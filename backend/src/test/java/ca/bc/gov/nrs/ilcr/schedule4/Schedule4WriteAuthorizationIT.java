@@ -1,10 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -172,5 +174,71 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
                 .content(ROW_BODY)
                 .with(canonicalSubmitter()))
         .andExpect(status().isNotFound());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // The ADMIN row of the role×status matrix (Story 16.1; added on the #427 review). Mill 740/2021
+  // is 1–10 'V' and silviculture 'D' (R__51) — so a gate that read the wrong track's column would
+  // see Draft, refuse the administrator, and every test below would fail on a 409 instead of
+  // passing vacuously. The shared unit truth table proves the component; these prove THIS
+  // schedule's wiring to it, on the write verb AND on DELETE.
+  // -----------------------------------------------------------------------------------------
+
+  /** A CREATE body — no id, so the admin write adds its own location rather than touching 8090. */
+  private static final String CREATE_BODY =
+      """
+      { "revisionCount": 0, "name": "Verified Correction Dump",
+        "categories": [ { "code": 40, "volume": 100, "cost": 5000, "distance": null } ] }
+      """;
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED track -> 2xx, and the track stays 'V' (AD-9)")
+  void admin_writesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "740")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CREATE_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // The correction must not move the track, and the echo must report the status the gate
+        // actually read — not a STATUS_DRAFT literal passed in its place.
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES a location at a VERIFIED track -> 2xx (the correction path)")
+  void admin_deletesAtVerified() throws Exception {
+    // Location 8090 is R__51's seeded delete target on this mill, so this removes a real row rather
+    // than exercising the idempotent no-op arm. A DELETE still holding the pre-16.1 Draft-only
+    // literal answers 409 here while its sibling PUT passes — the divergence a refused-at-Draft
+    // probe cannot see, because Draft-only and the matrix agree an admin may not write at 'D'.
+    mockMvc
+        .perform(
+            delete(ENDPOINT)
+                .param("millId", "740")
+                .param("year", "2021")
+                .param("id", "8090")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful());
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same VERIFIED track -> 409: only the ministry corrects")
+  void submitter_refusedAtVerified() throws Exception {
+    // The other half of the row. Without it, admin_writesAtVerified alone would also pass if the
+    // gate had simply been widened to "anyone may edit at V".
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "740")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CREATE_BODY)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isConflict());
   }
 }

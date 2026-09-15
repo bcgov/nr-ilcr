@@ -48,6 +48,23 @@ describe('visibleNavigationItems', () => {
     ])
   })
 
+  test('Administration lists Mills directly after Mill Associations, as legacy did', () => {
+    // menu.xhtml:32-36 ran Users → Mills → Content Editing → Report Year → Table Maintenance. The
+    // absolute order here already diverges, but Mills' place relative to the users screen is
+    // legacy's and the two screens cross-navigate to each other (UC-MILL-001 S10).
+    const administration = NAVIGATION_ITEMS.find((item) => item.name === 'Administration')
+    const names = administration?.items?.map((child) => child.name) ?? []
+    const at = names.indexOf('Mills')
+    expect(at).toBeGreaterThan(-1)
+    expect(names[at - 1]).toBe('Mill Associations')
+
+    const item = administration?.items?.find((child) => child.name === 'Mills')
+    expect(item?.path).toBe('/mills')
+    // Inherited from the parent menu's flag rather than declared per-item, which is what keeps the
+    // route guard and the hidden menu from drifting.
+    expect(isAdminOnlyPath('/mills')).toBe(true)
+  })
+
   test('Schedule 10 sits between Schedule 9 and Schedule 11, and is not admin-only', () => {
     // AC14 of Story 11.3. The route test proves the route exists; this proves it is REACHABLE, in
     // the right place, to a non-admin — the half no test asserted when 11.3 shipped.
@@ -73,6 +90,7 @@ describe('admin-only paths (route guard source)', () => {
       '/mill-associations',
       '/mill-information-report',
       '/mill-status-report',
+      '/mills',
       '/open-reporting-year',
     ])
   })
@@ -84,7 +102,11 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/home-content')).toBe(true)
     expect(isAdminOnlyPath('/mill-information-report')).toBe(true)
     expect(isAdminOnlyPath('/mill-status-report')).toBe(true)
+    expect(isAdminOnlyPath('/mills')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)
+    // `/mills` must not swallow the caller-scoped Home mill list, which is a different concern
+    // behind a different gate and is NOT admin-only.
+    expect(isAdminOnlyPath('/mill-associations-public')).toBe(false)
     expect(isAdminOnlyPath('/')).toBe(false)
   })
 

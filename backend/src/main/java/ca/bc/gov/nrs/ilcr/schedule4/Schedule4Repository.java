@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +11,7 @@ import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 4 tables (AD-3, re-pinned 2026-07-20:
@@ -584,5 +587,53 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   default void deleteFamily(long millId, int year, String name) {
     deleteFamilyDetails(millId, year, name);
     deleteFamilyReports(millId, year, name);
+  }
+
+  /**
+   * One submitted transportation report from {@code THE.TRANSPORTATION_REPORT_S_VW} — the
+   * licensee's own location name, distance and cycle time (Story 16.2, BR-04).
+   *
+   * <p>Reading {@code LOCATION_DESCRIPTION} here is the fix for a legacy defect. Legacy's own read
+   * of the submitted name is <em>commented out</em> at {@code Schedule4DAO.java:139-141}, with the
+   * author's note "for some reason these values are not being populated, not sure of the intent",
+   * and line 142 assigns the CURRENT value instead — so the location-name indicator legacy wires up
+   * can never fire. The field was doing double duty: {@code Schedule4MB.java:695-700}, {@code
+   * :257-263} and {@code :249},{@code :619} all need the AS-LOADED name to propagate and roll back
+   * a rename. Here those are two different concerns — the rename baseline is the page's own form
+   * state — so the submitted name can be what it says it is.
+   */
+  record TransportationSnapshotRow(
+      int transportationReportId,
+      String locationDescription,
+      BigDecimal distance,
+      BigDecimal cycleTime,
+      String comments) {}
+
+  /** Every submitted transportation report for a mill/year (category "4"). */
+  @Query(
+      value =
+          """
+      SELECT TRANSPORTATION_REPORT_ID, LOCATION_DESCRIPTION, DISTANCE,
+             TRANSPORTATION_CYCLE_TIME, COMMENTS
+        FROM THE.TRANSPORTATION_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '4'
+      """,
+      rowMapperClass = TransportationSnapshotRowMapper.class)
+  List<TransportationSnapshotRow> findTransportationSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code TRANSPORTATION_REPORT_S_VW} row. */
+  class TransportationSnapshotRowMapper implements RowMapper<TransportationSnapshotRow> {
+    @Override
+    public TransportationSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new TransportationSnapshotRow(
+          rs.getInt("TRANSPORTATION_REPORT_ID"),
+          rs.getString("LOCATION_DESCRIPTION"),
+          rs.getBigDecimal("DISTANCE"),
+          rs.getBigDecimal("TRANSPORTATION_CYCLE_TIME"),
+          rs.getString("COMMENTS"));
+    }
   }
 }

@@ -1,15 +1,20 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -42,8 +47,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule7aService {
 
-  private static final String STATUS_DRAFT = "D";
-
   // Legacy Constant.REPORT_COST_ITEMS.Schedule7_* ids (category '7').
   private static final int ITEM_SITE_PLAN = 70;
   private static final int ITEM_APPROACH = 71;
@@ -64,10 +67,26 @@ public class Schedule7aService {
 
   private final Schedule7aRepository repository;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule7aService(Schedule7aRepository repository, MessageSource messageSource) {
+  /**
+   * Constructs the Schedule 7A service.
+   *
+   * @param repository the repository
+   * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule7aService(
+      Schedule7aRepository repository,
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   // ===============================================================================================
@@ -80,30 +99,59 @@ public class Schedule7aService {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (never inlined, AC5)
-   * @return the document with server-computed totals and Draft-gated editability
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (never inlined, AC5)
+   * @return the document with server-computed totals and editability-gated editability
    */
   @Transactional(readOnly = true)
-  public Schedule7aResponse getSchedule7a(long millId, int year, boolean callerMayEdit) {
+  public Schedule7aResponse getSchedule7a(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Assemble the served document for a known track status (writes reuse it with their proven "D").
+   * Assemble the served document for a known track status (writes reuse it with the status their
+   * gate proved).
    */
   private Schedule7aResponse buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     List<BridgeReportEntity> bridgeRows = repository.findBridges(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
         costsByBridge(repository.findCostDetails(millId, year));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Long, Schedule7aRepository.BridgeSnapshotRow> bridgeSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costSnapshotsByBridge = new HashMap<>();
+    if (exposeOriginals && !bridgeRows.isEmpty()) {
+      for (Schedule7aRepository.BridgeSnapshotRow snap :
+          repository.findBridgeSnapshots(millId, year)) {
+        bridgeSnapshots.putIfAbsent(snap.bridgeReportId(), snap);
+      }
+      List<Long> bridgeIds =
+          bridgeRows.stream().map(BridgeReportEntity::bridgeReportId).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByBridgeReports(bridgeIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          costSnapshotsByBridge
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r.cost());
+        }
+      }
+    }
+
     List<Bridge> bridges = new ArrayList<>(bridgeRows.size());
     int rowCounter = 1;
     for (BridgeReportEntity row : bridgeRows) {
-      bridges.add(toBridge(row, rowCounter++, costs.getOrDefault(row.bridgeReportId(), Map.of())));
+      bridges.add(
+          toBridge(
+              row,
+              rowCounter++,
+              costs.getOrDefault(row.bridgeReportId(), Map.of()),
+              bridgeOriginals(
+                  trackStatus,
+                  bridgeSnapshots.get(row.bridgeReportId()),
+                  costSnapshotsByBridge.getOrDefault(row.bridgeReportId(), Map.of()))));
     }
     return new Schedule7aResponse(
         millId, year, trackStatus, editable, bridges, codeLists(year), null);
@@ -125,19 +173,19 @@ public class Schedule7aService {
 
   // ===============================================================================================
   // Writes (Story 12.2). Each method is one transaction: a persistence failure rolls back and
-  // surfaces as 500/ERR-004. Draft-gated on the 1–10 track (BR-01/AD-9).
+  // surfaces as 500/ERR-004. editability-gated on the 1–10 track (BR-01/AD-9).
   // ===============================================================================================
 
   /**
    * Add one bridge and return the recomputed document + the recalculated totals (S01/S02). Costs
    * are optional, but every one of the ten detail rows is written either way — an absent cost
-   * stores a NULL row, never no row (see {@link #writeCosts}). Draft-gated; unknown code → 400;
-   * malformed date → 400.
+   * stores a NULL row, never no row (see {@link #writeCosts}). editability-gated; unknown code →
+   * 400; malformed date → 400.
    */
   @Transactional
   public Schedule7aResponse addBridge(
-      long millId, int year, BridgeRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, BridgeRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     LocalDate builtDate = parseBuiltDate(request.builtDate());
     validateCodes(codeSets(year), request);
     try {
@@ -152,7 +200,7 @@ public class Schedule7aService {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -167,11 +215,11 @@ public class Schedule7aService {
       int year,
       long bridgeId,
       BridgeRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    final String trackStatus = requireEditable(millId, year, caller);
     applyBridgeUpdate(millId, year, bridgeId, request, user, codeSets(year));
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -180,21 +228,21 @@ public class Schedule7aService {
    * button). Each entry goes through the same per-row path as {@link #updateBridge}, so the
    * validation, optimistic lock and cost upsert/clear rules are identical.
    *
-   * <p>Atomic by construction: one entry failing its Draft gate, revision check, code check or date
-   * parse rolls the WHOLE batch back. That is the legacy guarantee — a partial save would leave the
-   * reporter unable to tell which rows persisted.
+   * <p>Atomic by construction: one entry failing its editability gate, revision check, code check
+   * or date parse rolls the WHOLE batch back. That is the legacy guarantee — a partial save would
+   * leave the reporter unable to tell which rows persisted.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the bridges to save, each with its id and {@code revisionCount}
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the audit user
    * @return the recomputed document with refreshed totals
    */
   @Transactional
   public Schedule7aResponse saveAllBridges(
-      long millId, int year, BridgeSaveAllRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, BridgeSaveAllRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     rejectDuplicateIds(request);
     // Read the five code tables ONCE for the batch rather than once per bridge: the lists are
     // year-scoped, not row-scoped, so N bridges would otherwise issue 5N identical queries inside
@@ -203,7 +251,7 @@ public class Schedule7aService {
     for (BridgeSaveAllRequest.Item item : request.bridges()) {
       applyBridgeUpdate(millId, year, item.bridgeReportId(), item.bridge(), user, codes);
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -222,7 +270,8 @@ public class Schedule7aService {
 
   /**
    * Correct one bridge row and its costs. Shared by the per-row PUT and the save-all so a bridge is
-   * persisted by exactly one code path. Assumes the Draft gate has already run for the request.
+   * persisted by exactly one code path. Assumes the editability gate has already run for the
+   * request.
    */
   private void applyBridgeUpdate(
       long millId, int year, long bridgeId, BridgeRequest request, String user, CodeSets codes) {
@@ -251,8 +300,8 @@ public class Schedule7aService {
   }
 
   /**
-   * Delete one bridge and ALL its cost children (S04/S05 — legacy whole-row removal). Draft-gated;
-   * an unknown id → 404.
+   * Delete one bridge and ALL its cost children (S04/S05 — legacy whole-row removal).
+   * editability-gated; an unknown id → 404.
    *
    * <p>CHILDREN FIRST, then the parent — the order legacy used (Schedule7aDAO:566-570). Delivery
    * carries an FK from {@code ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} without {@code ON DELETE
@@ -263,8 +312,8 @@ public class Schedule7aService {
    */
   @Transactional
   public Schedule7aResponse deleteBridge(
-      long millId, int year, long bridgeId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, long bridgeId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countBridge(bridgeId, millId, year) == 0) {
         throw new BridgeNotFoundException();
@@ -286,7 +335,7 @@ public class Schedule7aService {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -346,12 +395,16 @@ public class Schedule7aService {
     repository.upsertCost(bridgeId, costItemId, cost, user);
   }
 
-  /** The Draft gate for every write: the 1–10 track must be {@code D} (else 409, BR-01/AD-9). */
-  private void requireDraft(long millId, int year) {
+  /**
+   * The editability gate for every write: the caller must be permitted to write at the 1–10 track's
+   * current status (else 409, BR-01/AD-9).
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /** The five code-value sets a write is validated against, read once for a reporting year. */
@@ -558,7 +611,11 @@ public class Schedule7aService {
   }
 
   /** Map one bridge row + its cost map to the wire shape, computing the four totals (BR-06). */
-  private Bridge toBridge(BridgeReportEntity row, int rowCounter, Map<Integer, Integer> cost) {
+  private Bridge toBridge(
+      BridgeReportEntity row,
+      int rowCounter,
+      Map<Integer, Integer> cost,
+      Map<String, OriginalValue> submitted) {
     Integer sitePlan = cost.get(ITEM_SITE_PLAN);
     Integer ssMaterial = cost.get(ITEM_SS_MATERIAL);
     Integer ssDeliver = cost.get(ITEM_SS_DELIVER);
@@ -606,7 +663,8 @@ public class Schedule7aService {
         totalDeliver,
         totalInstall,
         grandTotal,
-        row.revisionCount());
+        row.revisionCount(),
+        submitted);
   }
 
   private static String formatBuiltDate(LocalDate date) {
@@ -657,5 +715,91 @@ public class Schedule7aService {
       }
     }
     return any ? Math.toIntExact(total) : null;
+  }
+
+  /**
+   * One bridge's submitted values (Story 16.2, BR-04) — the thirteen attributes legacy tracked on
+   * {@code BridgeReportType} ({@code :548-596}) plus the ten cost items ({@code
+   * Schedule7aDAO.java:299-432}).
+   *
+   * <p>The four TOTAL costs get none: legacy's own OV summing for them is commented out ({@code
+   * BridgeReportType.java:408,410,412}) and the page renders no indicator on them.
+   *
+   * <p>Every cost renders whole-dollar grouped, matching legacy's default-precision {@code
+   * originalValueCostConverter} on this screen; the three measurements render at one decimal as
+   * their own tooltips did.
+   */
+  private Map<String, OriginalValue> bridgeOriginals(
+      String trackStatus,
+      Schedule7aRepository.BridgeSnapshotRow bridge,
+      Map<Integer, Integer> submittedCosts) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "locationName",
+                bridge == null ? null : bridge.locationName(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "builtDate",
+                bridge == null ? null : formatBuiltDate(bridge.builtDate()),
+                OriginalValueFormat.TEXT)
+            .put(
+                "constructionTypeCode",
+                bridge == null ? null : bridge.constructionTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "superstructureTypeCode",
+                bridge == null ? null : bridge.superstructureTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "deckTypeCode",
+                bridge == null ? null : bridge.deckTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "abutmentTypeCode",
+                bridge == null ? null : bridge.abutmentTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "loadRatingCode",
+                bridge == null ? null : bridge.loadRatingCode(),
+                OriginalValueFormat.TEXT)
+            .put("lifeSpan", bridge == null ? null : bridge.lifeSpan(), OriginalValueFormat.WHOLE)
+            .put(
+                "abutmentHeight",
+                bridge == null ? null : bridge.abutmentHeight(),
+                OriginalValueFormat.ONE_DECIMAL)
+            .put("length", bridge == null ? null : bridge.length(), OriginalValueFormat.ONE_DECIMAL)
+            .put(
+                "width",
+                bridge == null ? null : bridge.deckWidth(),
+                OriginalValueFormat.ONE_DECIMAL)
+            .put("distance", bridge == null ? null : bridge.distance(), OriginalValueFormat.WHOLE)
+            .put("comments", bridge == null ? null : bridge.comments(), OriginalValueFormat.TEXT);
+
+    builder.put("sitePlanCost", submittedCosts.get(ITEM_SITE_PLAN), OriginalValueFormat.WHOLE);
+    builder.put(
+        "superstructureMaterialCost",
+        submittedCosts.get(ITEM_SS_MATERIAL),
+        OriginalValueFormat.WHOLE);
+    builder.put(
+        "superstructureDeliverCost",
+        submittedCosts.get(ITEM_SS_DELIVER),
+        OriginalValueFormat.WHOLE);
+    builder.put(
+        "superstructureInstallCost",
+        submittedCosts.get(ITEM_SS_INSTALL),
+        OriginalValueFormat.WHOLE);
+    builder.put(
+        "abutmentMaterialCost", submittedCosts.get(ITEM_ABUT_MATERIAL), OriginalValueFormat.WHOLE);
+    builder.put(
+        "abutmentDeliverCost", submittedCosts.get(ITEM_ABUT_DELIVER), OriginalValueFormat.WHOLE);
+    builder.put(
+        "abutmentInstallCost", submittedCosts.get(ITEM_ABUT_INSTALL), OriginalValueFormat.WHOLE);
+    builder.put("approachCost", submittedCosts.get(ITEM_APPROACH), OriginalValueFormat.WHOLE);
+    builder.put(
+        "afterInstallCost", submittedCosts.get(ITEM_AFTER_INSTALL), OriginalValueFormat.WHOLE);
+    builder.put("otherCost", submittedCosts.get(ITEM_OTHER), OriginalValueFormat.WHOLE);
+    return builder.build();
   }
 }

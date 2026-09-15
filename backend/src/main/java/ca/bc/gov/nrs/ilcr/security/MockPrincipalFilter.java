@@ -27,15 +27,59 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * MAINTAIN_CODE_TABLES). When the header is absent or names no known role, it falls back to the
  * configured default ({@code ilcr.security.mock-role}). The header is dev-only: in prod this filter
  * is not registered, so it is never consulted — it can never widen a real principal's authority.
+ *
+ * <p><b>The mock also carries a directory GUID</b> ({@code ilcr.security.mock-user-guid}), because
+ * a role alone no longer stands in for a real principal. Since Story 5.5 the Home mill list is
+ * IDENTITY-scoped: {@code MillContextService.listMills} looks the caller's GUID up in {@code
+ * ILCR_MILL_USER_XREF} and fail-closes to an empty list without one. So a GUID-less mock submitter
+ * saw ZERO mills, and only {@code ILCR_ADMIN} (which bypasses scoping, DL-22) saw any. That stayed
+ * invisible until Story 16.1 made editability role-dependent and admin lost Draft editing, leaving
+ * no single mock role able to both reach a mill and edit its Draft. An identity fixes it at the
+ * cause, and lets the dev/e2e principal exercise the REAL scoped query rather than bypass it.
+ *
+ * <p>The DEFAULT GUID is the canonical submitter of the test-scope seed ({@code
+ * R__70_test_scope_canonical_submitter.sql}), which is what the CI e2e database holds. Against any
+ * other database — an extract-backed local stack, say — that GUID has no {@code
+ * ILCR_MILL_USER_XREF} row, so a mock SUBMITTER is correctly scoped to nothing; point {@code
+ * ilcr.security.mock-user-guid} at a GUID that database does associate.
+ *
+ * <p>The GUID travels in a typed {@link MockUserPrincipal}, NOT in the principal's name, and that
+ * is load-bearing: {@code Authentication.getName()} is written straight into the {@code
+ * ENTRY_USERID} / {@code UPDATE_USERID} audit columns by every write controller, and those are
+ * {@code VARCHAR2(30)} while a FAM GUID is 32 chars — so naming the principal after it would {@code
+ * ORA-12899} on every save. The name stays the short, readable {@code dev-<roles>}; see {@link
+ * MockUserPrincipal} for why a dedicated type rather than the token's {@code details}.
  */
 public class MockPrincipalFilter extends OncePerRequestFilter {
 
   static final String MOCK_GROUPS_HEADER = "X-Mock-Groups";
 
   private final Role defaultRole;
+  private final String userGuid;
 
-  public MockPrincipalFilter(Role defaultRole) {
+  /**
+   * Creates the dev/UAT mock principal filter.
+   *
+   * @param defaultRole the role to present when {@code X-Mock-Groups} is absent or names no known
+   *     role ({@code ilcr.security.mock-role})
+   * @param userGuid the stand-in directory GUID to present ({@code ilcr.security.mock-user-guid});
+   *     trimmed, and warned about if blank, because a GUID that matches no {@code
+   *     ILCR_MILL_USER_XREF} row shows up only as an empty Home dropdown
+   */
+  public MockPrincipalFilter(Role defaultRole, String userGuid) {
     this.defaultRole = defaultRole;
+    // Trimmed because a stray space in YAML or an env var would not match any ILCR_MILL_USER_XREF
+    // row, and the only symptom is an empty Home dropdown — indistinguishable from missing data.
+    this.userGuid = (userGuid == null) ? "" : userGuid.trim();
+    if (this.userGuid.isEmpty()) {
+      // Not fatal: an ADMIN mock still works (admins bypass scoping), so failing startup would be
+      // disproportionate. But say it once, loudly, at the only moment anyone is looking — the
+      // alternative is a submitter silently seeing zero mills and it reading as an app defect.
+      logger.warn(
+          "ilcr.security.mock-user-guid is blank: a mock SUBMITTER will be scoped to NO mills "
+              + "(fail-closed). Set it to a directory GUID this database associates in "
+              + "ILCR_MILL_USER_XREF, or select the admin mock user.");
+    }
   }
 
   @Override
@@ -51,8 +95,13 @@ public class MockPrincipalFilter extends OncePerRequestFilter {
               + roles.stream()
                   .map(role -> role.name().toLowerCase(Locale.ROOT))
                   .collect(Collectors.joining("-"));
+      // A typed principal carrying the GUID a real caller would hold as `custom:idp_user_id`.
+      // `MockUserPrincipal` documents why it is a type and not the token's `details`, and why
+      // getName() must stay the short name rather than becoming the GUID.
+      var principal = new MockUserPrincipal(name, userGuid);
       SecurityContextHolder.getContext()
-          .setAuthentication(new UsernamePasswordAuthenticationToken(name, "N/A", authorities));
+          .setAuthentication(
+              new UsernamePasswordAuthenticationToken(principal, "N/A", authorities));
     }
     filterChain.doFilter(request, response);
   }

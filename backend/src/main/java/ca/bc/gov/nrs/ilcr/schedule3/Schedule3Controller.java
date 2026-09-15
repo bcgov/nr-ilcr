@@ -7,7 +7,8 @@ import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3Api;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -39,7 +40,7 @@ public class Schedule3Controller implements Schedule3Api {
 
   private final MillContextService millContextService;
   private final Schedule3Service schedule3Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
 
   /**
@@ -47,17 +48,17 @@ public class Schedule3Controller implements Schedule3Api {
    *
    * @param millContextService the mill context service
    * @param schedule3Service the schedule 3 service
-   * @param permissions the schedule permissions evaluator
+   * @param editability the role×status editability resolver
    * @param messageSource the message source
    */
   public Schedule3Controller(
       MillContextService millContextService,
       Schedule3Service schedule3Service,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource) {
     this.millContextService = millContextService;
     this.schedule3Service = schedule3Service;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
   }
 
@@ -74,8 +75,8 @@ public class Schedule3Controller implements Schedule3Api {
   public ResponseEntity<Schedule3Response> getSchedule3(
       long millId, int year, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    return ResponseEntity.ok(schedule3Service.getSchedule3(millId, year, callerMayEdit));
+    EditableStatuses caller = editability.forCaller(authentication);
+    return ResponseEntity.ok(schedule3Service.getSchedule3(millId, year, caller));
   }
 
   @Override
@@ -83,10 +84,9 @@ public class Schedule3Controller implements Schedule3Api {
   public ResponseEntity<Schedule3Response> saveSchedule3(
       long millId, int year, Schedule3Request request, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
-    Schedule3Response saved =
-        schedule3Service.saveSchedule3(millId, year, request, callerMayEdit, user);
+    Schedule3Response saved = schedule3Service.saveSchedule3(millId, year, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -97,7 +97,8 @@ public class Schedule3Controller implements Schedule3Api {
     millContextService.validateMillYearActive(millId, year);
     // 200 either way (the DELETE never 404s since defect #296); the message tells the truth
     // about what happened, as Schedule 2's has since the #292 code review.
-    boolean removed = schedule3Service.deleteSchedule3(millId, year);
+    boolean removed =
+        schedule3Service.deleteSchedule3(millId, year, editability.forCaller(authentication));
     return ResponseEntity.ok(
         new MessageResponse(message(removed ? MSG_DELETED : MSG_NOTHING_DELETED)));
   }

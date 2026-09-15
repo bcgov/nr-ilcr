@@ -21,13 +21,14 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { isScheduleSaved } from '@/utils/schedule'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
@@ -41,7 +42,6 @@ import './index.scss'
 // are client-side chrome (a suppression with no request / a Carbon Modal / a confirm Modal), so
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
@@ -122,6 +122,8 @@ function buildRequest(doc: Schedule1Response, form: FieldValues): Schedule1Reque
   }
 }
 
+const PAGE_HEADER = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
+
 const Schedule1: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const navigate = useNavigate()
@@ -148,9 +150,11 @@ const Schedule1: FC = () => {
   const [confirmNavOpen, setConfirmNavOpen] = useState(false)
   const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule1Response>({
       path: '/v1/schedule1',
+      scheduleName: 'Schedule 1',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -305,58 +309,7 @@ const Schedule1: FC = () => {
     navigate({ to: '/schedule-1/other-costs' })
   }
 
-  const header = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
-
-  if (contextMissing) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Mill and Reporting Year required"
-              subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-            />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <LoadingScreen label="Loading Schedule 1" />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Unable to load Schedule 1"
-              subtitle={errorDetail}
-            />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -367,17 +320,42 @@ const Schedule1: FC = () => {
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
   // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
-  // read-only cells track data entry the way legacy did. Null outside Draft / in view mode, where
+  // read-only cells track data entry the way legacy did. Null whenever the document is NOT editable
+  // for this caller — since Story 16.1 that is the role×status matrix, not Draft alone, so an
+  // administrator correcting at Submitted or Verified DOES get the mirror — or in view mode, where
   // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
   const derived = editable ? deriveSchedule1(data, enteredFromForm(committed)) : null
 
   // A value cell: an editable TextInput when the field is writable and the schedule is editable,
   // otherwise read-only text. perUnit is always read-only (server-computed).
+  // The original-value indicator for one cell (Story 16.2, BR-04). `originals` is the owning line
+  // item's map, `field` its own key ("volume"/"cost"); both are undefined for cells that legacy gave
+  // no indicator. Editable cells compare the LIVE form value so the icon appears and clears as the
+  // operator types, the way legacy's `<f:ajax event="change">` re-render did; read-only cells compare
+  // the served value.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: number | null | undefined,
+    typed: string | undefined,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={field}
+        current={typed ?? current}
+        label={label}
+      />
+    )
+
   const numberCell = (
     fieldKey: string,
     label: string,
     writable: boolean,
     current: number | null | undefined,
+    originals?: OriginalValues | null,
+    originalField?: string,
   ) =>
     editable && writable ? (
       // --input marks the cells whose value sits inside a TextInput: the field supplies its own
@@ -395,9 +373,13 @@ const Schedule1: FC = () => {
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
+        {indicator(originals, originalField, label, current, form[fieldKey])}
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">{fmtNumber(current)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtNumber(current)}
+        {indicator(originals, originalField, label, current, undefined)}
+      </TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -409,8 +391,25 @@ const Schedule1: FC = () => {
     return (
       <TableRow key={code}>
         <TableCell>{label}</TableCell>
-        {numberCell(`vol-${code}`, `${label} volume`, writableVolume, item.volume)}
-        {numberCell(`cost-${code}`, `${label} cost`, writableCost, item.cost)}
+        {numberCell(
+          `vol-${code}`,
+          `${label} volume`,
+          writableVolume,
+          item.volume,
+          item.originalValues,
+          'volume',
+        )}
+        {numberCell(
+          `cost-${code}`,
+          `${label} cost`,
+          writableCost,
+          item.cost,
+          item.originalValues,
+          // Only the nine entered items carry a submitted cost — legacy set volume alone on the
+          // pulled and subtotal rows, so those get no cost indicator. The backend simply omits the
+          // key, which makes this safe to pass unconditionally.
+          'cost',
+        )}
         <TableCell className="schedule-1__num">
           {fmtCurrency(derived ? derived.perUnit[code] : item.perUnit)}
         </TableCell>
@@ -609,7 +608,7 @@ const Schedule1: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
         {(data.warnings ?? []).map((w, i) => (
@@ -719,17 +718,37 @@ const Schedule1: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           {editable ? (
-            <CommentsTextArea
-              id="comments"
-              labelText="If you have any additional comments, please enter them here:"
-              maxCount={COMMENTS_MAX}
-              value={form['comments'] ?? ''}
-              onChange={setField('comments')}
-            />
+            <>
+              <CommentsTextArea
+                id="comments"
+                labelText="If you have any additional comments, please enter them here:"
+                maxCount={COMMENTS_MAX}
+                value={form['comments'] ?? ''}
+                onChange={setField('comments')}
+              />
+              {/* Legacy gave the comments textarea an indicator too, and never a width swap —
+                  icon and tooltip only (schedule1.xhtml:774-785). Text, so compared with equals. */}
+              <OriginalValueIndicator
+                originals={data.originalValues}
+                field="comments"
+                current={form['comments'] ?? ''}
+                numeric={false}
+                label="Comments"
+              />
+            </>
           ) : (
             <>
               <h3 className="schedule-1__heading">Comments</h3>
-              <p className="schedule-1__comments">{data.comments ?? '—'}</p>
+              <p className="schedule-1__comments">
+                {data.comments ?? '—'}
+                <OriginalValueIndicator
+                  originals={data.originalValues}
+                  field="comments"
+                  current={data.comments}
+                  numeric={false}
+                  label="Comments"
+                />
+              </p>
             </>
           )}
         </Column>

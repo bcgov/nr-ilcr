@@ -144,6 +144,7 @@ class Schedule2SectionMapperTest {
         false,
         0,
         comments,
+        null, // originalValues — Draft, so none
         purchasedLogCost,
         purchasedWoodOverhead,
         subtotal,

@@ -17,14 +17,20 @@ import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -44,6 +50,14 @@ class Schedule4WriteServiceTest {
   private static final String USER = "dev-submitter";
 
   @Mock private Schedule4Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule4Service service;
 
@@ -79,7 +93,7 @@ class Schedule4WriteServiceTest {
             List.of(
                 new CategoryInput(40, bd("1000"), 50000, null),
                 new CategoryInput(47, bd("200"), 8000, bd("60.0")))),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).insertReport(MILL, YEAR, "New Dump", null, USER); // primary (distance null)
@@ -102,7 +116,7 @@ class Schedule4WriteServiceTest {
         MILL,
         YEAR,
         new Schedule4LocationRequest(null, null, "Bare Dump", null, List.of()),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).insertReport(MILL, YEAR, "Bare Dump", null, USER);
@@ -130,7 +144,7 @@ class Schedule4WriteServiceTest {
             List.of(
                 new CategoryInput(40, bd("1500"), 60000, null),
                 new CategoryInput(47, bd("250"), 9000, bd("70.0")))),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).bumpRevision(8001, 0, MILL, YEAR, null, USER);
@@ -158,7 +172,7 @@ class Schedule4WriteServiceTest {
             "Existing Dump",
             null,
             List.of(new CategoryInput(40, bd("1500"), 60000, null))),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository, never())
@@ -181,7 +195,7 @@ class Schedule4WriteServiceTest {
         YEAR,
         new Schedule4LocationRequest(
             8001, 0, "Existing Dump", null, List.of(new CategoryInput(47, null, null, null))),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).deleteReport(8002);
@@ -201,7 +215,7 @@ class Schedule4WriteServiceTest {
                 MILL,
                 YEAR,
                 new Schedule4LocationRequest(8001, 0, "Rival Dump", null, List.of()),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
 
     verify(repository, never())
@@ -226,7 +240,7 @@ class Schedule4WriteServiceTest {
                 MILL,
                 YEAR,
                 new Schedule4LocationRequest(8001, 0, "Whatever", null, List.of()),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
 
     verify(repository, never()).nameExists(anyLong(), anyInt(), anyString(), any());
@@ -247,7 +261,7 @@ class Schedule4WriteServiceTest {
                 MILL,
                 YEAR,
                 new Schedule4LocationRequest(null, null, "X", null, List.of()),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
 
     verify(repository, never()).nameExists(anyLong(), anyInt(), anyString(), any());
@@ -273,7 +287,7 @@ class Schedule4WriteServiceTest {
                     "Existing Dump",
                     null,
                     List.of(new CategoryInput(40, bd("1"), 1, null))),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
 
     verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
@@ -295,7 +309,7 @@ class Schedule4WriteServiceTest {
                 MILL,
                 YEAR,
                 new Schedule4LocationRequest(null, null, "New Dump", null, List.of()),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
   }
 
@@ -304,7 +318,7 @@ class Schedule4WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
 
-    service.deleteLocation(MILL, YEAR, 8001);
+    service.deleteLocation(MILL, YEAR, 8001, CallerRights.SUBMITTER);
 
     verify(repository).deleteFamily(MILL, YEAR, "Existing Dump");
   }
@@ -315,7 +329,7 @@ class Schedule4WriteServiceTest {
     // Unknown in this context (also covers a foreign id: mill/year-scoped lookup returns empty).
     when(repository.findLocationName(9999, MILL, YEAR)).thenReturn(Optional.empty());
 
-    service.deleteLocation(MILL, YEAR, 9999); // must not throw
+    service.deleteLocation(MILL, YEAR, 9999, CallerRights.SUBMITTER); // must not throw
 
     verify(repository, never()).deleteFamily(anyLong(), anyInt(), anyString());
   }
@@ -325,7 +339,8 @@ class Schedule4WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(
-        ScheduleNotEditableException.class, () -> service.deleteLocation(MILL, YEAR, 8001));
+        ScheduleNotEditableException.class,
+        () -> service.deleteLocation(MILL, YEAR, 8001, CallerRights.SUBMITTER));
 
     verify(repository, never()).deleteFamily(anyLong(), anyInt(), anyString());
   }

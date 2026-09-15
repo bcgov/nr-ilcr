@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7b.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 7B culvert on the served document (AD-12). The nine entered values are as stored;
@@ -41,4 +43,40 @@ public record Culvert(
     Integer installCost,
     Integer totalCost,
     String comments,
-    int revisionCount) {}
+    int revisionCount,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public Culvert(
+      long culvertReportId,
+      int rowCounter,
+      String culvertTypeCode,
+      Integer spanSize,
+      Integer riseSize,
+      BigDecimal length,
+      Integer culvertPieceCount,
+      Integer materialCost,
+      Integer installCost,
+      Integer totalCost,
+      String comments,
+      int revisionCount) {
+    this(
+        culvertReportId,
+        rowCounter,
+        culvertTypeCode,
+        spanSize,
+        riseSize,
+        length,
+        culvertPieceCount,
+        materialCost,
+        installCost,
+        totalCost,
+        comments,
+        revisionCount,
+        null);
+  }
+}

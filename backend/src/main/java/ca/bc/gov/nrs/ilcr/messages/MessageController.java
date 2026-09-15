@@ -20,8 +20,10 @@ import org.springframework.web.context.request.WebRequest;
  * cannot drift from the outcome that produced them. Only keys with genuinely NO request behind them
  * belong here.
  *
- * <p>{@code VIEW_SCHEDULE} rather than a looser gate: every key here is schedule-screen chrome, so
- * a caller who cannot view a schedule has no use for one.
+ * <p>{@code VIEW_SCHEDULE} rather than a looser gate: every key here is screen chrome for an
+ * authenticated ILCR user, and both production roles hold {@code VIEW_SCHEDULE}, so it is the
+ * broadest gate that still refuses an outsider. Keys are static sentences, never data — an
+ * admin-only key here reveals nothing an authenticated submitter could act on.
  */
 @RestController
 public class MessageController implements MessageApi {
@@ -38,10 +40,18 @@ public class MessageController implements MessageApi {
    * <p>Schedule 4 hardcodes its equivalent ({@code schedule4/index.tsx:45-46}); converging it onto
    * this endpoint belongs to the cross-schedule consistency PR, not here.
    *
+   * <p>{@code confirmImportMill} is the same shape on the admin Mills screen: the CNF-001
+   * confirmation is rendered BEFORE the import endpoint is called, so no response exists to carry
+   * it (Story 22.1 serves the text; 22.3 renders it). It rides this endpoint's {@code
+   * VIEW_SCHEDULE} gate — held by both roles, so an ADMIN always passes — because the text is a
+   * static confirmation sentence, not admin data; {@code MAINTAIN_MILLS} still guards the import
+   * itself.
+   *
    * <p>Add a key only when a client must render it with no request behind it. If a request DOES
    * produce the text, put it on that response instead.
    */
-  private static final Set<String> CLIENT_RENDERABLE_KEYS = Set.of("sch5.copy.msg");
+  private static final Set<String> CLIENT_RENDERABLE_KEYS =
+      Set.of("sch5.copy.msg", "confirmImportMill");
 
   private final MessageSource messageSource;
 

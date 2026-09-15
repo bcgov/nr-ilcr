@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule7b;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,8 +15,10 @@ import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +41,11 @@ import org.springframework.security.core.Authentication;
 @DisplayName("Schedule7bController — delegation, editability, success-message echo")
 class Schedule7bControllerTest {
 
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
+
   private static final String MILL_PARAM = "514";
   private static final String YEAR_PARAM = "2021";
   private static final long MILL = 514L;
@@ -45,7 +53,7 @@ class Schedule7bControllerTest {
 
   @Mock private MillContextService millContextService;
   @Mock private Schedule7bService schedule7bService;
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
   @Mock private MessageSource messageSource;
   @Mock private Authentication authentication;
   @InjectMocks private Schedule7bController controller;
@@ -80,8 +88,9 @@ class Schedule7bControllerTest {
   @DisplayName("GET delegates context validation and derives editability from EDIT_SCHEDULE")
   void getDelegatesAndDerivesEditability() {
     contextResolves();
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule7bService.getSchedule7b(MILL, YEAR, true)).thenReturn(doc(List.of(oneCulvert())));
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule7bService.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER))
+        .thenReturn(doc(List.of(oneCulvert())));
 
     ResponseEntity<Schedule7bResponse> response =
         controller.getSchedule7b(MILL_PARAM, YEAR_PARAM, authentication);
@@ -96,12 +105,12 @@ class Schedule7bControllerTest {
   @DisplayName("GET passes callerMayEdit=false when the caller lacks EDIT_SCHEDULE")
   void getPassesReadOnlyAuthority() {
     contextResolves();
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule7bService.getSchedule7b(MILL, YEAR, false)).thenReturn(doc(List.of()));
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule7bService.getSchedule7b(MILL, YEAR, CallerRights.NONE)).thenReturn(doc(List.of()));
 
     controller.getSchedule7b(MILL_PARAM, YEAR_PARAM, authentication);
 
-    verify(schedule7bService).getSchedule7b(MILL, YEAR, false);
+    verify(schedule7bService).getSchedule7b(MILL, YEAR, CallerRights.NONE);
   }
 
   @Test
@@ -111,14 +120,14 @@ class Schedule7bControllerTest {
     echoKeys();
     when(authentication.getName()).thenReturn("tester");
     CulvertRequest request = request(null);
-    when(schedule7bService.addCulvert(MILL, YEAR, request, true, "tester"))
+    when(schedule7bService.addCulvert(MILL, YEAR, request, CallerRights.SUBMITTER, "tester"))
         .thenReturn(doc(List.of(oneCulvert())));
 
     ResponseEntity<Schedule7bResponse> response =
         controller.addCulvert(MILL_PARAM, YEAR_PARAM, request, authentication);
 
     assertThat(response.getBody().message().key()).isEqualTo("dataSavedSuccesfullyInfoMsg");
-    verify(schedule7bService).addCulvert(MILL, YEAR, request, true, "tester");
+    verify(schedule7bService).addCulvert(MILL, YEAR, request, CallerRights.SUBMITTER, "tester");
   }
 
   @Test
@@ -128,7 +137,8 @@ class Schedule7bControllerTest {
     echoKeys();
     when(authentication.getName()).thenReturn("tester");
     CulvertRequest request = request(0);
-    when(schedule7bService.updateCulvert(MILL, YEAR, 7801L, request, true, "tester"))
+    when(schedule7bService.updateCulvert(
+            MILL, YEAR, 7801L, request, CallerRights.SUBMITTER, "tester"))
         .thenReturn(doc(List.of(oneCulvert())));
 
     ResponseEntity<Schedule7bResponse> response =
@@ -145,7 +155,7 @@ class Schedule7bControllerTest {
     when(authentication.getName()).thenReturn("tester");
     CulvertSaveAllRequest batch =
         new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(7801L, request(0))));
-    when(schedule7bService.saveAllCulverts(MILL, YEAR, batch, true, "tester"))
+    when(schedule7bService.saveAllCulverts(MILL, YEAR, batch, CallerRights.SUBMITTER, "tester"))
         .thenReturn(doc(List.of(oneCulvert())));
 
     ResponseEntity<Schedule7bResponse> response =
@@ -159,7 +169,7 @@ class Schedule7bControllerTest {
   void deleteEchoesDeletedWhenCulvertsRemain() {
     contextResolves();
     echoKeys();
-    when(schedule7bService.deleteCulvert(MILL, YEAR, 7801L, true))
+    when(schedule7bService.deleteCulvert(MILL, YEAR, 7801L, CallerRights.SUBMITTER))
         .thenReturn(doc(List.of(oneCulvert())));
 
     ResponseEntity<Schedule7bResponse> response =
@@ -173,7 +183,8 @@ class Schedule7bControllerTest {
   void deleteEchoesDeletedEvenWhenLastCulvertRemoved() {
     contextResolves();
     echoKeys();
-    when(schedule7bService.deleteCulvert(MILL, YEAR, 7801L, true)).thenReturn(doc(List.of()));
+    when(schedule7bService.deleteCulvert(MILL, YEAR, 7801L, CallerRights.SUBMITTER))
+        .thenReturn(doc(List.of()));
 
     ResponseEntity<Schedule7bResponse> response =
         controller.deleteCulvert(7801L, MILL_PARAM, YEAR_PARAM, authentication);

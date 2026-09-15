@@ -10,6 +10,7 @@
 // Scaling (33) line's `pop` is itself derived from the two timber volumes, and that Schedule 3 rounds
 // $/m³ with the LEGACY scale-2 rule (divide at scale 10, then scale 2), not Schedules 2/4's scale 4.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from '@/interfaces/Schedule1Response'
 
 // One fixed admin-cost line in the three-column model. `crown` is derived (harvest − pop), read-only.
@@ -18,6 +19,9 @@ export interface CostLine {
   harvest: number | null
   pop: number | null
   crown: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // A timber / overhead block: PO&P Timber, Crown Timber, Total Overhead. `volume` is entered (except
@@ -26,6 +30,9 @@ export interface TimberBlock {
   volume: number | null
   cost: number | null
   perUnit: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // A derived three-column money total (Subtotal Other Costs, Subtotal Actual Costs, Included
@@ -64,4 +71,7 @@ export default interface Schedule3Response {
   warnings?: MessageInfo[]
   // Success message on a mutation echo (AD-8), else null/absent on the GET.
   message?: MessageInfo | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }

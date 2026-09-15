@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule2.dto;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import java.util.Map;
 
 /**
  * The Schedule 2 (Purchased/Private Log Costs) aggregate document (AD-5, AD-12) — the pinned GET
@@ -22,6 +24,10 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
  * omits it) and carrying the resolved success {@link MessageInfo} on the PUT save echo. Adding it
  * is an additive, backward-compatible extension of the frozen read contract (same pattern as {@code
  * Schedule1Response}).
+ *
+ * <p>{@code originalValues} (Story 16.2) carries the licensee's submitted {@code comments}; every
+ * figure's original rides on its own {@link CostBlock}. Null at Draft, which suppresses every
+ * indicator on the page.
  */
 public record Schedule2Response(
     long millId,
@@ -30,6 +36,7 @@ public record Schedule2Response(
     boolean editable,
     Integer revisionCount,
     String comments,
+    Map<String, OriginalValue> originalValues,
     CostBlock purchasedLogCost,
     CostBlock purchasedWoodOverhead,
     CostBlock subtotal,
@@ -48,6 +55,7 @@ public record Schedule2Response(
         editable,
         revisionCount,
         comments,
+        originalValues,
         purchasedLogCost,
         purchasedWoodOverhead,
         subtotal,

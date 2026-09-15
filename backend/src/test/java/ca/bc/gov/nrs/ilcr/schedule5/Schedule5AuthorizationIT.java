@@ -88,8 +88,8 @@ class Schedule5AuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN group -> passes authz and gets editable:true on the Draft context")
-  void admin_passesAuthorization() throws Exception {
+  @DisplayName("ILCR_ADMIN group -> passes authz but is READ-ONLY on a Draft context (AD-9)")
+  void admin_passesAuthorizationButIsReadOnlyAtDraft() throws Exception {
     mockMvc
         .perform(
             get(ENDPOINT)
@@ -97,6 +97,8 @@ class Schedule5AuthorizationIT extends AbstractOracleIT {
                 .param("year", SEEDED_YEAR)
                 .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful())
-        .andExpect(jsonPath("$.editable", is(true)));
+        // Administrator is not a superset of submitter: the statuses are a hand-off chain, so while
+        // the track is Draft the mill owns it and the ministry reads only.
+        .andExpect(jsonPath("$.editable", is(false)));
   }
 }

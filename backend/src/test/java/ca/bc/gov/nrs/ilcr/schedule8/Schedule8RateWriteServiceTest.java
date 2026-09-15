@@ -12,7 +12,12 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -39,6 +45,14 @@ class Schedule8RateWriteServiceTest {
   private static final String USER = "tester";
 
   @Mock private Schedule8Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule8Service service;
 
@@ -70,7 +84,7 @@ class Schedule8RateWriteServiceTest {
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(false);
     assertThrows(
         ScheduleNotFoundException.class,
-        () -> service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), true, USER));
+        () -> service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), CallerRights.SUBMITTER, USER));
     verify(repository, never()).insertRate(anyInt(), any(), any(), any(), any(), any());
   }
 
@@ -78,7 +92,7 @@ class Schedule8RateWriteServiceTest {
   void add_insertsRateRow() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
-    service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), true, USER);
+    service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), CallerRights.SUBMITTER, USER);
     verify(repository)
         .insertRate(eq(SAMPLE), eq("CT1"), eq(82), eq("d"), eq(new BigDecimal("5.00")), eq(USER));
   }
@@ -90,7 +104,7 @@ class Schedule8RateWriteServiceTest {
     when(repository.rateExists(7000, SAMPLE)).thenReturn(false);
     assertThrows(
         ScheduleNotFoundException.class,
-        () -> service.saveRate(MILL, YEAR, SAMPLE, 7000, rate(0), true, USER));
+        () -> service.saveRate(MILL, YEAR, SAMPLE, 7000, rate(0), CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -103,7 +117,7 @@ class Schedule8RateWriteServiceTest {
         .thenReturn(0);
     assertThrows(
         StaleRevisionException.class,
-        () -> service.saveRate(MILL, YEAR, SAMPLE, 7000, rate(5), true, USER));
+        () -> service.saveRate(MILL, YEAR, SAMPLE, 7000, rate(5), CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -111,7 +125,7 @@ class Schedule8RateWriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(7000, SAMPLE)).thenReturn(false);
-    service.deleteRate(MILL, YEAR, SAMPLE, 7000, true);
+    service.deleteRate(MILL, YEAR, SAMPLE, 7000, CallerRights.SUBMITTER);
     verify(repository, never()).deleteRateRow(anyInt());
   }
 }

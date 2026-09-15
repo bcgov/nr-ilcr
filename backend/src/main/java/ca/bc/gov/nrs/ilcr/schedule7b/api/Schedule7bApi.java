@@ -109,9 +109,9 @@ public interface Schedule7bApi {
       Authentication authentication);
 
   /**
-   * Delete one culvert and its two cost children (S04). Draft-gated. Unknown id → 404. The success
-   * {@code message} is always SUC-002 {@code dataDeletedSuccesfullyInfoMsg}, including when that
-   * was the last culvert (legacy 7B has no empty-list message branch — see {@code
+   * Delete one culvert and its two cost children (S04). editability-gated. Unknown id → 404. The
+   * success {@code message} is always SUC-002 {@code dataDeletedSuccesfullyInfoMsg}, including when
+   * that was the last culvert (legacy 7B has no empty-list message branch — see {@code
    * Schedule7bController.deleteCulvert}). The Yes/No confirmation (ALT-001) is an in-page dialog
    * with no backend contract — a cancelled delete (S05) sends no request.
    *
@@ -129,9 +129,9 @@ public interface Schedule7bApi {
       Authentication authentication);
 
   /**
-   * Check Status for Schedule 7B (BR-07) — read-only validation, mutates nothing, NOT Draft-gated
-   * ({@code VIEW_SCHEDULE}). Applies the type-conditional matrix: span required only for {@code R}
-   * (Round), comments only for {@code O} (Others), rise never checked, and
+   * Check Status for Schedule 7B (BR-07) — read-only validation, mutates nothing, NOT
+   * editability-gated ({@code VIEW_SCHEDULE}). Applies the type-conditional matrix: span required
+   * only for {@code R} (Round), comments only for {@code O} (Others), rise never checked, and
    * length/pieces/material/install required for every culvert. Returns the schedule-wide all-met
    * message when every culvert passes — there is no per-culvert all-met message (unlike Schedule
    * 7A).

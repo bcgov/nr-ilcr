@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule8.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 8 rate-adjustment row (AD-12) — a {@code TREE_TO_TRUCK_RATE_DETAIL} row surfaced
@@ -22,4 +24,30 @@ public record RateRow(
     String itemDescription,
     BigDecimal costingRate,
     String costTypeCode,
-    String costTypeDescription) {}
+    String costTypeDescription,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public RateRow(
+      Integer id,
+      Integer revisionCount,
+      Integer costItemCode,
+      String itemDescription,
+      BigDecimal costingRate,
+      String costTypeCode,
+      String costTypeDescription) {
+    this(
+        id,
+        revisionCount,
+        costItemCode,
+        itemDescription,
+        costingRate,
+        costTypeCode,
+        costTypeDescription,
+        null);
+  }
+}

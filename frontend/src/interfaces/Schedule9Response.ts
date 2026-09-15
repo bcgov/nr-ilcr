@@ -4,6 +4,7 @@
 // `costPerUnit` are `number | null`. `costPerUnit` = cost ÷ units, computed server-side (AD-5), and
 // is NEVER recomputed nor posted here — it is null when units are 0/blank (S14) and must render blank.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
@@ -46,6 +47,9 @@ export interface ContractualWorkRecord {
   readonly source: CodeDescription | null
   readonly sourceDescription: string | null
   readonly comments: string | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Check Status (S09) result — read-only validation, no status transition, mutates nothing. `errors`

@@ -2,10 +2,14 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
@@ -20,6 +24,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -58,8 +63,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule4Service {
 
-  private static final String STATUS_DRAFT = "D";
-
   private static final String KIND_FIXED = "FIXED";
   private static final String KIND_DISTANCE = "DISTANCE";
 
@@ -76,9 +79,23 @@ public class Schedule4Service {
   private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule4Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule4Service(Schedule4Repository repository) {
+  /**
+   * Constructs the Schedule 4 service.
+   *
+   * @param repository the repository
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule4Service(
+      Schedule4Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -86,13 +103,24 @@ public class Schedule4Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action (from the controller)
+   * @param caller the track statuses this caller may edit
    * @return the read document (never null; {@code locations: []} when the mill/year has none)
    */
   @Transactional(readOnly = true)
-  public Schedule4Response getSchedule4(long millId, int year, boolean callerMayEdit) {
+  public Schedule4Response getSchedule4(long millId, int year, EditableStatuses caller) {
+    return assembleSchedule4(millId, year, caller);
+  }
+
+  /**
+   * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
+   * ({@link #checkStatus} and the four write paths, which each echo the recomputed document) reach
+   * it directly instead of self-invoking the annotated entry point. A {@code this} call bypasses
+   * the Spring proxy, so the annotation never applied on those paths anyway (sonar java:S6809); the
+   * read joins the transaction the caller already opened, which is the behaviour they had.
+   */
+  private Schedule4Response assembleSchedule4(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    final boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = caller.allows(trackStatus);
 
     // A location spans MULTIPLE TRANSPORTATION_REPORT rows sharing LOCATION_DESCRIPTION
     // (delivery-DB
@@ -103,11 +131,64 @@ public class Schedule4Service {
     // per-location value. Report order (legacy findTransportationReportDetails) is by report id;
     // the LinkedHashMap keeps first-seen (lowest report id) location order.
     List<LocationRow> locationRows = repository.findLocations(millId, year);
+    LocationIndex index = indexLocations(locationRows);
+    Snapshots snapshots = loadSnapshots(millId, year, trackStatus, locationRows);
+
+    Map<String, List<CategoryAmount>> categoriesByName =
+        categoriesByName(millId, year, trackStatus, index, snapshots);
+    Map<String, List<SubPageRow>> subPageByName =
+        subPageRowsByName(millId, year, trackStatus, snapshots);
+
+    List<Location> locations = new ArrayList<>(categoriesByName.size());
+    categoriesByName.forEach(
+        (name, categories) -> {
+          Integer primaryId =
+              index.primaryIdByName().getOrDefault(name, index.minIdByName().get(name));
+          locations.add(
+              new Location(
+                  primaryId,
+                  index.revisionByReport().get(primaryId),
+                  name,
+                  index.commentsByReport().get(primaryId),
+                  categories,
+                  subPageByName.getOrDefault(name, List.of()),
+                  locationOriginals(trackStatus, snapshots.byReport().get(primaryId))));
+        });
+
+    return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
+  }
+
+  /**
+   * The per-report lookups a location family is assembled from, all keyed by transportation report
+   * id except the two name-keyed id resolvers.
+   *
+   * @param distanceByReport each report's own distance (null on a primary report)
+   * @param nameByReport the location name a report belongs to
+   * @param commentsByReport the report's comments
+   * @param revisionByReport the report's optimistic-lock revision
+   * @param categoryOrder location names in first-seen (lowest report id) order, pre-seeded empty
+   * @param primaryIdByName the distance-null primary report id for a location, when it has one
+   * @param minIdByName the lowest report id for a location, the fallback identity (§Decision 2)
+   */
+  private record LocationIndex(
+      Map<Integer, BigDecimal> distanceByReport,
+      Map<Integer, String> nameByReport,
+      Map<Integer, String> commentsByReport,
+      Map<Integer, Integer> revisionByReport,
+      Map<String, List<CategoryAmount>> categoryOrder,
+      Map<String, Integer> primaryIdByName,
+      Map<String, Integer> minIdByName) {}
+
+  /**
+   * Index the location rows once. {@code categoryOrder} is seeded here rather than on demand so a
+   * location with no in-scope details still appears in the document, in report-id order.
+   */
+  private static LocationIndex indexLocations(List<LocationRow> locationRows) {
     Map<Integer, BigDecimal> distanceByReport = new HashMap<>();
     Map<Integer, String> nameByReport = new HashMap<>();
     Map<Integer, String> commentsByReport = new HashMap<>();
     Map<Integer, Integer> revisionByReport = new HashMap<>();
-    Map<String, List<CategoryAmount>> categoriesByName = new LinkedHashMap<>();
+    Map<String, List<CategoryAmount>> categoryOrder = new LinkedHashMap<>();
     // The location's stable, rename-safe id (§Decision 2): the distance-null primary report if the
     // family has one, else its lowest report id.
     Map<String, Integer> primaryIdByName = new HashMap<>();
@@ -117,24 +198,79 @@ public class Schedule4Service {
       nameByReport.put(loc.transportationReportId(), loc.locationDescription());
       commentsByReport.put(loc.transportationReportId(), loc.comments());
       revisionByReport.put(loc.transportationReportId(), loc.revisionCount());
-      categoriesByName.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
+      categoryOrder.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
       minIdByName.merge(loc.locationDescription(), loc.transportationReportId(), Math::min);
       if (loc.distance() == null) {
         primaryIdByName.putIfAbsent(loc.locationDescription(), loc.transportationReportId());
       }
     }
+    return new LocationIndex(
+        distanceByReport,
+        nameByReport,
+        commentsByReport,
+        revisionByReport,
+        categoryOrder,
+        primaryIdByName,
+        minIdByName);
+  }
 
-    for (DetailRow d : repository.findInScopeDetails(millId, year)) {
-      if (d.costItemCode() == null) {
-        continue;
+  /**
+   * The licensee's submitted figures (Story 16.2, BR-04), indexed two ways because Schedule 4
+   * addresses a value two ways: the report-level fields by report id, and the cost rows by (report
+   * id, cost item) since one location's family spans several reports that all reuse the same cost
+   * items.
+   *
+   * @param byReport report-level submitted fields, by transportation report id
+   * @param byReportAndItem submitted cost rows, keyed {@code reportId + ":" + costItemCode}
+   */
+  private record Snapshots(
+      Map<Integer, Schedule4Repository.TransportationSnapshotRow> byReport,
+      Map<String, CostDetailSnapshotRepository.Row> byReportAndItem) {}
+
+  /** Load both snapshot indexes, or a pair of empty maps at Draft (no query is issued). */
+  private Snapshots loadSnapshots(
+      long millId, int year, String trackStatus, List<LocationRow> locationRows) {
+    Map<Integer, Schedule4Repository.TransportationSnapshotRow> byReport = new HashMap<>();
+    Map<String, CostDetailSnapshotRepository.Row> byReportAndItem = new HashMap<>();
+    if (!originalValues.exposesOriginalValues(trackStatus)) {
+      return new Snapshots(byReport, byReportAndItem);
+    }
+    for (Schedule4Repository.TransportationSnapshotRow r :
+        repository.findTransportationSnapshots(millId, year)) {
+      byReport.putIfAbsent(r.transportationReportId(), r);
+    }
+    if (locationRows.isEmpty()) {
+      return new Snapshots(byReport, byReportAndItem);
+    }
+    // Widened, not narrowed: the location ids are int on LocationRow and the shared snapshot
+    // finder speaks Long, so this conversion cannot lose a value.
+    List<Long> reportIds =
+        locationRows.stream().map(row -> (long) row.transportationReportId()).distinct().toList();
+    for (CostDetailSnapshotRepository.Row r :
+        costSnapshots.findByTransportationReports(reportIds)) {
+      if (r.parentId() != null && r.costItemCode() != null) {
+        byReportAndItem.putIfAbsent(r.parentId() + ":" + r.costItemCode(), r);
       }
-      String name = nameByReport.get(d.transportationReportId());
+    }
+    return new Snapshots(byReport, byReportAndItem);
+  }
+
+  /**
+   * The fixed and distance-based category grid per location. A detail whose report is not a
+   * category-"4" location row is skipped defensively.
+   */
+  private Map<String, List<CategoryAmount>> categoriesByName(
+      long millId, int year, String trackStatus, LocationIndex index, Snapshots snapshots) {
+    Map<String, List<CategoryAmount>> categoriesByName = index.categoryOrder();
+    for (DetailRow d : repository.findInScopeDetails(millId, year)) {
+      String name =
+          d.costItemCode() == null ? null : index.nameByReport().get(d.transportationReportId());
       if (name == null) {
-        continue; // detail's report is not a category-"4" location row (defensive)
+        continue;
       }
       boolean isDistance = DISTANCE_CODES.contains(d.costItemCode());
       BigDecimal categoryDistance =
-          isDistance ? normalize(distanceByReport.get(d.transportationReportId())) : null;
+          isDistance ? normalize(index.distanceByReport().get(d.transportationReportId())) : null;
       categoriesByName
           .get(name)
           .add(
@@ -144,11 +280,24 @@ public class Schedule4Service {
                   normalize(d.volume()),
                   d.cost(),
                   categoryDistance,
-                  perUnit(bd(d.cost()), d.volume())));
+                  perUnit(bd(d.cost()), d.volume()),
+                  categoryOriginals(
+                      trackStatus,
+                      snapshots
+                          .byReportAndItem()
+                          .get(d.transportationReportId() + ":" + d.costItemCode()),
+                      isDistance,
+                      snapshots.byReport().get(d.transportationReportId()))));
     }
+    return categoriesByName;
+  }
 
-    // Sub-page list rows (Story 4.3): each its own report sharing the location name; grouped under
-    // the location, kept separate from the fixed/distance category grid.
+  /**
+   * Sub-page list rows (Story 4.3): each its own report sharing the location name; grouped under
+   * the location, kept separate from the fixed/distance category grid.
+   */
+  private Map<String, List<SubPageRow>> subPageRowsByName(
+      long millId, int year, String trackStatus, Snapshots snapshots) {
     Map<String, List<SubPageRow>> subPageByName = new HashMap<>();
     for (SubPageRowRow r : repository.findSubPageRows(millId, year)) {
       if (r.costItemCode() == null) {
@@ -165,24 +314,15 @@ public class Schedule4Service {
                   normalize(r.volume()),
                   r.cost(),
                   r.cycle(),
-                  perUnit(bd(r.cost()), r.volume())));
+                  perUnit(bd(r.cost()), r.volume()),
+                  subPageOriginals(
+                      trackStatus,
+                      snapshots
+                          .byReportAndItem()
+                          .get(r.transportationReportId() + ":" + r.costItemCode()),
+                      snapshots.byReport().get(r.transportationReportId()))));
     }
-
-    List<Location> locations = new ArrayList<>(categoriesByName.size());
-    categoriesByName.forEach(
-        (name, categories) -> {
-          Integer primaryId = primaryIdByName.getOrDefault(name, minIdByName.get(name));
-          locations.add(
-              new Location(
-                  primaryId,
-                  revisionByReport.get(primaryId),
-                  name,
-                  commentsByReport.get(primaryId),
-                  categories,
-                  subPageByName.getOrDefault(name, List.of())));
-        });
-
-    return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
+    return subPageByName;
   }
 
   /**
@@ -203,8 +343,8 @@ public class Schedule4Service {
    */
   @Transactional(readOnly = true)
   public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
-    // callerMayEdit is irrelevant to the requirement check (only stored Costs matter); pass false.
-    Schedule4Response document = getSchedule4(millId, year, false);
+    // Editability is irrelevant to the requirement check (only stored Costs matter).
+    Schedule4Response document = assembleSchedule4(millId, year, EditableStatuses.NONE);
     List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
     boolean scheduleMet = true;
     for (Location location : document.locations()) {
@@ -237,8 +377,8 @@ public class Schedule4Service {
   /**
    * Save (create-or-edit) one Schedule 4 location and return the recomputed document (Story 4.2,
    * S01/S02/S07). The mill/year context is already validated in the controller (AD-4). Enforces the
-   * Draft gate (AD-9), server-side name uniqueness (BR-02), and per-location optimistic locking
-   * (§Decision 3).
+   * editability gate (AD-9), server-side name uniqueness (BR-02), and per-location optimistic
+   * locking (§Decision 3).
    *
    * <p>A location is a FAMILY of {@code TRANSPORTATION_REPORT} rows: {@code request.id()} null →
    * CREATE (insert the primary report, revision 0→1); present → EDIT (bump the primary revision,
@@ -255,14 +395,18 @@ public class Schedule4Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the location name, optimistic-lock token, and entered categories (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 4 document
    */
   @Transactional
   public Schedule4Response saveLocation(
-      long millId, int year, Schedule4LocationRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      Schedule4LocationRequest request,
+      EditableStatuses caller,
+      String user) {
+    requireEditable(millId, year, caller);
     String name = request.name().trim();
     // The edited family's current name (null on create) — excluded from the uniqueness comparison
     // so
@@ -314,7 +458,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
@@ -328,8 +472,8 @@ public class Schedule4Service {
    * @param id the primary report id of the location to delete
    */
   @Transactional
-  public void deleteLocation(long millId, int year, int id) {
-    requireDraft(millId, year);
+  public void deleteLocation(long millId, int year, int id, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     // Mill/year-scoped: a foreign id resolves to no name here, so it can never delete another
     // context's family (IDOR guard); an absent id in this context stays an idempotent no-op.
     String name = repository.findLocationName(id, millId, year).orElse(null);
@@ -352,7 +496,7 @@ public class Schedule4Service {
    * Add one sub-page list row (Towing/Truck Rehaul/Other) to a location and return the recomputed
    * document (Story 4.3, S03–S06). A row is its OWN {@code TRANSPORTATION_REPORT} sharing the
    * location's name + a single detail (item 43/46/55 with {@code ITEM_DESCRIPTION}); {@code cycle}
-   * is written for Truck Rehaul only. Draft gate (AD-9); unknown {@code locationId} → 404;
+   * is written for Truck Rehaul only. editability gate (AD-9); unknown {@code locationId} → 404;
    * persistence fault → 500 (type-only log). The mill/year context is validated in the controller
    * (AD-4).
    *
@@ -360,7 +504,7 @@ public class Schedule4Service {
    * @param year the reporting year
    * @param locationId the parent location's primary report id (its {@link Location#id()})
    * @param request the row type, description, and amounts (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 4 document
    */
@@ -370,9 +514,9 @@ public class Schedule4Service {
       int year,
       int locationId,
       Schedule4SubPageRowRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     // Mill/year-scoped: a foreign locationId resolves to no name here, so rows can only be attached
     // to a location that genuinely exists in THIS context (IDOR guard) — otherwise 404.
     String name = repository.findLocationName(locationId, millId, year).orElse(null);
@@ -398,7 +542,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
@@ -406,17 +550,17 @@ public class Schedule4Service {
    * document (Story 4.3, the edit counterpart of {@link #addSubPageRow}). The row is its OWN {@code
    * TRANSPORTATION_REPORT} (carrying its distance + cycle) with a single detail (item 43/46/55 with
    * {@code ITEM_DESCRIPTION}); {@code cycle} is written for Truck Rehaul only, null otherwise.
-   * Draft gate (AD-9); an unknown {@code locationId}, or a {@code rowId} that is NOT a sub-page row
-   * of THAT location, → 404 (path-scoped, IDOR guard — never a cross-location/cross-context
-   * mutation); persistence fault → 500 (type-only log). The mill/year context is validated in the
-   * controller (AD-4).
+   * editability gate (AD-9); an unknown {@code locationId}, or a {@code rowId} that is NOT a
+   * sub-page row of THAT location, → 404 (path-scoped, IDOR guard — never a
+   * cross-location/cross-context mutation); persistence fault → 500 (type-only log). The mill/year
+   * context is validated in the controller (AD-4).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param locationId the parent location's primary report id (its {@link Location#id()})
    * @param rowId the sub-page row's own report id (the edit target)
    * @param request the row type, description, and amounts (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 4 document
    */
@@ -427,9 +571,9 @@ public class Schedule4Service {
       int locationId,
       int rowId,
       Schedule4SubPageRowRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     // Mill/year-scoped: a foreign locationId resolves to no name here (IDOR guard) → 404.
     String name = repository.findLocationName(locationId, millId, year).orElse(null);
     if (name == null) {
@@ -457,27 +601,27 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
    * Delete one sub-page list row (its whole {@code TRANSPORTATION_REPORT} + cascaded detail) and
-   * return the recomputed document (Story 4.3, S11 / BR-08). Draft gate (AD-9). Idempotent: an
-   * unknown id — or an id that is NOT a sub-page row (e.g. a location's primary/category report) —
-   * is a no-op success, so this endpoint can never delete a location. Fixes the legacy
+   * return the recomputed document (Story 4.3, S11 / BR-08). editability gate (AD-9). Idempotent:
+   * an unknown id — or an id that is NOT a sub-page row (e.g. a location's primary/category report)
+   * — is a no-op success, so this endpoint can never delete a location. Fixes the legacy
    * Other-sub-page bug by returning the "deleted" semantics for all three types (§Decision 4).
    * Context validated in the controller (AD-4).
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param rowId the sub-page row's own report id
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed Schedule 4 document
    */
   @Transactional
   public Schedule4Response deleteSubPageRow(
-      long millId, int year, int locationId, int rowId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int locationId, int rowId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     // Enforce the /locations/{locationId}/rows/{rowId} path: resolve the addressed location's name
     // (mill/year-scoped) and only delete when rowId is a sub-page row OF THAT location. A foreign
     // or
@@ -497,7 +641,7 @@ public class Schedule4Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
@@ -545,13 +689,15 @@ public class Schedule4Service {
   }
 
   /**
-   * The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409).
+   * The editability gate shared by save and delete: the caller must be permitted to write at the
+   * Schedules 1–10 track's current status (else 409).
    */
-  private void requireDraft(long millId, int year) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   private static BigDecimal bd(Integer value) {
@@ -583,5 +729,73 @@ public class Schedule4Service {
     }
     BigDecimal result = cost.divide(volume, 4, RoundingMode.HALF_UP).stripTrailingZeros();
     return result.scale() < 1 ? result.setScale(1, RoundingMode.HALF_UP) : result;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Original-value helpers (Story 16.2, BR-04).
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * A location's submitted name. Legacy declares no original for a location's COMMENTS ({@code
+   * TransportationReportType.java:30} has the field and no {@code commentsOriginalVal}), so none is
+   * served — "only if the legacy app does it".
+   */
+  private Map<String, OriginalValue> locationOriginals(
+      String trackStatus, Schedule4Repository.TransportationSnapshotRow report) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("name", report == null ? null : report.locationDescription(), OriginalValueFormat.TEXT)
+        .build();
+  }
+
+  /**
+   * One category cell's submitted figures: volume and cost from the cost row, plus the report's own
+   * submitted distance for the three distance categories (47/48/52), whose distance lives on the
+   * report rather than on the detail.
+   */
+  private Map<String, OriginalValue> categoryOriginals(
+      String trackStatus,
+      CostDetailSnapshotRepository.Row detail,
+      boolean isDistance,
+      Schedule4Repository.TransportationSnapshotRow distanceReport) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
+            .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE);
+    // `isDistance` decides whether the field EXISTS on this category; a null row means only that
+    // nothing was submitted for it. The two must not collapse into the same absent key: a category
+    // without a distance field has no indicator wiring and correctly shows none, whereas one whose
+    // report carries no 'S' snapshot must still flag a distance entered since submission.
+    if (isDistance) {
+      builder.put(
+          "distance",
+          distanceReport == null ? null : distanceReport.distance(),
+          OriginalValueFormat.ONE_DECIMAL);
+    }
+    return builder.build();
+  }
+
+  /**
+   * One sub-page row's submitted figures. Legacy tracked all five on these rows — description,
+   * distance, volume, cost and, on Truck Rehaul only, the cycle time ({@code
+   * Schedule4DAO.java:346-382}); the cycle key simply stays absent for the other two row types,
+   * whose reports have no submitted cycle.
+   */
+  private Map<String, OriginalValue> subPageOriginals(
+      String trackStatus,
+      CostDetailSnapshotRepository.Row detail,
+      Schedule4Repository.TransportationSnapshotRow report) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "description",
+            detail == null ? null : detail.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
+        .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE)
+        .put("distance", report == null ? null : report.distance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("cycle", report == null ? null : report.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
+        .build();
   }
 }

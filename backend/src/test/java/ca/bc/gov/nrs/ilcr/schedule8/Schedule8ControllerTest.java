@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,7 +27,8 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,7 +58,7 @@ class Schedule8ControllerTest {
 
   @Mock private Schedule8Service schedule8Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private MessageSource messageSource;
 
@@ -72,11 +74,12 @@ class Schedule8ControllerTest {
    */
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     controller =
         new Schedule8Controller(
             millContextService,
             schedule8Service,
-            permissions,
+            editability,
             messageSource,
             new Schedule8CheckStatusResolver(schedule8Service, messageSource));
   }
@@ -88,8 +91,8 @@ class Schedule8ControllerTest {
   @Test
   void getSchedule8_validatesContext_derivesEditFlag_returnsDocument() {
     Schedule8Response doc = mock(Schedule8Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule8Service.getSchedule8(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule8Service.getSchedule8(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
     ResponseEntity<Schedule8Response> response =
         controller.getSchedule8(MILL_ID, YEAR, authentication);
@@ -117,9 +120,10 @@ class Schedule8ControllerTest {
     Schedule8PageRequest request = mock(Schedule8PageRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.savePage(MILL_ID, YEAR, request, true, "dev-admin")).thenReturn(saved);
+    when(schedule8Service.savePage(MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
     ResponseEntity<Schedule8Response> response =
@@ -140,7 +144,7 @@ class Schedule8ControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
-    verify(schedule8Service).deletePage(MILL_ID, YEAR, 8001);
+    verify(schedule8Service).deletePage(MILL_ID, YEAR, 8001, CallerRights.SUBMITTER);
   }
 
   @Test
@@ -148,9 +152,10 @@ class Schedule8ControllerTest {
     Schedule8SampleRequest request = mock(Schedule8SampleRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.saveSample(MILL_ID, YEAR, 8001, request, true, "dev-admin"))
+    when(schedule8Service.saveSample(
+            MILL_ID, YEAR, 8001, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
@@ -166,8 +171,9 @@ class Schedule8ControllerTest {
   void deleteSample_delegates_andAppliesDeletedMessage() {
     Schedule8Response updated = mock(Schedule8Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule8Service.deleteSample(MILL_ID, YEAR, 8001, 9001, true)).thenReturn(updated);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule8Service.deleteSample(MILL_ID, YEAR, 8001, 9001, CallerRights.SUBMITTER))
+        .thenReturn(updated);
     stubSaved("dataDeletedSuccesfullyInfoMsg", "Data deleted successfully");
 
     ResponseEntity<Schedule8Response> response =
@@ -183,9 +189,10 @@ class Schedule8ControllerTest {
     Schedule8RateRequest request = mock(Schedule8RateRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.saveRate(MILL_ID, YEAR, 9001, null, request, true, "dev-admin"))
+    when(schedule8Service.saveRate(
+            MILL_ID, YEAR, 9001, null, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
@@ -193,7 +200,8 @@ class Schedule8ControllerTest {
         controller.addRate(MILL_ID, YEAR, 9001, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(schedule8Service).saveRate(MILL_ID, YEAR, 9001, null, request, true, "dev-admin");
+    verify(schedule8Service)
+        .saveRate(MILL_ID, YEAR, 9001, null, request, CallerRights.SUBMITTER, "dev-admin");
     verify(saved).withMessage(any());
   }
 
@@ -202,9 +210,10 @@ class Schedule8ControllerTest {
     Schedule8RateRequest request = mock(Schedule8RateRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.saveRate(MILL_ID, YEAR, 9001, 7001, request, true, "dev-admin"))
+    when(schedule8Service.saveRate(
+            MILL_ID, YEAR, 9001, 7001, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
@@ -212,7 +221,8 @@ class Schedule8ControllerTest {
         controller.updateRate(MILL_ID, YEAR, 9001, 7001, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(schedule8Service).saveRate(MILL_ID, YEAR, 9001, 7001, request, true, "dev-admin");
+    verify(schedule8Service)
+        .saveRate(MILL_ID, YEAR, 9001, 7001, request, CallerRights.SUBMITTER, "dev-admin");
     verify(saved).withMessage(any());
   }
 
@@ -220,8 +230,9 @@ class Schedule8ControllerTest {
   void deleteRate_delegates_andAppliesDeletedMessage() {
     Schedule8Response updated = mock(Schedule8Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule8Service.deleteRate(MILL_ID, YEAR, 9001, 7001, true)).thenReturn(updated);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule8Service.deleteRate(MILL_ID, YEAR, 9001, 7001, CallerRights.SUBMITTER))
+        .thenReturn(updated);
     stubSaved("dataDeletedSuccesfullyInfoMsg", "Data deleted successfully");
 
     ResponseEntity<Schedule8Response> response =

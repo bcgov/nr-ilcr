@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One volume/cost/$-per-m&sup3; triple on a Schedule 5 camp (AD-12) — the single sub-shape reused
@@ -24,4 +26,18 @@ import java.math.BigDecimal;
  * Schedule5DAO.java:242-244} sets cost only).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record CategoryAmount(BigDecimal volume, Long cost, BigDecimal costPerVolume) {}
+public record CategoryAmount(
+    BigDecimal volume,
+    Long cost,
+    BigDecimal costPerVolume,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * A derived total: no original values, because nothing stores it. Legacy populated no {@code
+   * *OriginalVal} for Sub-Total, Camp Total, Access Expense Total or Camp &amp; Access Total, and
+   * rendered no indicator on any of them.
+   */
+  public CategoryAmount(BigDecimal volume, Long cost, BigDecimal costPerVolume) {
+    this(volume, cost, costPerVolume, null);
+  }
+}

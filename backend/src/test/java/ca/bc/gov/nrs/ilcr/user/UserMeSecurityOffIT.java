@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 class UserMeSecurityOffIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/me";
+  private static final String MOCK_USER_GUID = "CANONSUBMITTERBBBBCCCCDDDD000001";
 
   @Test
   @DisplayName("default mock principal -> 200 as ILCR_SUBMITTER")
@@ -26,7 +27,7 @@ class UserMeSecurityOffIT extends AbstractOracleIT {
     mockMvc
         .perform(get(ENDPOINT))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.userGuid").value("dev-submitter"))
+        .andExpect(jsonPath("$.userGuid").value(MOCK_USER_GUID))
         .andExpect(jsonPath("$.displayName").value("Local Development User"))
         .andExpect(jsonPath("$.roles", contains("ILCR_SUBMITTER")));
   }
@@ -37,7 +38,7 @@ class UserMeSecurityOffIT extends AbstractOracleIT {
     mockMvc
         .perform(get(ENDPOINT).header("X-Mock-Groups", "ILCR_ADMIN"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.userGuid").value("dev-admin"))
+        .andExpect(jsonPath("$.userGuid").value(MOCK_USER_GUID))
         .andExpect(jsonPath("$.roles", contains("ILCR_ADMIN")));
   }
 }

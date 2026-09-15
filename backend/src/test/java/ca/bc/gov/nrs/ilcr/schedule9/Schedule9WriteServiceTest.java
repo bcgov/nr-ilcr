@@ -16,7 +16,12 @@ import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 
@@ -47,6 +53,14 @@ class Schedule9WriteServiceTest {
   @Mock private Schedule9Repository repository;
 
   @Mock private MessageSource messageSource;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule9Service service;
 
@@ -111,7 +125,7 @@ class Schedule9WriteServiceTest {
       FieldValuesRequiredException ex =
           assertThrows(
               FieldValuesRequiredException.class,
-              () -> service.addRecord(MILL, YEAR, request, true, USER));
+              () -> service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
       assertEquals(List.of("Company ID"), ex.getFieldLabels());
     }
 
@@ -126,7 +140,7 @@ class Schedule9WriteServiceTest {
       FieldValuesRequiredException ex =
           assertThrows(
               FieldValuesRequiredException.class,
-              () -> service.addRecord(MILL, YEAR, request, true, USER));
+              () -> service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
       assertEquals(
           List.of("Company ID", "Contractual Item", "Unit Type", "Biogeoclimatic Zone", "Source"),
           ex.getFieldLabels());
@@ -158,7 +172,8 @@ class Schedule9WriteServiceTest {
               null,
               null);
 
-      assertDoesNotThrow(() -> service.addRecord(MILL, YEAR, request, true, USER));
+      assertDoesNotThrow(
+          () -> service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
       verify(repository).insertCostLine(anyInt(), anyInt(), eq(114), any(), isNull(), eq(USER));
     }
   }
@@ -189,7 +204,7 @@ class Schedule9WriteServiceTest {
 
       assertThrows(
           InvalidContractualCodeException.class,
-          () -> service.addRecord(MILL, YEAR, request, true, USER));
+          () -> service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
     }
 
     @Test
@@ -215,7 +230,7 @@ class Schedule9WriteServiceTest {
 
       assertThrows(
           InvalidContractualCodeException.class,
-          () -> service.addRecord(MILL, YEAR, request, true, USER));
+          () -> service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
     }
   }
 
@@ -247,7 +262,7 @@ class Schedule9WriteServiceTest {
               "ok",
               null);
 
-      service.addRecord(MILL, YEAR, request, true, USER);
+      service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER);
 
       verify(repository)
           .insertRecord(
@@ -290,7 +305,7 @@ class Schedule9WriteServiceTest {
               null,
               null);
 
-      service.addRecord(MILL, YEAR, request, true, USER);
+      service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER);
 
       // unit O keeps unit desc, source S keeps source desc on the master; item 114 keeps item desc
       // on the cost line.
@@ -335,7 +350,7 @@ class Schedule9WriteServiceTest {
               null,
               null);
 
-      service.addRecord(MILL, YEAR, request, true, USER);
+      service.addRecord(MILL, YEAR, request, CallerRights.SUBMITTER, USER);
 
       verify(repository)
           .insertRecord(
@@ -366,7 +381,7 @@ class Schedule9WriteServiceTest {
 
       assertThrows(
           ScheduleNotEditableException.class,
-          () -> service.addRecord(MILL, YEAR, valid(), true, USER));
+          () -> service.addRecord(MILL, YEAR, valid(), CallerRights.SUBMITTER, USER));
     }
 
     @Test
@@ -397,7 +412,7 @@ class Schedule9WriteServiceTest {
 
       assertThrows(
           StaleRevisionException.class,
-          () -> service.updateRecord(MILL, YEAR, 42, request, true, USER));
+          () -> service.updateRecord(MILL, YEAR, 42, request, CallerRights.SUBMITTER, USER));
     }
 
     @Test
@@ -428,7 +443,7 @@ class Schedule9WriteServiceTest {
 
       assertThrows(
           ContractualWorkRecordNotFoundException.class,
-          () -> service.updateRecord(MILL, YEAR, 42, request, true, USER));
+          () -> service.updateRecord(MILL, YEAR, 42, request, CallerRights.SUBMITTER, USER));
     }
 
     @Test
@@ -437,7 +452,7 @@ class Schedule9WriteServiceTest {
       draft();
       assertThrows(
           RevisionCountRequiredException.class,
-          () -> service.updateRecord(MILL, YEAR, 42, valid(), true, USER));
+          () -> service.updateRecord(MILL, YEAR, 42, valid(), CallerRights.SUBMITTER, USER));
     }
   }
 }

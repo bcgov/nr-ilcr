@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -19,20 +20,28 @@ import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -57,6 +66,14 @@ class Schedule11ServiceTest {
   @Mock private MillContextService millContextService;
 
   @Mock private MessageSource messageSource;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule11Service service;
 
@@ -100,7 +117,8 @@ class Schedule11ServiceTest {
     when(repository.findCostDetails(YEAR, MILL))
         .thenReturn(List.of(cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000)));
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     assertEquals(25000, row.actualCost());
     assertEquals(10000, row.plannedCost());
@@ -117,7 +135,8 @@ class Schedule11ServiceTest {
         .thenReturn(List.of(location(9101L, new BigDecimal("33.3"), "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 24, 4500)));
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     assertEquals(4500, row.actualCost());
     assertNull(row.plannedCost());
@@ -132,7 +151,8 @@ class Schedule11ServiceTest {
         .thenReturn(List.of(location(9101L, new BigDecimal("10.25"), "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     assertNull(row.actualCost());
     assertNull(row.plannedCost());
@@ -147,7 +167,8 @@ class Schedule11ServiceTest {
         .thenReturn(List.of(location(9101L, new BigDecimal("50"), "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 23, 7000)));
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     // 7000 / 50 = 140 exactly: stripTrailingZeros then min scale 1 -> 140.0, not 140 or 1.4E+2.
     assertEquals(new BigDecimal("140.0"), row.costPerNetArea());
@@ -160,7 +181,8 @@ class Schedule11ServiceTest {
         .thenReturn(List.of(location(9101L, BigDecimal.ZERO, "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 24, 1000)));
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     assertEquals(1000, row.totalCost());
     assertNull(row.costPerNetArea()); // CoreUtil.bigDecimalDivision: zero denominator -> null
@@ -174,7 +196,8 @@ class Schedule11ServiceTest {
     when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(location(9101L, null, "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 24, 1000)));
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     assertNull(row.netArea());
     assertNull(row.costPerNetArea());
@@ -190,7 +213,8 @@ class Schedule11ServiceTest {
     when(repository.findCostDetails(YEAR, MILL))
         .thenReturn(List.of(cost(1L, 9101L, 19, 99999), cost(2L, 9101L, 24, 500)));
 
-    SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
+    SilvicultureLocation row =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
     assertEquals(500, row.totalCost());
     assertNull(row.plannedCost());
@@ -204,7 +228,8 @@ class Schedule11ServiceTest {
             List.of(location(9101L, BigDecimal.ONE, "Y"), location(9102L, BigDecimal.ONE, "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
 
-    List<SilvicultureLocation> rows = service.getSchedule11(MILL, YEAR, true).locations();
+    List<SilvicultureLocation> rows =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations();
 
     assertTrue(rows.get(0).enhancedIndicator());
     assertFalse(rows.get(1).enhancedIndicator());
@@ -222,7 +247,8 @@ class Schedule11ServiceTest {
                     9102L, "B", "N", 8802L, "CWH", "vm", null, null, BigDecimal.ONE, null, 0)));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
 
-    List<SilvicultureLocation> rows = service.getSchedule11(MILL, YEAR, true).locations();
+    List<SilvicultureLocation> rows =
+        service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations();
 
     assertEquals("ESSFwc4a", rows.get(0).becLabel()); // full zone+subzone+variant+phase
     assertEquals("CWHvm", rows.get(1).becLabel()); // nulls -> "" (getBiogeoSubZoneVariantPase)
@@ -246,7 +272,7 @@ class Schedule11ServiceTest {
                 cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000),
                 cost(3L, 9102L, 24, 4500), cost(4L, 9103L, 23, 7000)));
 
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
 
     // sumBigDecimalAreas: 214.05 -> scale 1 HALF_UP -> 214.1 (footer rounding is real).
     assertEquals(new BigDecimal("214.1"), doc.totals().netArea());
@@ -274,7 +300,7 @@ class Schedule11ServiceTest {
     when(repository.findLocations(YEAR, MILL)).thenReturn(locs);
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(costs);
 
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(2_499_999_975L, (long) doc.totals().actualCost());
     assertNull(doc.totals().plannedCost());
@@ -287,7 +313,7 @@ class Schedule11ServiceTest {
     when(repository.findLocations(YEAR, MILL)).thenReturn(List.of());
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
 
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertTrue(doc.locations().isEmpty());
     assertNull(doc.totals().netArea());
@@ -308,7 +334,7 @@ class Schedule11ServiceTest {
                 location(9102L, new BigDecimal("20"), "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 24, 3000)));
 
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(3000L, (long) doc.totals().actualCost());
     assertNull(doc.totals().plannedCost()); // no planned contributors anywhere -> null, not 0
@@ -321,21 +347,21 @@ class Schedule11ServiceTest {
   void draftTrackAndEditPermission_editable() {
     stubTrack("D");
     stubEmpty();
-    assertTrue(service.getSchedule11(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void draftTrackWithoutEditPermission_notEditable() {
     stubTrack("D");
     stubEmpty();
-    assertFalse(service.getSchedule11(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule11(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
   void submittedTrack_notEditableEvenWithPermission() {
     stubTrack("S");
     stubEmpty();
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals("S", doc.trackStatus());
     assertFalse(doc.editable());
   }
@@ -344,7 +370,7 @@ class Schedule11ServiceTest {
   void verifiedTrack_notEditableForSubmitter() {
     stubTrack("V");
     stubEmpty();
-    assertFalse(service.getSchedule11(MILL, YEAR, true).editable());
+    assertFalse(service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
@@ -353,7 +379,7 @@ class Schedule11ServiceTest {
     // "Not Initiated" — display text is 25.3's concern.
     stubTrack(null);
     stubEmpty();
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.trackStatus());
     assertFalse(doc.editable());
   }
@@ -363,7 +389,7 @@ class Schedule11ServiceTest {
     // Dead 'O' passes through read-only per A-8 (stored legacy code served verbatim, not editable).
     stubTrack("O");
     stubEmpty();
-    Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
+    Schedule11Response doc = service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals("O", doc.trackStatus());
     assertFalse(doc.editable());
   }
@@ -375,7 +401,9 @@ class Schedule11ServiceTest {
     stubTrack("S"); // silviculture Submitted -> write gate 409, before any repository write
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
+        () ->
+            service.addLocation(
+                MILL, YEAR, request(5000, 4000, null), CallerRights.SUBMITTER, "u"));
     verify(repository, never())
         .insertLocation(
             anyLong(),
@@ -395,7 +423,9 @@ class Schedule11ServiceTest {
     when(repository.countBiogeo(8801L)).thenReturn(0); // not in catalogue -> 400 (S16)
     assertThrows(
         InvalidBiogeoCodeException.class,
-        () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
+        () ->
+            service.addLocation(
+                MILL, YEAR, request(5000, 4000, null), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
@@ -420,7 +450,9 @@ class Schedule11ServiceTest {
             anyString());
     assertThrows(
         SilvicultureBiogeoConflictException.class,
-        () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
+        () ->
+            service.addLocation(
+                MILL, YEAR, request(5000, 4000, null), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
@@ -446,7 +478,9 @@ class Schedule11ServiceTest {
             anyString());
     assertThrows(
         ScheduleNotSavedException.class,
-        () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
+        () ->
+            service.addLocation(
+                MILL, YEAR, request(5000, 4000, null), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
@@ -472,7 +506,9 @@ class Schedule11ServiceTest {
         .upsertCost(9201L, 24, 5000, "u");
     assertThrows(
         ScheduleNotSavedException.class,
-        () -> service.updateLocation(MILL, YEAR, 9201L, request(5000, 4000, 0), true, "u"));
+        () ->
+            service.updateLocation(
+                MILL, YEAR, 9201L, request(5000, 4000, 0), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
@@ -482,7 +518,7 @@ class Schedule11ServiceTest {
     when(repository.countBiogeo(8801L)).thenReturn(1);
     when(repository.nextLocationId()).thenReturn(9500L);
     // actual present, planned null -> upsert actual (24), delete planned (23) [clear semantics].
-    service.addLocation(MILL, YEAR, request(5000, null, null), true, "u");
+    service.addLocation(MILL, YEAR, request(5000, null, null), CallerRights.SUBMITTER, "u");
     verify(repository).upsertCost(9500L, 24, 5000, "u");
     verify(repository).deleteCost(9500L, 23);
   }
@@ -506,7 +542,9 @@ class Schedule11ServiceTest {
     when(repository.countLocation(9201L, MILL, YEAR)).thenReturn(1); // exists -> stale, not 404
     assertThrows(
         StaleRevisionException.class,
-        () -> service.updateLocation(MILL, YEAR, 9201L, request(5000, 4000, 0), true, "u"));
+        () ->
+            service.updateLocation(
+                MILL, YEAR, 9201L, request(5000, 4000, 0), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
@@ -528,7 +566,9 @@ class Schedule11ServiceTest {
     when(repository.countLocation(9999L, MILL, YEAR)).thenReturn(0); // absent -> 404, not stale
     assertThrows(
         SilvicultureLocationNotFoundException.class,
-        () -> service.updateLocation(MILL, YEAR, 9999L, request(5000, 4000, 0), true, "u"));
+        () ->
+            service.updateLocation(
+                MILL, YEAR, 9999L, request(5000, 4000, 0), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
@@ -537,7 +577,7 @@ class Schedule11ServiceTest {
     when(repository.deleteLocation(9999L, MILL, YEAR)).thenReturn(0);
     assertThrows(
         SilvicultureLocationNotFoundException.class,
-        () -> service.deleteLocation(MILL, YEAR, 9999L, true));
+        () -> service.deleteLocation(MILL, YEAR, 9999L, CallerRights.SUBMITTER));
     // The mill/year-scoped location delete IS the ownership check — an id the caller does not own
     // must fail 404 BEFORE the id-scoped cost cascade runs (cross-mill isolation without relying
     // on rollback).
@@ -549,7 +589,7 @@ class Schedule11ServiceTest {
     stubTrack("D");
     stubEmpty(); // for the recomputed document echo
     when(repository.deleteLocation(9202L, MILL, YEAR)).thenReturn(1);
-    service.deleteLocation(MILL, YEAR, 9202L, true);
+    service.deleteLocation(MILL, YEAR, 9202L, CallerRights.SUBMITTER);
     InOrder inOrder = inOrder(repository);
     inOrder.verify(repository).deleteLocation(9202L, MILL, YEAR);
     inOrder.verify(repository).deleteCostsForLocation(9202L);
@@ -678,5 +718,57 @@ class Schedule11ServiceTest {
     assertTrue(service.searchBiogeoCatalogue("").isEmpty());
     assertTrue(service.searchBiogeoCatalogue(null).isEmpty());
     verify(repository, never()).searchBiogeoCatalogue(anyString());
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a location carries the five keys the silviculture view can supply")
+    void beyondDraftServesTheSubmittedFigures() {
+      stubTrack("S");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL))
+          .thenReturn(List.of(cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000)));
+      when(repository.findLocationSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule11Repository.LocationSnapshotRow(
+                      9101L, "Submitted location", 8801L, new BigDecimal("100.0"))));
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 9101L, 24, null, 20000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 9101L, 23, null, 9000, null, null)));
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.ADMIN).locations().get(0);
+
+      // D5: `enhancedIndicator` and `comments` are ABSENT because the view carries neither column,
+      // so legacy's own indicator for the enhanced flag could never fire either. The other five are
+      // the ones schedule11.xhtml actually draws.
+      assertThat(served.originalValues())
+          .containsOnlyKeys(
+              "location", "biogeoclimaticCatalogueId", "netArea", "actualCost", "plannedCost");
+      assertThat(served.originalValues().get("location").value()).isEqualTo("Submitted location");
+      assertThat(served.originalValues().get("actualCost").value()).isEqualTo("20000");
+    }
+
+    @Test
+    @DisplayName("the gate reads the SILVICULTURE track, never the 1-10 column")
+    void draftSilvicultureExposesNothing() {
+      stubTrack("D");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+      assertThat(served.originalValues()).isNull();
+      verify(repository, never()).findLocationSnapshots(anyLong(), anyInt());
+    }
   }
 }

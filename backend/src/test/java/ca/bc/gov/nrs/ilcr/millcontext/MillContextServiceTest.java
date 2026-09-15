@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -115,14 +116,39 @@ class MillContextServiceTest {
   }
 
   @Test
-  void validateMillAccess_mockNonJwtPrincipal_isExempt() {
+  void validateMillAccess_identifiedMockPrincipal_isStillExempt_byChoiceNotForLackOfIdentity() {
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
-    // Security-off dev mock: a non-Jwt principal carries no directory GUID — AC6 exemption, no
-    // throw,
-    // no xref read (strict Mockito).
+    // THE SHAPE THE APP ACTUALLY PRESENTS with security off, and why this test was rewritten
+    // (bcgov/nr-ilcr#385). The AC6 exemption used to be justified as "a non-Jwt principal
+    // carries no directory GUID" — nothing to scope by. That is no longer true:
+    // MockPrincipalFilter presents a MockUserPrincipal carrying a stand-in GUID, and
+    // `listMills` DOES scope by it. So the exemption is now a deliberate dev-mode CHOICE,
+    // not a consequence: with security off the list is scoped and direct access is not.
+    //
+    // Retiring it is tracked separately, sequenced with running the suite security-ON,
+    // where this branch never fires because every caller presents a Jwt. Until then this
+    // test pins the asymmetry as a decision on record rather than a surprise — if you make
+    // the gates agree, THIS test should fail and tell you why. Strict Mockito also proves
+    // no xref read.
     SecurityContext ctx = SecurityContextHolder.createEmptyContext();
     ctx.setAuthentication(
-        new UsernamePasswordAuthenticationToken("dev-submitter", "N/A", List.of()));
+        new UsernamePasswordAuthenticationToken(
+            new MockUserPrincipal("dev-submitter", "MOCKGUIDAAAABBBBCCCCDDDD00000001"),
+            "N/A",
+            List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_anyOtherNonJwtPrincipal_isExempt() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    // The generic branch: the guard keys on "not a Jwt", so ANY non-Jwt principal is exempt,
+    // not just the dev mock above. Kept separate because the risk differs — this one has no
+    // identity at all, so scoping it is impossible rather than merely declined.
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken("some-other-principal", "N/A", List.of()));
     SecurityContextHolder.setContext(ctx);
     assertDoesNotThrow(() -> service.validateMillAccess(514L));
   }
@@ -425,5 +451,37 @@ class MillContextServiceTest {
   void millYearActive_validStrings_delegateToTypedGuard() {
     when(repository.findMillStatusCodeForYear(514L, YEAR)).thenReturn(Optional.of("ACT"));
     assertDoesNotThrow(() -> service.validateMillYearActive("514", "2021"));
+  }
+
+  // --- Story 15.1: the cheap both-tracks read for the Check Status sweep ---
+
+  @Test
+  void findTrackStatusCodes_mapsBothCodesFromTheOneRow() {
+    when(repository.findTrackStatusCodes(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", "S")));
+
+    var codes = service.findTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertEquals("S", codes.schedule11Code());
+  }
+
+  @Test
+  void findTrackStatusCodes_nullSilvicultureCode_isCarriedNotThrown() {
+    // Legacy NPE'd on a null MILL_SILVICULTUR_STATUS_CODE; Story 1.2 tolerates it and so does this.
+    when(repository.findTrackStatusCodes(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", null)));
+
+    var codes = service.findTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertNull(codes.schedule11Code());
+  }
+
+  @Test
+  void findTrackStatusCodes_noStatusRow_isEmpty() {
+    when(repository.findTrackStatusCodes(514L, YEAR)).thenReturn(Optional.empty());
+
+    assertTrue(service.findTrackStatusCodes(514L, YEAR).isEmpty());
   }
 }

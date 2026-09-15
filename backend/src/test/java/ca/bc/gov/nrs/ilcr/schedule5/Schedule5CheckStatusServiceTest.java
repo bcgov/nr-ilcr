@@ -10,11 +10,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,11 +52,16 @@ class Schedule5CheckStatusServiceTest {
 
   @Mock private Schedule5Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule5Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule5Service(repository);
+    service = new Schedule5Service(repository, originalValues, costSnapshots);
   }
 
   /** A camp that passes every descriptor condition. */

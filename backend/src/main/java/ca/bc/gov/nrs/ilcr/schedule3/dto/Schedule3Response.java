@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule3.dto;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The Schedule 3 aggregate document (AD-5, AD-12) — the pinned GET response for the Forest
@@ -14,7 +16,9 @@ import java.util.List;
  * @param millId the mill id
  * @param year the reporting year
  * @param trackStatus the Schedules 1–10 track status ({@code ILCR_MILL_REPORT_STATUS_CODE}, AD-9)
- * @param editable server-authoritative: {@code EDIT_SCHEDULE} held AND track is Draft
+ * @param editable server-authoritative: {@code EDIT_SCHEDULE} held AND the role×status matrix
+ *     admits the caller at this track status — submitter at Draft, administrator at Submitted or
+ *     Verified ({@link ca.bc.gov.nrs.ilcr.security.ScheduleEditability})
  * @param revisionCount optimistic-lock token (summary {@code REVISION_COUNT})
  * @param overrideHarvestTotalPop the Override Harvest/Total PO&amp;P indicator ("Y"/"N"), from the
  *     summary {@code LOCATION} column (legacy carrier); defaults to "N" (BR-10, Story 4.2 writes
@@ -46,6 +50,7 @@ public record Schedule3Response(
     Integer revisionCount,
     String overrideHarvestTotalPop,
     String comments,
+    Map<String, OriginalValue> originalValues,
     List<CostLine> lineItems,
     TimberBlock popTimber,
     TimberBlock crownTimber,
@@ -69,6 +74,7 @@ public record Schedule3Response(
         revisionCount,
         overrideHarvestTotalPop,
         comments,
+        originalValues,
         lineItems,
         popTimber,
         crownTimber,
@@ -96,6 +102,7 @@ public record Schedule3Response(
         revisionCount,
         overrideHarvestTotalPop,
         comments,
+        originalValues,
         lineItems,
         popTimber,
         crownTimber,

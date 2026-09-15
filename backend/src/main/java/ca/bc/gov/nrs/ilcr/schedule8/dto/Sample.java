@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule8.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One Schedule 8 Tree-to-Truck sample (AD-12) — a {@code TREE_TO_TRUCK_DETAIL_REPORT} row under a
@@ -50,4 +52,78 @@ public record Sample(
     int additionCount,
     int deductionCount,
     List<RateRow> additions,
-    List<RateRow> deductions) {}
+    List<RateRow> deductions,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public Sample(
+      Integer id,
+      Integer revisionCount,
+      String contractId,
+      String cutBlock,
+      Integer groundBasePct,
+      Integer grapplePct,
+      Integer skylinePct,
+      Integer highleadPct,
+      Integer helicopterPct,
+      Integer otherSkiddingPct,
+      Integer percentTotal,
+      Integer skylineSlopeDistance,
+      Integer skylineSupportNumber,
+      BigDecimal supportAvgDistance,
+      BigDecimal distance,
+      BigDecimal cycleTime,
+      boolean uphillDirection,
+      boolean waterDumpDestination,
+      String skidTypeCode,
+      String skidTypeDescription,
+      Integer coniferousVolume,
+      Integer deciduousVolume,
+      Integer actualHarvested,
+      BigDecimal originalRate,
+      BigDecimal additionsTotal,
+      BigDecimal deductionsTotal,
+      BigDecimal finalRate,
+      int additionCount,
+      int deductionCount,
+      List<RateRow> additions,
+      List<RateRow> deductions) {
+    this(
+        id,
+        revisionCount,
+        contractId,
+        cutBlock,
+        groundBasePct,
+        grapplePct,
+        skylinePct,
+        highleadPct,
+        helicopterPct,
+        otherSkiddingPct,
+        percentTotal,
+        skylineSlopeDistance,
+        skylineSupportNumber,
+        supportAvgDistance,
+        distance,
+        cycleTime,
+        uphillDirection,
+        waterDumpDestination,
+        skidTypeCode,
+        skidTypeDescription,
+        coniferousVolume,
+        deciduousVolume,
+        actualHarvested,
+        originalRate,
+        additionsTotal,
+        deductionsTotal,
+        finalRate,
+        additionCount,
+        deductionCount,
+        additions,
+        deductions,
+        null);
+  }
+}

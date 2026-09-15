@@ -5,6 +5,10 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
@@ -15,9 +19,12 @@ import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.NestedExceptionUtils;
@@ -73,8 +80,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule2Service {
 
-  private static final String STATUS_DRAFT = "D";
-
   private static final int ITEM_PURCHASED_LOG_COST = 25; // cost entered
   private static final int ITEM_LESS_LOG_SALES = 26; // volume + cost entered
   // Schedule 3 Silviculture Admin Costs line (category-'3' item 37, Harvest-only → crown = its
@@ -90,6 +95,9 @@ public class Schedule2Service {
   private final Schedule2Repository repository;
   private final Schedule1CostDerivation schedule1CostDerivation;
   private final Schedule3Service schedule3Service;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
+  private final ReportSummarySnapshotRepository summarySnapshots;
 
   /**
    * Constructs the Schedule 2 service.
@@ -103,16 +111,22 @@ public class Schedule2Service {
   public Schedule2Service(
       Schedule2Repository repository,
       Schedule1CostDerivation schedule1CostDerivation,
-      Schedule3Service schedule3Service) {
+      Schedule3Service schedule3Service,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots,
+      ReportSummarySnapshotRepository summarySnapshots) {
     this.repository = repository;
     this.schedule1CostDerivation = schedule1CostDerivation;
     this.schedule3Service = schedule3Service;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
+    this.summarySnapshots = summarySnapshots;
   }
 
   /**
    * Persist the two entered Schedule 2 line items (25/26) + comments for a mill/year and return the
    * recomputed document (S12). The mill/year context is already validated in the controller (AD-4).
-   * Enforces the server-side Draft gate (AD-9) and optimistic-lock concurrency (AR11).
+   * Enforces the server-side editability gate (AD-9) and optimistic-lock concurrency (AR11).
    *
    * <p>The Schedule 2 divergence from Schedule 1: SAVE <em>creates the summary when none
    * exists</em> ({@link #getOrCreateEditableSummary}) — Schedule 2 never 404s. A brand-new summary
@@ -129,14 +143,13 @@ public class Schedule2Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered fields + optimistic-lock token
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable}
-   *     flag)
+   * @param caller the track statuses this caller may edit (for the echoed {@code editable} flag)
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document (incremented {@code revisionCount})
    */
   @Transactional
   public Schedule2Response saveSchedule2(
-      long millId, int year, Schedule2Request request, boolean callerMayEdit, String user) {
+      long millId, int year, Schedule2Request request, EditableStatuses caller, String user) {
     // null → 0 is defense-in-depth only: the DTO's @NotNull makes null unreachable over HTTP (0 is
     // the
     // new/unsaved token). Kept for direct callers that bypass bean validation.
@@ -146,9 +159,9 @@ public class Schedule2Service {
       // (INSERT / sequence fetch) is translated to ScheduleNotSaved (500) exactly like the update
       // path — never leaked as a raw DataAccessException (which the shared handler would map to
       // 409).
-      // requireDraft's 409 still propagates: ScheduleNotEditableException is not a
+      // The editability gate's 409 still propagates: ScheduleNotEditableException is not a
       // DataAccessException.
-      int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
+      int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), caller, user);
       int bumped = repository.bumpRevision(summaryId, expectedRevision, request.comments(), user);
       if (bumped == 0) {
         // A stale-revision conflict is a normal concurrent-edit outcome (→ 409), not an error, so
@@ -179,7 +192,7 @@ public class Schedule2Service {
           user);
       // Recompute-and-return INSIDE the try so a late DataAccessException on the read path is also
       // translated to ScheduleNotSaved (500) rather than leaking to the shared handler (409).
-      return getSchedule2(millId, year, callerMayEdit);
+      return assembleSchedule2(millId, year, caller);
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
@@ -211,8 +224,8 @@ public class Schedule2Service {
    * @return {@code true} when a summary existed and was deleted, {@code false} on the no-op
    */
   @Transactional
-  public boolean deleteSchedule2(long millId, int year) {
-    requireDraft(millId, year);
+  public boolean deleteSchedule2(long millId, int year, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     Optional<SummaryRow> summary = repository.findSummary(millId, year);
     if (summary.isEmpty()) {
       return false; // idempotent — nothing to remove, and the caller must not claim otherwise
@@ -232,13 +245,15 @@ public class Schedule2Service {
   }
 
   /**
-   * The Draft-gate guard for the create-on-absent save path: the track must be Draft (else 409),
-   * and the category-{@code "2"} summary is created when absent (returning its id) — Schedule 2
-   * never 404s. This was the key deviation from {@code Schedule1Service.requireEditableSummary};
-   * defect #296 brought Schedules 1 and 3 onto the same shape, so all three now agree.
+   * The editability guard for the create-on-absent save path: the caller must be permitted to write
+   * at the track's current status (else 409), and the category-{@code "2"} summary is created when
+   * absent (returning its id) — Schedule 2 never 404s. This was the key deviation from {@code
+   * Schedule1Service.requireEditableSummary}; defect #296 brought Schedules 1 and 3 onto the same
+   * shape, so all three now agree.
    */
-  private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
-    requireDraft(millId, year);
+  private int getOrCreateEditableSummary(
+      long millId, int year, String comments, EditableStatuses caller, String user) {
+    requireEditable(millId, year, caller);
     return repository
         .findSummary(millId, year)
         .map(SummaryRow::summaryId)
@@ -246,15 +261,16 @@ public class Schedule2Service {
   }
 
   /**
-   * The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409).
-   * Uses the {@code FOR UPDATE} locking read so concurrent first-saves for the same mill/year
-   * serialize on the report-status row — closing the create-on-absent duplicate-summary race (the
-   * real schema has no unique constraint on year+mill+category). Safe: only write paths call this,
-   * and both run inside a {@code @Transactional}.
+   * The editability gate shared by save and delete: the caller must be permitted to write at the
+   * Schedules 1–10 track's current status (else 409). Uses the {@code FOR UPDATE} locking read so
+   * concurrent first-saves for the same mill/year serialize on the report-status row — closing the
+   * create-on-absent duplicate-summary race (the real schema has no unique constraint on
+   * year+mill+category). Safe: only write paths call this, and both run inside a
+   * {@code @Transactional}.
    */
-  private void requireDraft(long millId, int year) {
+  private void requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
   }
@@ -264,39 +280,47 @@ public class Schedule2Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action (from the controller)
+   * @param caller the track statuses this caller may edit (resolved by the controller)
    * @return the aggregate document (never null; empty/editable when unsaved)
    */
   @Transactional(readOnly = true)
-  public Schedule2Response getSchedule2(long millId, int year, boolean callerMayEdit) {
-    Optional<SummaryRow> summary = repository.findSummary(millId, year);
+  public Schedule2Response getSchedule2(long millId, int year, EditableStatuses caller) {
+    return assembleSchedule2(millId, year, caller);
+  }
+
+  /**
+   * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
+   * ({@link #saveSchedule2}, {@link #checkStatus}) reach it directly instead of self-invoking the
+   * annotated entry point. A {@code this} call bypasses the Spring proxy, so the annotation was
+   * never applied on those paths anyway (sonar java:S6809); the read simply joins the transaction
+   * the caller already opened, which is the behaviour those two paths always had.
+   */
+  private Schedule2Response assembleSchedule2(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    final boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = caller.allows(trackStatus);
 
-    // Stored line items 25/26 (empty when unsaved — AC6).
-    Integer purchasedLogCostAmount = null; // item 25 cost
-    BigDecimal lessLogSalesVolume = null; // item 26 volume
-    Integer lessLogSalesCost = null; // item 26 cost
-    String comments = null;
-    Integer revisionCount = null;
+    // Stored line items 25/26 (empty when unsaved — AC6). The summary row itself is kept so the
+    // submitted snapshot can be read against the SAME summary id (Story 16.2).
+    SummaryRow summaryRow = repository.findSummary(millId, year).orElse(null);
+    StoredItems stored = summaryRow == null ? StoredItems.EMPTY : readStoredItems(summaryRow);
 
-    if (summary.isPresent()) {
-      SummaryRow row = summary.get();
-      comments = row.comments();
-      revisionCount = row.revisionCount();
-      List<DetailRow> details = repository.findDetails(row.summaryId());
-      for (DetailRow d : details) {
-        if (d.costItemCode() == null) {
-          continue;
-        }
-        if (d.costItemCode() == ITEM_PURCHASED_LOG_COST) {
-          purchasedLogCostAmount = d.cost();
-        } else if (d.costItemCode() == ITEM_LESS_LOG_SALES) {
-          lessLogSalesVolume = d.volume();
-          lessLogSalesCost = d.cost();
-        }
-      }
-    }
+    // The licensee's submitted figures, skipped entirely at Draft where they would all be null.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode =
+        summaryRow == null || !exposeOriginals
+            ? Map.of()
+            : costSnapshots.findBySummary(summaryRow.summaryId()).stream()
+                .filter(r -> r.costItemCode() != null)
+                .collect(HashMap::new, (m, r) -> m.putIfAbsent(r.costItemCode(), r), Map::putAll);
+    ReportSummarySnapshotRepository.Snapshot summarySnapshot =
+        summaryRow == null || !exposeOriginals
+            ? null
+            : summarySnapshots.findBySummaryId(summaryRow.summaryId()).orElse(null);
+    Integer purchasedLogCostAmount = stored.purchasedLogCostAmount(); // item 25 cost
+    BigDecimal lessLogSalesVolume = stored.lessLogSalesVolume(); // item 26 volume
+    Integer lessLogSalesCost = stored.lessLogSalesCost(); // item 26 cost
+    String comments = stored.comments();
+    Integer revisionCount = stored.revisionCount();
 
     // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of
     // truth,
@@ -311,7 +335,8 @@ public class Schedule2Service {
     // serves an EMPTY document for an absent Schedule 3, whose subtotals seed at ZERO. Reading that
     // here would turn these carried figures from blank into $0 on Schedule 2's own screen. The
     // existence signal that used to be ScheduleNotFoundException now lives in the Optional.
-    Schedule3Response sch3 = schedule3Service.findSchedule3(millId, year, false).orElse(null);
+    Schedule3Response sch3 =
+        schedule3Service.findSchedule3(millId, year, EditableStatuses.NONE).orElse(null);
     if (sch3 == null) {
       log.debug("No Schedule 3 for mill {} year {}; carried Sch3 figures null", millId, year);
     }
@@ -348,7 +373,20 @@ public class Schedule2Service {
         new CostBlock(
             normalizeVolume(popTimberVolume),
             purchasedLogCostAmount,
-            perUnit(bd(purchasedLogCostAmount), popTimberVolume)); // getPurchasedLogCostCal
+            perUnit(bd(purchasedLogCostAmount), popTimberVolume), // getPurchasedLogCostCal
+            // Cost only. Legacy set item 25's cost original and never its volume original
+            // (Schedule2DAO.java:122-123) — the volume is carried from Schedule 3, not entered here
+            // — and schedule2.xhtml renders exactly one indicator on this row to match.
+            originalValues
+                .forTrack(trackStatus)
+                .put(
+                    "cost",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_PURCHASED_LOG_COST,
+                        CostDetailSnapshotRepository.Row::cost),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // --- purchasedWoodOverhead: all carried from Sch3 (vol 118, cost 135).
     // ------------------------
@@ -375,7 +413,25 @@ public class Schedule2Service {
         new CostBlock(
             normalizeVolume(lessLogSalesVolume),
             lessLogSalesCost,
-            perUnit(bd(lessLogSalesCost), lessLogSalesVolume));
+            perUnit(bd(lessLogSalesCost), lessLogSalesVolume),
+            // Both, because both are entered here (Schedule2DAO.java:118-119).
+            originalValues
+                .forTrack(trackStatus)
+                .put(
+                    "volume",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_LESS_LOG_SALES,
+                        CostDetailSnapshotRepository.Row::volume),
+                    OriginalValueFormat.WHOLE)
+                .put(
+                    "cost",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_LESS_LOG_SALES,
+                        CostDetailSnapshotRepository.Row::cost),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // --- netPurchased: volume = Sch3 118 - lessLogSales.volume (getNetPurchasedVolume);
     // ------------
@@ -437,6 +493,13 @@ public class Schedule2Service {
         editable,
         revisionCount,
         comments,
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "comments",
+                summarySnapshot == null ? null : summarySnapshot.comments(),
+                OriginalValueFormat.TEXT)
+            .build(),
         purchasedLogCost,
         purchasedWoodOverhead,
         subtotal,
@@ -445,6 +508,61 @@ public class Schedule2Service {
         totalCompanyLogging,
         totalAverage,
         null); // success message is set by the controller on the PUT echo (AD-8)
+  }
+
+  /**
+   * One field of one submitted cost-detail row, or null when that row is not on file — the shape
+   * {@code OriginalValues.Builder.put} expects for "no original".
+   */
+  private static <T> T snapshot(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      int costItemCode,
+      java.util.function.Function<CostDetailSnapshotRepository.Row, T> field) {
+    CostDetailSnapshotRepository.Row row = byCode.get(costItemCode);
+    return row == null ? null : field.apply(row);
+  }
+
+  /**
+   * The stored half of the document, read off one category-{@code '2'} summary row: line items
+   * 25/26 plus the summary's own comments/revision. {@link #EMPTY} is the unsaved-schedule state,
+   * every component null (AC6).
+   */
+  private record StoredItems(
+      Integer purchasedLogCostAmount,
+      BigDecimal lessLogSalesVolume,
+      Integer lessLogSalesCost,
+      String comments,
+      Integer revisionCount) {
+
+    private static final StoredItems EMPTY = new StoredItems(null, null, null, null, null);
+  }
+
+  /**
+   * Pick items 25 and 26 out of one summary's detail rows. A null {@code costItemCode} row is
+   * skipped rather than matched, and any other item code is ignored — Schedule 2 stores only these
+   * two.
+   */
+  private StoredItems readStoredItems(SummaryRow row) {
+    Integer purchasedLogCostAmount = null; // item 25 cost
+    BigDecimal lessLogSalesVolume = null; // item 26 volume
+    Integer lessLogSalesCost = null; // item 26 cost
+    for (DetailRow d : repository.findDetails(row.summaryId())) {
+      if (d.costItemCode() == null) {
+        continue;
+      }
+      if (d.costItemCode() == ITEM_PURCHASED_LOG_COST) {
+        purchasedLogCostAmount = d.cost();
+      } else if (d.costItemCode() == ITEM_LESS_LOG_SALES) {
+        lessLogSalesVolume = d.volume();
+        lessLogSalesCost = d.cost();
+      }
+    }
+    return new StoredItems(
+        purchasedLogCostAmount,
+        lessLogSalesVolume,
+        lessLogSalesCost,
+        row.comments(),
+        row.revisionCount());
   }
 
   /**
@@ -462,8 +580,8 @@ public class Schedule2Service {
    */
   @Transactional(readOnly = true)
   public Schedule2CheckStatusResponse checkStatus(long millId, int year) {
-    // callerMayEdit is irrelevant to BR-07 (only the item-25 cost matters); pass false.
-    Schedule2Response document = getSchedule2(millId, year, false);
+    // Editability is irrelevant to BR-07 (only the item-25 cost matters); permit nothing.
+    Schedule2Response document = assembleSchedule2(millId, year, EditableStatuses.NONE);
     boolean met = document.purchasedLogCost().cost() != null;
     String outcome = met ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     String key = met ? MSG_REQUIREMENTS_MET : MSG_MISSING_REQUIRED;

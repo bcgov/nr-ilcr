@@ -10,13 +10,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -35,6 +41,14 @@ class Schedule1CrownPushTest {
 
   @Mock private Schedule1Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", and a mock would make every
+  // original-value assertion below an assertion about the mock (Story 16.2).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
   @InjectMocks private Schedule1Service service;
 
   @Test
@@ -44,7 +58,8 @@ class Schedule1CrownPushTest {
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // Draft → editable
 
-    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, volume, USER);
+    boolean pushed =
+        service.applyCrownTimberVolume(MILL, YEAR, volume, CallerRights.SUBMITTER, USER);
 
     assertTrue(pushed);
     // The aggregate revision is bumped (AR11) so a stale-token main-page save is rejected.
@@ -60,7 +75,9 @@ class Schedule1CrownPushTest {
   void applyCrownTimberVolume_noOp_whenSchedule1NotOpened() {
     when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
 
-    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
+    boolean pushed =
+        service.applyCrownTimberVolume(
+            MILL, YEAR, new BigDecimal("1"), CallerRights.SUBMITTER, USER);
 
     assertFalse(pushed); // WRN-002: nothing written when Schedule 1 has no summary
     verify(repository, never()).touchSummary(anyInt(), any());
@@ -75,7 +92,9 @@ class Schedule1CrownPushTest {
     when(repository.findTrackStatus(MILL, YEAR))
         .thenReturn(Optional.of("S")); // submitted, not Draft
 
-    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
+    boolean pushed =
+        service.applyCrownTimberVolume(
+            MILL, YEAR, new BigDecimal("1"), CallerRights.SUBMITTER, USER);
 
     // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown
     // push.

@@ -1,14 +1,28 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CostLineRow;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPage;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetail;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,11 +52,16 @@ class Schedule10ServiceTest {
 
   @Mock private Schedule10Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule10Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule10Service(repository);
+    service = new Schedule10Service(repository, originalValues, costSnapshots);
     // Default: no data anywhere. Individual tests override what they need.
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRoadDetails(MILL, YEAR)).thenReturn(List.of());
@@ -99,24 +118,34 @@ class Schedule10ServiceTest {
 
     @ParameterizedTest(name = "track={0}, callerMayEdit={1} -> editable={2}")
     @CsvSource({
-      "D,    true,  true",
-      "D,    false, false",
-      "S,    true,  false",
-      "S,    false, false",
-      "V,    true,  false",
-      "V,    false, false",
-      "O,    true,  false",
+      "D, SUBMITTER, true",
+      "D, ADMIN,     false",
+      "D, NONE,      false",
+      "S, SUBMITTER, false",
+      "S, ADMIN,     true",
+      "S, NONE,      false",
+      "V, SUBMITTER, false",
+      "V, ADMIN,     true",
+      "V, NONE,      false",
+      "O, SUBMITTER, false",
+      "O, ADMIN,     false",
     })
-    void followsTrackStatusAndPermission(String track, boolean mayEdit, boolean expected) {
+    void followsTrackStatusAndRole(String track, String role, boolean expected) {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
-      assertThat(service.getSchedule10(MILL, YEAR, mayEdit).editable()).isEqualTo(expected);
+      EditableStatuses caller =
+          switch (role) {
+            case "SUBMITTER" -> CallerRights.SUBMITTER;
+            case "ADMIN" -> CallerRights.ADMIN;
+            default -> CallerRights.NONE;
+          };
+      assertThat(service.getSchedule10(MILL, YEAR, caller).editable()).isEqualTo(expected);
     }
 
     @Test
     @DisplayName("a missing context row yields a null track and editable:false")
     void missingTrackStatusIsNotEditable() {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
-      Schedule10Response response = service.getSchedule10(MILL, YEAR, true);
+      Schedule10Response response = service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
       assertThat(response.trackStatus()).isNull();
       assertThat(response.editable()).isFalse();
     }
@@ -138,7 +167,8 @@ class Schedule10ServiceTest {
                   detail(8911, 8900, "Spur B"),
                   detail(8912, 8901, "Regex Road")));
 
-      List<ConstructionPage> pages = service.getSchedule10(MILL, YEAR, true).pages();
+      List<ConstructionPage> pages =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages();
 
       assertThat(pages).hasSize(2);
       assertThat(pages.get(0).pageNumber()).isEqualTo(1);
@@ -161,7 +191,8 @@ class Schedule10ServiceTest {
     void pageWithoutDetailsServesZero() {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8906, "01", "01A", null)));
 
-      ConstructionPage page = service.getSchedule10(MILL, YEAR, true).pages().get(0);
+      ConstructionPage page =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
 
       assertThat(page.roadDetailCount()).isZero();
       assertThat(page.roadDetails()).isEmpty();
@@ -177,7 +208,8 @@ class Schedule10ServiceTest {
                   page(8902, null, null, "08"), // -> "10" via the TFL table
                   page(8903, "99", "99A", null))); // -> unmapped
 
-      List<ConstructionPage> pages = service.getSchedule10(MILL, YEAR, true).pages();
+      List<ConstructionPage> pages =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages();
 
       assertThat(pages.get(0).roadGroup()).isEqualTo("11");
       assertThat(pages.get(1).roadGroup()).isEqualTo("10");
@@ -193,7 +225,8 @@ class Schedule10ServiceTest {
       // Road Group "11" where legacy serves nothing. Parity restored at code review 2026-08-17.
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", "  ")));
 
-      ConstructionPage page = service.getSchedule10(MILL, YEAR, true).pages().get(0);
+      ConstructionPage page =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
 
       // The raw value is served, not normalized away.
       assertThat(page.tflNumberCode()).isEqualTo("  ");
@@ -230,7 +263,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 20, new BigDecimal("50000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // 50000, not 150000: the second row wins outright. The cost query's ORDER BY makes which row
       // that is deterministic here — legacy iterates a HashSet, so there it is arbitrary.
@@ -255,7 +293,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 20, new BigDecimal("7000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("7000");
     }
@@ -275,7 +318,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 99, new BigDecimal("777777"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // The stray amount must not appear anywhere, and must not inflate any total.
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
@@ -300,7 +348,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 22, new BigDecimal("40000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       assertThat(detail.subGrade().actualCost()).isNull();
       assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("0");
@@ -322,7 +375,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 20, new BigDecimal("150000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // Legacy's sum rule: one non-null term makes the sum non-null, so the money survives.
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
@@ -339,7 +397,12 @@ class Schedule10ServiceTest {
           .thenReturn(List.of(new CostLineRow(8910, 20, null), new CostLineRow(8910, 20, null)));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // All terms null keeps the field blank; the total still coerces to zero for display.
       assertThat(detail.subGrade().actualCost()).isNull();
@@ -374,7 +437,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 9, BigDecimal.ZERO))); // stabilizing other  (sub 4)
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
       assertThat(detail.subGrade().ttTransfer()).isEqualByComparingTo("-5000");
@@ -407,7 +475,7 @@ class Schedule10ServiceTest {
           .thenReturn(List.of(new CostLineRow(8910, 20, new BigDecimal("150000"))));
 
       List<RoadDetail> details =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails();
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).roadDetails();
 
       assertThat(details.get(0).subGrade().actualCost()).isEqualByComparingTo("150000");
       // 8911 has no cost lines at all — the normal shape in real delivery data. Its individual
@@ -424,7 +492,12 @@ class Schedule10ServiceTest {
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // Individual lines stay null (rendered blank); the totals coerce to zero, per legacy
       // getCostValue (:1160-1168). This is the shape of every real delivery row.
@@ -438,6 +511,129 @@ class Schedule10ServiceTest {
       assertThat(detail.subGrade().costPerLength()).isEqualByComparingTo("0");
       // Material total is int arithmetic and is always present.
       assertThat(detail.materialComposition().totalPct()).isZero();
+    }
+  }
+
+  @Nested
+  @DisplayName("original values (Story 16.2, BR-04)")
+  class OriginalValuesIndicators {
+
+    // A road detail's submitted attributes come from the detail view and its substructure costs
+    // from the shared cost view, joined on the ROAD detail id — the shared finder's parent here is
+    // the detail row, not the page, which is what makes this join worth pinning.
+
+    private void storedDocument(String trackStatus) {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(trackStatus));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(9001, "01", "01B", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8801, 9001, "Ridge Road")));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(List.of(new CostLineRow(8801, 20, new BigDecimal("50000"))));
+    }
+
+    private void assertOriginal(
+        Map<String, OriginalValue> originals, String field, String value, String formatted) {
+      assertThat(originals).containsKey(field);
+      assertThat(originals.get(field).value()).isEqualTo(value);
+      assertThat(originals.get(field).tooltip())
+          .isEqualTo(OriginalValuesFixture.tooltip(formatted));
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and no snapshot view is read")
+    void draft_exposesNothing_andSkipsTheSnapshotReads() {
+      storedDocument("D");
+
+      Schedule10Response doc = service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
+      RoadDetail road = doc.pages().get(0).roadDetails().get(0);
+
+      assertThat(road.originalValues()).isNull();
+      assertThat(doc.pages().get(0).originalValues()).isNull();
+      verify(repository, never()).findDetailSnapshots(anyLong(), anyInt());
+      verify(costSnapshots, never()).findByRoadConstructionDetails(anyList());
+    }
+
+    @Test
+    @DisplayName("beyond Draft the detail's attributes and its costs join on the detail id")
+    void submitted_joinDetailAndCostSnapshotsOnTheDetailId() {
+      storedDocument("S");
+      when(repository.findPageSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule10Repository.PageSnapshotRow(
+                      9001, "South Division", "2021-05", "RNI", "02", "02B", null)));
+      when(repository.findDetailSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule10Repository.DetailSnapshotRow(
+                      8801,
+                      "Creek Road",
+                      "P",
+                      8801,
+                      "C",
+                      15,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      new BigDecimal("11.000"),
+                      new BigDecimal("2.500"),
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      "N",
+                      null,
+                      null,
+                      null,
+                      null,
+                      "submitted comment")));
+      when(costSnapshots.findByRoadConstructionDetails(List.of(8801L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 8801L, 20, null, 45000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 8801L, 7, null, 1500, null, null)));
+
+      RoadDetail road =
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
+
+      // Off the detail snapshot.
+      assertOriginal(road.originalValues(), "roadName", "Creek Road", "Creek Road");
+      assertOriginal(road.originalValues(), "comments", "submitted comment", "submitted comment");
+      // Off the shared cost snapshot, routed per cost item onto the sub-grade substructure —
+      // the parent id there is the DETAIL id, so a mis-keyed join empties exactly these.
+      assertOriginal(road.subGrade().originalValues(), "actualCost", "45000", "45,000");
+      assertOriginal(road.subGrade().originalValues(), "lessBridges", "1500", "1,500");
+      // An item with no submitted row keeps no key.
+      // Written but empty: the detail-id join found no submitted row for this one.
+      assertThat(road.subGrade().originalValues()).containsEntry("lessCulverts", nothingOnFile());
+    }
+
+    @Test
+    @DisplayName("beyond Draft with nothing on file every field carries legacy’s empty tooltip")
+    void submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
+      storedDocument("S");
+      when(repository.findPageSnapshots(MILL, YEAR)).thenReturn(List.of());
+      when(repository.findDetailSnapshots(MILL, YEAR)).thenReturn(List.of());
+
+      RoadDetail road =
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
+
+      assertAllNothingOnFile(road.originalValues());
+      assertAllNothingOnFile(road.subGrade().originalValues());
     }
   }
 }

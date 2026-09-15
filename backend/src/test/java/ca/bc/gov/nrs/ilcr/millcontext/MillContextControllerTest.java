@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -76,10 +77,26 @@ class MillContextControllerTest {
   }
 
   @Test
-  @DisplayName("dev mock principal (non-Jwt) → listMills(false, \"\") — blank guid, fail-closed")
-  void listMills_mockNonJwtPrincipal_passesBlankGuid() {
+  @DisplayName("dev mock principal → listMills(false, its stand-in directory GUID)")
+  void listMills_mockUserPrincipal_passesItsGuid() {
+    // What MockPrincipalFilter actually presents with security off (#385). Before it carried a
+    // GUID this call passed "" and a mock submitter was scoped to ZERO mills — an empty Home
+    // dropdown, which is what broke local dev and the whole e2e suite under Story 16.1.
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
-    authenticate("dev-submitter"); // UsernamePasswordAuthenticationToken, no JWT claims
+    authenticate(new MockUserPrincipal("dev-submitter", "MOCKGUIDAAAABBBBCCCCDDDD00000001"));
+
+    controller.listMills();
+
+    verify(millContextService).listMills(false, "MOCKGUIDAAAABBBBCCCCDDDD00000001");
+  }
+
+  @Test
+  @DisplayName("non-Jwt principal with no identity → listMills(false, \"\") — fail-closed")
+  void listMills_identitylessNonJwtPrincipal_passesBlankGuid() {
+    // Not the dev mock principal (that is the case above) — any OTHER non-Jwt authentication,
+    // which carries nothing we can scope by. Must fail closed to an empty list, never all mills.
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticate("some-other-principal"); // UsernamePasswordAuthenticationToken, no JWT claims
 
     controller.listMills();
 

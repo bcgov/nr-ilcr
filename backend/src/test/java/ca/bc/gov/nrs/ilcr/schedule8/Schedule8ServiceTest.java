@@ -1,24 +1,39 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -36,6 +51,14 @@ class Schedule8ServiceTest {
   private static final int YEAR = 2021;
 
   @Mock private Schedule8Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule8Service service;
 
@@ -134,7 +157,7 @@ class Schedule8ServiceTest {
   @Test
   void threeLevelAssembly_pageCarriesItsSampleAndSampleCount() {
     stubOnePageOneSample();
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(1, doc.pages().size());
     Page page = doc.pages().get(0);
     assertEquals(8500, page.id());
@@ -146,7 +169,8 @@ class Schedule8ServiceTest {
   @Test
   void additionsAndDeductions_splitBySubcategory() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(1, sample.additionCount());
     assertEquals(1, sample.deductionCount());
     assertEquals(82, sample.additions().get(0).costItemCode()); // subcat '1'
@@ -156,7 +180,8 @@ class Schedule8ServiceTest {
   @Test
   void computedRollups_totalsAndFinalRate() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(100, sample.percentTotal()); // 60 + 40
     assertEquals(1000, sample.actualHarvested()); // 700 + 300
     eq("5", sample.additionsTotal());
@@ -180,7 +205,8 @@ class Schedule8ServiceTest {
                     8702, 8600, "CT1", 999, "Orphan",
                     "9.99"))); // 999 not in subcategories → dropped
 
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
 
     assertEquals(1, sample.additionCount()); // only the classifiable addition
     assertEquals(0, sample.deductionCount());
@@ -191,7 +217,7 @@ class Schedule8ServiceTest {
   @Test
   void codeLabels_resolvedFromCodeTables() {
     stubOnePageOneSample();
-    Page page = service.getSchedule8(MILL, YEAR, true).pages().get(0);
+    Page page = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
     assertEquals("SC1", page.supportCentre());
     assertEquals("Support Centre One", page.supportCentreLabel());
     assertEquals("Region One", page.regionLabel());
@@ -204,7 +230,8 @@ class Schedule8ServiceTest {
   @Test
   void ynIndicators_mappedToBooleans() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertTrue(sample.uphillDirection()); // "Y"
     assertFalse(sample.waterDumpDestination()); // "N"
   }
@@ -212,8 +239,8 @@ class Schedule8ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stubOnePageOneSample();
-    assertTrue(service.getSchedule8(MILL, YEAR, true).editable());
-    assertFalse(service.getSchedule8(MILL, YEAR, false).editable());
+    assertTrue(service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).editable());
+    assertFalse(service.getSchedule8(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -222,7 +249,7 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertFalse(doc.editable());
     assertEquals(1, doc.pages().size());
     assertEquals("S", doc.trackStatus());
@@ -234,7 +261,7 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.pages().isEmpty());
     assertTrue(doc.editable()); // editable per Draft track even with no pages
   }
@@ -254,7 +281,8 @@ class Schedule8ServiceTest {
                 rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
                 rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
 
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
 
     assertEquals(2, sample.additionCount());
     assertEquals(2, sample.deductionCount());
@@ -305,10 +333,122 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(0, sample.additionCount());
     assertEquals(0, sample.deductionCount());
     eq("0", sample.additionsTotal());
     eq("25.5", sample.finalRate()); // originalRate only
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft the page, its sample and its rate rows each carry their own keys")
+    void beyondDraftServesAllThreeLevels() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+      when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+      when(repository.findRateRows(MILL, YEAR))
+          .thenReturn(List.of(rate(8700, 8600, "CT1", 82, "Add A", "5.00")));
+      when(repository.findPageSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.PageSnapshotRow(
+                      8500,
+                      "Div",
+                      "L1",
+                      "Contact",
+                      "222-222-2222",
+                      "CP",
+                      "SC",
+                      "R",
+                      "BEC",
+                      "07",
+                      null,
+                      null,
+                      "page note")));
+      when(repository.findSampleSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.SampleSnapshotRow(
+                      8600,
+                      "C1",
+                      "B1",
+                      60,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      new BigDecimal("1.5"),
+                      "Y",
+                      "N",
+                      "S",
+                      null,
+                      null,
+                      new BigDecimal("12.34"))));
+      when(repository.findRateSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.RateSnapshotRow(
+                      8700, 82, "Add A", new BigDecimal("4.00"), "CT1")));
+
+      Page servedPage = service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0);
+      Sample servedSample = servedPage.samples().get(0);
+
+      // Legacy draws twelve indicators on a page, nineteen on a sample and four on a rate row.
+      assertThat(servedPage.originalValues()).containsKeys("division", "license", "comments");
+      assertThat(servedSample.originalValues())
+          .containsKeys("contractId", "cutBlock", "groundBasePct", "cycleTime", "originalRate");
+      // D3: uphill and water dump come from their OWN columns, which legacy crossed.
+      assertThat(servedSample.originalValues().get("uphillDirection").tooltip())
+          .isEqualTo("Original Submission Value: Uphill");
+      assertThat(servedSample.originalValues().get("waterDumpDestination").tooltip())
+          .isEqualTo("Original Submission Value: Land Dump");
+      assertThat(servedSample.additions().get(0).originalValues())
+          .containsOnlyKeys("costItemCode", "itemDescription", "costingRate", "costTypeCode");
+    }
+
+    @Test
+    @DisplayName("a sample with nothing on file still carries every field, with legacy's label")
+    void noSnapshotCarriesEmptyOriginals() {
+      // REGRESSION GUARD. This asserted an EMPTY map until the empty-tooltip fix, and an empty map
+      // is now indistinguishable from "no field on this row has indicator wiring" — so every
+      // indicator on a sample with no 'S' snapshot silently stopped rendering. `sampleOriginals`
+      // must substitute an all-null row rather than short-circuit, so its per-field puts still run.
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+      when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+      when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
+
+      Sample servedSample =
+          service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0).samples().get(0);
+
+      assertAllNothingOnFile(servedSample.originalValues());
+      // Named explicitly: a field the operator has filled in since submission must have something
+      // for its indicator to show.
+      assertThat(servedSample.originalValues())
+          .containsEntry("contractId", nothingOnFile())
+          .containsEntry("helicopterPct", nothingOnFile());
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      stubOnePageOneSample();
+
+      Page servedPage = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
+
+      assertThat(servedPage.originalValues()).isNull();
+      assertThat(servedPage.samples().get(0).originalValues()).isNull();
+      verify(repository, never()).findPageSnapshots(anyLong(), anyInt());
+    }
   }
 }

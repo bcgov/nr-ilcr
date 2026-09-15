@@ -1,11 +1,13 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -198,6 +200,68 @@ class Schedule10WriteAuthorizationIT extends AbstractOracleIT {
         .perform(
             post(PAGES)
                 .param("millId", "718")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(PAGE_BODY)
+                .with(csrf())
+                .with(canonicalSubmitter()))
+        .andExpect(status().isConflict());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // The ADMIN row of the role×status matrix (Story 16.1; added on the #427 review). Mill 746/2021
+  // is 1–10 'V' and silviculture 'D' (R__51) — so a gate that read the wrong track's column would
+  // see Draft, refuse the administrator, and every test below would fail on a 409 instead of
+  // passing vacuously. The shared unit truth table proves the component; these prove THIS
+  // schedule's wiring to it, on the write verb AND on DELETE.
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED track -> 2xx, and the track stays 'V' (AD-9)")
+  void admin_writesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            post(PAGES)
+                .param("millId", "746")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(PAGE_BODY)
+                .with(csrf())
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // The correction must not move the track, and the echo must report the status the gate
+        // actually read — not a STATUS_DRAFT literal passed in its place.
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES a page at a VERIFIED track -> 2xx (the correction path)")
+  void admin_deletesAtVerified() throws Exception {
+    // Page 8990 is R__51's seeded delete target on this mill and carries no road details, so this
+    // removes a real row. Schedule 10 is also the one service whose gate literal was locally named
+    // DRAFT rather than STATUS_DRAFT, which is exactly the kind of copy that gets missed in a
+    // sweep — and a refused-at-Draft probe cannot tell a missed one from a converted one.
+    mockMvc
+        .perform(
+            delete(PAGES + "/8990")
+                .param("millId", "746")
+                .param("year", "2021")
+                .with(csrf())
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same VERIFIED track -> 409: only the ministry corrects")
+  void submitter_refusedAtVerified() throws Exception {
+    // The other half of the row. Without it, admin_writesAtVerified alone would also pass if the
+    // gate had simply been widened to "anyone may edit at V".
+    mockMvc
+        .perform(
+            post(PAGES)
+                .param("millId", "746")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(PAGE_BODY)

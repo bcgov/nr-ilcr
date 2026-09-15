@@ -94,8 +94,8 @@ public interface Schedule11Api {
       Authentication authentication);
 
   /**
-   * Delete one Schedule 11 location and its item-23/24 cost children (S07). Draft-gated; carries no
-   * revision token (systemic AR11 DELETE deviation). Unknown id → 404.
+   * Delete one Schedule 11 location and its item-23/24 cost children (S07). editability-gated;
+   * carries no revision token (systemic AR11 DELETE deviation). Unknown id → 404.
    *
    * @param id the location id to delete
    * @param millId the raw mill id param
@@ -112,8 +112,8 @@ public interface Schedule11Api {
 
   /**
    * Check Status for Schedule 11 (BR-07, S04/S05/S06) — read-only validation, mutates nothing, NOT
-   * Draft-gated ({@code VIEW_SCHEDULE}). A location passes iff both costs are non-null. Returns
-   * SUC-004 always and SUC-003 when all met, else per-missing-cost FLD-004 flags.
+   * editability-gated ({@code VIEW_SCHEDULE}). A location passes iff both costs are non-null.
+   * Returns SUC-004 always and SUC-003 when all met, else per-missing-cost FLD-004 flags.
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
@@ -129,7 +129,7 @@ public interface Schedule11Api {
   /**
    * Type-ahead search of the global BEC catalogue for the forced-selection field (BR-09, S16). A
    * read-only lookup that mutates nothing and takes NO mill/year context (the catalogue is global,
-   * not Draft-gated). {@code q} is matched case-insensitively as a prefix of the concatenated
+   * not editability-gated). {@code q} is matched case-insensitively as a prefix of the concatenated
    * zone+subzone+variant+phase label; a blank/whitespace {@code q} yields an empty list. Requires
    * {@code VIEW_SCHEDULE} → 403 otherwise.
    *

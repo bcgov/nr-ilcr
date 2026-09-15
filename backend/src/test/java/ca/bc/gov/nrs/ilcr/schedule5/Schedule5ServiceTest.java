@@ -1,15 +1,23 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,11 +53,16 @@ class Schedule5ServiceTest {
 
   @Mock private Schedule5Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule5Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule5Service(repository);
+    service = new Schedule5Service(repository, originalValues, costSnapshots);
   }
 
   // -----------------------------------------------------------------------------------------
@@ -81,7 +94,7 @@ class Schedule5ServiceTest {
     when(repository.findTrackStatus(anyLong(), anyInt())).thenReturn(Optional.of("D"));
     when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(campRow));
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(details);
-    return service.getSchedule5(MILL, YEAR, true).camps().getFirst();
+    return service.getSchedule5(MILL, YEAR, CallerRights.SUBMITTER).camps().getFirst();
   }
 
   private static final BigDecimal VOL_120K = new BigDecimal("120000");
@@ -639,19 +652,34 @@ class Schedule5ServiceTest {
   class EditableMatrix {
 
     @Test
-    @DisplayName("EDIT_SCHEDULE + Draft -> true; every other combination -> false")
-    void editableOnlyWhenDraftAndPermitted() {
-      assertThat(editableFor("D", true)).isTrue();
-      assertThat(editableFor("D", false)).isFalse();
-      assertThat(editableFor("S", true)).isFalse();
-      assertThat(editableFor("V", true)).isFalse();
-      // Dead status code O passes through as a non-Draft value (A-8).
-      assertThat(editableFor("O", true)).isFalse();
-      // No status row at all.
-      assertThat(editableFor(null, true)).isFalse();
+    @DisplayName("a submitter edits at Draft only")
+    void submitterEditsAtDraftOnly() {
+      assertThat(editableFor("D", CallerRights.SUBMITTER)).isTrue();
+      assertThat(editableFor("S", CallerRights.SUBMITTER)).isFalse();
+      assertThat(editableFor("V", CallerRights.SUBMITTER)).isFalse();
     }
 
-    private boolean editableFor(String trackStatus, boolean callerMayEdit) {
+    @Test
+    @DisplayName("an administrator edits at Submitted and Verified, never at Draft")
+    void adminEditsAfterDraftOnly() {
+      assertThat(editableFor("D", CallerRights.ADMIN)).isFalse();
+      assertThat(editableFor("S", CallerRights.ADMIN)).isTrue();
+      assertThat(editableFor("V", CallerRights.ADMIN)).isTrue();
+    }
+
+    @Test
+    @DisplayName("no role, the dead O status, and a missing status row are all read-only")
+    void nobodyEditsOutsideTheMatrix() {
+      assertThat(editableFor("D", CallerRights.NONE)).isFalse();
+      // Dead status code O passes through read-only for every role (A-8).
+      assertThat(editableFor("O", CallerRights.SUBMITTER)).isFalse();
+      assertThat(editableFor("O", CallerRights.ADMIN)).isFalse();
+      // No status row at all is never an implicit Draft.
+      assertThat(editableFor(null, CallerRights.SUBMITTER)).isFalse();
+      assertThat(editableFor(null, CallerRights.ADMIN)).isFalse();
+    }
+
+    private boolean editableFor(String trackStatus, EditableStatuses callerMayEdit) {
       when(repository.findTrackStatus(anyLong(), anyInt()))
           .thenReturn(Optional.ofNullable(trackStatus));
       when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
@@ -667,7 +695,7 @@ class Schedule5ServiceTest {
     when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
 
-    Schedule5Response document = service.getSchedule5(MILL, YEAR, true);
+    Schedule5Response document = service.getSchedule5(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertThat(document.millId()).isEqualTo(MILL);
     assertThat(document.year()).isEqualTo(YEAR);
@@ -750,5 +778,73 @@ class Schedule5ServiceTest {
     assertThat(served.campSubTotal().cost()).isEqualTo(1039L);
     // Access = 32+64+128+256+512 + 2048 (item-68 sum).
     assertThat(served.accessExpenseTotal().cost()).isEqualTo(3040L);
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a camp carries its five attributes and each category its own pair")
+    void beyondDraftServesTheSubmittedFigures() {
+      when(repository.findTrackStatus(anyLong(), anyInt())).thenReturn(Optional.of("S"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.findCostDetails(anyLong(), anyInt()))
+          .thenReturn(List.of(detail(1, 58, VOL_120K, 5000)));
+      when(repository.findCampSnapshots(anyLong(), anyInt()))
+          .thenReturn(
+              List.of(
+                  new Schedule5Repository.CampSnapshotRow(
+                      CAMP,
+                      "Submitted Camp",
+                      new BigDecimal("9.00"),
+                      35,
+                      new BigDecimal("110000"),
+                      "Y",
+                      "submitted comment")));
+      when(costSnapshots.findByCampReports(List.of((long) CAMP)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(
+                      1, (long) CAMP, 58, new BigDecimal("110000"), 4000, null, null),
+                  // Item 61 is Recoveries — the volume-less category, so only its cost is on file.
+                  new CostDetailSnapshotRepository.Row(2, (long) CAMP, 61, null, 750, null, null)));
+
+      Camp served = service.getSchedule5(MILL, YEAR, CallerRights.ADMIN).camps().getFirst();
+
+      // Legacy tracks five camp attributes and NO camp comments original
+      // (CampReportType.java:29 declares the field and no commentsOriginalVal).
+      assertThat(served.originalValues())
+          .containsOnlyKeys(
+              "campName",
+              "roadDistanceToOperatingArea",
+              "sizeOfCamp",
+              "associatedCampVolume",
+              "isolatedCamp");
+      assertThat(served.originalValues().get("campName").value()).isEqualTo("Submitted Camp");
+      // D6: the isolated-camp flag goes through the SHARED rule, so its Y/N renders as words.
+      assertThat(served.originalValues().get("isolatedCamp").tooltip())
+          .isEqualTo("Original Submission Value: Yes");
+      // Item 58 is Wages & Benefits, so that is the category the snapshot above populates.
+      assertThat(served.wagesAndBenefits().originalValues()).containsOnlyKeys("volume", "cost");
+      // A category with nothing on file still carries an EMPTY map, not a null one: beyond Draft
+      // the
+      // page must evaluate the added-since-submission branch for it too.
+      assertAllNothingOnFile(served.cateringAndFood().originalValues());
+      // Recoveries is the volume-less category: cost only, as legacy had it.
+      assertThat(served.recoveries().originalValues()).containsOnlyKeys("cost");
+      // A derived total carries none: nothing stores it.
+      assertThat(served.campSubTotal().originalValues()).isNull();
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      Camp served = serveCamp(camp(VOL_120K), List.of(detail(1, 58, VOL_120K, 5000)));
+
+      assertThat(served.originalValues()).isNull();
+      assertThat(served.cateringAndFood().originalValues()).isNull();
+      verify(repository, never()).findCampSnapshots(anyLong(), anyInt());
+    }
   }
 }

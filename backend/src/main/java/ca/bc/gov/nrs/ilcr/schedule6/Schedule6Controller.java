@@ -9,7 +9,8 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -45,7 +46,7 @@ public class Schedule6Controller implements Schedule6Api {
 
   private final MillContextService millContextService;
   private final Schedule6Service schedule6Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
   private final Schedule6CheckStatusResolver checkStatusResolver;
 
@@ -56,12 +57,12 @@ public class Schedule6Controller implements Schedule6Api {
   public Schedule6Controller(
       MillContextService millContextService,
       Schedule6Service schedule6Service,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource,
       Schedule6CheckStatusResolver checkStatusResolver) {
     this.millContextService = millContextService;
     this.schedule6Service = schedule6Service;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
     this.checkStatusResolver = checkStatusResolver;
   }
@@ -71,9 +72,9 @@ public class Schedule6Controller implements Schedule6Api {
   public ResponseEntity<Schedule6Response> getSchedule6(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     return ResponseEntity.ok(
-        schedule6Service.getSchedule6(context.millId(), context.year(), callerMayEdit));
+        schedule6Service.getSchedule6(context.millId(), context.year(), caller));
   }
 
   @Override
@@ -86,7 +87,7 @@ public class Schedule6Controller implements Schedule6Api {
             context.millId(),
             context.year(),
             request,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
@@ -101,7 +102,7 @@ public class Schedule6Controller implements Schedule6Api {
             context.millId(),
             context.year(),
             request,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
@@ -129,7 +130,7 @@ public class Schedule6Controller implements Schedule6Api {
             context.millId(),
             context.year(),
             recordId,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            editability.forCaller(authentication),
             authentication.getName());
     // Legacy's delete path resolved its own message key, not the save one
     // (Schedule6MB.delete() :224-226 -> "dataDeletedSuccesfullyInfoMsg").

@@ -10,7 +10,8 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -39,7 +40,7 @@ public class Schedule8Controller implements Schedule8Api {
 
   private final MillContextService millContextService;
   private final Schedule8Service schedule8Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
   private final Schedule8CheckStatusResolver checkStatusResolver;
 
@@ -55,8 +56,8 @@ public class Schedule8Controller implements Schedule8Api {
       long millId, int year, Authentication authentication) {
     // No no-pages 404 for Schedule 8 — only mill/year existence + active checks (404/409).
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    return ResponseEntity.ok(schedule8Service.getSchedule8(millId, year, callerMayEdit));
+    EditableStatuses caller = editability.forCaller(authentication);
+    return ResponseEntity.ok(schedule8Service.getSchedule8(millId, year, caller));
   }
 
   @Override
@@ -71,9 +72,9 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8Response> savePage(
       long millId, int year, Schedule8PageRequest request, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
-    Schedule8Response saved = schedule8Service.savePage(millId, year, request, callerMayEdit, user);
+    Schedule8Response saved = schedule8Service.savePage(millId, year, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -82,7 +83,7 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<MessageResponse> deletePage(
       long millId, int year, int id, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    schedule8Service.deletePage(millId, year, id);
+    schedule8Service.deletePage(millId, year, id, editability.forCaller(authentication));
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
   }
 
@@ -95,10 +96,10 @@ public class Schedule8Controller implements Schedule8Api {
       Schedule8SampleRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule8Response saved =
-        schedule8Service.saveSample(millId, year, pageId, request, callerMayEdit, user);
+        schedule8Service.saveSample(millId, year, pageId, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -107,9 +108,8 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8Response> deleteSample(
       long millId, int year, int pageId, int id, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    Schedule8Response updated =
-        schedule8Service.deleteSample(millId, year, pageId, id, callerMayEdit);
+    EditableStatuses caller = editability.forCaller(authentication);
+    Schedule8Response updated = schedule8Service.deleteSample(millId, year, pageId, id, caller);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 
@@ -122,10 +122,10 @@ public class Schedule8Controller implements Schedule8Api {
       Schedule8RateRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule8Response saved =
-        schedule8Service.saveRate(millId, year, sampleId, null, request, callerMayEdit, user);
+        schedule8Service.saveRate(millId, year, sampleId, null, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -139,10 +139,10 @@ public class Schedule8Controller implements Schedule8Api {
       Schedule8RateRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule8Response saved =
-        schedule8Service.saveRate(millId, year, sampleId, rowId, request, callerMayEdit, user);
+        schedule8Service.saveRate(millId, year, sampleId, rowId, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -151,9 +151,8 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8Response> deleteRate(
       long millId, int year, int sampleId, int rowId, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    Schedule8Response updated =
-        schedule8Service.deleteRate(millId, year, sampleId, rowId, callerMayEdit);
+    EditableStatuses caller = editability.forCaller(authentication);
+    Schedule8Response updated = schedule8Service.deleteRate(millId, year, sampleId, rowId, caller);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 

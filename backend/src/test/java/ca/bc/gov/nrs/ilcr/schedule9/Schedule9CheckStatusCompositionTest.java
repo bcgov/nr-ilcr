@@ -11,7 +11,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ class Schedule9CheckStatusCompositionTest {
   private final Schedule9Service service = mock(Schedule9Service.class);
   private final Schedule9Controller controller =
       new Schedule9Controller(
-          millContext(), service, mock(SchedulePermissions.class), realBundle());
+          millContext(), service, mock(ScheduleEditability.class), realBundle());
 
   private static MillContextService millContext() {
     MillContextService millContextService = mock(MillContextService.class);

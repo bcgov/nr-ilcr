@@ -1,9 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,7 +15,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,7 +51,7 @@ class Schedule5ApiSurfaceTest {
 
   @Mock private Schedule5Service schedule5Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private MessageSource messageSource;
 
@@ -58,12 +59,13 @@ class Schedule5ApiSurfaceTest {
 
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     mockMvc =
         MockMvcBuilders.standaloneSetup(
                 new Schedule5Controller(
                     millContextService,
                     schedule5Service,
-                    permissions,
+                    editability,
                     messageSource,
                     new Schedule5CheckStatusResolver(schedule5Service, messageSource)))
             .build();
@@ -120,11 +122,9 @@ class Schedule5ApiSurfaceTest {
     // to hand back a real document — a null would NPE into a 500 and say nothing about the mapping.
     SubPageDocument doc =
         new SubPageDocument(8700, "Reconcile Camp", null, true, List.of(), null, null);
-    when(schedule5Service.saveSubPage(
-            anyLong(), anyInt(), anyInt(), any(), any(), anyBoolean(), any()))
+    when(schedule5Service.saveSubPage(anyLong(), anyInt(), anyInt(), any(), any(), any(), any()))
         .thenReturn(doc);
-    when(schedule5Service.deleteSubPageRow(
-            anyLong(), anyInt(), anyInt(), any(), anyInt(), anyBoolean()))
+    when(schedule5Service.deleteSubPageRow(anyLong(), anyInt(), anyInt(), any(), anyInt(), any()))
         .thenReturn(doc);
     // A principal is supplied because the save path reads authentication.getName() for the audit
     // columns; Spring resolves an Authentication parameter from request.getUserPrincipal(), which

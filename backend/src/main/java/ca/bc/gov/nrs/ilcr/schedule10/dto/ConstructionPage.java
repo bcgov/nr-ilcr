@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One Schedule 10 construction page, owning its road-detail rows.
@@ -40,4 +42,42 @@ public record ConstructionPage(
     String constructionPeriod,
     int roadDetailCount,
     Integer revisionCount,
-    List<RoadDetail> roadDetails) {}
+    List<RoadDetail> roadDetails,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public ConstructionPage(
+      int pageId,
+      int pageNumber,
+      String pageLabel,
+      String forestRegionCode,
+      String tsaNumber,
+      String tsbNumberCode,
+      String tflNumberCode,
+      String roadGroup,
+      String divisionName,
+      String constructionPeriod,
+      int roadDetailCount,
+      Integer revisionCount,
+      List<RoadDetail> roadDetails) {
+    this(
+        pageId,
+        pageNumber,
+        pageLabel,
+        forestRegionCode,
+        tsaNumber,
+        tsbNumberCode,
+        tflNumberCode,
+        roadGroup,
+        divisionName,
+        constructionPeriod,
+        roadDetailCount,
+        revisionCount,
+        roadDetails,
+        null);
+  }
+}

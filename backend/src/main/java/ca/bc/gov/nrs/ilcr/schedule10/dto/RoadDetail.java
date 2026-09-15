@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 10 road-detail row.
@@ -53,4 +55,52 @@ public record RoadDetail(
     BigDecimal overlandDistance,
     BigDecimal overlandVolume,
     String comments,
-    Integer revisionCount) {}
+    Integer revisionCount,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public RoadDetail(
+      int roadDetailId,
+      int rowNumber,
+      String roadDetailLabel,
+      String roadName,
+      String roadLifetimeCode,
+      BecClassification becClassification,
+      String relSoilMoistRgmClsCode,
+      Integer sideSlopePct,
+      SubGrade subGrade,
+      Stabilizing stabilizing,
+      MaterialComposition materialComposition,
+      String detailedEngineeringCostInd,
+      BigDecimal endHaulDistance,
+      BigDecimal endHaulVolume,
+      BigDecimal overlandDistance,
+      BigDecimal overlandVolume,
+      String comments,
+      Integer revisionCount) {
+    this(
+        roadDetailId,
+        rowNumber,
+        roadDetailLabel,
+        roadName,
+        roadLifetimeCode,
+        becClassification,
+        relSoilMoistRgmClsCode,
+        sideSlopePct,
+        subGrade,
+        stabilizing,
+        materialComposition,
+        detailedEngineeringCostInd,
+        endHaulDistance,
+        endHaulVolume,
+        overlandDistance,
+        overlandVolume,
+        comments,
+        revisionCount,
+        null);
+  }
+}

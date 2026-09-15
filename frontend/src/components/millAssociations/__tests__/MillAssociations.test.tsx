@@ -776,6 +776,98 @@ describe('Users page — resilience (AC6)', () => {
     expect(await screen.findByRole('option', { name: /670 - Cedar Mill/ })).toBeInTheDocument()
   })
 
+  test('a carried user from the Mills page is resolved and selected (Story 22.3 AC8)', async () => {
+    assignmentsAre(activeOn670)
+    const seen: URLSearchParams[] = []
+    server.use(
+      http.get(LOOKUP, ({ request }) => {
+        seen.push(new URL(request.url).searchParams)
+        return HttpResponse.json([ADA])
+      }),
+    )
+    render(<MillAssociations carriedUserGuid={GUID} />)
+
+    // The GUID criterion is a BCeID-business EXACT lookup — the only endpoint that turns a GUID
+    // back into a directory record. Sending it under IDIR is a 400 by design.
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0].get('idp')).toBe('BCEIDBUSINESS')
+    expect(seen[0].get('userGuid')).toBe(GUID)
+
+    expect(await screen.findByRole('table', { name: /associated mills/i })).toBeInTheDocument()
+    expect(screen.getByText(/Ada Lovelace/)).toBeInTheDocument()
+  })
+
+  test('a carried user that cannot be resolved renders NO selection, and says why', async () => {
+    // The directory is flag-off in every environment, so a disabled controller leaves no route and
+    // answers 404 with no ProblemDetail to extract text from — hence a page-owned fallback. This is
+    // the ruling Story 23.3 recorded for 22.3 to inherit (deviation (N)).
+    server.use(http.get(LOOKUP, () => new HttpResponse(null, { status: 404 })))
+    render(<MillAssociations carriedUserGuid={GUID} />)
+
+    expect(await screen.findByText(/could not be looked up/i)).toBeInTheDocument()
+    // Without a selection: an empty panel with no explanation is what the ruling exists to prevent.
+    expect(screen.queryByRole('table', { name: /associated mills/i })).not.toBeInTheDocument()
+  })
+
+  test('a carried user the directory does not know is a miss, not silence', async () => {
+    server.use(http.get(LOOKUP, () => HttpResponse.json([])))
+    render(<MillAssociations carriedUserGuid={GUID} />)
+
+    expect(await screen.findByText(/could not be looked up/i)).toBeInTheDocument()
+  })
+
+  test('a slow carried lookup cannot stomp a selection the administrator made meanwhile', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    let releaseCarried!: () => void
+    const carriedHeld = new Promise<void>((resolve) => {
+      releaseCarried = resolve
+    })
+    server.use(
+      http.get(LOOKUP, async ({ request }) => {
+        // The carried resolve is the GUID-criterion call; the picker searches without it.
+        if (new URL(request.url).searchParams.get('userGuid')) {
+          await carriedHeld
+          return HttpResponse.json([ADA])
+        }
+        return HttpResponse.json([GRACE])
+      }),
+    )
+    render(<MillAssociations carriedUserGuid={GUID} />)
+
+    // The administrator outruns the directory and picks Grace through the picker.
+    await user.type(screen.getByRole('combobox', { name: /user id/i }), 'GH')
+    await user.click(await screen.findByRole('option', { name: 'Grace Hopper (GHOPPER)' }))
+    await screen.findByText(/Grace Hopper/)
+
+    releaseCarried()
+    await drainEventLoop()
+    // The late resolve neither replaces the manual selection nor posts a failure banner over it.
+    expect(screen.getByText(/Grace Hopper/)).toBeInTheDocument()
+    expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/could not be looked up/i)).not.toBeInTheDocument()
+  })
+
+  test('with NO carried user the page mounts exactly as it always has', async () => {
+    assignmentsAre(activeOn670)
+    let lookups = 0
+    server.use(
+      http.get(LOOKUP, () => {
+        lookups += 1
+        return HttpResponse.json([ADA])
+      }),
+    )
+    render(<MillAssociations />)
+    await screen.findByRole('combobox', { name: /user id/i })
+    await drainEventLoop()
+
+    // The hand-off must be inert when absent: no lookup, no banner, no selection — the mount
+    // behaviour the other ~30 tests in this file pin.
+    expect(lookups).toBe(0)
+    expect(screen.queryByRole('table', { name: /associated mills/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/could not be looked up/i)).not.toBeInTheDocument()
+  })
+
   test('a write whose re-read fails does not leave a success sentence over stale rows', async () => {
     const user = userEvent.setup()
     let listCalls = 0

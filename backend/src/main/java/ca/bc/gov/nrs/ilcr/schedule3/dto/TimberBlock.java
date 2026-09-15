@@ -1,6 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule3.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * A timber / overhead block (AD-12): PO&amp;P Timber, Crown Timber, and Total Overhead. The {@code
@@ -19,4 +22,12 @@ import java.math.BigDecimal;
  * @param cost the derived cost (whole dollars)
  * @param perUnit the derived {@code $ / m³} (cost / volume), scale 2, or null
  */
-public record TimberBlock(BigDecimal volume, Long cost, BigDecimal perUnit) {}
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record TimberBlock(
+    BigDecimal volume, Long cost, BigDecimal perUnit, Map<String, OriginalValue> originalValues) {
+
+  /** A derived block: no original values, because nothing stores it. */
+  public TimberBlock(BigDecimal volume, Long cost, BigDecimal perUnit) {
+    this(volume, cost, perUnit, null);
+  }
+}

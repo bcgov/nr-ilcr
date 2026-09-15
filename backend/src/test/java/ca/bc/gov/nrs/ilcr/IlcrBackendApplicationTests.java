@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
@@ -54,6 +56,12 @@ class IlcrBackendApplicationTests {
   @MockitoBean private Schedule10Repository schedule10Repository;
 
   @MockitoBean private Schedule11Repository schedule11Repository;
+
+  // The two original-value snapshot views (Story 16.2) — Spring Data JDBC repositories like every
+  // other one here, so they are absent with the datasource off and need the same stand-in.
+  @MockitoBean private CostDetailSnapshotRepository costDetailSnapshotRepository;
+
+  @MockitoBean private ReportSummarySnapshotRepository reportSummarySnapshotRepository;
 
   @Test
   void contextLoads() {}

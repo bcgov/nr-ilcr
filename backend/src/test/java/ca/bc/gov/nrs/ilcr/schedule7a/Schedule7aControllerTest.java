@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -12,8 +14,10 @@ import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,9 +39,14 @@ import org.springframework.security.core.Authentication;
 @DisplayName("Schedule7aController — delegation, editability, success-message echo")
 class Schedule7aControllerTest {
 
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
+
   @Mock private MillContextService millContextService;
   @Mock private Schedule7aService schedule7aService;
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
   @Mock private MessageSource messageSource;
   @Mock private Authentication authentication;
   @InjectMocks private Schedule7aController controller;
@@ -98,9 +107,9 @@ class Schedule7aControllerTest {
   void get_delegatesAndResolvesEditability() {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514L, 2021));
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     Schedule7aResponse served = doc(List.of());
-    when(schedule7aService.getSchedule7a(514L, 2021, true)).thenReturn(served);
+    when(schedule7aService.getSchedule7a(514L, 2021, CallerRights.SUBMITTER)).thenReturn(served);
 
     ResponseEntity<Schedule7aResponse> result =
         controller.getSchedule7a("514", "2021", authentication);
@@ -116,7 +125,7 @@ class Schedule7aControllerTest {
         .thenReturn(new MillYearContext(514L, 2021));
     when(authentication.getName()).thenReturn("submitter");
     BridgeRequest request = anyRequest();
-    when(schedule7aService.addBridge(514L, 2021, request, true, "submitter"))
+    when(schedule7aService.addBridge(514L, 2021, request, CallerRights.SUBMITTER, "submitter"))
         .thenReturn(doc(List.of()));
 
     ResponseEntity<Schedule7aResponse> result =
@@ -132,7 +141,8 @@ class Schedule7aControllerTest {
         .thenReturn(new MillYearContext(514L, 2021));
     when(authentication.getName()).thenReturn("submitter");
     BridgeRequest request = anyRequest();
-    when(schedule7aService.updateBridge(514L, 2021, 7601L, request, true, "submitter"))
+    when(schedule7aService.updateBridge(
+            514L, 2021, 7601L, request, CallerRights.SUBMITTER, "submitter"))
         .thenReturn(doc(List.of()));
 
     ResponseEntity<Schedule7aResponse> result =
@@ -152,7 +162,7 @@ class Schedule7aControllerTest {
             List.of(
                 new BridgeSaveAllRequest.Item(7601L, anyRequest()),
                 new BridgeSaveAllRequest.Item(7602L, anyRequest())));
-    when(schedule7aService.saveAllBridges(514L, 2021, request, true, "submitter"))
+    when(schedule7aService.saveAllBridges(514L, 2021, request, CallerRights.SUBMITTER, "submitter"))
         .thenReturn(doc(List.of(oneBridge())));
 
     ResponseEntity<Schedule7aResponse> result =
@@ -167,12 +177,13 @@ class Schedule7aControllerTest {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514L, 2021));
 
-    when(schedule7aService.deleteBridge(514L, 2021, 7601L, true)).thenReturn(doc(List.of()));
+    when(schedule7aService.deleteBridge(514L, 2021, 7601L, CallerRights.SUBMITTER))
+        .thenReturn(doc(List.of()));
     ResponseEntity<Schedule7aResponse> emptied =
         controller.deleteBridge(7601L, "514", "2021", authentication);
     assertThat(emptied.getBody().message().key()).isEqualTo("anyDataToSaveInfoMsg");
 
-    when(schedule7aService.deleteBridge(514L, 2021, 7602L, true))
+    when(schedule7aService.deleteBridge(514L, 2021, 7602L, CallerRights.SUBMITTER))
         .thenReturn(doc(List.of(oneBridge())));
     ResponseEntity<Schedule7aResponse> remaining =
         controller.deleteBridge(7602L, "514", "2021", authentication);

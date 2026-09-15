@@ -1,3 +1,5 @@
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+
 // Mirrors the backend Schedule2Response DTO (Schedule 2 read slice). Blocks are nested `CostBlock`s;
 // Jackson omits nulls (non_null), so an absent block member simply won't be in the JSON. perUnit and
 // the derived blocks are computed server-side and are read-only here — never sent on a write, and the
@@ -17,6 +19,9 @@ export interface CostBlock {
   readonly volume?: number | null
   readonly cost?: number | null
   readonly perUnit?: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Success message carried on a mutating response (AD-8): the frontend renders `text` verbatim and
@@ -49,6 +54,9 @@ export default interface Schedule2Response {
   // The API returns null on GET and a MessageInfo on mutations — one nullable field, not also
   // optional, so callers only ever check `message?.text`.
   readonly message: MessageInfo | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Read-only CheckStatus evaluation (POST check-status, no body). `MET` when item-25 cost present,

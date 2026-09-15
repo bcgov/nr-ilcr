@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * The Schedule 5 Check Status result (AD-5/AD-12, BR-08) — a read-only readiness evaluation that
- * mutates nothing. {@code VIEW_SCHEDULE}-gated and NOT Draft-gated (the 2.6 precedent, {@code
+ * mutates nothing. {@code VIEW_SCHEDULE}-gated and NOT editability-gated (the 2.6 precedent, {@code
  * deferred-work.md:23}), so a Submitted mill can still be checked.
  *
  * <p><strong>Exactly eight conditions per camp, transcribed and not extended</strong> ({@code

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,9 +13,11 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -33,6 +36,11 @@ import org.springframework.security.core.Authentication;
 @ExtendWith(MockitoExtension.class)
 class Schedule1OtherCostsControllerTest {
 
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
+
   private static final long MILL_ID = 514L;
   private static final int YEAR = 2021;
   private static final String CATEGORY = "1";
@@ -41,7 +49,7 @@ class Schedule1OtherCostsControllerTest {
 
   @Mock private Schedule1Service schedule1Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private MessageSource messageSource;
 
@@ -58,8 +66,9 @@ class Schedule1OtherCostsControllerTest {
   @Test
   void getOtherCosts_validatesContext_andPassesEditFlag() {
     OtherCostsDocument doc = mock(OtherCostsDocument.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule1Service.getOtherCostsDocument(MILL_ID, YEAR, true)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule1Service.getOtherCostsDocument(MILL_ID, YEAR, CallerRights.SUBMITTER))
+        .thenReturn(doc);
 
     ResponseEntity<OtherCostsDocument> response =
         controller.getOtherCosts(MILL_ID, YEAR, authentication);
@@ -74,7 +83,8 @@ class Schedule1OtherCostsControllerTest {
     OtherCostRequest request = mock(OtherCostRequest.class);
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule1Service.addOtherCost(MILL_ID, YEAR, request, "dev-admin")).thenReturn(doc);
+    when(schedule1Service.addOtherCost(MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(doc);
     when(messageSource.getMessage(
             eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
@@ -92,7 +102,9 @@ class Schedule1OtherCostsControllerTest {
     OtherCostRequest request = mock(OtherCostRequest.class);
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule1Service.updateOtherCost(MILL_ID, YEAR, 7, request, "dev-admin")).thenReturn(doc);
+    when(schedule1Service.updateOtherCost(
+            MILL_ID, YEAR, 7, request, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(doc);
     when(messageSource.getMessage(
             eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
@@ -112,7 +124,8 @@ class Schedule1OtherCostsControllerTest {
     when(request.rows()).thenReturn(rows);
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
+    when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(doc);
     when(messageSource.getMessage(
             eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
@@ -133,7 +146,8 @@ class Schedule1OtherCostsControllerTest {
     when(request.rows()).thenReturn(rows);
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
+    when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(doc);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");
@@ -150,7 +164,8 @@ class Schedule1OtherCostsControllerTest {
   @Test
   void deleteOtherCost_delegates_andAppliesDeletedMessage() {
     OtherCostsDocument doc = mockDocEchoingMessage();
-    when(schedule1Service.deleteOtherCost(MILL_ID, YEAR, 7)).thenReturn(doc);
+    when(schedule1Service.deleteOtherCost(MILL_ID, YEAR, 7, CallerRights.SUBMITTER))
+        .thenReturn(doc);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");

@@ -7,16 +7,18 @@ import java.util.List;
  * The Schedule 7A (Bridge Costs) aggregate document — the pinned Story 12.1 wire contract (AD-12).
  * {@code trackStatus} is the Schedules 1–10 track code ({@code ILCR_MILL_REPORT_STATUS_CODE}, BR-01
  * — Schedule 7A has no track of its own); {@code editable} is server-authoritative ({@code
- * EDIT_SCHEDULE} ∧ {@code trackStatus == "D"}). {@code bridges} is the ordered list of stored
- * bridges (empty is a valid document); {@code codeLists} carries the five dropdown option lists.
- * {@code message} is populated only on a mutating (Story 12.2) response echo — Jackson {@code
- * non_null} omits it on the GET, so the GET wire is unchanged.
+ * EDIT_SCHEDULE} ∧ the role×status matrix — see {@code editable} below). {@code bridges} is the
+ * ordered list of stored bridges (empty is a valid document); {@code codeLists} carries the five
+ * dropdown option lists. {@code message} is populated only on a mutating (Story 12.2) response echo
+ * — Jackson {@code non_null} omits it on the GET, so the GET wire is unchanged.
  *
  * @param millId the mill id
  * @param year the reporting year
  * @param trackStatus the Schedules 1–10 track code ({@code D}/{@code S}/{@code V}/{@code O}); null
  *     when the status row's code column is null
- * @param editable caller holds {@code EDIT_SCHEDULE} AND the 1–10 track is Draft (AD-5/AD-9)
+ * @param editable caller holds {@code EDIT_SCHEDULE} AND the role×status matrix admits it at this
+ *     1–10 track status — submitter at Draft, administrator at Submitted or Verified (AD-5/AD-9;
+ *     {@link ca.bc.gov.nrs.ilcr.security.ScheduleEditability})
  * @param bridges the stored bridges, ordered by {@code BRIDGE_REPORT_ID} ascending
  * @param codeLists the five code option lists for the dropdowns
  * @param message success message on a Story 12.2 mutation echo (AD-8); always null on the GET

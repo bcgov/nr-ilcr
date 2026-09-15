@@ -5,10 +5,15 @@ import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.isTotalComments;
 import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.resolvePop;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
@@ -28,6 +33,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -59,7 +65,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule3Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String OVERRIDE_DEFAULT = "N";
 
   // The fixed admin-cost LINES, the LineSpec record, and the PO&P/other-acceptable derivation rules
@@ -140,6 +145,9 @@ public class Schedule3Service {
   private final Schedule3Repository repository;
   private final Schedule1Service schedule1Service;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
+  private final ReportSummarySnapshotRepository summarySnapshots;
 
   /**
    * Constructs the Schedule 3 service.
@@ -151,10 +159,16 @@ public class Schedule3Service {
   public Schedule3Service(
       Schedule3Repository repository,
       Schedule1Service schedule1Service,
-      MessageSource messageSource) {
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots,
+      ReportSummarySnapshotRepository summarySnapshots) {
     this.repository = repository;
     this.schedule1Service = schedule1Service;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
+    this.summarySnapshots = summarySnapshots;
   }
 
   /**
@@ -162,13 +176,12 @@ public class Schedule3Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the {@code EDIT_SCHEDULE} action (from the
-   *     controller)
+   * @param caller whether the caller holds the {@code EDIT_SCHEDULE} action (from the controller)
    * @return the aggregate document (never null; empty/editable when unsaved), all derived values
    *     computed server-side
    */
-  public Schedule3Response getSchedule3(long millId, int year, boolean callerMayEdit) {
-    return assemble(millId, year, callerMayEdit, repository.findSummary(millId, year).orElse(null));
+  public Schedule3Response getSchedule3(long millId, int year, EditableStatuses caller) {
+    return assemble(millId, year, caller, repository.findSummary(millId, year).orElse(null));
   }
 
   /**
@@ -184,13 +197,13 @@ public class Schedule3Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action
+   * @param caller the track statuses this caller may edit
    * @return the aggregate document, or empty when no Schedule 3 summary exists
    */
-  public Optional<Schedule3Response> findSchedule3(long millId, int year, boolean callerMayEdit) {
+  public Optional<Schedule3Response> findSchedule3(long millId, int year, EditableStatuses caller) {
     return repository
         .findSummary(millId, year)
-        .map(summary -> assemble(millId, year, callerMayEdit, summary));
+        .map(summary -> assemble(millId, year, caller, summary));
   }
 
   /**
@@ -200,10 +213,14 @@ public class Schedule3Service {
    * hide Delete on a never-saved schedule (#296 AC3, the #292 rule).
    */
   private Schedule3Response assemble(
-      long millId, int year, boolean callerMayEdit, SummaryRow summary) {
+      long millId, int year, EditableStatuses caller, SummaryRow summary) {
     List<DetailRow> details =
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     final String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+
+    Snapshots snapshots = loadSnapshots(trackStatus, summary);
+    final Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode = snapshots.byCode();
+    final ReportSummarySnapshotRepository.Snapshot summarySnapshot = snapshots.summary();
 
     PartitionedDetails partitioned = partitionDetails(details);
     Map<Integer, DetailRow> byCode = partitioned.byCode();
@@ -218,19 +235,11 @@ public class Schedule3Service {
     BigDecimal overheadVolume = add(popTimberVolume, crownTimberVolume);
 
     // --- Fixed lines (harvest/pop/crown) -------------------------------------------------------
-    Map<Integer, Integer> harvestByCode = new HashMap<>();
-    Map<Integer, Integer> popByCode = new HashMap<>();
-    List<CostLine> lineItems = new ArrayList<>();
-    for (LineSpec spec : LINES) {
-      Integer harvest = costOf(byCode.get(spec.code()));
-      Integer pop = resolvePop(spec, harvest, byCode, popTimberVolume, overheadVolume);
-      Integer crown = crownCost(harvest, pop);
-      harvestByCode.put(spec.code(), harvest);
-      popByCode.put(spec.code(), pop);
-      if (harvest != null || pop != null || crown != null) {
-        lineItems.add(new CostLine(spec.code(), harvest, pop, crown));
-      }
-    }
+    FixedLines fixed =
+        fixedLines(trackStatus, byCode, popTimberVolume, overheadVolume, snapshotByCode);
+    final List<CostLine> lineItems = fixed.lineItems();
+    final Map<Integer, Integer> harvestByCode = fixed.harvestByCode();
+    final Map<Integer, Integer> popByCode = fixed.popByCode();
 
     // --- Subtotal Other Costs (from item-124 groups) -------------------------------------------
     ThreeColumnTotal subtotalOtherCosts = subtotalOtherCosts(acceptableRows);
@@ -265,16 +274,22 @@ public class Schedule3Service {
     Long popTimberCost = totalCosts.pop(); // legacy getPopTimber().cost = totalCost.popCost
     Long crownTimberCost = totalCosts.crown(); // legacy getCrownTimber().cost = totalCost.crownCost
     Long overheadCost = addLong(popTimberCost, crownTimberCost);
+    // The two timber VOLUMES are entered and carry submitted originals (Schedule3DAO.java:310-321);
+    // their costs are the derived total columns, so neither carries one, and totalOverhead —
+    // derived
+    // outright — carries none at all.
     TimberBlock popTimber =
         new TimberBlock(
             normalizeVolume(popTimberVolume),
             popTimberCost,
-            perUnit(popTimberCost, popTimberVolume));
+            perUnit(popTimberCost, popTimberVolume),
+            volumeOriginal(trackStatus, snapshotByCode.get(CODE_POP_TIMBER)));
     TimberBlock crownTimber =
         new TimberBlock(
             normalizeVolume(crownTimberVolume),
             crownTimberCost,
-            perUnit(crownTimberCost, crownTimberVolume));
+            perUnit(crownTimberCost, crownTimberVolume),
+            volumeOriginal(trackStatus, snapshotByCode.get(CODE_CROWN_TIMBER)));
     TimberBlock totalOverhead =
         new TimberBlock(
             normalizeVolume(overheadVolume), overheadCost, perUnit(overheadCost, overheadVolume));
@@ -283,7 +298,7 @@ public class Schedule3Service {
     int unacceptableCount =
         unacceptableRows.size() + (annualRentsHarvest != null && annualRentsHarvest != 0 ? 1 : 0);
 
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    boolean editable = caller.allows(trackStatus);
     String override =
         summary == null || summary.location() == null ? OVERRIDE_DEFAULT : summary.location();
 
@@ -295,6 +310,20 @@ public class Schedule3Service {
         summary == null ? null : summary.revisionCount(),
         override,
         summary == null ? null : summary.comments(),
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "comments",
+                summarySnapshot == null ? null : summarySnapshot.comments(),
+                OriginalValueFormat.TEXT)
+            // Not a location: Schedule 3 stores its override-total-PO&P flag in the summary's
+            // LOCATION column, which is where legacy read both the current and the submitted value
+            // (Schedule3DAO.java:135-136).
+            .put(
+                "overrideHarvestTotalPop",
+                summarySnapshot == null ? null : summarySnapshot.overrideTotalPop(),
+                OriginalValueFormat.TEXT)
+            .build(),
         lineItems,
         popTimber,
         crownTimber,
@@ -314,6 +343,71 @@ public class Schedule3Service {
    */
   private record PartitionedDetails(
       Map<Integer, DetailRow> byCode, List<DetailRow> acceptable, List<DetailRow> unacceptable) {}
+
+  /**
+   * The licensee's submitted figures for one summary (Story 16.2, BR-04).
+   *
+   * @param byCode a fixed line's submitted cost row, by cost-item code
+   * @param summary the submitted summary-level figures (comments, override-total-PO&amp;P)
+   */
+  private record Snapshots(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      ReportSummarySnapshotRepository.Snapshot summary) {}
+
+  /** Read both snapshots, or neither at Draft — where no query is issued at all. */
+  private Snapshots loadSnapshots(String trackStatus, SummaryRow summary) {
+    if (summary == null || !originalValues.exposesOriginalValues(trackStatus)) {
+      return new Snapshots(Map.of(), null);
+    }
+    return new Snapshots(
+        indexSnapshots(costSnapshots.findBySummary(summary.summaryId())),
+        summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null));
+  }
+
+  /**
+   * The eleven fixed lines, plus the per-code Harvest and PO&amp;P costs the subtotals sum. Both
+   * maps are keyed by cost-item code and carry an entry for every line, present or not, because the
+   * subtotal loop iterates {@code LINES} rather than the served rows.
+   */
+  private record FixedLines(
+      List<CostLine> lineItems,
+      Map<Integer, Integer> harvestByCode,
+      Map<Integer, Integer> popByCode) {}
+
+  /**
+   * Build the fixed lines. A line is served only when at least one of its three columns has a value
+   * — legacy's own emptiness rule — but its costs are recorded either way so the subtotals see
+   * them.
+   */
+  private FixedLines fixedLines(
+      String trackStatus,
+      Map<Integer, DetailRow> byCode,
+      BigDecimal popTimberVolume,
+      BigDecimal overheadVolume,
+      Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode) {
+    Map<Integer, Integer> harvestByCode = new HashMap<>();
+    Map<Integer, Integer> popByCode = new HashMap<>();
+    List<CostLine> lineItems = new ArrayList<>();
+    for (LineSpec spec : LINES) {
+      Integer harvest = costOf(byCode.get(spec.code()));
+      Integer pop = resolvePop(spec, harvest, byCode, popTimberVolume, overheadVolume);
+      Integer crown = crownCost(harvest, pop);
+      harvestByCode.put(spec.code(), harvest);
+      popByCode.put(spec.code(), pop);
+      // Harvest or PO&P alone is enough: crownCost() returns null unless BOTH are present, so a
+      // non-null crown can never be the only reason a line is served (sonar java:S2589).
+      if (harvest != null || pop != null) {
+        lineItems.add(
+            new CostLine(
+                spec.code(),
+                harvest,
+                pop,
+                crown,
+                lineOriginals(trackStatus, spec, snapshotByCode)));
+      }
+    }
+    return new FixedLines(lineItems, harvestByCode, popByCode);
+  }
 
   /**
    * Partition detail rows: one row per (summary, cost-item) is the invariant; if a duplicate ever
@@ -339,27 +433,26 @@ public class Schedule3Service {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Write path (Story 4.2) — Draft-gated, optimistic-locked, transactional (AD-6/AD-9/AR11).
+  // Write path (Story 4.2) — editability-gated, optimistic-locked, transactional (AD-6/AD-9/AR11).
   // ---------------------------------------------------------------------------------------------
 
   /**
    * Persist the entered Schedule 3 fields (S01) and return the recomputed document. Writes only the
    * editable rows (11 fixed-line Harvest/PO&P costs, the two timber volumes, comments, override →
-   * {@code LOCATION}); never derived or sub-page rows. Enforces the Draft gate (AD-9) and
+   * {@code LOCATION}); never derived or sub-page rows. Enforces the editability gate (AD-9) and
    * optimistic lock (AR11). When the Crown Timber volume changed, propagates it into Schedule 1 via
    * the {@code schedule1} domain (BR-09, AD-14) and carries WRN-001/002 on the response.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered fields + optimistic-lock token
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
-   *     editable})
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code editable})
    * @param user the acting user id (audit)
    * @return the recomputed document, warnings carrying the BR-09 outcome
    */
   @Transactional
   public Schedule3Response saveSchedule3(
-      long millId, int year, Schedule3Request request, boolean callerMayEdit, String user) {
+      long millId, int year, Schedule3Request request, EditableStatuses caller, String user) {
     // 0, not -1 — see Schedule1Service#saveSchedule1: -1 can never match a freshly-created
     // summary's REVISION_COUNT 0, and Schedule 2 uses 0 (#296 code review).
     int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
@@ -373,7 +466,7 @@ public class Schedule3Service {
       // On a freshly-created summary there are no detail rows, so the persisted crown volume is
       // null and the BR-09 push below fires on any entered value, which is correct for a first
       // save.
-      summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
+      summaryId = getOrCreateEditableSummary(millId, year, request.comments(), caller, user);
       persistedCrownVolume = persistedVolume(summaryId, CODE_CROWN_TIMBER);
       int bumped =
           repository.bumpRevision(
@@ -406,7 +499,7 @@ public class Schedule3Service {
       try {
         boolean applied =
             schedule1Service.applyCrownTimberVolume(
-                millId, year, request.crownTimberVolume(), user);
+                millId, year, request.crownTimberVolume(), caller, user);
         warnings.add(warning(applied ? WARN_CROWN_APPLIED : WARN_CROWN_NOT_OPENED));
       } catch (DataAccessException ex) {
         // Surface a push failure as ERR-001 (500), consistent with the save writes (the whole save
@@ -420,13 +513,14 @@ public class Schedule3Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule3(millId, year, callerMayEdit).withWarnings(warnings);
+    return getSchedule3(millId, year, caller).withWarnings(warnings);
   }
 
   /**
    * Delete the whole Schedule 3 row family (summary + all detail rows) for a mill/year (S08).
-   * Enforces the same Draft gate as save. Idempotent since defect #296: a Draft mill/year with no
-   * category-"3" summary is a no-op that still returns 200 (never 404), matching Schedule 2.
+   * Enforces the same editability gate as save. Idempotent since defect #296: a Draft mill/year
+   * with no category-"3" summary is a no-op that still returns 200 (never 404), matching Schedule
+   * 2.
    *
    * <p>Returns whether anything was actually removed, so the controller can tell a real delete from
    * the idempotent no-op instead of announcing success for both (the #292 rule, now applied here
@@ -437,9 +531,9 @@ public class Schedule3Service {
    * @return {@code true} when a summary existed and was deleted, {@code false} on the no-op
    */
   @Transactional
-  public boolean deleteSchedule3(long millId, int year) {
+  public boolean deleteSchedule3(long millId, int year, EditableStatuses caller) {
     // The LOCKING gate, as Schedule 2's delete uses (#296 code review) — see deleteSchedule1.
-    requireDraftForUpdate(millId, year);
+    requireEditableForUpdate(millId, year, caller);
     Optional<SummaryRow> summary = repository.findSummary(millId, year);
     if (summary.isEmpty()) {
       return false; // idempotent — nothing to remove, and the caller must not claim otherwise
@@ -465,21 +559,22 @@ public class Schedule3Service {
    * The Other Acceptable Costs document (groups + subtotal) for a mill/year (does not gate Draft).
    */
   public OtherAcceptableDocument getOtherAcceptableDocument(
-      long millId, int year, boolean callerMayEdit) {
+      long millId, int year, EditableStatuses caller) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    boolean editable =
-        callerMayEdit && STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null));
-    return buildOtherAcceptableDocument(summary.summaryId(), editable);
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    boolean editable = caller.allows(trackStatus);
+    return buildOtherAcceptableDocument(summary.summaryId(), editable, trackStatus);
   }
 
   /**
-   * Add one Other Acceptable group (a fresh TOT + PO&P pair). Draft-gated; recomputes the document.
+   * Add one Other Acceptable group (a fresh TOT + PO&P pair). editability-gated; recomputes the
+   * document.
    */
   @Transactional
   public OtherAcceptableDocument addOtherAcceptable(
-      long millId, int year, OtherAcceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId, int year, OtherAcceptableRequest request, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       // Lock the summary row first so a concurrent add can't read the same max group number and
       // mint
@@ -508,7 +603,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -516,8 +612,13 @@ public class Schedule3Service {
    */
   @Transactional
   public OtherAcceptableDocument updateOtherAcceptable(
-      long millId, int year, int id, OtherAcceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      int id,
+      OtherAcceptableRequest request,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       SubPageRow totRow = findTotRow(summaryId, id);
       String popComments = GROUPKEY_POP + totRow.comments().substring(GROUPKEY_TOT.length());
@@ -543,7 +644,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -551,8 +653,9 @@ public class Schedule3Service {
    * row.
    */
   @Transactional
-  public OtherAcceptableDocument deleteOtherAcceptable(long millId, int year, int id, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+  public OtherAcceptableDocument deleteOtherAcceptable(
+      long millId, int year, int id, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       SubPageRow totRow = findTotRow(summaryId, id);
       String popComments = GROUPKEY_POP + totRow.comments().substring(GROUPKEY_TOT.length());
@@ -570,7 +673,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotDeletedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** How one batch-save row maps onto the stored rows during reconcile. */
@@ -600,12 +704,16 @@ public class Schedule3Service {
    * Schedule3SubtotalOtherCostsMB.save()} reconcile over the item-124 TOT+PO&amp;P pairs: a group
    * whose TOT id already exists is UPDATED in place (both its TOT and PO&amp;P rows), a group with
    * no (or an unknown) id is INSERTED as a fresh pair, and any existing group absent from the
-   * request is DELETED (TOT + PO&amp;P). Draft-gated; recomputes the document.
+   * request is DELETED (TOT + PO&amp;P). editability-gated; recomputes the document.
    */
   @Transactional
   public OtherAcceptableDocument saveOtherAcceptable(
-      long millId, int year, List<OtherAcceptableSaveRequest.Row> rows, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      List<OtherAcceptableSaveRequest.Row> rows,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     List<OtherAcceptableSaveRequest.Row> incoming = rows == null ? List.of() : rows;
     try {
       // Lock the summary first (AR11): serialize concurrent writers and stop a concurrent add/save
@@ -672,7 +780,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** The TOT row for a group id under this summary, or {@link OtherCostNotFoundException} (404). */
@@ -719,7 +828,12 @@ public class Schedule3Service {
    * Assemble the Other Acceptable document: pair TOT+PO&P rows by group key, derive crown +
    * subtotal.
    */
-  private OtherAcceptableDocument buildOtherAcceptableDocument(int summaryId, boolean editable) {
+  private OtherAcceptableDocument buildOtherAcceptableDocument(
+      int summaryId, boolean editable, String trackStatus) {
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId =
+        originalValues.exposesOriginalValues(trackStatus)
+            ? indexSnapshotsByDetailId(costSnapshots.findBySummary(summaryId))
+            : Map.of();
     List<SubPageRow> rows = repository.findSubPageRows(summaryId, CODE_OTHER_ACCEPTABLE);
     Map<String, SubPageRow[]> groups = new LinkedHashMap<>(); // key -> [tot, pop]
     for (SubPageRow row : rows) {
@@ -752,7 +866,35 @@ public class Schedule3Service {
               tot.itemDescription(),
               tot.cost(),
               popCost,
-              otherAcceptableCrown(tot.cost(), popCost)));
+              otherAcceptableCrown(tot.cost(), popCost),
+              // Description, Harvest total and PO&P all carry submitted originals
+              // (Schedule3DAO.java:357-381). Crown is derived from the other two.
+              originalValues
+                  .forTrack(trackStatus)
+                  .put(
+                      "description",
+                      snapshotField(
+                          snapshotByDetailId,
+                          tot.detailId(),
+                          CostDetailSnapshotRepository.Row::itemDescription),
+                      OriginalValueFormat.TEXT)
+                  .put(
+                      "total",
+                      snapshotField(
+                          snapshotByDetailId,
+                          tot.detailId(),
+                          CostDetailSnapshotRepository.Row::cost),
+                      OriginalValueFormat.WHOLE)
+                  .put(
+                      "pop",
+                      pair[1] == null
+                          ? null
+                          : snapshotField(
+                              snapshotByDetailId,
+                              pair[1].detailId(),
+                              CostDetailSnapshotRepository.Row::cost),
+                      OriginalValueFormat.WHOLE)
+                  .build()));
       harvest += nullToZero(tot.cost());
       pop += nullToZero(popCost);
     }
@@ -767,19 +909,19 @@ public class Schedule3Service {
 
   /** The Included Unacceptable Costs document (rows + subtotal + read-only Annual Rents S111). */
   public UnacceptableDocument getUnacceptableDocument(
-      long millId, int year, boolean callerMayEdit) {
+      long millId, int year, EditableStatuses caller) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    boolean editable =
-        callerMayEdit && STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null));
-    return buildUnacceptableDocument(summary.summaryId(), editable);
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    boolean editable = caller.allows(trackStatus);
+    return buildUnacceptableDocument(summary.summaryId(), editable, trackStatus);
   }
 
-  /** Add one Included Unacceptable row (item 38, null comments). Draft-gated. */
+  /** Add one Included Unacceptable row (item 38, null comments). editability-gated. */
   @Transactional
   public UnacceptableDocument addUnacceptable(
-      long millId, int year, UnacceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId, int year, UnacceptableRequest request, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       // Bump the aggregate revision (AR11) — see updateOtherAcceptable.
       repository.touchSummary(summaryId, user);
@@ -793,7 +935,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -801,8 +944,13 @@ public class Schedule3Service {
    */
   @Transactional
   public UnacceptableDocument updateUnacceptable(
-      long millId, int year, int id, UnacceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      int id,
+      UnacceptableRequest request,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       int updated =
           repository.updateSubPageRowById(
@@ -823,15 +971,17 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
    * Delete one Included Unacceptable row by detail id. 404 when the id is not an item-38 row here.
    */
   @Transactional
-  public UnacceptableDocument deleteUnacceptable(long millId, int year, int id, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+  public UnacceptableDocument deleteUnacceptable(
+      long millId, int year, int id, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       int deleted = repository.deleteSubPageRowById(id, summaryId, CODE_UNACCEPTABLE);
       if (deleted == 0) {
@@ -850,19 +1000,24 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotDeletedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
    * Batch "Save" the whole Included Unacceptable row set in one transaction — the legacy {@code
    * Schedule3IncludedUnacceptableCostsMB.save()} reconcile: rows carrying an existing detail id are
    * UPDATED in place, rows with no (or an unknown) id are INSERTED, and any existing item-38 row
-   * absent from the request is DELETED. Draft-gated; recomputes the document.
+   * absent from the request is DELETED. editability-gated; recomputes the document.
    */
   @Transactional
   public UnacceptableDocument saveUnacceptable(
-      long millId, int year, List<UnacceptableSaveRequest.Row> rows, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      List<UnacceptableSaveRequest.Row> rows,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     List<UnacceptableSaveRequest.Row> incoming = rows == null ? List.of() : rows;
     try {
       // Lock the summary first (AR11): serialize concurrent writers and invalidate a stale
@@ -902,16 +1057,45 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** Assemble the Included Unacceptable document (item-38 rows + subtotal + Annual Rents S111). */
-  private UnacceptableDocument buildUnacceptableDocument(int summaryId, boolean editable) {
+  private UnacceptableDocument buildUnacceptableDocument(
+      int summaryId, boolean editable, String trackStatus) {
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId =
+        originalValues.exposesOriginalValues(trackStatus)
+            ? indexSnapshotsByDetailId(costSnapshots.findBySummary(summaryId))
+            : Map.of();
     List<SubPageRow> rows = repository.findSubPageRows(summaryId, CODE_UNACCEPTABLE);
     List<UnacceptableRow> rowDtos = new ArrayList<>();
     long rowsTotal = 0L;
     for (SubPageRow row : rows) {
-      rowDtos.add(new UnacceptableRow(row.detailId(), row.itemDescription(), row.cost()));
+      rowDtos.add(
+          new UnacceptableRow(
+              row.detailId(),
+              row.itemDescription(),
+              row.cost(),
+              // Description and total, the two fields legacy's row template flagged
+              // (Schedule3DAO.java:288-292 via DescriptionTotalType).
+              originalValues
+                  .forTrack(trackStatus)
+                  .put(
+                      "description",
+                      snapshotField(
+                          snapshotByDetailId,
+                          row.detailId(),
+                          CostDetailSnapshotRepository.Row::itemDescription),
+                      OriginalValueFormat.TEXT)
+                  .put(
+                      "total",
+                      snapshotField(
+                          snapshotByDetailId,
+                          row.detailId(),
+                          CostDetailSnapshotRepository.Row::cost),
+                      OriginalValueFormat.WHOLE)
+                  .build()));
       rowsTotal += nullToZero(row.cost());
     }
     Integer annualRents = firstCost(summaryId, CODE_ANNUAL_RENTS);
@@ -1123,51 +1307,60 @@ public class Schedule3Service {
   }
 
   /**
-   * The Draft-gate guard for the SUB-PAGE writes (Other Acceptable, Unacceptable): track must be
-   * Draft (else 409) and the summary must exist (else 404).
+   * The editability-gate guard for the SUB-PAGE writes (Other Acceptable, Unacceptable): track must
+   * be Draft (else 409) and the summary must exist (else 404).
    *
    * <p>Deliberately still 404s, and is deliberately no longer used by the main save/delete — both
    * sub-pages are reachable only from a SAVED Schedule 3 (legacy ALT-001, "The schedule has to be
    * saved before opening other costs"), so "no summary" there really is not-found. Defect #296
    * moved only the main page off this guard; see {@link #getOrCreateEditableSummary}.
    */
-  private SummaryRow requireEditableSummary(long millId, int year) {
-    requireDraft(millId, year);
+  private SummaryRow requireEditableSummary(long millId, int year, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     return repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
   }
 
   /**
-   * The Draft-gate guard for the create-on-absent main save path: the track must be Draft (else
-   * 409), and the category-"3" summary is created when absent, returning its id (defect #296 — the
-   * main Schedule 3 save never 404s). Mirrors {@code Schedule2Service.getOrCreateEditableSummary}.
+   * The editability-gate guard for the create-on-absent main save path: the caller must be
+   * permitted to write at the track's current status (else 409), and the category-"3" summary is
+   * created when absent, returning its id (defect #296 — the main Schedule 3 save never 404s).
+   * Mirrors {@code Schedule2Service.getOrCreateEditableSummary}.
    */
-  private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
-    requireDraftForUpdate(millId, year);
+  private int getOrCreateEditableSummary(
+      long millId, int year, String comments, EditableStatuses caller, String user) {
+    requireEditableForUpdate(millId, year, caller);
     return repository
         .findSummary(millId, year)
         .map(SummaryRow::summaryId)
         .orElseGet(() -> repository.insertSummary(millId, year, comments, user));
   }
 
-  /** The plain Draft gate (AD-9): the Schedules 1-10 track must be Draft, else 409. */
-  private void requireDraft(long millId, int year) {
-    if (!STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
+  /**
+   * The plain editability gate (AD-9): the caller must be permitted to write at the Schedules 1-10
+   * track's current status, else 409.
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
-   * The Draft gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
+   * The editability gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
    * report-status row so concurrent first-saves for the same mill/year serialize on it.
    * Load-bearing, not decoration: the real schema has no unique constraint on (year, mill,
    * category), so without the lock two concurrent first-saves can both see "not matched" in the
    * create MERGE and both insert a permanent duplicate. Only write paths call this, inside
    * {@code @Transactional}.
    */
-  private void requireDraftForUpdate(long millId, int year) {
-    if (!STATUS_DRAFT.equals(repository.findTrackStatusForUpdate(millId, year).orElse(null))) {
+  private String requireEditableForUpdate(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /** Upsert each entered fixed line: Harvest cost always; PO&P cost only for the PO&P lines. */
@@ -1372,5 +1565,84 @@ public class Schedule3Service {
 
   private static long nullToZero(Integer value) {
     return value == null ? 0L : value;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Original-value helpers (Story 16.2). One place per index shape, so a schedule with three
+  // different ways of addressing a cost row cannot key one of them wrongly.
+  // -------------------------------------------------------------------------------------------
+
+  /** Submitted cost-detail rows by cost item — the fixed lines and the two timber volumes. */
+  private static Map<Integer, CostDetailSnapshotRepository.Row> indexSnapshots(
+      List<CostDetailSnapshotRepository.Row> rows) {
+    Map<Integer, CostDetailSnapshotRepository.Row> byCode = new HashMap<>();
+    for (CostDetailSnapshotRepository.Row row : rows) {
+      if (row.costItemCode() != null) {
+        byCode.putIfAbsent(row.costItemCode(), row);
+      }
+    }
+    return byCode;
+  }
+
+  /**
+   * Submitted cost-detail rows by their own detail id — the sub-page rows, which all share one cost
+   * item (124 or 38) and so cannot be addressed by it.
+   */
+  private static Map<Integer, CostDetailSnapshotRepository.Row> indexSnapshotsByDetailId(
+      List<CostDetailSnapshotRepository.Row> rows) {
+    Map<Integer, CostDetailSnapshotRepository.Row> byId = new HashMap<>();
+    for (CostDetailSnapshotRepository.Row row : rows) {
+      if (row.detailId() != null) {
+        byId.putIfAbsent(row.detailId(), row);
+      }
+    }
+    return byId;
+  }
+
+  /** One field of one submitted row, or null when that row is not on file. */
+  private static <T> T snapshotField(
+      Map<Integer, CostDetailSnapshotRepository.Row> byId,
+      Integer detailId,
+      java.util.function.Function<CostDetailSnapshotRepository.Row, T> field) {
+    CostDetailSnapshotRepository.Row row = detailId == null ? null : byId.get(detailId);
+    return row == null ? null : field.apply(row);
+  }
+
+  /**
+   * One fixed line's submitted figures: its Harvest cost always, and its PO&amp;P cost only when
+   * the line HAS a stored PO&amp;P item. That is exactly {@code popCode != null}, so the three
+   * lines legacy left without a PO&amp;P original need no special case here — Annual Rents (29) and
+   * Silviculture Admin (37) force PO&amp;P to zero and Scaling (33) derives it from the
+   * timber-volume ratio, so none of the three has a PO&amp;P row to have submitted.
+   */
+  private Map<String, OriginalValue> lineOriginals(
+      String trackStatus,
+      LineSpec spec,
+      Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "harvest",
+                costOfSnapshot(snapshotByCode.get(spec.code())),
+                OriginalValueFormat.WHOLE);
+    if (spec.popCode() != null) {
+      builder.put(
+          "pop", costOfSnapshot(snapshotByCode.get(spec.popCode())), OriginalValueFormat.WHOLE);
+    }
+    return builder.build();
+  }
+
+  /** A submitted volume, for the two entered timber volumes. */
+  private Map<String, OriginalValue> volumeOriginal(
+      String trackStatus, CostDetailSnapshotRepository.Row snapshot) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("volume", snapshot == null ? null : snapshot.volume(), OriginalValueFormat.WHOLE)
+        .build();
+  }
+
+  private static Integer costOfSnapshot(CostDetailSnapshotRepository.Row row) {
+    return row == null ? null : row.cost();
   }
 }

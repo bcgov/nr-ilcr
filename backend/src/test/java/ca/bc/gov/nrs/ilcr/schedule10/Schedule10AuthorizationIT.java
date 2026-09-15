@@ -98,7 +98,7 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
 
   @Test
   @DisplayName("editable is server-authoritative — a non-Draft track is false for any caller")
-  void nonDraftTrackIsNotEditableForAnyCaller() throws Exception {
+  void nonDraftTrackEditabilityFollowsTheRole() throws Exception {
     // Mill 716 sits on track 'S'. Both production groups hold EDIT_SCHEDULE, so this proves the
     // flag follows the track status and not merely the caller's permissions (AD-9).
     mockMvc
@@ -117,9 +117,8 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
                 .param("year", SEEDED_YEAR)
                 .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isOk())
-        // Legacy would grant an admin edit at 'S', but no shipped schedule implements that path —
-        // it belongs to the AD-9/AR14 remediation (Story 11.1 deviation (g)). Pinned so the gap is
-        // visible rather than silently assumed.
-        .andExpect(jsonPath("$.editable", is(false)));
+        // An administrator DOES edit at 'S' — the ministry correction path. Legacy granted it on
+        // the same cell, and the shared editability component now implements the full matrix.
+        .andExpect(jsonPath("$.editable", is(true)));
   }
 }

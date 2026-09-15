@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
@@ -12,7 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +35,7 @@ class Schedule9ApiSurfaceTest {
 
   @Mock private Schedule9Service schedule9Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private MessageSource messageSource;
 
@@ -45,10 +45,11 @@ class Schedule9ApiSurfaceTest {
 
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     mockMvc =
         MockMvcBuilders.standaloneSetup(
                 new Schedule9Controller(
-                    millContextService, schedule9Service, permissions, messageSource))
+                    millContextService, schedule9Service, editability, messageSource))
             .build();
     lenient()
         .when(millContextService.validateMillYearActive(any(), any()))
@@ -58,12 +59,10 @@ class Schedule9ApiSurfaceTest {
     Schedule9Response dummyResponse =
         new Schedule9Response(700L, 2021, "D", true, List.of(), null, null);
     lenient()
-        .when(schedule9Service.addRecord(anyLong(), anyInt(), any(), anyBoolean(), any()))
+        .when(schedule9Service.addRecord(anyLong(), anyInt(), any(), any(), any()))
         .thenReturn(dummyResponse);
     lenient()
-        .when(
-            schedule9Service.updateRecord(
-                anyLong(), anyInt(), anyInt(), any(), anyBoolean(), any()))
+        .when(schedule9Service.updateRecord(anyLong(), anyInt(), anyInt(), any(), any(), any()))
         .thenReturn(dummyResponse);
   }
 

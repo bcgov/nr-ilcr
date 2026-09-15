@@ -92,12 +92,13 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
 
   /**
    * Same as {@link #findTrackStatus} but takes a row lock (Oracle {@code FOR UPDATE}) on the
-   * per-mill/year report-status row. The write-path Draft gate uses this so concurrent first-saves
-   * for the same mill/year serialize on this row: the first create inserts the category-{@code "2"}
-   * summary and commits (releasing the lock); the next writer then reads the now-committed summary
-   * so its {@link #mergeSummaryRow} is a no-op. This closes the create-on-absent duplicate-summary
-   * race the (real-schema) missing unique constraint would otherwise allow. Must run inside the
-   * write {@code @Transactional} to hold the lock until commit.
+   * per-mill/year report-status row. The write-path editability gate uses this so concurrent
+   * first-saves for the same mill/year serialize on this row: the first create inserts the
+   * category-{@code "2"} summary and commits (releasing the lock); the next writer then reads the
+   * now-committed summary so its {@link #mergeSummaryRow} is a no-op. This closes the
+   * create-on-absent duplicate-summary race the (real-schema) missing unique constraint would
+   * otherwise allow. Must run inside the write {@code @Transactional} to hold the lock until
+   * commit.
    */
   @Query(
       """

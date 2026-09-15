@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 5 logging camp (AD-12) — its descriptors, its twelve stored category amounts, the
@@ -61,4 +63,68 @@ public record Camp(
     CategoryAmount accessExpenseTotal,
     CategoryAmount campAndAccessTotal,
     int otherCampExpenseCount,
-    int otherAccessExpenseCount) {}
+    int otherAccessExpenseCount,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public Camp(
+      int campId,
+      int revisionCount,
+      String campName,
+      BigDecimal roadDistanceToOperatingArea,
+      Integer sizeOfCamp,
+      BigDecimal associatedCampVolume,
+      Boolean isolatedCamp,
+      String comments,
+      CategoryAmount cateringAndFood,
+      CategoryAmount wagesAndBenefits,
+      CategoryAmount depreciationLease,
+      CategoryAmount generalCampExpenses,
+      CategoryAmount otherCampExpenses,
+      CategoryAmount campSubTotal,
+      CategoryAmount recoveries,
+      CategoryAmount campTotal,
+      CategoryAmount crewTransportation,
+      CategoryAmount equipAndSuppliesLand,
+      CategoryAmount equipAndSuppliesRail,
+      CategoryAmount equipAndSuppliesAir,
+      CategoryAmount equipAndSuppliesWater,
+      CategoryAmount otherAccessExpenses,
+      CategoryAmount accessExpenseTotal,
+      CategoryAmount campAndAccessTotal,
+      int otherCampExpenseCount,
+      int otherAccessExpenseCount) {
+    this(
+        campId,
+        revisionCount,
+        campName,
+        roadDistanceToOperatingArea,
+        sizeOfCamp,
+        associatedCampVolume,
+        isolatedCamp,
+        comments,
+        cateringAndFood,
+        wagesAndBenefits,
+        depreciationLease,
+        generalCampExpenses,
+        otherCampExpenses,
+        campSubTotal,
+        recoveries,
+        campTotal,
+        crewTransportation,
+        equipAndSuppliesLand,
+        equipAndSuppliesRail,
+        equipAndSuppliesAir,
+        equipAndSuppliesWater,
+        otherAccessExpenses,
+        accessExpenseTotal,
+        campAndAccessTotal,
+        otherCampExpenseCount,
+        otherAccessExpenseCount,
+        null);
+  }
+}

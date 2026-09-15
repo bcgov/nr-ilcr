@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecord;
@@ -14,6 +17,8 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest.CheckEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -45,6 +51,14 @@ class Schedule6CheckStatusServiceTest {
   // Unused by the PAYLOAD tests — checkStatus(millId, year, request) never touches the repository,
   // which one of them asserts outright. The Story 15.0 stored-path tests at the bottom stub it.
   @Mock private Schedule6Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule6Service service;
 
@@ -380,7 +394,8 @@ class Schedule6CheckStatusServiceTest {
     when(repository.findTsaNumbers(MILL, YEAR)).thenReturn(List.of());
     when(repository.findSupplyBlocks(MILL, YEAR)).thenReturn(List.of());
 
-    List<RoadRecord> served = service.getSchedule6(MILL, YEAR, true).roadRecords();
+    List<RoadRecord> served =
+        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords();
     // Force the ISSUES branch so every candidate appears in the response (the MET branch emits no
     // per-record results at all, so it could not carry this comparison).
     List<RoadRecordCheckResult> checked = service.checkStatusStored(MILL, YEAR).records();

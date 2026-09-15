@@ -36,7 +36,8 @@ public class SchedulePermissions {
             Action.OPEN_REPORTING_YEAR,
             Action.EDIT_HOME_CONTENT,
             Action.MAINTAIN_USERS,
-            Action.GENERATE_MILL_REPORTS));
+            Action.GENERATE_MILL_REPORTS,
+            Action.MAINTAIN_MILLS));
     ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
   }
 

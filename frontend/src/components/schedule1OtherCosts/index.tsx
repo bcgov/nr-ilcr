@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type { OtherCostsDocument } from '@/interfaces/OtherCosts'
 import { useNavigate } from '@tanstack/react-router'
@@ -37,6 +38,9 @@ const OtherCostsPage: FC = () => {
         id: r.id,
         description: r.description,
         values: { cost: numStrGroup(r.cost) },
+        // The Licensee's submitted description and cost for this row (Story 16.2, BR-04) — the two
+        // fields legacy's row template flagged (schedule1OtherCosts.xhtml).
+        originals: r.originalValues,
       })),
     validate: (description, values) => validateOtherCost(description, values.cost),
     onBack: () => navigate({ to: '/schedule-1' }),
@@ -108,6 +112,13 @@ const OtherCostsPage: FC = () => {
                     invalid={Boolean(errs.description)}
                     invalidText={errs.description}
                   />
+                  <OriginalValueIndicator
+                    originals={row.originals}
+                    field="description"
+                    current={row.description}
+                    numeric={false}
+                    label="Description"
+                  />
                 </TableCell>
                 <TableCell className="schedule-1__num">{fmtNumber(volume)}</TableCell>
                 <TableCell className="schedule-1__num schedule-1__num--input">
@@ -122,6 +133,12 @@ const OtherCostsPage: FC = () => {
                     onBlur={() => setRowValue(row.key, 'cost', groupInput(row.values.cost ?? ''))}
                     invalid={Boolean(errs.cost)}
                     invalidText={errs.cost}
+                  />
+                  <OriginalValueIndicator
+                    originals={row.originals}
+                    field="cost"
+                    current={row.values.cost ?? ''}
+                    label="Cost"
                   />
                 </TableCell>
                 <TableCell className="schedule-1__num">
@@ -143,10 +160,25 @@ const OtherCostsPage: FC = () => {
           }
           return (
             <>
-              <TableCell>{row.description}</TableCell>
+              <TableCell>
+                {row.description}
+                <OriginalValueIndicator
+                  originals={row.originals}
+                  field="description"
+                  current={row.description}
+                  numeric={false}
+                  label="Description"
+                />
+              </TableCell>
               <TableCell className="schedule-1__num">{fmtNumber(volume)}</TableCell>
               <TableCell className="schedule-1__num">
                 {fmtNumber(toNum(row.values.cost ?? ''))}
+                <OriginalValueIndicator
+                  originals={row.originals}
+                  field="cost"
+                  current={row.values.cost ?? ''}
+                  label="Cost"
+                />
               </TableCell>
               <TableCell className="schedule-1__num">
                 {fmtCurrency(perUnitOf(row.values.cost ?? ''))}

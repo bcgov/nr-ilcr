@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,7 +16,8 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +46,7 @@ class Schedule2ControllerTest {
 
   @Mock private Schedule2Service schedule2Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private MessageSource messageSource;
 
@@ -60,11 +62,12 @@ class Schedule2ControllerTest {
    */
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     controller =
         new Schedule2Controller(
             millContextService,
             schedule2Service,
-            permissions,
+            editability,
             messageSource,
             new Schedule2CheckStatusResolver(schedule2Service, messageSource));
   }
@@ -72,8 +75,8 @@ class Schedule2ControllerTest {
   @Test
   void getSchedule2_validatesContext_derivesEditFlag_andReturnsDocument() {
     Schedule2Response doc = mock(Schedule2Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule2Service.getSchedule2(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule2Service.getSchedule2(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
     ResponseEntity<Schedule2Response> response =
         controller.getSchedule2(MILL_ID, YEAR, authentication);
@@ -89,9 +92,10 @@ class Schedule2ControllerTest {
     Schedule2Request request = mock(Schedule2Request.class);
     Schedule2Response saved = mock(Schedule2Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule2Service.saveSchedule2(MILL_ID, YEAR, request, true, "dev-admin"))
+    when(schedule2Service.saveSchedule2(
+            MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     when(messageSource.getMessage(
             eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
@@ -107,7 +111,7 @@ class Schedule2ControllerTest {
 
   @Test
   void deleteSchedule2_removedARow_returnsDeletedMessage() {
-    when(schedule2Service.deleteSchedule2(MILL_ID, YEAR)).thenReturn(true);
+    when(schedule2Service.deleteSchedule2(MILL_ID, YEAR, CallerRights.SUBMITTER)).thenReturn(true);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
@@ -120,7 +124,7 @@ class Schedule2ControllerTest {
     assertEquals("dataDeletedSuccesfullyInfoMsg", response.getBody().message().key());
     assertEquals("Data deleted successfully", response.getBody().message().text());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
-    verify(schedule2Service).deleteSchedule2(MILL_ID, YEAR);
+    verify(schedule2Service).deleteSchedule2(MILL_ID, YEAR, CallerRights.SUBMITTER);
   }
 
   /**
@@ -131,7 +135,7 @@ class Schedule2ControllerTest {
    */
   @Test
   void deleteSchedule2_removedNothing_returnsNoDataToDeleteMessage() {
-    when(schedule2Service.deleteSchedule2(MILL_ID, YEAR)).thenReturn(false);
+    when(schedule2Service.deleteSchedule2(MILL_ID, YEAR, CallerRights.SUBMITTER)).thenReturn(false);
     when(messageSource.getMessage(eq("noDataToDeleteInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("No saved data was found, so nothing was deleted");
 

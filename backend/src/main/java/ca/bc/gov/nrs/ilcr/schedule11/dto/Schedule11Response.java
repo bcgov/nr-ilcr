@@ -15,8 +15,11 @@ import java.util.List;
  * @param trackStatus the silviculture track code ({@code D}/{@code S}/{@code V} live; dead {@code
  *     O} passes through read-only per A-8); null when the status row's code column is null (legacy
  *     renders "Not Initiated" — display text is 25.3's concern)
- * @param editable caller holds {@code EDIT_SCHEDULE} AND the silviculture track is Draft (AD-5; the
- *     1–10 track never affects this — S10)
+ * @param editable caller holds {@code EDIT_SCHEDULE} AND the role×status matrix admits it at the
+ *     silviculture track's status — submitter at Draft, administrator at Submitted or Verified
+ *     (AD-5; {@link ca.bc.gov.nrs.ilcr.security.ScheduleEditability}). The 1–10 track never affects
+ *     this — S10; the matrix takes the status as a parameter and this schedule supplies its own
+ *     track's, so the two tracks cannot bleed into each other
  * @param revisionCount ALWAYS null: no {@code ILCR_REPORT_SUMMARY} row exists for this list
  *     schedule; 25.2 keys concurrency per-row on {@code BASIC_SILVICULTURE_REPORT.REVISION_COUNT}
  *     (recorded AR11 keying delta)

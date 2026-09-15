@@ -106,9 +106,9 @@ public interface Schedule7aApi {
       Authentication authentication);
 
   /**
-   * Delete one bridge and its cost children (S04/S05). Draft-gated. Unknown id → 404. The success
-   * {@code message} is SUC-002 when bridges remain, or SUC-003 (empty schedule) when it was the
-   * last.
+   * Delete one bridge and its cost children (S04/S05). editability-gated. Unknown id → 404. The
+   * success {@code message} is SUC-002 when bridges remain, or SUC-003 (empty schedule) when it was
+   * the last.
    *
    * @param id the bridge id to delete
    * @param millId the raw mill id param
@@ -125,8 +125,8 @@ public interface Schedule7aApi {
 
   /**
    * Check Status for Schedule 7A (BR-08, S29) — read-only validation, mutates nothing, NOT
-   * Draft-gated ({@code VIEW_SCHEDULE}). Flags each missing required value per bridge; returns the
-   * per-bridge and schedule-wide all-met messages when complete.
+   * editability-gated ({@code VIEW_SCHEDULE}). Flags each missing required value per bridge;
+   * returns the per-bridge and schedule-wide all-met messages when complete.
    *
    * @param millId the raw mill id param
    * @param year the raw reporting year param

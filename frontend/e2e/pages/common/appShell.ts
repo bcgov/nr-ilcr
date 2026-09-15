@@ -1,5 +1,7 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 
+import { seedMockUser } from './mockUser';
+
 /**
  * App-shell smoke page object — the persistent Layout chrome (Carbon Header, mock-user selector, primary
  * side-nav) that renders CLIENT-SIDE with NO backend / delivery-DB dependency. Mirrors the app team's
@@ -23,8 +25,19 @@ export class AppShellPage {
     return this.page.getByRole('combobox', { name: 'Mock user' });
   }
 
-  /** Open the app with the backend unreachable (all `/api` aborted); assert the header mounted. */
+  /**
+   * Open the app with the backend unreachable (all `/api` aborted); assert the header mounted.
+   *
+   * AS THE ADMINISTRATOR, and this scenario is the ONLY place in the suite that is: the nav
+   * assertion covers `Generate Reports`, which is `adminOnly: true` in `routes/-navigation.ts`, so
+   * a submitter would not render it at all. Stated here as a precondition rather than inherited
+   * from whichever user `MOCK_USERS[0]` happens to be — that inheritance is exactly what silently
+   * ran the whole suite as an administrator for a month (see `pages/common/mockUser.ts`). The
+   * global `page` fixture seeds the submitter first; init scripts run in the order they were
+   * added, so this later call wins.
+   */
   async openWithoutBackend(): Promise<void> {
+    await seedMockUser(this.page, 'admin');
     await this.page.route('**/api/**', (route) => route.abort());
     await this.page.goto('/');
     await expect(this.header).toBeVisible();

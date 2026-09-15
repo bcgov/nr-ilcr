@@ -1,12 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 5 tables (AD-3): explicit
@@ -180,9 +183,9 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
 
   /**
    * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
-   * per-mill/year report-status row. Every WRITE path's Draft gate uses this one; the read path
-   * keeps the unlocked variant. Copied from Schedule 2, which introduced it for the same reason
-   * ({@code Schedule2Repository.java:90-106}).
+   * per-mill/year report-status row. Every WRITE path's editability gate uses this one; the read
+   * path keeps the unlocked variant. Copied from Schedule 2, which introduced it for the same
+   * reason ({@code Schedule2Repository.java:90-106}).
    *
    * <p><strong>It is the concurrency backstop that Schedule 5's schema cannot provide.</strong>
    * This project owns no DDL on {@code THE} — there are no {@code src/main/resources/db/migration}
@@ -196,8 +199,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * <ul>
    *   <li>BR-02's count-then-insert ({@code Schedule5Service.addCamp}) — two concurrent creates of
    *       the same name can no longer both count zero and both commit;
-   *   <li>the Draft gate itself — the status this returns cannot transition between the gate and
-   *       the INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than
+   *   <li>the editability gate itself — the status this returns cannot transition between the gate
+   *       and the INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than
    *       binding;
    *   <li>{@link #upsertCostDetail}'s update-then-insert — two concurrent first-edits of one camp
    *       can no longer both find zero rows and both insert a row for the same item id, which is
@@ -726,4 +729,49 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
       """)
   int deleteSubPageRow(
       @Param("rowId") int rowId, @Param("campId") int campId, @Param("itemId") int itemId);
+
+  /**
+   * One submitted camp from {@code THE.CAMP_REPORT_S_VW} — the licensee's own camp attributes
+   * (Story 16.2, BR-04). {@code isolatedCampInd} is the stored {@code Y}/{@code N}.
+   */
+  record CampSnapshotRow(
+      int campId,
+      String campName,
+      BigDecimal distanceToOperatingArea,
+      Integer sizeOfCamp,
+      BigDecimal associatedCampVolume,
+      String isolatedCampInd,
+      String comments) {}
+
+  /** Every submitted camp for a mill/year (category "5"). */
+  @Query(
+      value =
+          """
+      SELECT CAMP_REPORT_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY,
+             ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS
+        FROM THE.CAMP_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = CampSnapshotRowMapper.class)
+  List<CampSnapshotRow> findCampSnapshots(@Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code CAMP_REPORT_S_VW} row. */
+  class CampSnapshotRowMapper implements RowMapper<CampSnapshotRow> {
+    @Override
+    public CampSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      int size = rs.getInt("CAMP_SIZE_CAPACITY");
+      // Captured immediately: wasNull() reports on the LAST column read, so asking after the
+      // getBigDecimal below would answer for the distance instead.
+      Integer sizeOfCamp = rs.wasNull() ? null : size;
+      return new CampSnapshotRow(
+          rs.getInt("CAMP_REPORT_ID"),
+          rs.getString("CAMP_NAME"),
+          rs.getBigDecimal("DISTANCE_TO_OPERATING_AREA"),
+          sizeOfCamp,
+          rs.getBigDecimal("ASSOCIATED_CAMP_VOLUME"),
+          rs.getString("ISOLATED_CAMP_IND"),
+          rs.getString("COMMENTS"));
+    }
+  }
 }

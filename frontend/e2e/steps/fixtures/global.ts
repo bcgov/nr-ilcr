@@ -2,6 +2,7 @@ import { test as base } from 'playwright-bdd';
 
 import { HomePage } from '../../pages/common/homePage';
 import { AppShellPage } from '../../pages/common/appShell';
+import { seedMockUser } from '../../pages/common/mockUser';
 import { type ScheduleKey } from '../../fixtures/sch1/schedule1-test-data';
 
 /**
@@ -125,6 +126,30 @@ export type GlobalFixtures = {
 };
 
 export const globalTest = base.extend<GlobalFixtures>({
+  /**
+   * THE SUITE'S IDENTITY, declared once for every scenario: `ILCR_SUBMITTER`, the legacy
+   * ILCR_LICENSEE that all twelve feature files name in their "As a Licensee" role line. Under the
+   * role x status matrix (Story 16.1) this is the only role that may edit a Draft, which is the
+   * track every write scenario runs on — and, symmetrically, the role for which the non-Draft
+   * anchors really are read-only, as `render-states.feature` asserts.
+   *
+   * Overriding `page` rather than adding a step is deliberate: the identity is a property of the
+   * browser, not of any one Given, and several page objects navigate directly (`openWithNoContext`
+   * seeds its own init script and calls `page.goto`) without passing through a shared entry point.
+   * See `pages/common/mockUser.ts` for how the choice reaches the backend and why it is seeded
+   * instead of inherited from `MOCK_USERS[0]`. A scenario that needs the administrator calls
+   * `seedMockUser(page, 'admin')` itself — `pages/common/appShell.ts` is the one that does.
+   */
+  page: async ({ page }, use) => {
+    // No exception any more: since bcgov/nr-ilcr#385 the mock principal carries a directory GUID
+    // that is associated with the mills in both e2e databases, so Home offers the submitter its
+    // OWN scoped list. This used to also install `grantAdminOnMillList`, which borrowed the
+    // administrator for `GET /api/v1/mills` because a mock submitter was offered no mill at all —
+    // see `pages/common/mockUser.ts` for why that is gone and what it had cost.
+    await seedMockUser(page, 'submitter');
+    await use(page);
+  },
+
   homePage: async ({ page }, use) => {
     await use(new HomePage(page));
   },

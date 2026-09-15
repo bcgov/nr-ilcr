@@ -4,11 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -37,6 +43,14 @@ class Schedule2CheckStatusServiceTest {
 
   @Mock private Schedule3Service schedule3Service;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
   @InjectMocks private Schedule2Service service;
 
   private void stubCrossScheduleAbsent(
@@ -45,7 +59,9 @@ class Schedule2CheckStatusServiceTest {
     summary.ifPresent(
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
-    lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(Optional.empty());
     lenient()
         .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
         .thenReturn(Optional.empty());

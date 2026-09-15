@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,11 +20,13 @@ import ca.bc.gov.nrs.ilcr.assignment.dto.SubmitterAccount;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
@@ -43,7 +46,9 @@ class AssignmentServiceTest {
   private final IlcrUserRepository users = mock(IlcrUserRepository.class);
   private final MillUserXrefRepository assignments = mock(MillUserXrefRepository.class);
   private final MillContextRepository mills = mock(MillContextRepository.class);
-  private final AssignmentService service = new AssignmentService(users, assignments, mills);
+  private final MillMaintenanceRepository millStatus = mock(MillMaintenanceRepository.class);
+  private final AssignmentService service =
+      new AssignmentService(users, assignments, mills, millStatus);
 
   @Test
   @DisplayName("a lost insert race reports the already-assigned warning, never a server error")
@@ -84,6 +89,7 @@ class AssignmentServiceTest {
   void closedMillBlocksRevivalBeforeWriting() {
     when(mills.findSelectableMillById(MILL))
         .thenReturn(Optional.of(new MillSummary(MILL, "0001", "Closed Mill", "CLS")));
+    when(millStatus.lockStatusCode(MILL)).thenReturn(Optional.of("CLS"));
     when(users.findUser(GUID)).thenReturn(Optional.of(account()));
     when(assignments.findAssignment(MILL, GUID)).thenReturn(Optional.of(endedAssignment()));
 
@@ -91,6 +97,42 @@ class AssignmentServiceTest {
 
     verify(assignments, never())
         .reactivateAssignment(anyLong(), anyString(), anyInt(), anyString());
+  }
+
+  @Test
+  @DisplayName("a revive guards on the LOCKED mill status, not the one it displayed")
+  void revivalGuardsOnTheLockedStatus() {
+    // The two reads disagree on purpose: the display read still says ACT while the locked read says
+    // CLS, which is the state a mill closed between them leaves behind. Guarding on the display
+    // read would revive an assignment onto a closed mill — the BR-01 window the row lock closes,
+    // since the deactivation side locks this same row before reading its own guard.
+    activeMill();
+    when(millStatus.lockStatusCode(MILL)).thenReturn(Optional.of("CLS"));
+    when(users.findUser(GUID)).thenReturn(Optional.of(account()));
+    when(assignments.findAssignment(MILL, GUID)).thenReturn(Optional.of(endedAssignment()));
+
+    assertThrows(MillNotActiveException.class, () -> service.assign(MILL, GUID, ADMIN));
+
+    verify(assignments, never())
+        .reactivateAssignment(anyLong(), anyString(), anyInt(), anyString());
+  }
+
+  @Test
+  @DisplayName("a revive takes the mill row lock before it writes")
+  void revivalLocksBeforeWriting() {
+    activeMill();
+    when(users.findUser(GUID)).thenReturn(Optional.of(account()));
+    when(assignments.findAssignment(MILL, GUID))
+        .thenReturn(Optional.of(endedAssignment()))
+        .thenReturn(Optional.of(activeAssignment()));
+    when(assignments.reactivateAssignment(MILL, GUID, 1, ADMIN)).thenReturn(1);
+
+    service.assign(MILL, GUID, ADMIN);
+
+    // Locking after the write would serialize nothing against a concurrent mill closure.
+    InOrder serialized = inOrder(millStatus, assignments);
+    serialized.verify(millStatus).lockStatusCode(MILL);
+    serialized.verify(assignments).reactivateAssignment(MILL, GUID, 1, ADMIN);
   }
 
   @Test
@@ -218,9 +260,15 @@ class AssignmentServiceTest {
     verify(assignments, never()).insertActiveAssignment(anyLong(), anyString(), anyString());
   }
 
+  /**
+   * An active mill, seen the same way through both reads the revive path makes: the display lookup
+   * and the locked status read the closed-mill guard actually consults. A test that wants the two
+   * to disagree — the concurrent-closure case — re-stubs the locked read.
+   */
   private void activeMill() {
     when(mills.findSelectableMillById(MILL))
         .thenReturn(Optional.of(new MillSummary(MILL, "0001", "Active Mill", "ACT")));
+    when(millStatus.lockStatusCode(MILL)).thenReturn(Optional.of("ACT"));
   }
 
   private static IlcrUserEntity account() {

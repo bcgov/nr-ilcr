@@ -19,11 +19,16 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -65,6 +71,14 @@ class Schedule7bServiceTest {
 
   @Mock private Schedule7bRepository repository;
   @Mock private MessageSource messageSource;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
   @InjectMocks private Schedule7bService service;
 
   @BeforeEach
@@ -145,7 +159,8 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
 
-      Culvert culvert = service.getSchedule7b(MILL, YEAR, true).culverts().getFirst();
+      Culvert culvert =
+          service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts().getFirst();
 
       assertThat(culvert.materialCost()).isEqualTo(4000);
       assertThat(culvert.installCost()).isEqualTo(1500);
@@ -159,7 +174,12 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 900, null));
 
-      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts().getFirst().totalCost())
+      assertThat(
+              service
+                  .getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER)
+                  .culverts()
+                  .getFirst()
+                  .totalCost())
           .isEqualTo(900);
     }
 
@@ -170,7 +190,12 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, null, null));
 
-      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts().getFirst().totalCost())
+      assertThat(
+              service
+                  .getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER)
+                  .culverts()
+                  .getFirst()
+                  .totalCost())
           .isNull();
     }
 
@@ -183,7 +208,8 @@ class Schedule7bServiceTest {
       when(repository.findCostDetails(MILL, YEAR))
           .thenReturn(List.of(cost(1, 7801, 78, 1500), cost(2, 7801, 77, 4000)));
 
-      Culvert culvert = service.getSchedule7b(MILL, YEAR, true).culverts().getFirst();
+      Culvert culvert =
+          service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts().getFirst();
 
       assertThat(culvert.materialCost()).isEqualTo(4000);
       assertThat(culvert.installCost()).isEqualTo(1500);
@@ -197,7 +223,7 @@ class Schedule7bServiceTest {
           .thenReturn(List.of(completeRound(7801), completeRound(7802), completeRound(7803)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
-      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts())
+      assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts())
           .extracting(Culvert::rowCounter)
           .containsExactly(1, 2, 3);
     }
@@ -210,7 +236,12 @@ class Schedule7bServiceTest {
           .thenReturn(List.of(row(7801, "R", 1200, 900, new BigDecimal("12"), 3, null)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
-      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts().getFirst().length())
+      assertThat(
+              service
+                  .getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER)
+                  .culverts()
+                  .getFirst()
+                  .length())
           .isEqualByComparingTo("12.0")
           .hasToString("12.0");
     }
@@ -222,7 +253,7 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
-      Schedule7bResponse document = service.getSchedule7b(MILL, YEAR, true);
+      Schedule7bResponse document = service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER);
 
       assertThat(document.codeLists().culvertTypes()).isEqualTo(TYPES);
       verify(repository).culvertTypeOptions(YEAR);
@@ -235,11 +266,11 @@ class Schedule7bServiceTest {
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-      assertThat(service.getSchedule7b(MILL, YEAR, true).editable()).isTrue();
-      assertThat(service.getSchedule7b(MILL, YEAR, false).editable()).isFalse();
+      assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).editable()).isTrue();
+      assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.NONE).editable()).isFalse();
 
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
-      assertThat(service.getSchedule7b(MILL, YEAR, true).editable()).isFalse();
+      assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).editable()).isFalse();
     }
 
     @Test
@@ -249,7 +280,7 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
-      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts()).isEmpty();
+      assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts()).isEmpty();
     }
   }
 
@@ -535,7 +566,7 @@ class Schedule7bServiceTest {
       draft();
       when(repository.nextCulvertReportId()).thenReturn(9501L);
 
-      service.addCulvert(MILL, YEAR, validRequest(null), true, USER);
+      service.addCulvert(MILL, YEAR, validRequest(null), CallerRights.SUBMITTER, USER);
 
       verify(repository)
           .insertCulvert(any(CulvertReportEntity.class), eq(MILL), eq(YEAR), eq(USER));
@@ -553,7 +584,7 @@ class Schedule7bServiceTest {
           MILL,
           YEAR,
           request("R", 1200, 900, new BigDecimal("12.5"), 3, null, null, null, null),
-          true,
+          CallerRights.SUBMITTER,
           USER);
 
       verify(repository).upsertCost(9501L, 77, null, USER);
@@ -569,16 +600,18 @@ class Schedule7bServiceTest {
       CulvertSaveAllRequest batch =
           new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(1L, corrected)));
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 1L, corrected, true, USER))
+      assertThatThrownBy(
+              () -> service.updateCulvert(MILL, YEAR, 1L, corrected, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
-      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 1L, true))
+      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 1L, CallerRights.SUBMITTER))
           .isInstanceOf(ScheduleNotEditableException.class);
       // The page-level Save must be gated too — it was the one write verb the gate was never
       // asserted on, so deleting requireDraft() from saveAllCulverts left the suite green while a
       // Submitted report could be mutated wholesale.
-      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
+      assertThatThrownBy(
+              () -> service.saveAllCulverts(MILL, YEAR, batch, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
 
       verify(repository, never()).insertCulvert(any(), anyLong(), anyInt(), anyString());
@@ -592,7 +625,7 @@ class Schedule7bServiceTest {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
       CulvertRequest added = validRequest(null);
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
     }
 
@@ -603,7 +636,8 @@ class Schedule7bServiceTest {
       CulvertRequest retiredType =
           request("XOLD", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, null, null);
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, retiredType, true, USER))
+      assertThatThrownBy(
+              () -> service.addCulvert(MILL, YEAR, retiredType, CallerRights.SUBMITTER, USER))
           .isInstanceOf(InvalidCulvertTypeException.class);
 
       verify(repository, never()).insertCulvert(any(), anyLong(), anyInt(), anyString());
@@ -621,9 +655,11 @@ class Schedule7bServiceTest {
       CulvertSaveAllRequest batch =
           new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(7801L, bad)));
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, bad, true, USER))
+      assertThatThrownBy(
+              () -> service.updateCulvert(MILL, YEAR, 7801L, bad, CallerRights.SUBMITTER, USER))
           .isInstanceOf(InvalidCulvertTypeException.class);
-      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
+      assertThatThrownBy(
+              () -> service.saveAllCulverts(MILL, YEAR, batch, CallerRights.SUBMITTER, USER))
           .isInstanceOf(InvalidCulvertTypeException.class);
 
       verify(repository, never()).updateCulvert(any(), anyLong(), anyInt(), anyInt(), anyString());
@@ -643,7 +679,7 @@ class Schedule7bServiceTest {
       CulvertRequest unchangedType =
           request("XOLD", 1300, 900, new BigDecimal("12.5"), 3, 4000, 1500, null, 0);
 
-      service.updateCulvert(MILL, YEAR, 7801L, unchangedType, true, USER);
+      service.updateCulvert(MILL, YEAR, 7801L, unchangedType, CallerRights.SUBMITTER, USER);
 
       verify(repository).updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER));
     }
@@ -660,13 +696,13 @@ class Schedule7bServiceTest {
           MILL,
           YEAR,
           request("R", 1200, 900, new BigDecimal("12.50"), 3, 4000, 1500, null, null),
-          true,
+          CallerRights.SUBMITTER,
           USER);
       service.addCulvert(
           MILL,
           YEAR,
           request("R", 1200, 900, new BigDecimal("12.55"), 3, 4000, 1500, null, null),
-          true,
+          CallerRights.SUBMITTER,
           USER);
 
       var captor = org.mockito.ArgumentCaptor.forClass(CulvertReportEntity.class);
@@ -684,7 +720,9 @@ class Schedule7bServiceTest {
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
       CulvertRequest corrected = validRequest(0);
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
+      assertThatThrownBy(
+              () ->
+                  service.updateCulvert(MILL, YEAR, 7801L, corrected, CallerRights.SUBMITTER, USER))
           .isInstanceOf(StaleRevisionException.class);
     }
 
@@ -694,7 +732,9 @@ class Schedule7bServiceTest {
       draft();
       CulvertRequest corrected = validRequest(0);
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
+      assertThatThrownBy(
+              () ->
+                  service.updateCulvert(MILL, YEAR, 7801L, corrected, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CulvertNotFoundException.class);
 
       verify(repository, never()).updateCulvert(any(), anyLong(), anyInt(), anyInt(), anyString());
@@ -712,7 +752,9 @@ class Schedule7bServiceTest {
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(0);
       CulvertRequest corrected = validRequest(0);
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
+      assertThatThrownBy(
+              () ->
+                  service.updateCulvert(MILL, YEAR, 7801L, corrected, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CulvertNotFoundException.class);
     }
 
@@ -726,7 +768,10 @@ class Schedule7bServiceTest {
       CulvertRequest retiredType =
           request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, "ok", 0);
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, retiredType, true, USER))
+      assertThatThrownBy(
+              () ->
+                  service.updateCulvert(
+                      MILL, YEAR, 7801L, retiredType, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CulvertNotFoundException.class);
     }
 
@@ -742,7 +787,8 @@ class Schedule7bServiceTest {
                       9999L,
                       request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, "ok", 0))));
 
-      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
+      assertThatThrownBy(
+              () -> service.saveAllCulverts(MILL, YEAR, batch, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CulvertNotFoundException.class);
     }
 
@@ -753,7 +799,7 @@ class Schedule7bServiceTest {
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
       when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(1);
 
-      service.deleteCulvert(MILL, YEAR, 7801L, true);
+      service.deleteCulvert(MILL, YEAR, 7801L, CallerRights.SUBMITTER);
 
       // Order is the whole point: THE.ILCR_COST_REPORT_DETAIL carries ILCR_LCRD_CLV_RPT_FK on
       // CULVERT_REPORT_ID with DELETE_RULE = NO ACTION, so a parent-first delete raises ORA-02292
@@ -771,7 +817,7 @@ class Schedule7bServiceTest {
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
       when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(0);
 
-      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, true))
+      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, CallerRights.SUBMITTER))
           .isInstanceOf(CulvertNotFoundException.class);
     }
 
@@ -783,7 +829,7 @@ class Schedule7bServiceTest {
       // because the cost delete keys on the culvert id alone.
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(0);
 
-      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, true))
+      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, CallerRights.SUBMITTER))
           .isInstanceOf(CulvertNotFoundException.class);
 
       verify(repository, never()).deleteCostsForCulvert(anyLong());
@@ -800,7 +846,8 @@ class Schedule7bServiceTest {
                   new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
                   new CulvertSaveAllRequest.Item(7801L, validRequest(0))));
 
-      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
+      assertThatThrownBy(
+              () -> service.saveAllCulverts(MILL, YEAR, batch, CallerRights.SUBMITTER, USER))
           .isInstanceOf(DuplicateCulvertException.class);
 
       verify(repository, never()).updateCulvert(any(), anyLong(), anyInt(), anyInt(), anyString());
@@ -818,7 +865,7 @@ class Schedule7bServiceTest {
                   new CulvertSaveAllRequest.Item(7802L, validRequest(0)),
                   new CulvertSaveAllRequest.Item(7803L, validRequest(0))));
 
-      service.saveAllCulverts(MILL, YEAR, batch, true, USER);
+      service.saveAllCulverts(MILL, YEAR, batch, CallerRights.SUBMITTER, USER);
 
       // Once for the batch validation + once for the echoed document = 2, not 1-per-culvert.
       verify(repository, times(2)).culvertTypeOptions(YEAR);
@@ -834,7 +881,7 @@ class Schedule7bServiceTest {
           .insertCulvert(any(), anyLong(), anyInt(), anyString());
       CulvertRequest added = validRequest(null);
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotSavedException.class);
     }
 
@@ -844,12 +891,68 @@ class Schedule7bServiceTest {
       draft();
       when(repository.nextCulvertReportId()).thenReturn(9501L);
 
-      Schedule7bResponse echoed = service.addCulvert(MILL, YEAR, validRequest(null), true, USER);
+      Schedule7bResponse echoed =
+          service.addCulvert(MILL, YEAR, validRequest(null), CallerRights.SUBMITTER, USER);
 
       assertThat(echoed.trackStatus()).isEqualTo("D");
       assertThat(echoed.editable()).isTrue();
       // Exactly one status read: the Draft gate. The echo must not issue a second one.
       verify(repository, times(1)).findTrackStatus(MILL, YEAR);
+    }
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a culvert carries the eight keys legacy renders, and no total")
+    void beyondDraftServesTheSubmittedFigures() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
+      when(repository.findCulvertSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule7bRepository.CulvertSnapshotRow(
+                      7801L, "C", 900, 600, new BigDecimal("12.5"), 4, "as submitted")));
+      when(costSnapshots.findByCulvertReports(List.of(7801L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 7801L, 77, null, 3000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 7801L, 78, null, 1200, null, null)));
+
+      Culvert culvert = service.getSchedule7b(MILL, YEAR, CallerRights.ADMIN).culverts().getFirst();
+
+      // The parity decision, asserted as a SET: legacy draws an indicator on each of these nine
+      // fields and none on the derived Total (schedule7B.xhtml:315-516).
+      assertThat(culvert.originalValues())
+          .containsOnlyKeys(
+              "culvertTypeCode",
+              "spanSize",
+              "riseSize",
+              "length",
+              "culvertPieceCount",
+              "materialCost",
+              "installCost",
+              "comments");
+      assertThat(culvert.originalValues().get("materialCost").value()).isEqualTo("3000");
+      assertThat(culvert.originalValues().get("length").tooltip())
+          .isEqualTo("Original Submission Value: 12.5");
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
+
+      Culvert culvert =
+          service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts().getFirst();
+
+      assertThat(culvert.originalValues()).isNull();
+      verify(repository, never()).findCulvertSnapshots(anyLong(), anyInt());
     }
   }
 }

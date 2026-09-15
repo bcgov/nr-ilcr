@@ -5,15 +5,20 @@ import static ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bRepository.ITEM_MATERIAL;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -59,8 +64,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule7bService {
 
-  private static final String STATUS_DRAFT = "D";
-
   /** Legacy {@code Constant.CULVERT_TYPE_CODES.R} — the only type that requires a span (BR-07). */
   private static final String TYPE_ROUND = "R";
 
@@ -73,11 +76,27 @@ public class Schedule7bService {
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule7bRepository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
   private final MessageSource messageSource;
 
-  public Schedule7bService(Schedule7bRepository repository, MessageSource messageSource) {
+  /**
+   * Constructs the Schedule 7B service.
+   *
+   * @param repository the repository
+   * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule7bService(
+      Schedule7bRepository repository,
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   // ===============================================================================================
@@ -90,31 +109,59 @@ public class Schedule7bService {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (never inlined)
-   * @return the document with server-computed totals and Draft-gated editability
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (never inlined)
+   * @return the document with server-computed totals and editability-gated editability
    */
   @Transactional(readOnly = true)
-  public Schedule7bResponse getSchedule7b(long millId, int year, boolean callerMayEdit) {
+  public Schedule7bResponse getSchedule7b(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Assemble the served document for a known track status (writes reuse it with their proven "D").
+   * Assemble the served document for a known track status (writes reuse it with the status their
+   * gate proved).
    */
   private Schedule7bResponse buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     List<CulvertReportEntity> rows = repository.findCulverts(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
         costsByCulvert(repository.findCostDetails(millId, year));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Long, Schedule7bRepository.CulvertSnapshotRow> culvertSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costSnapshotsByCulvert = new HashMap<>();
+    if (exposeOriginals && !rows.isEmpty()) {
+      for (Schedule7bRepository.CulvertSnapshotRow snap :
+          repository.findCulvertSnapshots(millId, year)) {
+        culvertSnapshots.putIfAbsent(snap.culvertReportId(), snap);
+      }
+      List<Long> culvertIds =
+          rows.stream().map(CulvertReportEntity::culvertReportId).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCulvertReports(culvertIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          costSnapshotsByCulvert
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r.cost());
+        }
+      }
+    }
+
     List<Culvert> culverts = new ArrayList<>(rows.size());
     int rowCounter = 1;
     for (CulvertReportEntity row : rows) {
       culverts.add(
-          toCulvert(row, rowCounter++, costs.getOrDefault(row.culvertReportId(), Map.of())));
+          toCulvert(
+              row,
+              rowCounter++,
+              costs.getOrDefault(row.culvertReportId(), Map.of()),
+              culvertOriginals(
+                  trackStatus,
+                  culvertSnapshots.get(row.culvertReportId()),
+                  costSnapshotsByCulvert.getOrDefault(row.culvertReportId(), Map.of()))));
     }
     return new Schedule7bResponse(
         millId,
@@ -128,19 +175,19 @@ public class Schedule7bService {
 
   // ===============================================================================================
   // Writes (Story 13.2). Each method is one transaction: a persistence failure rolls back and
-  // surfaces as 500/ERR-001. Draft-gated on the 1–10 track (BR-01/AD-9).
+  // surfaces as 500/ERR-001. editability-gated on the 1–10 track (BR-01/AD-9).
   // ===============================================================================================
 
   /**
    * Record one culvert and return the recomputed document + the recalculated total (S01/S02). Both
    * costs are optional, but both detail rows are written either way — an absent cost stores a NULL
-   * row, never no row (see {@link #writeCosts}). Draft-gated; a type outside the year's effective
-   * codes → 400.
+   * row, never no row (see {@link #writeCosts}). editability-gated; a type outside the year's
+   * effective codes → 400.
    */
   @Transactional
   public Schedule7bResponse addCulvert(
-      long millId, int year, CulvertRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, CulvertRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     // No stored type on a create, so the year-effective check always applies.
     validateCulvertType(culvertTypeCodes(year), request, null);
     try {
@@ -155,7 +202,7 @@ public class Schedule7bService {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -169,12 +216,12 @@ public class Schedule7bService {
       int year,
       long culvertId,
       CulvertRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    final String trackStatus = requireEditable(millId, year, caller);
     applyCulvertUpdate(
         millId, year, culvertId, request, user, culvertTypeCodes(year), storedTypes(millId, year));
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -183,21 +230,21 @@ public class Schedule7bService {
    * button). Each entry goes through the same per-row path as {@link #updateCulvert}, so the
    * validation, optimistic lock and cost upsert rules are identical.
    *
-   * <p>Atomic by construction: one entry failing its Draft gate, revision check or type check rolls
-   * the WHOLE batch back. That is the legacy guarantee — a partial save would leave the reporter
-   * unable to tell which rows persisted.
+   * <p>Atomic by construction: one entry failing its editability gate, revision check or type check
+   * rolls the WHOLE batch back. That is the legacy guarantee — a partial save would leave the
+   * reporter unable to tell which rows persisted.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the culverts to save, each with its id and {@code revisionCount}
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the audit user
    * @return the recomputed document with refreshed totals
    */
   @Transactional
   public Schedule7bResponse saveAllCulverts(
-      long millId, int year, CulvertSaveAllRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, CulvertSaveAllRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     rejectDuplicateIds(request);
     // Read the code table ONCE for the batch rather than once per culvert: the list is year-scoped,
     // not row-scoped, so N culverts would otherwise issue N identical queries inside this
@@ -208,7 +255,7 @@ public class Schedule7bService {
       applyCulvertUpdate(
           millId, year, item.culvertReportId(), item.culvert(), user, codes, storedTypes);
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -227,7 +274,8 @@ public class Schedule7bService {
 
   /**
    * Correct one culvert and its costs. Shared by the per-row PUT and the save-all so a culvert is
-   * persisted by exactly one code path. Assumes the Draft gate has already run for the request.
+   * persisted by exactly one code path. Assumes the editability gate has already run for the
+   * request.
    *
    * <p>{@code storedTypes} carries the currently-stored type of every culvert in the mill/year so
    * an UNCHANGED type is exempt from the year-effective check — see {@link #validateCulvertType}.
@@ -281,8 +329,8 @@ public class Schedule7bService {
 
   /**
    * Delete one culvert and BOTH its cost children (S04 — legacy whole-row removal via Hibernate
-   * {@code CascadeType.ALL}, {@code model/CulvertReport.java:231}). Draft-gated; an unknown id →
-   * 404.
+   * {@code CascadeType.ALL}, {@code model/CulvertReport.java:231}). editability-gated; an unknown
+   * id → 404.
    *
    * <p>CHILDREN FIRST, then the parent — the order Hibernate's cascade gave legacy. Delivery
    * carries an FK from {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} without {@code ON DELETE
@@ -296,8 +344,8 @@ public class Schedule7bService {
    */
   @Transactional
   public Schedule7bResponse deleteCulvert(
-      long millId, int year, long culvertId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, long culvertId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countCulvert(culvertId, millId, year) == 0) {
         throw new CulvertNotFoundException();
@@ -319,7 +367,7 @@ public class Schedule7bService {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -368,12 +416,16 @@ public class Schedule7bService {
     repository.upsertCost(culvertId, ITEM_INSTALL, r.installCost(), user);
   }
 
-  /** The Draft gate for every write: the 1–10 track must be {@code D} (else 409, BR-01/AD-9). */
-  private void requireDraft(long millId, int year) {
+  /**
+   * The editability gate for every write: the caller must be permitted to write at the 1–10 track's
+   * current status (else 409, BR-01/AD-9).
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
@@ -429,7 +481,8 @@ public class Schedule7bService {
   }
 
   // ===============================================================================================
-  // Check Status (Story 13.2, BR-07) — read-only, mutates nothing, VIEW-gated (not Draft-gated).
+  // Check Status (Story 13.2, BR-07) — read-only, mutates nothing, VIEW-gated (not
+  // editability-gated).
   // ===============================================================================================
 
   /**
@@ -597,7 +650,10 @@ public class Schedule7bService {
 
   /** Map one culvert row + its cost map to the wire shape, computing the total (BR-05). */
   private static Culvert toCulvert(
-      CulvertReportEntity row, int rowCounter, Map<Integer, Integer> cost) {
+      CulvertReportEntity row,
+      int rowCounter,
+      Map<Integer, Integer> cost,
+      Map<String, OriginalValue> submitted) {
     Integer material = cost.get(ITEM_MATERIAL);
     Integer install = cost.get(ITEM_INSTALL);
 
@@ -613,7 +669,8 @@ public class Schedule7bService {
         install,
         totalCost(material, install),
         row.comments(),
-        row.revisionCount());
+        row.revisionCount(),
+        submitted);
   }
 
   /**
@@ -648,5 +705,39 @@ public class Schedule7bService {
       return material;
     }
     return material + install;
+  }
+
+  /**
+   * One culvert's submitted values (Story 16.2, BR-04) — the six attributes plus the two costs
+   * legacy tracked ({@code CulvertReportType.java:373-393}, {@code Schedule7bDAO.java:306-343}).
+   * The Total is derived, so it carries none.
+   *
+   * <p>One normalisation, recorded: legacy compared {@code spanSize}, {@code riseSize} and {@code
+   * culvertPieceCount} with the GENERIC {@code equals} helper while comparing {@code length} with
+   * the rounded BigDecimal one ({@code :377-389}). All four are numbers, so all four compare by
+   * value here; the difference only ever showed as a spurious indicator when Oracle handed back a
+   * different scale for the same figure.
+   */
+  private Map<String, OriginalValue> culvertOriginals(
+      String trackStatus,
+      Schedule7bRepository.CulvertSnapshotRow culvert,
+      Map<Integer, Integer> submittedCosts) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "culvertTypeCode",
+            culvert == null ? null : culvert.culvertTypeCode(),
+            OriginalValueFormat.TEXT)
+        .put("spanSize", culvert == null ? null : culvert.spanSize(), OriginalValueFormat.WHOLE)
+        .put("riseSize", culvert == null ? null : culvert.riseSize(), OriginalValueFormat.WHOLE)
+        .put("length", culvert == null ? null : culvert.length(), OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "culvertPieceCount",
+            culvert == null ? null : culvert.culvertPieceCount(),
+            OriginalValueFormat.WHOLE)
+        .put("materialCost", submittedCosts.get(ITEM_MATERIAL), OriginalValueFormat.WHOLE)
+        .put("installCost", submittedCosts.get(ITEM_INSTALL), OriginalValueFormat.WHOLE)
+        .put("comments", culvert == null ? null : culvert.comments(), OriginalValueFormat.TEXT)
+        .build();
   }
 }

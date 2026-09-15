@@ -42,5 +42,16 @@ public enum Action {
    * {@link #VIEW_SCHEDULE} — that is the print/schedule read gate, which both production roles
    * hold.
    */
-  GENERATE_MILL_REPORTS
+  GENERATE_MILL_REPORTS,
+  /**
+   * Maintain the mill inventory and its lifecycle (UC-MILL-001) — the Administration ▸ Mills
+   * surface: search, import a ministry mill, activate/deactivate, and save the head-office and
+   * contact details. ADMIN-only: a SUBMITTER hitting these APIs is denied 403.
+   *
+   * <p>Deliberately one action for the whole surface. Legacy derived a separate WebADE action from
+   * each button's English label ({@code mills/Save}, {@code mills/Deactivate}, …), which coupled
+   * the permission set to UI copy and left the icon-only import button gated by the degenerate name
+   * {@code mills/}. Authorization here names the capability, not the control (AD-7).
+   */
+  MAINTAIN_MILLS
 }

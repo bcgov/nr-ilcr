@@ -2,10 +2,13 @@ package ca.bc.gov.nrs.ilcr.schedule8;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
@@ -18,8 +21,10 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +55,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule8Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String IND_YES = "Y";
 
   /**
@@ -82,9 +86,17 @@ public class Schedule8Service {
   private static final Set<String> DEDUCTION_SUBCATEGORIES = Set.of("3", "4");
 
   private final Schedule8Repository repository;
+  private final OriginalValues originalValues;
 
-  public Schedule8Service(Schedule8Repository repository) {
+  /**
+   * Constructs the Schedule 8 service.
+   *
+   * @param repository the repository
+   * @param originalValues the original-value gate (Story 16.2)
+   */
+  public Schedule8Service(Schedule8Repository repository, OriginalValues originalValues) {
     this.repository = repository;
+    this.originalValues = originalValues;
   }
 
   /**
@@ -92,24 +104,44 @@ public class Schedule8Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action (from the controller)
+   * @param caller the track statuses this caller may edit
    * @return the read document (never null; {@code pages: []} when the mill/year has none)
    */
   @Transactional(readOnly = true)
-  public Schedule8Response getSchedule8(long millId, int year, boolean callerMayEdit) {
+  public Schedule8Response getSchedule8(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    final boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = caller.allows(trackStatus);
 
-    // Label maps + the addition/deduction discriminator, loaded once per read.
-    Map<String, String> supportCentre = repository.supportCentreLabels();
-    Map<String, String> region = repository.regionLabels();
-    Map<String, String> becZone = repository.becZoneLabels();
-    Map<String, String> tsa = repository.tsaNumberLabels();
-    Map<String, String> supplyBlock = repository.supplyBlockLabels();
-    Map<String, String> tfl = repository.tflNumberLabels();
+    // Label maps + the addition/deduction discriminator, loaded once per read. Declared final:
+    // the snapshot reads below sit between these and their first use, and the checkstyle
+    // declaration-distance rule accepts the distance once the value provably cannot change.
+    final Map<String, String> supportCentre = repository.supportCentreLabels();
+    final Map<String, String> region = repository.regionLabels();
+    final Map<String, String> becZone = repository.becZoneLabels();
+    final Map<String, String> tsa = repository.tsaNumberLabels();
+    final Map<String, String> supplyBlock = repository.supplyBlockLabels();
+    final Map<String, String> tfl = repository.tflNumberLabels();
     Map<String, String> skidType = repository.skidTypeLabels();
     Map<String, String> costType = repository.costTypeLabels();
     Map<Integer, String> subcategories = repository.costItemSubcategories();
+
+    // The licensee's submitted figures (Story 16.2, BR-04). Three views, because Schedule 8's
+    // document is three levels deep and each level has its own snapshot. Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule8Repository.PageSnapshotRow> pageSnapshots = new HashMap<>();
+    Map<Integer, Schedule8Repository.SampleSnapshotRow> sampleSnapshots = new HashMap<>();
+    Map<Integer, Schedule8Repository.RateSnapshotRow> rateSnapshots = new HashMap<>();
+    if (exposeOriginals) {
+      for (Schedule8Repository.PageSnapshotRow r : repository.findPageSnapshots(millId, year)) {
+        pageSnapshots.putIfAbsent(r.id(), r);
+      }
+      for (Schedule8Repository.SampleSnapshotRow r : repository.findSampleSnapshots(millId, year)) {
+        sampleSnapshots.putIfAbsent(r.id(), r);
+      }
+      for (Schedule8Repository.RateSnapshotRow r : repository.findRateSnapshots(millId, year)) {
+        rateSnapshots.putIfAbsent(r.id(), r);
+      }
+    }
 
     // Rate rows grouped under their sample; each sample's rows grouped under its page.
     Map<Integer, List<TreeToTruckRateDetailEntity>> ratesBySample = new LinkedHashMap<>();
@@ -120,7 +152,14 @@ public class Schedule8Service {
     for (TreeToTruckDetailReportEntity s : repository.findSamples(millId, year)) {
       Sample sample =
           toSample(
-              s, ratesBySample.getOrDefault(s.id(), List.of()), subcategories, skidType, costType);
+              s,
+              ratesBySample.getOrDefault(s.id(), List.of()),
+              subcategories,
+              skidType,
+              costType,
+              trackStatus,
+              sampleSnapshots.get(s.id()),
+              rateSnapshots);
       samplesByPage.computeIfAbsent(s.reportId(), k -> new ArrayList<>()).add(sample);
     }
 
@@ -150,7 +189,8 @@ public class Schedule8Service {
               labelFor(supplyBlock, p.supplyBlock()),
               p.comments(),
               samples.size(),
-              samples));
+              samples,
+              pageOriginals(trackStatus, pageSnapshots.get(p.id()))));
     }
 
     return new Schedule8Response(millId, year, trackStatus, editable, pages, null);
@@ -220,14 +260,14 @@ public class Schedule8Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the page fields + optimistic-lock token (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 8 document
    */
   @Transactional
   public Schedule8Response savePage(
-      long millId, int year, Schedule8PageRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, Schedule8PageRequest request, EditableStatuses caller, String user) {
+    requireEditable(millId, year, caller);
     // TFL vs Supply Block are mutually exclusive (BR-03): a TFL selection clears the supply block
     // and
     // vice-versa — normalized server-side so exactly one is ever stored.
@@ -243,7 +283,7 @@ public class Schedule8Service {
     // Ownership guard on EDIT: the page must belong to THIS mill/year (H1 — mirrors saveSample/
     // deletePage). Without it, a Draft context could overwrite another mill/year's page by id
     // (IDOR),
-    // since EDIT_SCHEDULE is global and requireDraft only checks the URL mill/year.
+    // since EDIT_SCHEDULE is global and requireEditable only checks the URL mill/year.
     if (request.id() != null && !repository.pageExists(request.id(), millId, year)) {
       throw new ScheduleNotFoundException();
     }
@@ -321,23 +361,23 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Delete a whole Schedule 8 report page — the page, its samples, and all their rate details
-   * (BR-05, S07) — for a mill/year, targeted by the page {@code id}. Enforces the same Draft gate
-   * as save. Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a no-op
-   * that still returns success (never 404), mirroring Schedule 2/4. Context is validated in the
-   * controller (AD-4).
+   * (BR-05, S07) — for a mill/year, targeted by the page {@code id}. Enforces the same editability
+   * gate as save. Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a
+   * no-op that still returns success (never 404), mirroring Schedule 2/4. Context is validated in
+   * the controller (AD-4).
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param id the page id to delete
    */
   @Transactional
-  public void deletePage(long millId, int year, int id) {
-    requireDraft(millId, year);
+  public void deletePage(long millId, int year, int id, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     if (!repository.pageExists(id, millId, year)) {
       return; // idempotent — nothing to remove
     }
@@ -356,7 +396,7 @@ public class Schedule8Service {
 
   /**
    * Save (create-or-edit) one sample under a page and return the recomputed document (Story 14.3,
-   * S01/S05). Draft gate (AD-9), per-sample optimistic lock, unknown page/sample → 404.
+   * S01/S05). editability gate (AD-9), per-sample optimistic lock, unknown page/sample → 404.
    * Field/cross- field validation (Contract ID, per-% 0–100, sum ≤ 100, Helicopter/Other
    * conditionals, ranges) is on the request DTO; this method persists and recomputes. The Y/N
    * indicator columns are written from the request's Booleans. One transaction; a persistence fault
@@ -366,7 +406,7 @@ public class Schedule8Service {
    * @param year the reporting year
    * @param pageId the parent page id (its {@code TREE_TO_TRUCK_REPORT_ID})
    * @param request the sample fields + optimistic-lock token (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 8 document
    */
@@ -376,9 +416,9 @@ public class Schedule8Service {
       int year,
       int pageId,
       Schedule8SampleRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     if (!repository.pageExists(pageId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such page to attach the sample to
     }
@@ -461,25 +501,25 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Delete one sample (cascading its rate details) under a page and return the recomputed document
-   * (Story 14.3, S08 / BR-05). Draft gate (AD-9). Idempotent: an unknown page or sample id is a
-   * no-op success (never 404), mirroring Schedule 2/4 deletes.
+   * (Story 14.3, S08 / BR-05). editability gate (AD-9). Idempotent: an unknown page or sample id is
+   * a no-op success (never 404), mirroring Schedule 2/4 deletes.
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param pageId the parent page id
    * @param sampleId the sample id to delete
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed Schedule 8 document
    */
   @Transactional
   public Schedule8Response deleteSample(
-      long millId, int year, int pageId, int sampleId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int pageId, int sampleId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     if (repository.pageExists(pageId, millId, year) && repository.sampleExists(sampleId, pageId)) {
       try {
         repository.deleteSample(sampleId);
@@ -493,15 +533,15 @@ public class Schedule8Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Add or edit one rate-detail row under a sample and return the recomputed document (Story 14.4,
    * S01/S06). {@code request.id()} null → ADD (insert at revision 0); present → EDIT
    * (optimistic-lock update). Whether the row is an addition or a deduction is derived on the read
-   * from its cost item's subcategory — not stored here. Draft gate (AD-9); unknown sample or (on
-   * edit) unknown row → 404; stale → 409; persistence fault → 500 (type-only log, AD-11). One
+   * from its cost item's subcategory — not stored here. editability gate (AD-9); unknown sample or
+   * (on edit) unknown row → 404; stale → 409; persistence fault → 500 (type-only log, AD-11). One
    * transaction.
    *
    * @param millId the mill id (context already validated)
@@ -509,7 +549,7 @@ public class Schedule8Service {
    * @param sampleId the parent sample id
    * @param rowId the rate-row id to edit; null to add
    * @param request the rate-row fields + optimistic-lock token (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 8 document (the sample's totals + finalRate + counts update)
    */
@@ -520,9 +560,9 @@ public class Schedule8Service {
       int sampleId,
       Integer rowId,
       Schedule8RateRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     if (!repository.sampleInMillYear(sampleId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such sample under this mill/year
     }
@@ -572,25 +612,25 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Delete one rate-detail row under a sample and return the recomputed document (Story 14.4, S09 /
-   * BR-05). Draft gate (AD-9). Idempotent: an unknown sample or row id (or a row not under this
-   * sample) is a no-op success (never 404, never deletes another sample's row).
+   * BR-05). editability gate (AD-9). Idempotent: an unknown sample or row id (or a row not under
+   * this sample) is a no-op success (never 404, never deletes another sample's row).
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param sampleId the parent sample id
    * @param rowId the rate-row id to delete
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed Schedule 8 document
    */
   @Transactional
   public Schedule8Response deleteRate(
-      long millId, int year, int sampleId, int rowId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int sampleId, int rowId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     if (repository.sampleInMillYear(sampleId, millId, year)
         && repository.rateExists(rowId, sampleId)) {
       try {
@@ -605,7 +645,7 @@ public class Schedule8Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /** Map a nullable request Boolean to the legacy Y/N indicator column value (null stays null). */
@@ -629,7 +669,7 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
-    return evaluate(getSchedule8(millId, year, false).pages());
+    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages());
   }
 
   /**
@@ -645,7 +685,7 @@ public class Schedule8Service {
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
     List<Page> scoped =
-        getSchedule8(millId, year, false).pages().stream()
+        getSchedule8(millId, year, EditableStatuses.NONE).pages().stream()
             .filter(p -> p.id() != null && p.id() == pageId)
             .toList();
     return evaluate(scoped);
@@ -728,12 +768,16 @@ public class Schedule8Service {
     return new Schedule8CheckFieldIssue(field, new MessageInfo(messageKey, null));
   }
 
-  /** The Draft gate shared by the writes: the Schedules 1–10 track must be Draft (else 409). */
-  private void requireDraft(long millId, int year) {
+  /**
+   * The editability gate shared by the writes: the caller must be permitted to write at the
+   * Schedules 1–10 track's current status (else 409).
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   private static boolean isNotBlank(String value) {
@@ -764,7 +808,10 @@ public class Schedule8Service {
       List<TreeToTruckRateDetailEntity> rateRows,
       Map<Integer, String> subcategories,
       Map<String, String> skidType,
-      Map<String, String> costType) {
+      Map<String, String> costType,
+      String trackStatus,
+      Schedule8Repository.SampleSnapshotRow sampleSnapshot,
+      Map<Integer, Schedule8Repository.RateSnapshotRow> rateSnapshots) {
     List<RateRow> additions = new ArrayList<>();
     List<RateRow> deductions = new ArrayList<>();
     BigDecimal additionsTotal = BigDecimal.ZERO;
@@ -778,7 +825,8 @@ public class Schedule8Service {
               r.itemDescription(),
               normalize(r.costingRate()),
               r.costTypeCode(),
-              labelFor(costType, r.costTypeCode()));
+              labelFor(costType, r.costTypeCode()),
+              rateOriginals(trackStatus, rateSnapshots.get(r.id())));
       switch (classifyRate(subcategories, r.costItemCode())) {
         case ADDITION -> {
           additions.add(row);
@@ -844,7 +892,8 @@ public class Schedule8Service {
         additions.size(),
         deductions.size(),
         additions,
-        deductions);
+        deductions,
+        sampleOriginals(trackStatus, sampleSnapshot));
   }
 
   private static BigDecimal zeroIfNull(BigDecimal value) {
@@ -920,5 +969,112 @@ public class Schedule8Service {
     }
     BigDecimal stripped = value.stripTrailingZeros();
     return stripped.scale() < 0 ? stripped.setScale(0) : stripped;
+  }
+
+  /**
+   * One page's submitted values (Story 16.2, BR-04) — the twelve legacy tracked on {@code
+   * TreeToTruckReportDO} ({@code :528-561}). The code fields are served as their submitted CODES,
+   * which is what legacy compared and what the page's dropdowns hold; the resolved labels alongside
+   * them are display-only and legacy gave them no indicator.
+   *
+   * <p>Legacy also populated a thirteenth field, {@code supplyBlockOriginalVal} ({@code
+   * Schedule8DAO.java:287}), from the same column as {@code tsbNumberCodeOriginal} — with no
+   * accessor and no view reference, so nothing is served for it (deviation D9).
+   */
+  private Map<String, OriginalValue> pageOriginals(
+      String trackStatus, Schedule8Repository.PageSnapshotRow page) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("division", page == null ? null : page.division(), OriginalValueFormat.TEXT)
+        .put("license", page == null ? null : page.license(), OriginalValueFormat.TEXT)
+        .put("contact", page == null ? null : page.contact(), OriginalValueFormat.TEXT)
+        .put("phone", page == null ? null : page.phone(), OriginalValueFormat.TEXT)
+        .put("cuttingPermit", page == null ? null : page.cuttingPermit(), OriginalValueFormat.TEXT)
+        .put("supportCentre", page == null ? null : page.supportCentre(), OriginalValueFormat.TEXT)
+        .put("region", page == null ? null : page.region(), OriginalValueFormat.TEXT)
+        .put("becZone", page == null ? null : page.becZone(), OriginalValueFormat.TEXT)
+        .put("tsaNumber", page == null ? null : page.tsaNumber(), OriginalValueFormat.TEXT)
+        .put("tflNumber", page == null ? null : page.tflNumber(), OriginalValueFormat.TEXT)
+        .put("supplyBlock", page == null ? null : page.supplyBlock(), OriginalValueFormat.TEXT)
+        .put("comments", page == null ? null : page.comments(), OriginalValueFormat.TEXT)
+        .build();
+  }
+
+  /**
+   * One sample's submitted values — the nineteen legacy tracked on {@code
+   * TreeToTruckDetailReportDO} ({@code :551-632}) that this document actually carries.
+   *
+   * <p>Two legacy fields are deliberately absent. {@code skidTypeDescOriginalVal} ({@code :45}) is
+   * never populated and never read, and {@code ilcrSkidTypeDescOV} ({@code :48}) is display-only
+   * with no boolean accessor, so the resolved skid-type label carries no indicator (deviation D9).
+   * The sample's own submitted COMMENTS has no counterpart either — this document has never served
+   * a sample-level comments field at all, so there is nothing for an indicator to decorate; that is
+   * a pre-existing read-contract gap, not one this story introduces.
+   *
+   * <p>Every derived figure — {@code percentTotal}, {@code actualHarvested}, the addition and
+   * deduction totals and {@code finalRate} — carries none, having no snapshot column.
+   */
+  private Map<String, OriginalValue> sampleOriginals(
+      String trackStatus, Schedule8Repository.SampleSnapshotRow sample) {
+    OriginalValues.Builder builder = originalValues.forTrack(trackStatus);
+    // Substituted rather than short-circuited, so the per-field puts below still run for a sample
+    // with no 'S' snapshot. They must: a written key with an empty value is what carries legacy's
+    // bare "Original Submission Value: " and lets the page flag a field filled in since submission,
+    // whereas an OMITTED key now means "this field has no indicator wiring" and renders nothing.
+    // Guarding once here rather than repeating a null check on all nineteen fields also keeps this
+    // method under the cognitive-complexity limit.
+    Schedule8Repository.SampleSnapshotRow submitted =
+        sample == null ? Schedule8Repository.SampleSnapshotRow.nothingOnFile(0) : sample;
+    return builder
+        .put("contractId", submitted.contractId(), OriginalValueFormat.TEXT)
+        .put("cutBlock", submitted.cutBlock(), OriginalValueFormat.TEXT)
+        .put("groundBasePct", submitted.groundBasePct(), OriginalValueFormat.PERCENTAGE)
+        .put("grapplePct", submitted.grapplePct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylinePct", submitted.skylinePct(), OriginalValueFormat.PERCENTAGE)
+        .put("highleadPct", submitted.highleadPct(), OriginalValueFormat.PERCENTAGE)
+        .put("helicopterPct", submitted.helicopterPct(), OriginalValueFormat.PERCENTAGE)
+        .put("otherSkiddingPct", submitted.otherSkiddingPct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylineSlopeDistance", submitted.skylineSlopeDistance(), OriginalValueFormat.WHOLE)
+        .put("skylineSupportNumber", submitted.skylineSupportNumber(), OriginalValueFormat.WHOLE)
+        .put(
+            "supportAvgDistance",
+            submitted.supportAverageDistance(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put("distance", submitted.distance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("cycleTime", submitted.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "uphillDirection", submitted.uphillDirectionInd(), OriginalValueFormat.UPHILL_DIRECTION)
+        .put(
+            "waterDumpDestination",
+            submitted.waterDumpDestinationInd(),
+            OriginalValueFormat.WATER_DUMP)
+        .put("skidTypeCode", submitted.skidTypeCode(), OriginalValueFormat.TEXT)
+        .put("coniferousVolume", submitted.coniferousVolume(), OriginalValueFormat.WHOLE)
+        .put("deciduousVolume", submitted.deciduousVolume(), OriginalValueFormat.WHOLE)
+        .put("originalRate", submitted.originalRate(), OriginalValueFormat.TWO_DECIMAL)
+        .build();
+  }
+
+  /**
+   * One rate row's submitted values — the five legacy tracked on {@code TreeToTruckRateDetailDO}
+   * ({@code :270-282}) minus {@code isCostItemOriginal} ({@code :270}), which compares whole
+   * entities and no view invokes (its sibling {@code isCostItemIDOriginal} is the one that
+   * renders).
+   */
+  private Map<String, OriginalValue> rateOriginals(
+      String trackStatus, Schedule8Repository.RateSnapshotRow rate) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("costItemCode", rate == null ? null : rate.costItemCode(), OriginalValueFormat.TEXT)
+        .put(
+            "itemDescription",
+            rate == null ? null : rate.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "costingRate",
+            rate == null ? null : rate.costingRate(),
+            OriginalValueFormat.TWO_DECIMAL)
+        .put("costTypeCode", rate == null ? null : rate.costTypeCode(), OriginalValueFormat.TEXT)
+        .build();
   }
 }
