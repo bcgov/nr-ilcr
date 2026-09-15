@@ -1,0 +1,22 @@
+// Layout for the Check Status page. The two result accordions inherit the app-wide 64rem accordion cap
+// from styles/_overrides.scss; the rest is the page's own rhythm.
+.schedule-page {
+  .check-status__actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-block: 1rem;
+  }
+
+  .check-status__region {
+    margin-block: 1rem;
+  }
+
+  .check-status__heading {
+    margin-block-end: 0.5rem;
+  }
+
+  // The per-item result grid sits inside the accordion body, which already carries Carbon's padding.
+  .check-status__lines {
+    padding-inline: 0;
+  }
+}
