@@ -30,9 +30,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { isScheduleSaved } from '@/utils/schedule'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
@@ -44,7 +42,6 @@ import './index.scss'
 // Client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so the
 // verbatim text lives here. SUC/WRN/FLD strings come from the API `message`/`warnings`/`detail`
 // (AD-8) — never hardcoded. Shared strings reuse Schedule 1's exact wording.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_S111 = 'Annual Rent (Forest Act, S111) is recorded as an Unacceptable Cost.'
 // ALT-001, legacy-verbatim and identical to Schedule 1's: both sub-pages require a saved parent.
 const ALT_SAVE_BEFORE_SUB_PAGE = 'The schedule has to be saved before opening other costs'
@@ -114,6 +111,10 @@ function buildRequest(doc: Schedule3Response, form: FieldValues): Schedule3Reque
 const mapLoadErrorDetail = (detail: string | undefined): string =>
   detail || 'Unable to load Schedule 3.'
 
+const PAGE_HEADER = (
+  <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
+)
+
 const Schedule3: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const navigate = useNavigate()
@@ -142,9 +143,11 @@ const Schedule3: FC = () => {
   // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule3Response>({
       path: '/v1/schedule3',
+      scheduleName: 'Schedule 3',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -296,41 +299,7 @@ const Schedule3: FC = () => {
     navigate({ to: route })
   }
 
-  const header = (
-    <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
-  )
-
-  if (contextMissing) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={header}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 3" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={header}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 3', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -341,7 +310,9 @@ const Schedule3: FC = () => {
   const fieldErrors = editable ? validateSchedule3(form) : {}
 
   // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
-  // read-only cells track data entry the way legacy did. Null outside Draft / in view mode, where
+  // read-only cells track data entry the way legacy did. Null whenever the document is NOT editable
+  // for this caller — since Story 16.1 that is the role×status matrix, not Draft alone, so an
+  // administrator correcting at Submitted or Verified DOES get the mirror — or in view mode, where
   // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
   const derived = editable ? deriveSchedule3(data, enteredFromForm(committed)) : null
 
@@ -549,7 +520,7 @@ const Schedule3: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {/* Advisory warnings from a mutation echo (BR-09 crown push). Verbatim text (AD-8). */}
         {saveWarnings.map((w) => (

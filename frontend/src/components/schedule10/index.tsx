@@ -30,7 +30,6 @@ import { clearFieldError } from '@/utils/forms'
 import { groupFixedInput } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import PageFields from './PageFields'
 import RoadDetailPage from './RoadDetailPage'
@@ -158,8 +157,10 @@ const Schedule10: FC = () => {
     setPendingNav(null)
   }, [resetBanners, closePagePanel, closeRoadPanel])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule10Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule10Response>({
     path: SCHEDULE10_PATH,
+    scheduleName: 'Schedule 10',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -451,16 +452,7 @@ const Schedule10: FC = () => {
     setPendingNav(() => proceed)
   }
 
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 10',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
   if (!data) {
     return null
   }
