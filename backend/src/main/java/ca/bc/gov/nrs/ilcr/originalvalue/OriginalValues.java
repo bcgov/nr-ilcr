@@ -140,19 +140,27 @@ public class OriginalValues {
      * the legacy JSF control-id spellings such as {@code isVolumeOriginalVal} or {@code
      * standingTreetoLoadedTruckVolOB}).
      *
-     * <p>A null submitted value is <b>not</b> recorded. That absence is the wire representation of
-     * legacy's {@code originalVal == null}, on which the client shows the indicator whenever the
-     * current value is non-empty — the branch that governs roughly half of the live rows, which
-     * carry no {@code 'S'} snapshot at all. A snapshot row that exists with a null column and no
-     * snapshot row at all are indistinguishable in legacy too, so one representation is correct
-     * rather than lossy.
+     * <p>A null submitted value <b>is</b> recorded, as an empty {@code value} carrying the bare
+     * separator as its tooltip. That is legacy's own text: every one of the seven {@code
+     * ILCROriginalValue*Converter} classes composed {@code "Original Submission Value: " + (value
+     * == null ? "" : value)} ({@code ILCROriginalValueStringConverter.java:23-26}), so a field with
+     * nothing on file rendered a tooltip that ends after the separator. Roughly half the live rows
+     * carry no {@code 'S'} snapshot at all, so this is the common case, not an edge one.
+     *
+     * <p>The key is therefore present for every field a service offers, and its absence means only
+     * that the field has no original-value wiring — which is also when legacy rendered no indicator
+     * at all (F9/D9). The client never has to invent text for a missing tooltip (AD-8).
      *
      * @param field the owning object's own field name, e.g. {@code volume}, {@code comments}
      * @param submitted the value from the {@code *_S_VW} snapshot; null when none is on file
      * @param format the legacy converter rule for this field's tooltip
      */
     public Builder put(String field, Object submitted, OriginalValueFormat format) {
-      if (!exposed || submitted == null) {
+      if (!exposed) {
+        return this;
+      }
+      if (submitted == null) {
+        values.put(field, new OriginalValue("", label + " "));
         return this;
       }
       values.put(

@@ -18,6 +18,9 @@ import type { OriginalValues } from '@/interfaces/OriginalValue'
  */
 const submitted: OriginalValues = {
   volume: { value: '60000', tooltip: 'Original Submission Value: 60,000' },
+  // Nothing on file: the server still sends the key, carrying the bare separator legacy's
+  // converters composed for a null original.
+  cost: { value: '', tooltip: 'Original Submission Value: ' },
 }
 
 const setup = (over: Partial<React.ComponentProps<typeof OriginalValueIndicator>> = {}) =>
@@ -62,13 +65,22 @@ describe('OriginalValueIndicator', () => {
     expect(screen.queryByTestId('original-value-volume')).not.toBeInTheDocument()
   })
 
-  test('a field with no submitted value on file says so rather than trailing off', () => {
+  test('a field with no submitted value on file shows legacy’s empty tooltip', () => {
+    // Legacy composed `"Original Submission Value: " + (value == null ? "" : value)` in all seven
+    // ILCROriginalValue*Converter classes, so this tooltip ends after the separator. An earlier
+    // revision substituted a sentence of its own, which read better but was neither legacy's text
+    // nor the server's (AD-8).
     setup({ field: 'cost', current: '7000', label: 'Standing Tree to Loaded Truck cost' })
     const indicator = screen.getByTestId('original-value-cost')
 
-    expect(indicator).toHaveAccessibleDescription(
-      'No value was originally submitted by the Licensee',
-    )
+    expect(indicator).toHaveAccessibleDescription('Original Submission Value:')
+  })
+
+  test('renders nothing for a field with no original-value wiring at all', () => {
+    // An absent key is no longer "nothing was submitted" — the server writes a key for every field
+    // it offers — so it means the field has no indicator, which is what legacy showed (F9/D9).
+    setup({ field: 'unwired', current: '7000', label: 'A field legacy never marked' })
+    expect(screen.queryByTestId('original-value-unwired')).not.toBeInTheDocument()
   })
 
   test('a text field compares exactly — a trailing space is a real change', () => {

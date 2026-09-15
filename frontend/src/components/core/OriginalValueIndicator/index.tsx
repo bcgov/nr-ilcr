@@ -22,14 +22,16 @@ import './index.scss'
  * here. The trigger is a real focusable `<button>` carrying an accessible name, so the indicator is
  * announced and its tooltip reachable by keyboard, not hover alone.
  *
- * DEVIATIONS FROM LEGACY, both recorded in the story:
+ * DEVIATION FROM LEGACY, recorded in the story:
  *   * D1 — the width swap is not reproduced. It exists to make room for the icon, Carbon owns field
  *     sizing, and legacy was inconsistent about it anyway: Schedule 7A got WIDER, all three
  *     Schedule 8 views and 11 of Schedule 9's 12 fields had no swap at all despite rendering the
  *     indicator, and two of the CSS classes for it are dead.
- *   * When nothing was submitted for the field, legacy still rendered its tooltip with an empty
- *     value ("Original Submission Value: "). Here the indicator carries a plain statement instead,
- *     because a tooltip that trails off after a colon reads as a defect rather than as information.
+ *
+ * When nothing was submitted for the field, legacy rendered its tooltip with an empty value —
+ * "Original Submission Value: ", ending after the separator — and so does this. An earlier revision
+ * substituted a sentence of its own here, which read better but was neither the legacy text nor the
+ * server's (AD-8); the server now composes this case too, so there is one source for the text.
  */
 export interface OriginalValueIndicatorProps {
   // The owning object's `originalValues` map, straight off the served row or document. Null at
@@ -47,9 +49,6 @@ export interface OriginalValueIndicatorProps {
   readonly label: string
 }
 
-/** Shown when the field never had a submitted value: it was added after the report was submitted. */
-const ADDED_SINCE_SUBMISSION = 'No value was originally submitted by the Licensee'
-
 const OriginalValueIndicator: FC<OriginalValueIndicatorProps> = ({
   originals,
   field,
@@ -59,12 +58,14 @@ const OriginalValueIndicator: FC<OriginalValueIndicatorProps> = ({
 }) => {
   const { changed, tooltip } = originalValueState(originals, field, current, numeric)
 
-  if (!changed) {
+  if (!changed || tooltip === null) {
     return null
   }
 
-  // The tooltip text is the API's, verbatim (AD-8) — "Original Submission Value: 60,000".
-  const text = tooltip ?? ADDED_SINCE_SUBMISSION
+  // The tooltip text is the API's, verbatim (AD-8) — "Original Submission Value: 60,000", or the
+  // bare "Original Submission Value: " when the licensee submitted nothing for this field, which
+  // is the text legacy's converters composed for a null original.
+  const text = tooltip
 
   // `description`, NOT `label` — the two are not interchangeable here (found in review of #452).
   // Carbon's `label` renders the tooltip through `aria-labelledby`, which REPLACES the trigger's own
