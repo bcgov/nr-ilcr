@@ -286,7 +286,8 @@ public class Schedule4Service {
                       snapshots
                           .byReportAndItem()
                           .get(d.transportationReportId() + ":" + d.costItemCode()),
-                      isDistance ? snapshots.byReport().get(d.transportationReportId()) : null)));
+                      isDistance,
+                      snapshots.byReport().get(d.transportationReportId()))));
     }
     return categoriesByName;
   }
@@ -755,14 +756,22 @@ public class Schedule4Service {
   private Map<String, OriginalValue> categoryOriginals(
       String trackStatus,
       CostDetailSnapshotRepository.Row detail,
+      boolean isDistance,
       Schedule4Repository.TransportationSnapshotRow distanceReport) {
     OriginalValues.Builder builder =
         originalValues
             .forTrack(trackStatus)
             .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
             .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE);
-    if (distanceReport != null) {
-      builder.put("distance", distanceReport.distance(), OriginalValueFormat.ONE_DECIMAL);
+    // `isDistance` decides whether the field EXISTS on this category; a null row means only that
+    // nothing was submitted for it. The two must not collapse into the same absent key: a category
+    // without a distance field has no indicator wiring and correctly shows none, whereas one whose
+    // report carries no 'S' snapshot must still flag a distance entered since submission.
+    if (isDistance) {
+      builder.put(
+          "distance",
+          distanceReport == null ? null : distanceReport.distance(),
+          OriginalValueFormat.ONE_DECIMAL);
     }
     return builder.build();
   }

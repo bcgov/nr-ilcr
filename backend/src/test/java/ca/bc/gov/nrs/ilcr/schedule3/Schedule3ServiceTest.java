@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule3;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -408,17 +409,15 @@ class Schedule3ServiceTest {
   }
 
   @Test
-  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     stub("S", "N", List.of(cost(27, 100000)));
     when(costSnapshots.findBySummary(SUMMARY_ID)).thenReturn(List.of());
     when(summarySnapshots.findBySummaryId(SUMMARY_ID)).thenReturn(Optional.empty());
 
     Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
 
-    assertNotNull(doc.originalValues());
-    assertTrue(doc.originalValues().isEmpty());
-    assertNotNull(line(doc, 27).originalValues());
-    assertTrue(line(doc, 27).originalValues().isEmpty());
+    assertAllNothingOnFile(doc.originalValues());
+    assertAllNothingOnFile(line(doc, 27).originalValues());
   }
 
   @Test

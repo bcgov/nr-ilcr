@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -611,12 +613,13 @@ class Schedule10ServiceTest {
       assertOriginal(road.subGrade().originalValues(), "actualCost", "45000", "45,000");
       assertOriginal(road.subGrade().originalValues(), "lessBridges", "1500", "1,500");
       // An item with no submitted row keeps no key.
-      assertThat(road.subGrade().originalValues()).doesNotContainKey("lessCulverts");
+      // Written but empty: the detail-id join found no submitted row for this one.
+      assertThat(road.subGrade().originalValues()).containsEntry("lessCulverts", nothingOnFile());
     }
 
     @Test
-    @DisplayName("beyond Draft with nothing on file the maps are empty, never null")
-    void submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    @DisplayName("beyond Draft with nothing on file every field carries legacy’s empty tooltip")
+    void submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
       storedDocument("S");
       when(repository.findPageSnapshots(MILL, YEAR)).thenReturn(List.of());
       when(repository.findDetailSnapshots(MILL, YEAR)).thenReturn(List.of());
@@ -629,8 +632,8 @@ class Schedule10ServiceTest {
               .roadDetails()
               .get(0);
 
-      assertThat(road.originalValues()).isEmpty();
-      assertThat(road.subGrade().originalValues()).isEmpty();
+      assertAllNothingOnFile(road.originalValues());
+      assertAllNothingOnFile(road.subGrade().originalValues());
     }
   }
 }

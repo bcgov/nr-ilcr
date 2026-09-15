@@ -670,9 +670,11 @@ public class Schedule11Service {
    * implementable: {@code BASIC_SILVICULTURE_REPORT_S_VW} does not select {@code ENHANCED_IND}
    * ({@code BasicSilvicultureReportOv.java:28-38}), so {@link
    * Schedule11Repository.LocationSnapshotRow} has no accessor to pass — the only writable form is
-   * {@code put("enhancedIndicator", null, …)}, and {@link OriginalValues.Builder#put} discards a
-   * null submitted value, so the call would be dead code that changes no payload. Omitting it is
-   * therefore the same wire contract with nothing to mislead a reader.
+   * {@code put("enhancedIndicator", null, …)}. That call is no longer inert: since the
+   * empty-tooltip fix {@link OriginalValues.Builder#put} RECORDS a null submitted value as an
+   * empty-valued entry, so adding it would publish a key and make the indicator fire on any
+   * non-empty current value — the very thing legacy could never do here. Omitting it is what keeps
+   * the behaviour faithful.
    *
    * <p>The omission is also what reproduces legacy: its own indicator for this field could never
    * fire, because the DAO read the CURRENT value into {@code enhancedIndicatorOriginalVal} ({@code

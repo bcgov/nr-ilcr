@@ -79,16 +79,16 @@ class OriginalValuesTest {
   }
 
   @Nested
-  @DisplayName("a null submitted value is represented by the key's ABSENCE")
+  @DisplayName("a null submitted value carries legacy's empty tooltip")
   class NullOriginal {
 
     @Test
-    @DisplayName("no key is written, so the page falls to the added-since-submission branch")
-    void nullSubmitted_writesNoKey() {
+    @DisplayName("the key is written with an empty value, so the page can show legacy's text")
+    void nullSubmitted_writesEmptyValuedKey() {
       // This is the common case, not an edge one: roughly half the live cost-detail rows carry no
-      // 'S' snapshot at all. Legacy's isOriginalVal treats original == null as "flag whenever the
-      // current value is non-empty", and an absent key is how the client is told to do that. A
-      // snapshot row with a null column and no snapshot row are indistinguishable in legacy too.
+      // 'S' snapshot at all. Legacy's converters composed the tooltip regardless — "Original
+      // Submission Value: " + (value == null ? "" : value), ILCROriginalValueStringConverter:23-26
+      // — so the field still has text to show, and the client never invents any (AD-8).
       Map<String, OriginalValue> map =
           originalValues
               .forTrack("S")
@@ -96,18 +96,19 @@ class OriginalValuesTest {
               .put("cost", 600, OriginalValueFormat.WHOLE)
               .build();
 
-      assertThat(map).containsOnlyKeys("cost");
+      assertThat(map).containsOnlyKeys("volume", "cost");
+      assertThat(map.get("volume")).isEqualTo(new OriginalValue("", "Original Submission Value: "));
     }
 
     @Test
-    @DisplayName("beyond Draft with nothing on file is an empty map, never null")
+    @DisplayName("beyond Draft with nothing on file is populated, never null")
     void nothingOnFile_isEmptyNotNull() {
       // A real and distinct state from Draft: the page must still evaluate every field for the
       // added-since-submission branch, which it cannot do if this collapses to null.
       assertThat(
               originalValues.forTrack("S").put("volume", null, OriginalValueFormat.WHOLE).build())
           .isNotNull()
-          .isEmpty();
+          .containsOnlyKeys("volume");
     }
   }
 

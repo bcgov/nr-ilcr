@@ -20,8 +20,12 @@ import { parseDecimalInput } from '@/utils/number'
  *      so a licensee viewing a Submitted report sees the indicators too.
  *   2. a submitted value is on file -> flag when it differs from the current value. Legacy ignored
  *      `isSubmit` entirely on this branch.
- *   3. no submitted value on file -> flag when the current value is non-empty ("added since
- *      submission"). Not an edge case: roughly half the live rows carry no snapshot at all.
+ *   3. no submitted value on file (an entry whose `value` is empty) -> flag when the current value
+ *      is non-empty ("added since submission"), showing the server's bare "Original Submission
+ *      Value: ". Not an edge case: roughly half the live rows carry no snapshot at all.
+ *
+ * A field with no entry at all is not one of the three: it has no original-value wiring, so nothing
+ * is flagged and there is no tooltip to show.
  *
  * Text compares EXACTLY, with no trimming on either side, because legacy's was an `equals`. Only
  * the emptiness test on branch 3 trims, mirroring legacy's own `isNullOrEmpty(currentVal, true)`.
@@ -29,7 +33,7 @@ import { parseDecimalInput } from '@/utils/number'
 export interface OriginalValueState {
   // Whether to render the indicator.
   readonly changed: boolean
-  // The verbatim tooltip text from the API, or null when nothing is on file for the field.
+  // The verbatim tooltip text from the API, or null when the field carries no original-value entry.
   readonly tooltip: string | null
 }
 
@@ -94,10 +98,20 @@ export const originalValueState = (
   const currentIsEmpty = currentText.trim() === ''
   const submitted: OriginalValue | undefined = originals[field]
 
-  // Branch 3 — nothing on file: any non-empty value is a value added since submission. The tooltip
-  // is null rather than empty so a caller can tell "no original" from "an original that is blank".
+  // The field carries no original-value wiring at all, so there is nothing to flag and no tooltip
+  // to show. The server records a key for every field it offers — including those with nothing on
+  // file — so an absent key means the field was never offered, which is also where legacy rendered
+  // no indicator (F9/D9).
   if (submitted === undefined) {
-    return currentIsEmpty ? NOT_CHANGED : { changed: true, tooltip: null }
+    return NOT_CHANGED
+  }
+
+  // Branch 3 — nothing on file: any non-empty value is a value added since submission. Legacy asked
+  // this question through `isNullOrEmpty(currentVal, true)` (`CoreUtil.java:994`), whose `true` is
+  // its own trim flag, so a whitespace-only field is not "a value added since submission". Oracle
+  // stores '' as NULL, so an empty `value` here always means nothing was on file.
+  if (submitted.value === '') {
+    return currentIsEmpty ? NOT_CHANGED : { changed: true, tooltip: submitted.tooltip }
   }
 
   // Branch 2 — compare, ignoring the Draft-only `isSubmit` consideration as legacy did here.
