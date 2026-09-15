@@ -77,7 +77,8 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
 
   /**
    * The Schedules 1–10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year —
-   * NOT the silviculture track (AD-9). Drives {@code editable} (Draft-only).
+   * NOT the silviculture track (AD-9). Drives {@code editable} through the role×status matrix
+   * (Story 16.1): submitter at Draft, administrator at Submitted or Verified.
    */
   @Query(
       """

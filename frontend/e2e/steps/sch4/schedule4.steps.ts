@@ -529,6 +529,22 @@ Then('the Schedule 4 page is blocked with {string}', async ({ schedule4Page }, d
   await expect(schedule4Page.notification(CLIENT.titleLoadFailed)).toBeVisible();
 });
 
+/**
+ * The closed-mill guard, which is NOT the load failure above: the page renders the 409's verbatim
+ * detail under its own title (`core/ScheduleLoadState`), because a mill closed for the reporting
+ * year is a context the reporter changes on the Home page rather than the app failing to load.
+ * Asserting the absence of the generic title is what keeps the two apart — the detail alone reads
+ * the same in either framing.
+ */
+Then(
+  'the Schedule 4 page shows the closed-mill guard with {string}',
+  async ({ schedule4Page }, detail) => {
+    await expect(schedule4Page.notification(detail)).toBeVisible();
+    await expect(schedule4Page.notification(CLIENT.titleMillClosed)).toBeVisible();
+    await expect(schedule4Page.notification(CLIENT.titleLoadFailed)).toHaveCount(0);
+  },
+);
+
 // ---------------------------------------------------------------------------------------------------
 // Mutation spy — prove the negative
 // ---------------------------------------------------------------------------------------------------

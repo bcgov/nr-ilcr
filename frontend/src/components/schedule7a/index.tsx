@@ -15,7 +15,6 @@ import { groupInput, numStr, numStrGroup } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import BridgeFields from './BridgeFields'
 import {
@@ -177,8 +176,10 @@ const Schedule7a: FC = () => {
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7aResponse>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule7aResponse>({
     path: SCHEDULE7A_PATH,
+    scheduleName: 'Schedule 7A',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -399,23 +400,15 @@ const Schedule7a: FC = () => {
     )
   }
 
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 7A',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
   }
 
   const { editable, bridges, codeLists } = data
-  // Legacy disabled Check Status outside Draft alongside every write control, even though the
+  // Legacy disabled Check Status alongside every write control whenever the report was not
+  // editable by the caller — its rule was role×status, not Draft alone, even though the
   // endpoint itself is read-only and permitted at any status.
   const controlsDisabled = !editable || saving
 
@@ -453,7 +446,8 @@ const Schedule7a: FC = () => {
           rowMessages={checkResult?.bridgeMessages}
         />
 
-        {/* Write controls stay rendered and go disabled outside Draft rather than disappearing —
+        {/* Write controls stay rendered and go disabled whenever the caller may not edit (the
+            role×status matrix since Story 16.1, not Draft alone) rather than disappearing —
             legacy bound `disabled` on all 32 of them and never removed a control, so a read-only
             reporter can still see which actions exist. */}
         <Column sm={4} md={8} lg={16} className="schedule-7a__actions">

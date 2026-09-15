@@ -29,20 +29,26 @@ Feature: Schedule 4 — guard states and read-only view
     Then the Schedule 4 mill and reporting year guard message is shown
     And the Schedule 4 location list is not displayed
 
-  # S16 / EF2-002 and S17 / EF2-003 — the document GET fails, so no list renders and the API's verbatim
-  # detail is what the reporter sees.
-  @p1 @S16 @S17
-  Scenario Outline: <name>
-    Given the Schedule 4 guard anchor "<guard>"
+  # S16 / EF2-002 — a mill closed for the reporting year is a CONTEXT guard, not a load failure: it
+  # carries its own title, because what the reporter has to do is pick another mill on the Home page.
+  # These two used to share one Scenario Outline; they assert different framings now, so they are two
+  # scenarios rather than one with a parametrised title.
+  @p1 @S16
+  Scenario: A mill that is not active for the year is blocked
+    Given the Schedule 4 guard anchor "closed-mill"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4 expecting a guard message
-    Then the Schedule 4 page is blocked with "<detail>"
+    Then the Schedule 4 page shows the closed-mill guard with "This Mill is not active for the current Reporting Year. Please select another mill from the Home Page."
     And the Schedule 4 location list is not displayed
 
-    Examples:
-      | name                                                        | guard        | detail                                                                                             |
-      | S16 A mill that is not active for the year is blocked       | closed-mill  | This Mill is not active for the current Reporting Year. Please select another mill from the Home Page. |
-      | S17 A mill/year with no Schedule 4 report is blocked        | not-found    | Schedule not found.                                                                                |
+  # S17 / EF2-003 — no Schedule 4 report for the pair IS a load failure, and keeps the generic title.
+  @p1 @S17
+  Scenario: A mill/year with no Schedule 4 report is blocked
+    Given the Schedule 4 guard anchor "not-found"
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 4 expecting a guard message
+    Then the Schedule 4 page is blocked with "Schedule not found."
+    And the Schedule 4 location list is not displayed
 
   # S18 / STA-001 — read-only on both non-Draft codes.
   @p0 @S18

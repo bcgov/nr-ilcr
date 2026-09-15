@@ -643,10 +643,15 @@ const SamplePage: FC<SamplePageProps> = ({
         <Button kind="primary" renderIcon={Add} disabled={!editable || busy} onClick={openNew}>
           Add New Sample
         </Button>
+        {/* Check Status mutates nothing and the endpoint is VIEW_SCHEDULE-gated, but the BUTTON
+            follows legacy, which disabled it alongside the write controls whenever the report was
+            not editable by the caller (26 of 26 buttons across 15 pages). This previously read
+            `disabled={busy}` — the twin of the same omission on the main page
+            (`index.tsx:842`), and out of step with every sibling button here. */}
         <Button
           kind="tertiary"
           renderIcon={CheckmarkOutline}
-          disabled={busy}
+          disabled={!editable || busy}
           onClick={handleCheckStatus}
         >
           Check Status

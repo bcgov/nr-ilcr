@@ -563,6 +563,8 @@ export const CLIENT = {
   titleCopy: 'Copy location',
   titleCheckStatus: 'Check Status',
   titleLoadFailed: 'Unable to load Schedule 4',
+  /** S16's own title — a mill closed for the year is a context guard, not a load failure. */
+  titleMillClosed: 'Mill not active for Reporting Year',
   /** The per-location Check Status issue notification's title: `${location.name} — required`. */
   titleLocationRequired: (name: string): string => `${name} — required`,
 } as const;

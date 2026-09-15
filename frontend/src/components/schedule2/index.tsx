@@ -28,9 +28,7 @@ import { isScheduleSaved } from '@/utils/schedule'
 import { enteredNum } from '@/utils/derivedMath'
 import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
@@ -39,7 +37,6 @@ import './index.scss'
 // ERR-001 (mill/year not selected) and the confirm-delete text are client-side chrome (a suppression
 // with no request / a confirm dialog), so their verbatim text lives here. Success/error text comes
 // from the API `message.text` / ProblemDetail.detail — never hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
@@ -108,9 +105,11 @@ const Schedule2: FC = () => {
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule2Response>({
       path: '/v1/schedule2',
+      scheduleName: 'Schedule 2',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -220,37 +219,7 @@ const Schedule2: FC = () => {
     })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 2" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 2', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
