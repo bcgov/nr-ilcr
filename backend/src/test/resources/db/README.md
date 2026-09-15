@@ -162,6 +162,39 @@ sense against this directory, `mvn clean` before believing it.
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
+   | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
+
+   **Data Extract CSV (`R__60`, UC-EXT-001)** — three mills whose two status tracks disagree in the
+   three ways the "Data Verified" rule has to tell apart: `760` is `V`/`V`, `761` is `V`/`D` and
+   `762` is `S`/`V`, so a selection naming Schedules 1–10 and one also naming Schedule 11 reach
+   different verdicts on the same mills. `760` carries a Schedule 1 **and** a Schedule 3 summary;
+   `761` carries a Schedule 1 and a Schedule 2 summary and deliberately **no** Schedule 3, which is
+   the `*** NO SCHEDULE 3 ***` sentinel case; `762` carries no schedule data at all, so a
+   whole-schedule no-data marker is reachable while other mills in the same selection still have
+   rows. Mill NUMBERs are out of mill-id order on purpose (7620/7600/7610), because the title block
+   renders numbers while section rows are ordered by id.
+
+   The Story 21.2 code review (2026-09-14) found the Schedule 3 sub-page, 4, 5, 8 and 10 walks had
+   never executed against a fixture row, so `760` now also carries one row for each of them, `761`
+   one silviculture location (its `V`/`D` split is what proves the Schedule 11 STATUS cell reads the
+   silviculture track), and `762` an EMPTY Schedule 1 summary (`1320`, legacy's all-records-empty
+   whole-schedule marker). Those rows live in tables with their own primary keys, so `R__60` claims
+   **one** further band, **`6600–6699`**, verified free of any `66xx` literal in `db/` and `db-e2e/`
+   and below every sequence start those tables draw from (`9000`+): `TRANSPORTATION_REPORT`
+   `6600–6609`, `CAMP_REPORT` `6610–6619`, `TREE_TO_TRUCK_REPORT` `6620–6629`,
+   `TREE_TO_TRUCK_DETAIL_REPORT` `6630–6639`, `ROAD_CONSTRUCTION_REPRT` `6640–6649`,
+   `ROAD_CONSTRUCTION_REPRT_DTL` `6650–6659`, `BASIC_SILVICULTURE_REPORT` `6660–6669`. Its
+   cost-report details stay inside `9000–9099` (`9003`–`9004`, `9011`–`9014`, `9040`–`9041`,
+   `9050`–`9052`, `9060`–`9061` now used), which is safe because `V20260818` restarted
+   `ILCR_COST_REPORT_DETAIL_SEQ` at `10000`. It adds NO table, NO code row and NO cost item.
+
+   **Every row in `R__60` is report year 2020, and that is load-bearing.** `MillReportStatusIT`
+   asserts the 2021 `ILCR_MILL_REPORT_STATUS` rows are exactly five *and* names them in order
+   (`contains(514, 730, 731, 732, 733)`), so a 2021 row here would fail two assertions in another
+   area. The second year of a multi-year extract selection is therefore a year with no status row and
+   no data — which is itself three of the cases under test: the verbatim `** NO STATUS **` cell, a
+   missing status row forcing `Data Verified: No`, and the combined Schedule 1+2 layout emitting no
+   mini-table header for a year with no rows.
 
    **Mill administration (`R__75`, UC-MILL-001)** — the maintain-mills surface needs four shapes this
    snapshot could not otherwise supply. `750` and `756` are ministry mills with **no**

@@ -174,14 +174,14 @@ public class ReportController implements ReportApi {
    * <p>The body is a {@link Resource}, written synchronously, NOT a {@code StreamingResponseBody}.
    * Async streaming was there to keep the export off the heap while it ran, and it has nothing left
    * to do now that the export finishes first — while combining it with a declared {@code
-   * Content-Length} actively raced (see {@link ExportedPdf#asResource()}). The heap is unaffected
+   * Content-Length} actively raced (see {@link SpooledFile#asResource()}). The heap is unaffected
    * either way: the converter copies from disk in a small buffer, and the spool deletes itself when
    * the response stream closes.
    */
   private ResponseEntity<Resource> pdfResponse(
       String filename, Long millId, int year, RenderedReport report) {
     // Before the ResponseEntity exists, deliberately: a throw here is still a normal 500.
-    ExportedPdf pdf = pdfSpooler.spool(report);
+    SpooledFile pdf = pdfSpooler.spool(report);
     log.debug(
         "Sending {} ({} bytes) for mill {} year {}",
         filename,
