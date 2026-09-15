@@ -180,7 +180,12 @@ const withLegacyUnits = (
   }
   return errors.map((error) => ({
     ...error,
-    text: rules.reduce((text, [pattern, unit]) => text.replace(pattern, () => unit), error.text),
+    // Defensive: the wire types `text` as a string, but a resolver that ever left it unset must not
+    // take the whole page down for one line.
+    text: rules.reduce(
+      (text, [pattern, unit]) => text.replace(pattern, () => unit),
+      error.text ?? '',
+    ),
   }))
 }
 

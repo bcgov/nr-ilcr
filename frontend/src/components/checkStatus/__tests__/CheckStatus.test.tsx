@@ -126,6 +126,10 @@ const item = (title: string): HTMLElement => {
 /** The result lines inside one item — every InlineNotification renders with role=status. */
 const linesIn = (element: HTMLElement) => within(element).queryAllByRole('status')
 
+/** The sweep requests seen by a spy on the shared axios instance (the tombstone's /mill-context read shares it). */
+const sweepCalls = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls.filter((call) => String(call[0]).startsWith('/v1/check-status'))
+
 const hintFor = (button: HTMLElement): HTMLElement | null => {
   const id = button.getAttribute('aria-describedby')
   return id ? document.getElementById(id) : null
@@ -142,12 +146,6 @@ const ContextSwitchHarness = () => {
       <CheckStatus />
     </>
   )
-}
-
-const drainEventLoop = async (turns = 20) => {
-  for (let i = 0; i < turns; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
 }
 
 // The submitter tests seed the mock user; nothing in the harness clears it.
@@ -311,7 +309,6 @@ describe('Check Status page (Story 15.2)', () => {
     )
 
     expect(await screen.findByText(ERR_MILL_YEAR_NOT_SELECTED)).toBeInTheDocument()
-    await drainEventLoop()
     expect(calls).toBe(0)
     expect(getSpy).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument()
@@ -840,10 +837,14 @@ describe('Check Status page (Story 15.2)', () => {
 
   // ---- Stale context ---------------------------------------------------------------------------
 
-  test('stale-context guard: a sweep for mill A resolving after the context flipped to mill B never renders', async () => {
+  test('stale-context guard: switching mill/year aborts the in-flight sweep, shows loading on the same render, and nothing of the old request renders', async () => {
     let releaseA!: () => void
     const heldA = new Promise<void>((resolve) => {
       releaseA = resolve
+    })
+    let releaseB!: () => void
+    const heldB = new Promise<void>((resolve) => {
+      releaseB = resolve
     })
     server.use(
       http.get(SWEEP_URL, async ({ request }) => {
@@ -858,26 +859,35 @@ describe('Check Status page (Story 15.2)', () => {
             }),
           )
         }
+        await heldB
         return HttpResponse.json(sweep({ millId: 999, year: 2020 }))
       }),
     )
+    const getSpy = vi.spyOn(apiService.getAxiosInstance(), 'get')
     const user = userEvent.setup()
     render(<ContextSwitchHarness />)
     expect(await screen.findByRole('status', { name: 'Loading Check Status' })).toBeInTheDocument()
+    await waitFor(() => expect(sweepCalls(getSpy)).toHaveLength(1))
+    const signalA = (sweepCalls(getSpy)[0][1] as { signal: AbortSignal }).signal
+    expect(signalA.aborted).toBe(false)
 
     await user.click(screen.getByRole('button', { name: 'change' }))
-    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    // Both requests are held, so this IS the frame right after the switch: loading, not blank.
+    expect(screen.getByRole('status', { name: 'Loading Check Status' })).toBeInTheDocument()
+    // The request for mill A was aborted by the effect cleanup the moment the context changed.
+    expect(signalA.aborted).toBe(true)
+    await waitFor(() => expect(sweepCalls(getSpy)).toHaveLength(2))
 
     releaseA()
-    await drainEventLoop()
+    releaseB()
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
     expect(screen.queryByText(SCH1_CROSS_CHECK_TEXT)).not.toBeInTheDocument()
-    expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
   })
 
-  test("stale-context guard: mill A's rejected request cannot replace mill B with its error", async () => {
-    let rejectA!: () => void
+  test("stale-context guard: the aborted request's rejection is never shown as a load failure", async () => {
+    let releaseA!: () => void
     const heldA = new Promise<void>((resolve) => {
-      rejectA = resolve
+      releaseA = resolve
     })
     server.use(
       http.get(SWEEP_URL, async ({ request }) => {
@@ -889,17 +899,20 @@ describe('Check Status page (Story 15.2)', () => {
         return HttpResponse.json(sweep({ millId: 999, year: 2020 }))
       }),
     )
+    const getSpy = vi.spyOn(apiService.getAxiosInstance(), 'get')
     const user = userEvent.setup()
     render(<ContextSwitchHarness />)
     expect(await screen.findByRole('status', { name: 'Loading Check Status' })).toBeInTheDocument()
+    await waitFor(() => expect(sweepCalls(getSpy)).toHaveLength(1))
 
     await user.click(screen.getByRole('button', { name: 'change' }))
     expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
-
-    rejectA()
-    await drainEventLoop()
+    // Axios rejects an aborted request with a CanceledError; that rejection is not this page's error.
+    expect((sweepCalls(getSpy)[0][1] as { signal: AbortSignal }).signal.aborted).toBe(true)
+    releaseA()
+    await waitFor(() => expect(screen.getAllByText(MET_TEXT)).toHaveLength(12))
     expect(screen.queryByText(LOAD_FAILED)).not.toBeInTheDocument()
-    expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
+    expect(screen.queryByText('Unable to load Check Status')).not.toBeInTheDocument()
   })
 
   test('a mill/year change re-issues the sweep for the new context', async () => {

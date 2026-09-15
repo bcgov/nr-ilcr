@@ -101,7 +101,11 @@ const trackActions = (
 ): TrackActions => {
   const canSubmit = isSubmitter && track.statusCode === DRAFT
   const canVerify = isAdmin && track.statusCode === SUBMITTED
-  const reversal: TrackAction = { enabled: isAdmin, onClick: () => undefined }
+  const reversal: TrackAction = {
+    enabled: isAdmin,
+    disabledReason: isAdmin ? undefined : HINT_NOT_ADMIN,
+    onClick: () => undefined,
+  }
   return {
     setToDraft: isAdmin && track.statusCode === SUBMITTED ? reversal : undefined,
     setToSubmit: isAdmin && track.statusCode === VERIFIED ? reversal : undefined,
@@ -159,19 +163,17 @@ const CheckStatus: FC = () => {
     notSubmitted: HINT_NOT_SUBMITTED_11,
   })
 
-  const bar1To10 = <CheckStatusActions {...actions1To10} />
-
   return (
     <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        {bar1To10}
+        <CheckStatusActions {...actions1To10} />
         <TrackRegion
           id="check-status-heading-1-10"
           heading="Schedules 1–10"
           track={data.schedules1To10}
         />
-        {bar1To10}
+        <CheckStatusActions {...actions1To10} />
         <TrackRegion
           id="check-status-heading-11"
           heading="Schedule 11"
