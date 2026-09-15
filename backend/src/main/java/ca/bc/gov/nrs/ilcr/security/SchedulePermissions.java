@@ -37,7 +37,8 @@ public class SchedulePermissions {
             Action.EDIT_HOME_CONTENT,
             Action.MAINTAIN_USERS,
             Action.GENERATE_MILL_REPORTS,
-            Action.MAINTAIN_MILLS));
+            Action.MAINTAIN_MILLS,
+            Action.GENERATE_DATA_EXTRACT));
     ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
   }
 
