@@ -30,6 +30,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillYearTrackCodes;
 import ca.bc.gov.nrs.ilcr.reporting.FileSpooler;
+import ca.bc.gov.nrs.ilcr.reporting.SpoolShape;
 import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
@@ -74,7 +75,6 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -111,9 +111,6 @@ import org.springframework.stereotype.Component;
 public class DataExtractGenerator {
 
   private static final Logger log = LoggerFactory.getLogger(DataExtractGenerator.class);
-
-  /** Legacy's spool prefix, less the leading slash {@code createTempFile} discarded anyway. */
-  static final String SPOOL_PREFIX = "dataExtract";
 
   /** Legacy {@code MMMM, dd yyyy @ HH:mm aaa}: a 24-hour clock AND an AM/PM marker, verbatim. */
   private static final DateTimeFormatter TIMESTAMP =
@@ -273,7 +270,7 @@ public class DataExtractGenerator {
         selection.startYear(),
         selection.endYear(),
         extract.schedules.numbers());
-    return spooler.spool(SPOOL_PREFIX, ".csv", extract::writeTo);
+    return spooler.spool(SpoolShape.DATA_EXTRACT, extract::writeTo);
   }
 
   /** One build's resolved inputs and its walk over the selection. */
@@ -292,7 +289,7 @@ public class DataExtractGenerator {
     Extract(ValidatedSelection selection) {
       this.selection = selection;
       this.schedules = ScheduleSelection.of(selection.schedules());
-      this.mills = resolveMills(selection.millIds());
+      this.mills = selection.mills();
       for (MillYearTrackCodes row :
           millContextService.findTrackStatusCodes(
               selection.millIds(), selection.startYear(), selection.endYear())) {
@@ -853,25 +850,6 @@ public class DataExtractGenerator {
       String number = mill.millNumber();
       return number == null || number.isBlank() ? "Mill " + mill.millId() : number.strip();
     }
-  }
-
-  /**
-   * The selected mills in the SELECTION's order, from the administrator's full list. A selected id
-   * the list does not hold (no status xref, never enrolled) still gets a row shell so its reads run
-   * and its number cell falls back to the id, rather than failing the whole extract as legacy's map
-   * lookup would have.
-   */
-  private List<MillSummary> resolveMills(List<Long> millIds) {
-    Map<Long, MillSummary> byId = new LinkedHashMap<>();
-    for (MillSummary mill : millContextService.listMills(true, null)) {
-      byId.put(mill.millId(), mill);
-    }
-    List<MillSummary> resolved = new ArrayList<>();
-    for (Long id : millIds) {
-      MillSummary mill = byId.get(id);
-      resolved.add(mill != null ? mill : new MillSummary(id, null, null, null));
-    }
-    return resolved;
   }
 
   private static String key(long millId, int year) {

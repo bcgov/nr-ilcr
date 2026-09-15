@@ -49,7 +49,7 @@ const SUCCESS_FALLBACK = 'Data extraction successfully.'
  * `Content-Disposition` — the idiom both shipped download pages already follow. The backend derives
  * the same name on a clock pinned to Pacific time, so the date is taken in that zone here too: an
  * administrator in Ottawa or on a UTC laptop would otherwise save a differently dated file for
- * several hours of every day, not only across midnight. `en-CA` puts the parts in y-m-d order.
+ * several hours of every day, not only across midnight.
  */
 const PACIFIC_DATE = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Vancouver',
@@ -58,8 +58,22 @@ const PACIFIC_DATE = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 })
 
-const extractFilename = (now: Date): string =>
-  `dataExtract${PACIFIC_DATE.format(now).replaceAll('-', '')}.csv`
+/**
+ * Read the y/m/d parts BY NAME rather than formatting to a string and stripping separators.
+ * `en-CA` happens to render `yyyy-MM-dd` on today's engines, but the separator is a locale-data
+ * detail, not a guarantee — ICU has changed separators for other locales across releases, and a
+ * build that emitted slashes would silently produce `dataExtract2026/09/15.csv`, a name some
+ * browsers would then mangle into a path. `formatToParts` asks for the field instead of the
+ * punctuation, so only the parts we name can reach the filename. A part the engine somehow omits
+ * collapses to the empty string rather than the literal "undefined".
+ */
+const datePart = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string =>
+  parts.find((part) => part.type === type)?.value ?? ''
+
+const extractFilename = (now: Date): string => {
+  const parts = PACIFIC_DATE.formatToParts(now)
+  return `dataExtract${datePart(parts, 'year')}${datePart(parts, 'month')}${datePart(parts, 'day')}.csv`
+}
 
 const SAVE_FAILED =
   'The data extract was generated but could not be saved by this browser. Please try again.'

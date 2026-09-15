@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,11 +74,53 @@ class DataExtractServiceTest {
   }
 
   private static final List<Long> ONE_MILL = List.of(514L);
+
+  /**
+   * The same one mill as {@link #ONE_MILL}, RESOLVED — what the gate now hands the generator. The
+   * row is the one the stubbed directory holds, so an assertion on it also pins that the gate
+   * resolved from that read rather than inventing a shell.
+   */
+  private static final List<MillSummary> ONE_MILL_RESOLVED =
+      List.of(new MillSummary(514L, "514", "AAA Milling", "ACT"));
+
   private static final List<String> ONE_SCHEDULE = List.of("Schedule 1");
 
   private void yearsOpen() {
     when(reportYearGuard.requireOpenYear(anyString()))
         .thenAnswer(invocation -> Integer.parseInt(invocation.getArgument(0, String.class).trim()));
+  }
+
+  @Test
+  @DisplayName("the mill directory is read ONCE per request, and the generator gets it resolved")
+  void millDirectory_isReadOnce_andHandedOnResolved() {
+    yearsOpen();
+    when(generator.generate(any())).thenReturn(mock(SpooledFile.class));
+
+    service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE));
+
+    // Once, not twice. The gate needs the directory to refuse an id no picker could have offered,
+    // and the generator needs the mill's number and name for its row context; both used to read
+    // the whole directory themselves, so one request cost two full-table reads. The gate now
+    // resolves and passes on, and this count is what keeps the second read from coming back.
+    verify(millContextService, times(1)).listMills(true, null);
+    ArgumentCaptor<ValidatedSelection> selection =
+        ArgumentCaptor.forClass(ValidatedSelection.class);
+    verify(generator).generate(selection.capture());
+    // Resolved rows, not bare ids — and the ids still read off them in the same order.
+    assertThat(selection.getValue().mills()).isEqualTo(ONE_MILL_RESOLVED);
+    assertThat(selection.getValue().millIds()).isEqualTo(ONE_MILL);
+  }
+
+  @Test
+  @DisplayName("an empty mill selection reads no directory at all")
+  void emptyMillSelection_readsNoDirectory() {
+    // It has already earned its own message, and there is nothing to resolve. Pinning this keeps
+    // the cheapest refusal cheap: a submit with nothing ticked must not cost a full-table read.
+    assertThatThrownBy(() -> service.generate(request("2020", "2021", List.of(), ONE_SCHEDULE)))
+        .isInstanceOf(MultiMessageException.class);
+
+    verify(millContextService, never()).listMills(anyBoolean(), any());
+    verify(generator, never()).generate(any());
   }
 
   @Test
@@ -95,7 +139,7 @@ class DataExtractServiceTest {
         ArgumentCaptor.forClass(ValidatedSelection.class);
     verify(generator).generate(selection.capture());
     assertThat(selection.getValue())
-        .isEqualTo(new ValidatedSelection(2020, 2021, ONE_MILL, ONE_SCHEDULE));
+        .isEqualTo(new ValidatedSelection(2020, 2021, ONE_MILL_RESOLVED, ONE_SCHEDULE));
   }
 
   @Test
@@ -156,7 +200,7 @@ class DataExtractServiceTest {
   void startEqualToEnd_isNotARangeFailure() {
     yearsOpen();
     service.generate(request("2021", "2021", ONE_MILL, ONE_SCHEDULE));
-    verify(generator).generate(new ValidatedSelection(2021, 2021, ONE_MILL, ONE_SCHEDULE));
+    verify(generator).generate(new ValidatedSelection(2021, 2021, ONE_MILL_RESOLVED, ONE_SCHEDULE));
 
     MultiMessageException inverted =
         catchThrowableOfType(
@@ -212,7 +256,7 @@ class DataExtractServiceTest {
   void whitespacePaddedYear_parses() {
     yearsOpen();
     service.generate(request(" 2020 ", "2021", ONE_MILL, ONE_SCHEDULE));
-    verify(generator).generate(new ValidatedSelection(2020, 2021, ONE_MILL, ONE_SCHEDULE));
+    verify(generator).generate(new ValidatedSelection(2020, 2021, ONE_MILL_RESOLVED, ONE_SCHEDULE));
   }
 
   @Test

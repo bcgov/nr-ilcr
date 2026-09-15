@@ -704,16 +704,18 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
     // And it agrees with today's date IN PACIFIC TIME, not the runner's local clock. The backend
     // names the file on a clock pinned to America/Vancouver, and the page matches it; a local-clock
     // expectation here would go red for several hours of every day on a UTC CI runner (and pass by
-    // coincidence on a Vancouver laptop). `en-CA` yields y-m-d, so stripping the dashes is yyyyMMdd.
-    const expected = new Intl.DateTimeFormat('en-CA', {
+    // coincidence on a Vancouver laptop). Built from the NAMED parts, the same way the page builds
+    // it — an expectation that formatted to a string and stripped the separators would restate the
+    // very assumption the page no longer makes, and would pass whichever way the page was written.
+    const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Vancouver',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    })
-      .format(new Date())
-      .replaceAll('-', '')
-    expect(filename).toBe(`dataExtract${expected}.csv`)
+    }).formatToParts(new Date())
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((entry) => entry.type === type)?.value ?? ''
+    expect(filename).toBe(`dataExtract${part('year')}${part('month')}${part('day')}.csv`)
 
     const banner = await screen.findByTestId('data-extract-success')
     expect(banner).toHaveTextContent('Generated')
@@ -721,6 +723,54 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
     expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
       `The data extract has been generated. ${SERVER_SUCCESS_TEXT}`,
     )
+  })
+
+  test('names the file from the date PARTS, so a locale that renders other separators cannot reach it', async () => {
+    // The negative control for the filename builder. `en-CA` renders `yyyy-MM-dd` on every engine
+    // this app runs on today, but the separator is locale DATA, not a guarantee, and a build whose
+    // ICU emitted slashes would have produced `dataExtract2026/09/15.csv` from the previous
+    // format-then-strip-the-dashes construction — a name with path separators in it.
+    //
+    // So poison `format` and leave `formatToParts` alone: the page must never call the former. This
+    // test goes red against the old construction and stays green against the part-based one, which
+    // is the only way to pin a change whose whole point is what it no longer depends on.
+    //
+    // Swapped through the property DESCRIPTOR rather than `vi.spyOn`, because the spec defines
+    // `format` as an accessor on the prototype whose getter rejects a receiver that is not a real
+    // DateTimeFormat — spying on it throws before the test can run.
+    const original = Object.getOwnPropertyDescriptor(Intl.DateTimeFormat.prototype, 'format')
+    let formatCalled = false
+    Object.defineProperty(Intl.DateTimeFormat.prototype, 'format', {
+      configurable: true,
+      get: () => () => {
+        formatCalled = true
+        return '1999/12/31'
+      },
+    })
+
+    try {
+      server.use(
+        ...lists(),
+        http.post(EXTRACT, () => csvResponse()),
+      )
+      await renderPage()
+      const user = userEvent.setup()
+
+      await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+      await waitFor(() => {
+        expect(vi.mocked(triggerDownload)).toHaveBeenCalledTimes(1)
+      })
+      const [, filename] = vi.mocked(triggerDownload).mock.calls[0]
+      expect(filename).toMatch(/^dataExtract\d{8}\.csv$/)
+      expect(filename).not.toContain('/')
+      expect(filename).not.toContain('1999')
+      expect(formatCalled).toBe(false)
+    } finally {
+      if (original) {
+        Object.defineProperty(Intl.DateTimeFormat.prototype, 'format', original)
+      }
+    }
   })
 
   test('renders SUC-001 from the server bundle, never a client literal', async () => {

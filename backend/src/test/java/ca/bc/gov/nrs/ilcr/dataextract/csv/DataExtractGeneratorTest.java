@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillYearTrackCodes;
 import ca.bc.gov.nrs.ilcr.reporting.FileSpooler;
+import ca.bc.gov.nrs.ilcr.reporting.SpoolShape;
 import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Service;
@@ -62,6 +63,8 @@ class DataExtractGeneratorTest {
       Clock.fixed(Instant.parse("2020-03-05T23:30:00Z"), DataExtractGenerator.ZONE);
 
   private static final long MILL_ID = 514L;
+
+  private static final MillSummary MILL = new MillSummary(MILL_ID, "1234", "Test Mill", "ACT");
   private static final int YEAR = 2020;
 
   @Mock private MillContextService millContextService;
@@ -107,10 +110,10 @@ class DataExtractGeneratorTest {
     // the writer runs against the in-memory sink so the bytes can be read, and the returned file
     // is a Mockito dummy: SpooledFile's constructor is package-private to reporting (only the
     // spooler may mint one), and nothing in the generator reads the returned file anyway.
-    when(spooler.spool(eq(DataExtractGenerator.SPOOL_PREFIX), eq(".csv"), any()))
+    when(spooler.spool(eq(SpoolShape.DATA_EXTRACT), any()))
         .thenAnswer(
             invocation -> {
-              FileSpooler.SpoolWriter writer = invocation.getArgument(2);
+              FileSpooler.SpoolWriter writer = invocation.getArgument(1);
               writer.writeTo(sink);
               return mock(SpooledFile.class);
             });
@@ -118,8 +121,8 @@ class DataExtractGeneratorTest {
 
   /** One enrolled mill, one Verified/Verified year, one Schedule 6 read with no road records. */
   private void arrangeOneMillOneYearSchedule6() {
-    when(millContextService.listMills(true, null))
-        .thenReturn(List.of(new MillSummary(MILL_ID, "1234", "Test Mill", "ACT")));
+    // No listMills stub: the mills arrive on the ValidatedSelection already resolved by the gate,
+    // so the generator no longer reads the directory a second time within the request.
     when(millContextService.findTrackStatusCodes(List.of(MILL_ID), YEAR, YEAR))
         .thenReturn(List.of(new MillYearTrackCodes(MILL_ID, YEAR, "V", "V")));
     // The row context is built even for a pair with no records, so the description IS looked up.
@@ -132,7 +135,7 @@ class DataExtractGeneratorTest {
   }
 
   private ValidatedSelection schedule6Selection() {
-    return new ValidatedSelection(YEAR, YEAR, List.of(MILL_ID), List.of("Schedule 6"));
+    return new ValidatedSelection(YEAR, YEAR, List.of(MILL), List.of("Schedule 6"));
   }
 
   private String body() {

@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dataextract.dto.DataExtractRequest;
 import ca.bc.gov.nrs.ilcr.reporting.FileSpooler;
+import ca.bc.gov.nrs.ilcr.reporting.SpoolShape;
 import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -59,7 +60,7 @@ class DataExtractControllerTest {
 
   private SpooledFile spooled(byte[] body) {
     return new FileSpooler(spoolDir.toString())
-        .spool("dataExtract", ".csv", out -> out.write(body));
+        .spool(SpoolShape.DATA_EXTRACT, out -> out.write(body));
   }
 
   @Test

@@ -45,7 +45,7 @@ class PdfSpooler {
     // every request after it. Acquiring the file inside this block rather than before it is the
     // whole reason it is shaped this way.
     try (report) {
-      return spooler.spool("ilcr-report-", ".pdf", report::writeTo);
+      return spooler.spool(SpoolShape.PDF_REPORT, report::writeTo);
     } catch (SpoolFailedException e) {
       throw new ReportGenerationException(e.getMessage(), e);
     }

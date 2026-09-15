@@ -10,7 +10,9 @@ import ca.bc.gov.nrs.ilcr.reporting.ReportYearGuard;
 import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -165,7 +167,13 @@ public class DataExtractService {
       keys.add(MSG_MILLS_NOT_SELECTED);
       arguments.add(null);
     }
-    if (!millIds.isEmpty() && !allKnown(millIds)) {
+    // The administrator's mill directory, read ONCE per request and reused. It answers two
+    // questions — whether every selected id is one the picker could have offered, and what each
+    // selected mill's number and name are — and the generator used to ask the second by re-reading
+    // the whole directory itself. An empty selection skips the read entirely: it has already earned
+    // its message above and there is nothing to resolve.
+    Map<Long, MillSummary> directory = millIds.isEmpty() ? Map.of() : millDirectory();
+    if (!millIds.isEmpty() && !directory.keySet().containsAll(millIds)) {
       // The picker cannot send an id that is not a mill, but a plain JSON body can. Legacy failed
       // loudly on one (an NPE on the unknown mill's number); a shell row labelled "Mill <id>" with
       // "** NO STATUS **" cells would instead read as real, unverified data. No legacy text exists
@@ -203,16 +211,33 @@ public class DataExtractService {
     // is the legacy-closest one.
     int start = reportYearGuard.requireOpenYear(request.startYear());
     int end = reportYearGuard.requireOpenYear(request.endYear());
-    return new ValidatedSelection(start, end, millIds, schedules);
+    return new ValidatedSelection(start, end, resolve(millIds, directory), schedules);
   }
 
-  /** Whether every selected id names a mill the administrator's own picker could have offered. */
-  private boolean allKnown(List<Long> millIds) {
-    java.util.Set<Long> known = new java.util.HashSet<>();
+  /** The administrator's full mill list, by id. Every mill, closed included (DL-22). */
+  private Map<Long, MillSummary> millDirectory() {
+    Map<Long, MillSummary> byId = new LinkedHashMap<>();
     for (MillSummary mill : millContextService.listMills(true, null)) {
-      known.add(mill.millId());
+      byId.put(mill.millId(), mill);
     }
-    return known.containsAll(millIds);
+    return byId;
+  }
+
+  /**
+   * The selected mills in the SELECTION's order.
+   *
+   * <p>An id the directory does not hold keeps a row shell whose number cell falls back to the id,
+   * rather than failing the whole extract as legacy's map lookup would have. Unreachable from here
+   * — the gate above refuses an unknown id with its own 400 — but the resolution and the refusal
+   * are separate concerns and the fallback is what makes this method total.
+   */
+  private static List<MillSummary> resolve(List<Long> millIds, Map<Long, MillSummary> directory) {
+    List<MillSummary> resolved = new ArrayList<>();
+    for (Long id : millIds) {
+      MillSummary mill = directory.get(id);
+      resolved.add(mill != null ? mill : new MillSummary(id, null, null, null));
+    }
+    return resolved;
   }
 
   /**

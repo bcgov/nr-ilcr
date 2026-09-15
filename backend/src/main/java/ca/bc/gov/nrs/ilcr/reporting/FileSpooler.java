@@ -41,8 +41,8 @@ import org.springframework.util.StringUtils;
  * partial file here, so nothing survives a failed generation either.
  *
  * <p>Format-agnostic on purpose. The PDF path ({@link PdfSpooler}) and the CSV data extract share
- * the same whole-file-or-no-file contract and the same directory; each supplies its own file name
- * prefix and suffix and its own writer, and translates {@link SpoolFailedException} into the error
+ * the same whole-file-or-no-file contract and the same directory; each supplies its own declared
+ * {@link SpoolShape} and its own writer, and translates {@link SpoolFailedException} into the error
  * its endpoint answers with.
  */
 @Component
@@ -83,13 +83,13 @@ public class FileSpooler {
    * this runs before the response is committed, that throw reaches the global handler and the
    * caller gets an error, not a file.
    *
-   * @param prefix the temp file name prefix (names the producer in the spool directory)
-   * @param suffix the temp file name suffix, typically the extension
+   * @param shape the declared name shape for this kind of download, which is also what {@link
+   *     SpoolReaper} recognises it by
    * @param writer writes the whole body
    * @return the complete file on disk, whose {@code close()} deletes it
    */
-  public SpooledFile spool(String prefix, String suffix, SpoolWriter writer) {
-    Path file = createSpoolFile(prefix, suffix);
+  public SpooledFile spool(SpoolShape shape, SpoolWriter writer) {
+    Path file = createSpoolFile(shape.prefix(), shape.suffix());
     try {
       // The stream closes BEFORE size() is read, so the write is flushed and the file complete.
       try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(file))) {
@@ -129,6 +129,18 @@ public class FileSpooler {
       throw new SpoolFailedException(
           "Failed to create a spool file in " + directory + " for the generated download", e);
     }
+  }
+
+  /**
+   * The directory spool files are written to, for {@link SpoolReaper}.
+   *
+   * <p>Taken from the spooler rather than re-reading the property, so the sweeper and the writer
+   * can never be pointed at two different directories.
+   *
+   * @return the resolved spool directory, which may not exist yet
+   */
+  Path directory() {
+    return directory;
   }
 
   /** Best-effort cleanup of a partial spool; the original failure is what the caller must see. */
