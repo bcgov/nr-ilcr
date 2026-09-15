@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -415,11 +417,12 @@ class Schedule8ServiceTest {
     }
 
     @Test
-    @DisplayName("a sample with nothing on file gets an empty map, not a null one")
-    void noSnapshotIsEmptyNotNull() {
-      // Empty-not-null is what tells the page to evaluate the added-since-submission branch for
-      // every field; a null map would suppress the indicators altogether, which is the Draft
-      // answer.
+    @DisplayName("a sample with nothing on file still carries every field, with legacy's label")
+    void noSnapshotCarriesEmptyOriginals() {
+      // REGRESSION GUARD. This asserted an EMPTY map until the empty-tooltip fix, and an empty map
+      // is now indistinguishable from "no field on this row has indicator wiring" — so every
+      // indicator on a sample with no 'S' snapshot silently stopped rendering. `sampleOriginals`
+      // must substitute an all-null row rather than short-circuit, so its per-field puts still run.
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
       when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
@@ -428,7 +431,12 @@ class Schedule8ServiceTest {
       Sample servedSample =
           service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0).samples().get(0);
 
-      assertThat(servedSample.originalValues()).isNotNull().isEmpty();
+      assertAllNothingOnFile(servedSample.originalValues());
+      // Named explicitly: a field the operator has filled in since submission must have something
+      // for its indicator to show.
+      assertThat(servedSample.originalValues())
+          .containsEntry("contractId", nothingOnFile())
+          .containsEntry("helicopterPct", nothingOnFile());
     }
 
     @Test

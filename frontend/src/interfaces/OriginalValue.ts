@@ -17,7 +17,16 @@ export interface OriginalValue {
 // Per-field originals for one document or row, keyed by that object's own camelCase field name.
 //
 // Three states, all meaningful — see `utils/originalValue.ts` for the rule that reads them:
-//   * `null`/absent  — the track is at Draft: no indicator renders anywhere.
-//   * key present    — a submitted value is on file.
-//   * key absent     — no submitted value on file for that field.
+//   * map is `null`          — the track is at Draft: no indicator renders anywhere.
+//   * key present, `value`   — a submitted value is on file; flag when the current value differs.
+//     non-empty
+//   * key present, `value`   — nothing was submitted for that field; flag whenever the current
+//     empty                    value is non-empty, showing the server's bare
+//                              "Original Submission Value: " (legacy's own text for a null original).
+//
+// A key that is ABSENT is not one of the three: it means the field has no original-value wiring,
+// so nothing is flagged and there is no tooltip to show. The server writes a key for every field it
+// offers, including those with nothing on file — so do not "optimise" an empty value into an
+// omitted key, and do not treat an omitted key as "nothing submitted". That swap is what this
+// contract was corrected away from, and it silently stops indicators rendering.
 export type OriginalValues = Readonly<Record<string, OriginalValue>>
