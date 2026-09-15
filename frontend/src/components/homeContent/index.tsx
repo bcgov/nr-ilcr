@@ -6,8 +6,7 @@ import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import RichTextEditor from '@/components/homeContent/RichTextEditor'
 import apiService from '@/service/api-service'
-import { extractDetail } from '@/utils/error'
-import type { ProblemBody } from '@/interfaces/WorkingContext'
+import { extractDetail, extractMessages } from '@/utils/error'
 import type { HomeContentEntry, HomeContentSaveResponse } from '@/interfaces/HomeContent'
 
 const api = () => apiService.getAxiosInstance()
@@ -30,18 +29,9 @@ const REQUIRED = (label: string) => `${label}: Value is required.`
 const isBlankHtml = (html: string) =>
   (new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '').trim().length === 0
 
-/** Verbatim per-field message(s) from a 400 body, else detail, else a generic fallback. */
-const extractSaveErrors = (error: unknown): string[] => {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const data = (error as { response?: { data?: ProblemBody } }).response?.data
-    const texts = [
-      ...new Set((data?.messages ?? []).map((m) => m.text).filter(Boolean)),
-    ] as string[]
-    if (texts.length > 0) return texts
-    if (data?.detail) return [data.detail]
-  }
-  return ['Unable to save the Home content.']
-}
+/** Verbatim per-field message(s) from a 400 body, else detail, else this page's generic fallback. */
+const extractSaveErrors = (error: unknown) =>
+  extractMessages(error, 'Unable to save the Home content.')
 
 /**
  * Content Editing (Story 24.2 / UC-CNT-001). Admin-only surface: edit the three role welcome messages

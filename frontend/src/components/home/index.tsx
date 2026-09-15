@@ -9,8 +9,7 @@ import PageTitle from '@/components/core/PageTitle'
 import type MillSummary from '@/interfaces/MillSummary'
 import type ReportingYear from '@/interfaces/ReportingYear'
 import type WorkingContext from '@/interfaces/WorkingContext'
-import type { ProblemBody } from '@/interfaces/WorkingContext'
-import { extractDetail } from '@/utils/error'
+import { extractDetail, extractMessages } from '@/utils/error'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import type { HomeContentEntry } from '@/interfaces/HomeContent'
 import './index.scss'
@@ -23,28 +22,10 @@ import './index.scss'
 // notification titles), mirroring the ratified schedule1 idiom [schedule1/index.tsx:30-35].
 
 // The verbatim per-field message(s) from a 400 body (S08 shows both together); fall back to `detail`,
-// then a last-resort generic (only if the server sent no problem body at all). Deduplicated — the
-// contract does not guarantee distinct texts, repeated texts add nothing, and unique texts keep the
-// notification list's React keys collision-free.
-function extractSaveErrors(error: unknown): string[] {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const data = (error as { response?: { data?: ProblemBody } }).response?.data
-    const texts = [
-      ...new Set(
-        (data?.messages ?? [])
-          .map((message) => message.text)
-          .filter((text): text is string => Boolean(text)),
-      ),
-    ]
-    if (texts.length > 0) {
-      return texts
-    }
-    if (data?.detail) {
-      return [data.detail]
-    }
-  }
-  return ['Unable to save the working context.']
-}
+// then this page's last-resort generic (only if the server sent no problem body at all). The
+// extraction itself is shared — see utils/error.
+const extractSaveErrors = (error: unknown) =>
+  extractMessages(error, 'Unable to save the working context.')
 
 const millItemToString = (mill: MillSummary | null) =>
   mill ? `${mill.millNumber ?? ''} - ${mill.millName ?? ''}` : ''
