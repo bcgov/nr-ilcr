@@ -9,12 +9,18 @@
 #
 #   * "THE BUSINESS-EXCEPTION PANEL" IS GONE. S16/S17/S18 each expect their message in a PrimeFaces
 #     `p:messages` panel driven by an `isScheduleNotFound()`-style flag. The rewrite has no such
-#     panel: S17 and S18 render the API's OWN `detail` inside a Carbon notification titled "Unable to
-#     load Schedule 5" (index.tsx:1151-1161), and S16 never issues a request at all — it is a
-#     client-side guard on the missing context (index.tsx:1130-1141). The MESSAGES survive verbatim;
-#     only the mechanism moved. Both server details were confirmed against the running app
-#     (2026-09-10): 25051/2017 -> 409 and 16050/2022 -> 404, each carrying the exact ERR-004 / ERR-005
-#     string the source Gherkin predicts.
+#     panel: S17 and S18 render the API's OWN `detail` inside a Carbon notification, and S16 never
+#     issues a request at all — it is a client-side guard on the missing context (index.tsx:1130-1141).
+#     The MESSAGES survive verbatim; only the mechanism moved. Both server details were confirmed
+#     against the running app (2026-09-10): 25051/2017 -> 409 and 16050/2022 -> 404, each carrying the
+#     exact ERR-004 / ERR-005 string the source Gherkin predicts.
+#
+#   * THE TWO SERVER GUARDS NO LONGER SHARE A TITLE. Since the shared `core/ScheduleLoadState` landed
+#     (Epic 16), a mill closed for the reporting year is titled "Mill not active for Reporting Year"
+#     and is deliberately NOT framed as a load failure — it is a context the reporter fixes on the Home
+#     page. Only S18's genuine 404 still renders under "Unable to load Schedule 5". S17 therefore
+#     asserts the specific title AND the absence of the generic one; the detail alone cannot tell the
+#     two framings apart.
 #
 #   * S19 AND DEVIATION (B). The source expects the row's "Delete" and "Copy" to be rendered and
 #     DISABLED alongside a "View". The rewrite drops them from the DOM entirely and leaves View alone
@@ -60,18 +66,30 @@ Feature: Report Camp and Access Expenses (Schedule 5) — guard states and read-
 
   # S17 / ERR-004 and S18 / ERR-005 — the document GET fails, so nothing renders and the API's own
   # detail is what the reporter reads. Both anchors are proved at the API before the browser is driven.
-  @p1 @S17 @S18
-  Scenario Outline: <name>
-    Given the Schedule 5 guard anchor "<guard>"
+  #
+  # THESE TWO USED TO SHARE ONE Scenario Outline. They no longer can: a mill closed for the reporting
+  # year is a CONTEXT guard carrying its own title, while a missing record is a genuine load failure
+  # that keeps the generic one (`core/ScheduleLoadState`). They assert different framings now, so they
+  # are two scenarios rather than one parametrised by name. Same split sch4 made on its own S16/S17.
+
+  # S17 / ERR-004 — a mill closed for the reporting year: its own title, because what the reporter has
+  # to do is pick another mill on the Home page.
+  @p1 @S17
+  Scenario: A mill that is not active for the year is blocked
+    Given the Schedule 5 guard anchor "closed-mill"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 5 expecting a guard message
-    Then the Schedule 5 page is blocked with "<detail>"
+    Then the Schedule 5 page shows the closed-mill guard with "This Mill is not active for the current Reporting Year. Please select another mill from the Home Page."
     And the Schedule 5 data-entry panel is suppressed
 
-    Examples:
-      | name                                                       | guard       | detail                                                                                                |
-      | S17 A mill that is not active for the year is blocked      | closed-mill | This Mill is not active for the current Reporting Year. Please select another mill from the Home Page. |
-      | S18 A mill/year with no Schedule 5 record is blocked       | not-found   | Schedule not found.                                                                                   |
+  # S18 / ERR-005 — no Schedule 5 record for the pair IS a load failure, and keeps the generic title.
+  @p1 @S18
+  Scenario: A mill/year with no Schedule 5 record is blocked
+    Given the Schedule 5 guard anchor "not-found"
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 5 expecting a guard message
+    Then the Schedule 5 page is blocked with "Schedule not found."
+    And the Schedule 5 data-entry panel is suppressed
 
   # S19 / STA-001, BR-06 — the report is Submitted, so the whole schedule renders read-only.
   @p1 @S19 @STA-001 @BR-06

@@ -769,9 +769,20 @@ export const GUARD_MESSAGES = {
   /** ERR-004 — the 409 detail, served by the API and echoed unchanged. */
   millNotActive:
     'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.',
+  /**
+   * ERR-004's own TITLE. A mill closed for the reporting year is a CONTEXT the reporter changes on the
+   * Home page, not the app failing to load, so `core/ScheduleLoadState` titles it separately instead of
+   * letting it fall through to the generic failure below. Shared by every schedule — sch4 pins the same
+   * string as `titleMillClosed`.
+   */
+  millNotActiveTitle: 'Mill not active for Reporting Year',
   /** ERR-005 — the 404 detail. */
   scheduleNotFound: 'Schedule not found.',
-  /** The title both server-side guards render under (index.tsx:1157). */
+  /**
+   * The GENERIC load-failure title, which ERR-005 still renders under — but ERR-004 no longer does.
+   * Asserting its ABSENCE on the closed-mill guard is what keeps the two framings apart: the detail
+   * alone reads identically either way.
+   */
   loadFailedTitle: 'Unable to load Schedule 5',
 } as const;
 

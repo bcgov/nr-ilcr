@@ -104,7 +104,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | **covered** | `name-validation.feature` `@p1 @S14 @FLD-001` — GREEN, re-grounded per SPEC-2: rejected as REQUIRED, not duplicate. Prediction CONFIRMED |
 | S15 | Numeric Field Fails Range/Format Validation | Exception | **covered** | `numeric-validation.feature` `@p1 @S15 @FLD-002` — GREEN, 5 outline rows. WIDE band (Wages) not exercised — see note |
 | S16 | No Mill/Year Selected in Session | Exception | **covered** | `render-states.feature` `@p1 @S16 @ERR-003` — GREEN. Client-side guard; no anchor and no request |
-| S17 | Selected Mill Not Active for the Reporting Year | Exception | **covered** | `render-states.feature` `@p1 @S17` — GREEN. 409 detail asserted verbatim |
+| S17 | Selected Mill Not Active for the Reporting Year | Exception | **covered** | `render-states.feature` `@p1 @S17` — GREEN. 409 detail asserted verbatim, under its OWN title ("Mill not active for Reporting Year") with the generic load-failure title asserted ABSENT — a context guard, not a load failure |
 | S18 | No Schedule 5 Record Found for Mill/Year | Exception | **covered** | `render-states.feature` `@p1 @S18` — GREEN. 404; absence IS the fixture |
 | S19 | Schedule Not Editable — Report Not in Draft (Read-Only View) | Exception | **covered** | `render-states.feature` `@p1 @S19 @STA-001 @BR-06` — GREEN. Needed a SEEDED camp — see GAP-3 |
 | S20 | Check Status Finds Missing Required Values | Exception | **covered** | `check-status-missing.feature` `@p1 @S20 @FLD-003` — GREEN. Third confirmation of SPEC-3 |
