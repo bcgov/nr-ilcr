@@ -45,7 +45,11 @@ export function useCheckStatusSweep(
       .get<CheckStatusSweepResponse>(`/v1/check-status?millId=${millId}&year=${year}`)
       .then((response) => {
         if (active) {
-          setData(response.data)
+          if (response.data.millId !== millId || response.data.year !== year) {
+            setErrorDetail(LOAD_FAILED)
+          } else {
+            setData(response.data)
+          }
         }
       })
       .catch((error: unknown) => {

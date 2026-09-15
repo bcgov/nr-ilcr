@@ -348,6 +348,16 @@ describe('Check Status page (Story 15.2)', () => {
     expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
   })
 
+  test('a successful response for a different mill/year is rejected as a controlled load error', async () => {
+    server.use(http.get(SWEEP_URL, () => HttpResponse.json(sweep({ millId: 999, year: 2020 }))))
+    render(<CheckStatus />)
+
+    expect(await screen.findByText(LOAD_FAILED)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Schedules 1–10' })).not.toBeInTheDocument()
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
   test('loading: the shared loading state shows until the sweep resolves', async () => {
     let release!: () => void
     const held = new Promise<void>((resolve) => {
@@ -400,6 +410,8 @@ describe('Check Status page (Story 15.2)', () => {
       .getByText(SCH1_CROSS_CHECK_TEXT)
       .closest('.cds--inline-notification')
     expect(error).toHaveClass('cds--inline-notification--error')
+    if (!error || !warning) throw new Error('expected both an error and a warning notification')
+    expect(error.compareDocumentPosition(warning)).toBe(window.Node.DOCUMENT_POSITION_FOLLOWING)
     // The other eleven still show their met line — the positive control for "under its own section".
     expect(screen.getAllByText(MET_TEXT)).toHaveLength(11)
   })
@@ -744,7 +756,7 @@ describe('Check Status page (Story 15.2)', () => {
     expect(submitButtons()).toHaveLength(3) // positive control
   })
 
-  test('Verified gate: admin with both tracks Submitted → all three Verified enabled and every Submit greyed; the 1–10 pair and the Schedule 11 one read their own track', async () => {
+  test('Verified gate: admin with Schedules 1–10 Submitted and Schedule 11 Draft → only the 1–10 Verified pair is enabled', async () => {
     server.use(
       millContextWithBothTracks('S', 'D'),
       http.get(SWEEP_URL, () =>
@@ -858,6 +870,34 @@ describe('Check Status page (Story 15.2)', () => {
     releaseA()
     await drainEventLoop()
     expect(screen.queryByText(SCH1_CROSS_CHECK_TEXT)).not.toBeInTheDocument()
+    expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
+  })
+
+  test("stale-context guard: mill A's rejected request cannot replace mill B with its error", async () => {
+    let rejectA!: () => void
+    const heldA = new Promise<void>((resolve) => {
+      rejectA = resolve
+    })
+    server.use(
+      http.get(SWEEP_URL, async ({ request }) => {
+        const params = new URL(request.url).searchParams
+        if (params.get('millId') === '13050') {
+          await heldA
+          return HttpResponse.error()
+        }
+        return HttpResponse.json(sweep({ millId: 999, year: 2020 }))
+      }),
+    )
+    const user = userEvent.setup()
+    render(<ContextSwitchHarness />)
+    expect(await screen.findByRole('status', { name: 'Loading Check Status' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    rejectA()
+    await drainEventLoop()
+    expect(screen.queryByText(LOAD_FAILED)).not.toBeInTheDocument()
     expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
   })
 

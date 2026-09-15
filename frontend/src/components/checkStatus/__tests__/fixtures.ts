@@ -81,12 +81,15 @@ export const schedule1Fail: CheckStatusResponse = {
   message: null,
 }
 
-export const SCH1_WARNING_TEXT = 'Crown volume has been set from Schedule 1.'
+export const SCH1_WARNING_TEXT =
+  'Subtotal Other Costs (2) - Cost: One or more entries contain an empty Cost value. Please verify there are no Other Costs to be entered.'
 
-/** HAND-COMPOSED — no golden carries a Schedule 1 warning; shape from CheckStatusResponse.java. */
+/** HAND-COMPOSED — no golden carries the Schedule 1 WRN-002 Check-Status branch. */
 export const schedule1FailWithWarning: CheckStatusResponse = {
   ...schedule1Fail,
-  warnings: [{ key: 'crownVolumeSetForSchedule1', text: SCH1_WARNING_TEXT }],
+  warnings: [
+    { key: 'warning.schedule1.checkstatus.subtotalother.costEmpty', text: SCH1_WARNING_TEXT },
+  ],
 }
 
 /** schedule3-572-2021.json */
