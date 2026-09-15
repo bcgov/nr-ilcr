@@ -38,7 +38,12 @@ public class SchedulePermissions {
             Action.MAINTAIN_USERS,
             Action.GENERATE_MILL_REPORTS,
             Action.MAINTAIN_MILLS));
-    ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
+    // SUBMIT_REPORT (Story 15.3) is the first SUBMITTER-only action: legacy's Submit button was
+    // enabled for ILCR_LICENSEE alone, so an ADMIN posting to the submit API is denied 403 rather
+    // than refused later by the status guard.
+    ROLE_ACTIONS.put(
+        Role.SUBMITTER,
+        EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.SUBMIT_REPORT));
   }
 
   /**

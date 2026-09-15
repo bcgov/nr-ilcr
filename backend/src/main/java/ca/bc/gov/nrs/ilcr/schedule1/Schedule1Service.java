@@ -260,8 +260,11 @@ public class Schedule1Service {
     // trusting that the Schedule 3 save was itself permitted. Schedule 1 and Schedule 3 share the
     // mill/year track today, so a permitted Schedule 3 save already implies a permitted write here
     // — this guard preserves the invariant if that ever diverges. Unlike every other write gate
-    // this one returns rather than throwing: a blocked push is the WRN-002 outcome, not a 409.
-    if (!caller.allows(repository.findTrackStatus(millId, year).orElse(null))) {
+    // this one returns rather than throwing: a blocked push is the WRN-002 outcome, not a 409. The
+    // read is the locked one (Story 15.3, D8): the Schedule 3 save that calls this already holds
+    // the
+    // row, so re-locking it here is free, and the gate stays binding if it is ever called alone.
+    if (!caller.allows(repository.findTrackStatusForUpdate(millId, year).orElse(null))) {
       return false;
     }
     int summaryId = summary.summaryId();
@@ -526,7 +529,7 @@ public class Schedule1Service {
    * #296 moved only the main page off this guard; see {@link #getOrCreateEditableSummary}.
    */
   private int requireEditableSummary(long millId, int year, EditableStatuses caller) {
-    requireEditable(millId, year, caller);
+    requireEditableForUpdate(millId, year, caller);
     return repository
         .findSummary(millId, year, SCHEDULE_1_CATEGORY)
         .orElseThrow(ScheduleNotFoundException::new)
@@ -550,24 +553,14 @@ public class Schedule1Service {
   }
 
   /**
-   * The plain editability gate (AD-9): the caller must be permitted to write at the Schedules 1-10
-   * track's current status, else 409.
-   */
-  private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!caller.allows(trackStatus)) {
-      throw new ScheduleNotEditableException();
-    }
-    return trackStatus;
-  }
-
-  /**
    * The editability gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
    * report-status row so concurrent first-saves for the same mill/year serialize on it.
    * Load-bearing, not decoration: the real schema has no unique constraint on (year, mill,
    * category), so without the lock two concurrent first-saves can both see "not matched" in the
-   * create MERGE and both insert a permanent duplicate. Only write paths call this, inside
-   * {@code @Transactional}.
+   * create MERGE and both insert a permanent duplicate. Since Story 15.3 (D8) it is also the gate
+   * of every sub-resource write: the submit transition locks the same row before re-running the
+   * ten-schedule gate, so a save and a transition on one mill/year serialize instead of racing.
+   * Only write paths call this, inside {@code @Transactional}.
    */
   private String requireEditableForUpdate(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);

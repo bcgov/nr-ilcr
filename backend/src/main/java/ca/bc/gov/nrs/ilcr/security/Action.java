@@ -53,5 +53,15 @@ public enum Action {
    * the permission set to UI copy and left the icon-only import button gated by the degenerate name
    * {@code mills/}. Authorization here names the capability, not the control (AD-7).
    */
-  MAINTAIN_MILLS
+  MAINTAIN_MILLS,
+  /**
+   * Submit the Schedules 1–10 track for ministry review (UC-CHK-002, FR5) — the Check Status page's
+   * Submit button. SUBMITTER-only: legacy {@code UserSessionMB.canUserSubmitReport():502-521}
+   * enabled the button for {@code ILCR_LICENSEE} alone, and PRD FR5 keeps "ministry users cannot
+   * submit on a Licensee's behalf" as a role rule, so an ADMIN hitting the submit API is denied 403
+   * (the {@link #MAINTAIN_CODE_TABLES} precedent, inverted). Holding the action says only that
+   * Submit may be OFFERED; whether it succeeds is the track status and the ten-schedule validation
+   * gate, decided in the domain service.
+   */
+  SUBMIT_REPORT
 }

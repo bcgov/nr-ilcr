@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,7 +57,9 @@ class Schedule1CrownPushTest {
     BigDecimal volume = new BigDecimal("54321");
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // Draft → editable
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
+        .thenReturn(Optional.of("D")); // Draft → editable
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
 
     boolean pushed =
         service.applyCrownTimberVolume(MILL, YEAR, volume, CallerRights.SUBMITTER, USER);
@@ -89,8 +92,9 @@ class Schedule1CrownPushTest {
   void applyCrownTimberVolume_noOp_whenSchedule1NotDraft() {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    when(repository.findTrackStatus(MILL, YEAR))
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
         .thenReturn(Optional.of("S")); // submitted, not Draft
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     boolean pushed =
         service.applyCrownTimberVolume(

@@ -394,13 +394,15 @@ public class Schedule11Service {
 
   /**
    * The editability-gate for every write: the SILVICULTURE track must be {@code D} (else 409). Keys
-   * on {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext (AD-9 single owner) — a
-   * Submitted/Verified 1–10 track leaves Schedule 11 writable (AR7 track independence). Context
-   * (400/404/409-mill) is already validated by the controller before this runs (AD-4).
+   * on {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext's locked read (AD-9 single owner; the
+   * {@code FOR UPDATE} holds the status row so a Schedule 11 transition and this write serialize,
+   * Story 15.3 D8) — a Submitted/Verified 1–10 track leaves Schedule 11 writable (AR7 track
+   * independence). Context (400/404/409-mill) is already validated by the controller before this
+   * runs (AD-4).
    */
   private String requireSilvicultureEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus =
-        millContextService.findSchedule11TrackStatusCode(millId, year).orElse(null);
+        millContextService.findSchedule11TrackStatusCodeForUpdate(millId, year).orElse(null);
     if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }

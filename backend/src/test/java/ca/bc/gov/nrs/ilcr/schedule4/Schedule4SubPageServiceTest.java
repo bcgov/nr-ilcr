@@ -73,7 +73,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_towing_insertsReportAndDescriptionDetail_noCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(
             eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(), eq(USER)))
@@ -90,7 +91,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_truckRehaul_writesCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(
             eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), eq(7), eq(USER)))
@@ -106,7 +108,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_other_ignoresCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(
             eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(), eq(USER)))
@@ -123,7 +126,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_unknownLocation_throws404_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
 
     assertThrows(
@@ -143,7 +147,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_notDraft_throws409_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(
         ScheduleNotEditableException.class,
@@ -163,7 +168,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_persistenceFailure_translatesToScheduleNotSaved() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(
             anyLong(), anyInt(), anyString(), any(), any(), anyString()))
@@ -183,7 +189,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_towing_updatesReportAndDescriptionDetail_noCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(9100, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
@@ -204,7 +211,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_truckRehaul_writesCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(9101, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
@@ -224,7 +232,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_unknownLocation_throws404_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
 
     assertThrows(
@@ -246,7 +255,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_rowNotUnderThisLocation_throws404_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     // Not a sub-page row of THIS location (a primary/category report, or a row under another
     // location in the same mill/year) — the path-scoped guard makes it a 404.
@@ -271,7 +281,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_notDraft_throws409_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(
         ScheduleNotEditableException.class,
@@ -291,7 +302,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_persistenceFailure_translatesToScheduleNotSaved() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(9100, NAME, MILL, YEAR)).thenReturn(true);
     doThrow(new DataIntegrityViolationException("boom"))
@@ -313,7 +325,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void delete_subPageRow_deletesReport() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(8051, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
@@ -325,7 +338,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void delete_rowNotUnderThisLocation_isIdempotentNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     // Not a sub-page row of THIS location (a primary/category report, or a row under another
     // location in the same mill/year) — the path-scoped guard makes it a no-op.
@@ -340,7 +354,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void delete_foreignLocationId_isIdempotentNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     // locationId not in this mill/year (foreign/cross-context) → no name → never touches the row.
     when(repository.findLocationName(9999, MILL, YEAR)).thenReturn(Optional.empty());
     stubRecompute();
@@ -353,7 +368,8 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void delete_notDraft_throws409() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(
         ScheduleNotEditableException.class,

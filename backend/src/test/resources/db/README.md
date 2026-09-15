@@ -162,6 +162,7 @@ sense against this directory, `mvn clean` before believing it.
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
+   | Check Status submit (15.3) | **760–763**    | `R__55`; 760–762 Draft + all-ten-MET (one per mutating test), 763 status row + empty cat-1/3 summaries (1309–1310) for `DraftGateLockIT`; `MILL_NUMBER` 1760–1763 |
 
    **Mill administration (`R__75`, UC-MILL-001)** — the maintain-mills surface needs four shapes this
    snapshot could not otherwise supply. `750` and `756` are ministry mills with **no**

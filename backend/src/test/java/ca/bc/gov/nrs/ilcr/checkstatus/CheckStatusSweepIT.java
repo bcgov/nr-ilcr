@@ -52,7 +52,8 @@ class CheckStatusSweepIT extends AbstractOracleIT {
           "ROAD_CONSTRUCTION_REPRT",
           "ROAD_CONSTRUCTION_REPRT_DTL",
           "BASIC_SILVICULTURE_REPORT",
-          "ILCR_MILL_REPORT_STATUS");
+          "ILCR_MILL_REPORT_STATUS",
+          "ILCR_REPORT_CATEGORY");
 
   @Autowired private JdbcTemplate jdbcTemplate;
 
@@ -87,6 +88,46 @@ class CheckStatusSweepIT extends AbstractOracleIT {
             mill,
             year);
     return fingerprint.append("TRACK_CODES=").append(trackCodes).toString();
+  }
+
+  // --- canSubmit (Story 15.3 AC 9, D1): the legacy button rule, decided server-side ------------
+
+  @Test
+  @DisplayName(
+      "15.3 AC 9: submitter at Draft -> canSubmit true even though the gate fails (validity ignored);"
+          + " Schedule 11 carries no flag; nothing is mutated")
+  void sweep_submitterAtDraft_canSubmitTrue_validityIgnored() throws Exception {
+    String before = footprint(514, 2021);
+
+    mockMvc
+        .perform(sweep(514, 2021))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".statusCode", is("D")))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".requirementsMet", is(false)))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".canSubmit", is(true)))
+        .andExpect(jsonPath(TRACK_11 + ".canSubmit").doesNotExist());
+
+    assertEquals(before, footprint(514, 2021), "computing the offer flag must write nothing");
+  }
+
+  @Test
+  @DisplayName("15.3 AC 9: submitter at Submitted -> canSubmit false")
+  void sweep_submitterAtSubmitted_canSubmitFalse() throws Exception {
+    mockMvc
+        .perform(sweep(517, 2021))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".statusCode", is("S")))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".canSubmit", is(false)));
+  }
+
+  @Test
+  @DisplayName("15.3 AC 9: ILCR_ADMIN at Draft -> canSubmit false (legacy: Licensee only)")
+  void sweep_adminAtDraft_canSubmitFalse() throws Exception {
+    mockMvc
+        .perform(sweep(514, 2021).header("X-Mock-Groups", "ILCR_ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".statusCode", is("D")))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".canSubmit", is(false)));
   }
 
   @Test
