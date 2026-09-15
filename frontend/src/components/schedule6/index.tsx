@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
@@ -30,9 +32,7 @@ import CodeComboBox from '@/components/core/CodeComboBox'
 import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
 import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   GENERAL_COMMENTS_MAX_LENGTH,
@@ -53,7 +53,6 @@ import './index.scss'
 // rendered from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8). The
 // context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
 // real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's empty substitute list (schedule6.xhtml:459-464) sets no emptyMessage, so PrimeFaces
 // rendered its default "No records found." — reproduced verbatim rather than inventing a literal.
 const EMPTY_LIST = 'No records found.'
@@ -205,6 +204,11 @@ type RoadRecordFieldsProps = {
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
   /** Blur commit for the two fields the $ / m³ is computed from (defect #291). */
   readonly onRateCommit: () => void
+  /**
+   * The Licensee's submitted values for this road record (Story 16.2, BR-04) — undefined on the Add
+   * panel, null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
@@ -218,8 +222,21 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   onAreaTypeChange,
   onFieldChange,
   onRateCommit,
+  originals,
 }) => {
   const tfl = isTfl(form.areaType)
+  // Legacy renders seven indicators on a road record: the three classification codes, volume, cost,
+  // the row comment and the general comment (RoadMaintenanceReportType.java:372-400,
+  // CostVolumeCommentsType.java:101-109). RMG and $/m³ are derived and get none.
+  const indicator = (field: keyof RoadRecordFormValues, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   return (
     <div className="schedule-6__fields">
       {/* Corrections 2/3: legacy rendered both as a selectOneMenu over the code's DESCRIPTION
@@ -239,6 +256,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalidText={errors.areaType}
         onSelect={onAreaTypeChange}
       />
+      {indicator('areaType', 'TSA or TFL', false)}
       <TextInput
         id={`${idPrefix}-tfl-number`}
         labelText="TFL"
@@ -250,6 +268,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.tflNumber)}
         invalidText={errors.tflNumber}
       />
+      {indicator('tflNumber', 'TFL', false)}
       <CodeComboBox
         id={`${idPrefix}-supply-block`}
         // Same widening as TSA or TFL above, for the same reason — its options are descriptions too.
@@ -262,6 +281,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalidText={errors.supplyBlock}
         onSelect={(code) => onFieldChange('supplyBlock', code)}
       />
+      {indicator('supplyBlock', 'Supply Block', false)}
       <dl className="schedule-6__derived">
         <FieldValue label="RMG" value={rmg} />
       </dl>
@@ -295,6 +315,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.volume)}
         invalidText={errors.volume}
       />
+      {indicator('volume', 'Volume m³', true)}
       <TextInput
         id={`${idPrefix}-cost`}
         labelText="Cost $"
@@ -319,6 +340,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.cost)}
         invalidText={errors.cost}
       />
+      {indicator('cost', 'Cost $', true)}
       <dl className="schedule-6__derived">
         <FieldValue label="$ / m³" value={costPerVolume} numeric />
       </dl>
@@ -336,6 +358,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
           invalid={Boolean(errors.comments)}
           invalidText={errors.comments}
         />
+        {indicator('comments', 'Comments', false)}
       </div>
     </div>
   )
@@ -434,6 +457,7 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
       onRateCommit={onRateCommit}
+      originals={row.originalValues}
     />
     <Button
       className="schedule-6__row-delete"
@@ -547,16 +571,17 @@ const Schedule6: FC = () => {
 
   // The general comment is the one field the DOCUMENT seeds directly, so it rides the hook's form
   // state and is re-seeded on every context change with the rest of the document.
-  const { data, setData, form, setForm, errorDetail, isLoading } =
-    useScheduleDocument<Schedule6Response>({
-      path: SCHEDULE6_PATH,
-      millId,
-      year,
-      contextMissing,
-      seedForm: (doc) => ({ generalComments: doc.generalComments ?? '' }),
-      mapLoadError,
-      onReset: resetTransient,
-    })
+  const { data, setData, form, setForm, loadState } = useScheduleDocument<Schedule6Response>({
+    path: SCHEDULE6_PATH,
+    scheduleName: 'Schedule 6',
+    header: PAGE_HEADER,
+    millId,
+    year,
+    contextMissing,
+    seedForm: (doc) => ({ generalComments: doc.generalComments ?? '' }),
+    mapLoadError,
+    onReset: resetTransient,
+  })
 
   const query = `?millId=${String(millId)}&year=${String(year)}`
   const generalComments = form.generalComments ?? ''
@@ -812,37 +837,7 @@ const Schedule6: FC = () => {
       })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 6" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 6', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -1076,6 +1071,15 @@ const Schedule6: FC = () => {
               }}
               invalid={Boolean(commentsError)}
               invalidText={commentsError}
+            />
+            {/* Legacy read the general comment off the LAST road-record row and rendered its own
+                indicator for it (schedule6.xhtml:502-505). */}
+            <OriginalValueIndicator
+              originals={data.originalValues}
+              field="generalComments"
+              current={generalComments}
+              numeric={false}
+              label="General Comments"
             />
           </section>
         </Column>

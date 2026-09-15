@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC, ReactNode } from 'react'
 import { TextInput } from '@carbon/react'
 import type { CodeDescription, Schedule10CodeLists } from '@/interfaces/Schedule10Response'
@@ -22,6 +24,11 @@ type PageFieldsProps = {
   readonly roadGroup: string | null
   readonly readOnly: boolean
   readonly onChange: (key: keyof PageFormValues, value: string) => void
+  /**
+   * The Licensee's submitted values for this page (Story 16.2, BR-04) — undefined on the Add panel,
+   * null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 /**
@@ -61,7 +68,24 @@ const PageFields: FC<PageFieldsProps> = ({
   roadGroup,
   readOnly,
   onChange,
+  originals,
 }) => {
+  // Legacy rendered six indicators on a construction page (RoadConstructionReportType.java:342-420).
+  // Road Group is derived from the three classification codes and legacy left rmgOriginal with no
+  // accessor, so it gets none.
+  //
+  // Two form fields carry a different name from the served document: `tsaOrTfl` holds the TSA number
+  // (or the TFL sentinel) and `supplyBlock` holds the TSB code. Mapped explicitly so a rename fails
+  // loudly rather than dropping an indicator.
+  const indicator = (field: string, label: string, current: string, numeric = false) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={current}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const tflLocated = isTflLocated(form.tsaOrTfl)
   const id = (name: string) => `${idPrefix}-${name}`
 
@@ -107,6 +131,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.divisionName ?? ''}
           onChange={(event) => onChange('divisionName', event.target.value)}
         />
+        {indicator('divisionName', 'Division', form.divisionName)}
       </Field>
 
       <Field>
@@ -121,6 +146,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.constructionPeriod ?? ''}
           onChange={(event) => onChange('constructionPeriod', event.target.value)}
         />
+        {indicator('constructionPeriod', 'Period Surveyed', form.constructionPeriod)}
       </Field>
 
       <Field className="schedule-10__field--wide">
@@ -134,6 +160,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.forestRegionCode}
           onSelect={(code) => onChange('forestRegionCode', code)}
         />
+        {indicator('forestRegionCode', 'Region', form.forestRegionCode)}
       </Field>
 
       <Field className="schedule-10__field--wide">
@@ -147,6 +174,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.tsaOrTfl}
           onSelect={(code) => onChange('tsaOrTfl', code)}
         />
+        {indicator('tsaNumber', 'TSA or TFL', form.tsaOrTfl)}
       </Field>
 
       <Field className="schedule-10__field--wide">
@@ -160,6 +188,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.supplyBlock}
           onSelect={(code) => onChange('supplyBlock', code)}
         />
+        {indicator('tsbNumberCode', 'Supply Block', form.supplyBlock)}
       </Field>
 
       <Field className="schedule-10__field--narrow">
@@ -174,6 +203,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.tflNumberCode ?? ''}
           onChange={(event) => onChange('tflNumberCode', event.target.value)}
         />
+        {indicator('tflNumberCode', 'TFL', form.tflNumberCode)}
       </Field>
 
       <ReadOnlyField

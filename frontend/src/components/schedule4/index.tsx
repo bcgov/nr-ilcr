@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
@@ -36,7 +38,6 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { getRouteApi } from '@tanstack/react-router'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
@@ -54,7 +55,6 @@ import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. All success/error text
 // comes from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8).
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 // WRN-001, {0} = source location name.
 const copyWarning = (name: string): string =>
@@ -127,10 +127,36 @@ const CategoryCell: FC<{
   invalidText?: string
   onValueChange: (raw: string) => void
   onCommit: () => void
-}> = ({ inputId, label, value, readOnly, invalidText, onValueChange, onCommit }) => {
+  // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its keys
+  // this cell is. Null at Draft.
+  originals?: OriginalValues | null
+  originalField?: CategoryField
+}> = ({
+  inputId,
+  label,
+  value,
+  readOnly,
+  invalidText,
+  onValueChange,
+  onCommit,
+  originals,
+  originalField,
+}) => {
+  const indicator =
+    originalField === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={originalField}
+        current={value}
+        label={label}
+      />
+    )
   if (readOnly) {
     return (
-      <TableCell className="schedule-4__num">{value === '' ? '—' : groupInput(value)}</TableCell>
+      <TableCell className="schedule-4__num">
+        {value === '' ? '—' : groupInput(value)}
+        {indicator}
+      </TableCell>
     )
   }
   return (
@@ -146,6 +172,7 @@ const CategoryCell: FC<{
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
+      {indicator}
     </TableCell>
   )
 }
@@ -161,7 +188,9 @@ const CategoryRow: FC<{
   fieldErrors: Record<string, string>
   onFieldChange: (code: number, field: CategoryField) => (raw: string) => void
   onFieldCommit: (code: number, field: CategoryField) => () => void
-}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange, onFieldCommit }) => {
+  /** The Licensee's submitted values for this category (Story 16.2, BR-04). Null at Draft. */
+  originals?: OriginalValues | null
+}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange, onFieldCommit, originals }) => {
   const isDistance = def.kind === 'DISTANCE'
   return (
     <TableRow>
@@ -175,6 +204,8 @@ const CategoryRow: FC<{
           invalidText={fieldErrors[`${def.code}-distance`]}
           onValueChange={onFieldChange(def.code, 'distance')}
           onCommit={onFieldCommit(def.code, 'distance')}
+          originals={originals}
+          originalField="distance"
         />
       ) : (
         <TableCell className="schedule-4__num">—</TableCell>
@@ -187,6 +218,8 @@ const CategoryRow: FC<{
         invalidText={fieldErrors[`${def.code}-volume`]}
         onValueChange={onFieldChange(def.code, 'volume')}
         onCommit={onFieldCommit(def.code, 'volume')}
+        originals={originals}
+        originalField="volume"
       />
       <CategoryCell
         inputId={`${def.code}-cost`}
@@ -196,12 +229,20 @@ const CategoryRow: FC<{
         invalidText={fieldErrors[`${def.code}-cost`]}
         onValueChange={onFieldChange(def.code, 'cost')}
         onCommit={onFieldCommit(def.code, 'cost')}
+        originals={originals}
+        originalField="cost"
       />
       <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
       <TableCell className="schedule-4__num">—</TableCell>
     </TableRow>
   )
 }
+
+const SCH4_BASE = 'Special Log Transportation Systems'
+const renderHeader = (trail: string[] = [SCH4_BASE]) => (
+  <ScheduleTombstone title="Schedule 4" subtitle={trail} />
+)
+const PAGE_HEADER = renderHeader()
 
 const Schedule4: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
@@ -283,8 +324,10 @@ const Schedule4: FC = () => {
   // Shared load-on-context-change concern (Schedule 1/2 idiom): owns data/errorDetail/isLoading,
   // resets on mill/year change, and ignores a stale response. Schedule 4's writable state is the
   // on-demand location panel (not a flat form), so seedForm is unused here.
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule4Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule4Response>({
     path: '/v1/schedule4',
+    scheduleName: 'Schedule 4',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -343,19 +386,18 @@ const Schedule4: FC = () => {
 
   const closePanel = () => setPanelMode('closed')
 
-  const setCategoryField =
-    (code: number, field: 'volume' | 'cost' | 'distance') => (value: string) => {
-      // value is already the raw digit string (CommaNumberInput strips its display grouping).
-      setPanelCategories((prev) => ({
-        ...prev,
-        [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
-      }))
-    }
+  const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
+    // value is already the raw digit string (CommaNumberInput strips its display grouping).
+    setPanelCategories((prev) => ({
+      ...prev,
+      [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
+    }))
+  }
 
   // Commit one category field (its `onBlur`), advancing the mirror's baseline for that field only.
   // An invalid or unusable entry holds its previous committed value rather than driving the $/m³ from
   // something the server would refuse (ruled 2026-08-21 after code review).
-  const commitCategoryField = (code: number, field: 'volume' | 'cost' | 'distance') => () => {
+  const commitCategoryField = (code: number, field: CategoryField) => () => {
     // Validated here rather than read from `fieldErrors`, which is computed further down (after the
     // early returns); same source of truth, and it only runs on blur.
     const invalid = Boolean(
@@ -570,48 +612,7 @@ const Schedule4: FC = () => {
     }
   }
 
-  const SCH4_BASE = 'Special Log Transportation Systems'
-  const renderHeader = (trail: string[] = [SCH4_BASE]) => (
-    <ScheduleTombstone title="Schedule 4" subtitle={trail} />
-  )
-  const header = renderHeader()
-
-  const shell = (body: React.ReactNode) => (
-    <div className="app-page schedule-page">
-      {header}
-      <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16}>
-          {body}
-        </Column>
-      </Grid>
-    </div>
-  )
-
-  if (contextMissing) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Mill and Reporting Year required"
-        subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-      />,
-    )
-  }
-  if (isLoading) {
-    return shell(<LoadingScreen label="Loading Schedule 4" />)
-  }
-  if (errorDetail) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Unable to load Schedule 4"
-        subtitle={errorDetail}
-      />,
-    )
-  }
+  if (loadState) return loadState
   if (!data) return null
 
   const editable = data.editable
@@ -758,6 +759,7 @@ const Schedule4: FC = () => {
       fieldErrors={fieldErrors}
       onFieldChange={setCategoryField}
       onFieldCommit={commitCategoryField}
+      originals={panelLocation?.categories.find((c) => c.code === def.code)?.originalValues ?? null}
     />
   )
 
@@ -812,6 +814,16 @@ const Schedule4: FC = () => {
           invalidText={validation.nameError}
         />
       )}
+      {/* Legacy wires an indicator to the location name; its COMMENTS has no original at all
+          (TransportationReportType.java:30 declares the field and no commentsOriginalVal), so the
+          comments box below gets none — "only if the legacy app does it". */}
+      <OriginalValueIndicator
+        originals={panelMode === 'new' ? null : panelLocation?.originalValues}
+        field="name"
+        current={panelName}
+        numeric={false}
+        label="Location Name"
+      />
 
       <TableContainer className="schedule-4__grid">
         <Table aria-label="Transportation Categories">
@@ -910,7 +922,7 @@ const Schedule4: FC = () => {
 
   return (
     <div className="app-page schedule-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
           <Column sm={4} md={8} lg={16}>

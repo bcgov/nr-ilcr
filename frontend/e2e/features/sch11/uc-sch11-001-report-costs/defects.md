@@ -16,8 +16,11 @@ pin down. Beyond that bug, what this log records is that **Schedule 11 was rebui
 triaged with the Schedule 11 dev on 2026-08-10:
 - **DIV-2 — closed.** Hiding the editing controls in read-only is deliberate, so nothing more is needed.
 - **DIV-1 and DIV-3** — the dev will double-check these with the BA when she gets a chance.
-- **DIV-4** — the dev will take a closer look. This is the one with real substance: a legacy capability with
-  no new-app counterpart, which needs a backend change, and Schedule 1 is missing it too.
+- **DIV-4 — delivered, with one recorded exception.** This was the one with real substance: a legacy
+  capability with no new-app counterpart, needing a backend change, and Schedule 1 was missing it too.
+  Story 16.2 rebuilt it on both screens (2026-09-11). Five of Schedule 11's six indicators are reproduced;
+  Enhanced and Comments are a permanent, recorded exception because the delivery-schema snapshot view
+  exposes neither column — see the entry for the full reasoning.
 
 We haven't adjudicated any of them ourselves — each entry carries its owner and next step.
 
@@ -149,10 +152,37 @@ location with no costs stores real NULLs (which render as blank, not "0").
     revision of this entry said it "should ride that same ticket"; there is no ticket to ride, so that
     assumption is withdrawn. It needs a triage decision of its own.
   - **Priority / env:** p2 pending triage · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the Schedule 11 dev (2026-08-10): she'll take a closer look
-    at the missing original-value indicators when she gets a chance. Worth knowing before she does: it needs
-    a **backend** change to be fixable at all (the API exposes no prior value), and Schedule 1 is missing the
-    same thing — see its DIV-5 — so a fix probably covers both screens at once.
+  - **Status:** **DELIVERED WITH A RECORDED EXCEPTION 2026-09-11**, by Story 16.2 (GH #136) — backend
+    PRs #450/#451, frontend PR #452. The triage decision this entry was waiting for was taken: the
+    post-submission change-tracking view **does** matter, so it was rebuilt rather than dropped, and the
+    prediction above was right that it needed a backend change. `BASIC_SILVICULTURE_REPORT_S_VW` now feeds
+    an `originalValues` map onto each `SilvicultureLocation`, and the shared
+    `components/core/OriginalValueIndicator` renders from it.
+
+    **Five of legacy's six indicators are reproduced** — Location, Biogeo/Subzone/Variant, NAR, Actual
+    Cost, Planned Cost. **Two fields are a deliberate, permanent exception** (story deviation **D5**,
+    finding **F4**, and **AC7**), and this is the explicit record of it that #136 asked for:
+
+    - **Enhanced** — legacy draws the sixth indicator button (`enhancedIndicatorOV/OB/TT`, cited above),
+      but it can never fire: `BASIC_SILVICULTURE_REPORT_S_VW` does not select `ENHANCED_IND`
+      (`BasicSilvicultureReportOv.java:28-38`), and legacy's own DAO read the **current** value into
+      `enhancedIndicatorOriginalVal` (`Schedule11DAO.java:226`), which always compares equal. Omitting it
+      reproduces legacy's observable behaviour; rendering one would not.
+    - **Comments** — legacy persists `commentsOriginalVal` but declares no `isCommentsOriginalVal`
+      accessor and draws no button, so the licensee's original comment was never surfaced on screen.
+
+    **Why this cannot be closed by wiring them anyway.** `BASIC_SILVICULTURE_RPRT_AUD` does store both
+    columns, but widening the `_S_VW` view to select them is DDL on the delivery schema — outside this
+    project's sanctioned FAM-only scope. And because the backend serves **no key** for either field, an
+    indicator bound to one would take the comparison's "no original on file" branch and flag any non-empty
+    value as *added since submission* — firing on every commented row of every submitted report, and (the
+    form holding a boolean, `String(false)` being non-empty) on every row's Enhanced control regardless.
+    That would manufacture false audit evidence, which is worse than the gap it closes.
+
+    Raised twice in review of #452 and resolved against the story both times; the two omissions now carry
+    comments at the point of use in `components/schedule11/index.tsx` and four tests in
+    `Schedule11.test.tsx` pin them, so the set is not "completed" by a later reader. If the delivery-schema
+    view is ever widened, the exception lapses and both fields become ordinary wiring.
   - **The decision still needed:** whether losing the post-submission
     change-tracking view matters: if reviewers relied on it to see what a licensee altered after submitting,
     this is a real functional gap needing a backend change (the API exposes no prior value); if the audit

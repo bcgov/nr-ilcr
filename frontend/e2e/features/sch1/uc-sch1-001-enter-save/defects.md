@@ -297,7 +297,25 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     call: this cannot be fixed in the frontend alone, because the API exposes no previous value to render —
     so restoring it means a backend change, not just markup.
   - **Priority / env:** p2 pending triage · local seeded delivery DB.
-  - **Status:** OPEN — with the Schedule 1 dev, who'll look into it when he gets a chance. Found 2026-08-07.
+  - **Status:** **DELIVERED 2026-09-11**, by Story 16.2 (GH #136) — backend PRs #450/#451, frontend
+    PR #452. Found 2026-08-07. The triage question this entry left open — whether losing the
+    post-submission change-tracking view mattered — was answered yes, so it was rebuilt rather than
+    accepted as a drop, and the call that it needed a backend change was correct.
+
+    `ILCR_REPORT_SUMMARY_S_VW` and the cost-detail snapshots now feed an `originalValues` map onto the
+    document, its line items and the Other Costs rows, and the shared
+    `components/core/OriginalValueIndicator` renders from it — including `comments` on the main page
+    (`commentsOB`/`commentsTT`, cited above) and `description`/`cost` per row on the Other Costs sub-page.
+    The four volume-only fields named above are covered too, so DIV-2's partial restoration is now whole.
+
+    Two behaviours are worth knowing, because both are legacy's rather than ours: the comparison runs
+    against the **unsaved** on-screen value (legacy re-rendered the indicator from the field's own
+    `change` event, `schedule1.xhtml:113`), so the icon appears as you type and clears when you put the
+    value back without saving; and nothing renders at Draft for **any** role, because the gate is a status
+    gate, not a permission one.
+
+    Schedule 11's DIV-4 was delivered in the same story and carries a recorded exception for two of its
+    fields — see that entry.
   - **Test:** none — out of reach for this UC's scenarios, which all run against Draft schedules (the
     indicator only renders once a report has left Draft). S22 covers the non-Draft render but asserts
     only that inputs are absent and actions disabled. `not-applicable (E2E, current scope)` in

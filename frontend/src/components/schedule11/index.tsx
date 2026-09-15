@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule11Response from '@/interfaces/Schedule11Response'
 import type {
@@ -33,8 +34,6 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { numStr, numStrFixed } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   validateLocation,
@@ -48,7 +47,6 @@ import './index.scss'
 // rendered from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8). The
 // context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
 // real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const SCHEDULE11_PATH = '/v1/schedule11'
 const BEC_CATALOGUE_PATH = '/v1/schedule11/biogeoclimatic-catalogue'
@@ -362,6 +360,13 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.location)}
         invalidText={errors.location}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="location"
+        current={form.location}
+        numeric={false}
+        label="Location"
+      />
     </TableCell>
     <TableCell>
       <BiogeoComboBox
@@ -373,10 +378,28 @@ const EditRow: FC<EditRowProps> = ({
         invalidText={errors.bec}
         onSelect={(o) => onFieldChange('bec', o)}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="biogeoclimaticCatalogueId"
+        current={form.bec === null ? '' : String(form.bec.id)}
+        numeric={false}
+        label="Biogeo/Subzone/Variant"
+      />
     </TableCell>
     <TableCell>
       {/* Hidden label stays "Enhanced", not the "ES" header abbreviation — the accessible name is
-          what a screen reader announces for the control, and legacy names the field "Enhanced". */}
+          what a screen reader announces for the control, and legacy names the field "Enhanced".
+
+          NO INDICATOR HERE, DELIBERATELY (story deviation D5, finding F4 — asked again in review of
+          #452). `schedule11.xhtml` does draw a sixth indicator button, for this control, but it can
+          never fire: `BASIC_SILVICULTURE_REPORT_S_VW` does not select `ENHANCED_IND`, so no
+          submitted value for it can exist, and legacy's own DAO read the CURRENT value into
+          `enhancedIndicatorOriginalVal` (`Schedule11DAO.java:226`), which always compares equal.
+          Widening that view is delivery-schema DDL, outside this project's sanctioned scope.
+          Rendering one anyway would be worse than omitting it: the backend never emits an
+          `enhancedIndicator` key, so `originalValueState` would take its "added since submission"
+          branch and — because `String(false)` is non-empty — light the indicator on EVERY row of
+          every submitted report. Omitting it is what reproduces legacy's observable behaviour. */}
       <EnhancedDropdown
         id={`edit-enhanced-${row.locationId}`}
         label="Edit Enhanced"
@@ -400,6 +423,13 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.netArea)}
         invalidText={errors.netArea}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="netArea"
+        current={form.netArea}
+        numeric={true}
+        label="NAR(ha)"
+      />
     </TableCell>
     <TableCell className="schedule-11__num">
       <TextInput
@@ -413,6 +443,13 @@ const EditRow: FC<EditRowProps> = ({
         onChange={(e) => onFieldChange('actualCost', e.target.value)}
         invalid={Boolean(errors.actualCost)}
         invalidText={errors.actualCost}
+      />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="actualCost"
+        current={form.actualCost}
+        numeric={true}
+        label="Actual Cost ($)"
       />
     </TableCell>
     <TableCell className="schedule-11__num">
@@ -428,13 +465,30 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.plannedCost)}
         invalidText={errors.plannedCost}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="plannedCost"
+        current={form.plannedCost}
+        numeric={true}
+        label="Planned Cost ($)"
+      />
     </TableCell>
     {/* Total Cost + $/NAR are server-derived (AD-5); shown read-only, they refresh on re-save. */}
     <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
     <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
     <TableCell>
       {/* Legacy's table cell was a p:inputTextarea rows=3 (the character counter is
-          Add-panel-only, matching legacy). */}
+          Add-panel-only, matching legacy).
+
+          NO INDICATOR HERE, DELIBERATELY (AC7 — asked again in review of #452). Schedule 11 is one
+          of the three comments fields legacy wires no indicator for: it persists
+          `commentsOriginalVal` but declares no `isCommentsOriginalVal` accessor and draws no button
+          in the view, so the licensee's original comment was never surfaced. The backend therefore
+          emits no `comments` key for a location (`Schedule11Service.locationOriginals`), and an
+          indicator bound to it would take the "added since submission" branch and flag every
+          commented row on a submitted report as a ministry addition. The comments variant this
+          story owes is delivered on the nine schedules legacy does declare it for — Sch 1, 2, 3,
+          6 (row and general), 7A, 7B, 8 and 9, plus the Schedule 10 road detail. */}
       <TextArea
         id={`edit-comments-${row.locationId}`}
         labelText="Edit Comments"
@@ -562,8 +616,10 @@ const Schedule11: FC = () => {
     setConfirmDeleteId(null)
   }, [])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule11Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule11Response>({
     path: SCHEDULE11_PATH,
+    scheduleName: 'Schedule 11',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -775,37 +831,7 @@ const Schedule11: FC = () => {
       })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 11" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 11', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

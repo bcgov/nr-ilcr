@@ -16,7 +16,6 @@ import { groupFixedInput, numStrFixed } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CulvertFields from './CulvertFields'
 import {
@@ -149,8 +148,10 @@ const Schedule7b: FC = () => {
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7bResponse>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule7bResponse>({
     path: SCHEDULE7B_PATH,
+    scheduleName: 'Schedule 7B',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -373,23 +374,15 @@ const Schedule7b: FC = () => {
   // The load-error branch covers the three context guards AND the action-key denial: ERR-003 /
   // ERR-004 / ERR-002 and the 403 all arrive as a ProblemDetail, and each renders its verbatim
   // `detail` with the work area suppressed (S11-S13, S30).
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 7B',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
   }
 
   const { editable, culverts, codeLists } = data
-  // Legacy disabled Check Status outside Draft alongside every write control, even though the endpoint
+  // Legacy disabled Check Status alongside every write control whenever the report was not
+  // editable by the caller — its rule was role×status, not Draft alone, even though the endpoint
   // itself is read-only and permitted at any status (`schedule7B.xhtml:264-265,558-559`; Story 13.1
   // recorded deviation 6 leaves the endpoint open and puts the button-disable here).
   const controlsDisabled = !editable || saving
@@ -429,7 +422,8 @@ const Schedule7b: FC = () => {
           checkResult={checkResult}
         />
 
-        {/* Write controls stay rendered and go disabled outside Draft rather than disappearing — legacy
+        {/* Write controls stay rendered and go disabled whenever the caller may not edit (the
+            role×status matrix since Story 16.1, not Draft alone) rather than disappearing — legacy
             bound `disabled` on every one of them and never removed a control, so a read-only reporter
             can still see which actions exist (STA-001, S14). */}
         <Column sm={4} md={8} lg={16} className="schedule-7b__actions">
@@ -517,6 +511,7 @@ const Schedule7b: FC = () => {
                       }
                       onChange={(key, value) => setRowField(culvert, key, value)}
                       onMask={(key) => maskRowField(culvert, key)}
+                      originals={culvert.originalValues}
                     />
                     {/* Delete is the ONLY per-row control in legacy (schedule7B.xhtml:526-540). Saving
                         is a page-level action covering every culvert at once, so a per-row Save/Cancel
