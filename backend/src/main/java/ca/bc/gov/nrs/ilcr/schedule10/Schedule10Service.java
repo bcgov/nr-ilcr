@@ -61,8 +61,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Write rules that matter:
  *
  * <ul>
- *   <li><strong>Draft only.</strong> Every write is gated on the 1–10 track status being {@code D},
- *       server-side. Legacy has no such gate at all.
+ *   <li><strong>Role×status gated.</strong> Every write is gated server-side on the 1–10 track
+ *       status admitting the caller's role (Story 16.1): submitter at {@code D}, administrator at
+ *       {@code S} or {@code V}. Legacy has no such gate at all.
  *   <li><strong>Costs</strong> are keyed rows, not columns: all twelve are maintained per road
  *       detail, update-in-place, and a blank stores {@code COST = NULL} rather than deleting the
  *       row (BR-08, AC5).

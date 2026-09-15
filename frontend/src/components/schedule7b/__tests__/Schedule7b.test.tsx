@@ -1,7 +1,19 @@
 import type { ReactNode } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  fireEvent,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -1161,5 +1173,484 @@ describe('Schedule 7B action icons (Story 30.3 / #312 Overall 6)', () => {
     await user.click(toggle)
     expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// Story 16.3 — the ministry-correction journey on Schedule 7B.
+//
+// Two things are declared per arm, and they are NOT the same thing: WHO is acting (the role, via
+// `renderAsAdmin` / `renderAsSubmitter`, which seeds the mock-user key so the browser identity and
+// the `X-Mock-Groups` wire identity agree) and WHAT that actor may do (the server-computed
+// `editable` boolean on the document). The page reads only the latter — it never derives
+// editability from `trackStatus` or from the role (AD-9).
+//
+// So the fixtures below do NOT hardcode `editable`: the MSW handler COMPUTES it from the 16.1
+// matrix over the acting role the request actually carried. That makes each arm's role declaration
+// LOAD-BEARING rather than documentation — `renderAsSubmitter` genuinely changes what the server
+// answers, and a broken identity helper shows up as the admin arms and the submitter arms agreeing.
+// It is the whole point of this story: a silently-wrong identity went undetected for a month.
+//
+// Scoped to THIS describe: the suite's pre-existing tests declare no role and serve their own
+// hardcoded `editable`, and they are left exactly as they were.
+//
+// Every user-facing string is asserted VERBATIM against
+// `backend/src/main/resources/messages.properties` (AD-8).
+// -------------------------------------------------------------------------------------------------
+
+describe('Schedule 7B at Submitted — the ministry correction journey (Story 16.3)', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill
+  // still owns the data. Anything else — `O`, a missing row, an unknown role — is read-only.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes the falsification check
+  // trivial (flip the admin entry to ['D'] and every admin-at-Submitted arm below must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock
+   * user's roles onto `X-Mock-Groups` (api-service.ts:11-17), so this is the same signal the real
+   * mock backend gates on — not something the test asserts about itself.
+   *
+   * The throw below can never fire and is NOT the identity guard: `mockUserGroups()` calls
+   * `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` — the ADMIN — so a header is
+   * ALWAYS sent, even by a test that declared no role at all. The guard is `sentRole`, asserted in
+   * each arm's own body (in the BODY, not in the resolver: an `expect` that throws inside an MSW
+   * resolver surfaces as a failed request and is misattributed to the page).
+   *
+   * The header alone cannot close the ADMIN case: the fallback identity IS the admin, so a request
+   * from an arm that forgot `renderAsAdmin` is byte-identical to one that declared it (verified by
+   * deleting it — the arm used to pass). That other half is closed by `declaredRole()`
+   * (test-utils.tsx), which reports what THIS test seeded and `null` when nothing did — the one
+   * thing a declared admin and a fallback admin do not share. So every arm asserts BOTH, via
+   * `expectActingAs`: what the test declared, and what the request carried.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /** The identity the DOCUMENT request actually carried, recorded for the arm to assert. */
+  let sentRole: string | null = null
+
+  /**
+   * The full identity claim an arm's name makes, in both halves: the DECLARATION this test made
+   * (null if it made none — which is what catches a forgotten `renderAs*` even when the fallback
+   * would have sent the same role) and what the request actually CARRIED on the wire. The header is
+   * `roles.join(',')` over a single-role mock user, so it compares equal to the role itself, which
+   * additionally pins that no second role rode along.
+   */
+  const expectActingAs = (role: IlcrRole, ...headers: (string | null)[]) => {
+    expect(declaredRole()).toBe(role)
+    for (const header of headers) {
+      expect(header).toBe(role)
+    }
+  }
+
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * A Schedule 7B document on `trackStatus`, answered for whoever is asking: `editable` is the
+   * matrix's verdict on (acting role, track), never the fixture's assertion about itself. Used for
+   * the GET and for every write echo, so the whole conversation stays identity-driven.
+   */
+  const matrixBody = (
+    request: Request,
+    trackStatus: string | null,
+    over: Record<string, unknown> = {},
+  ) => {
+    const body = doc({ trackStatus, ...over })
+    // The header is `roles.join(',')` (api-service.ts:14) and the backend UNIONS the permitted
+    // statuses across every role the caller holds (`ScheduleEditability.forCaller`). One mock user
+    // holds exactly one role today, so the split is unreachable — but encoding "the whole header is
+    // one role" would be the wrong rule the day a combined caller exists. An unrecognised role
+    // contributes nothing, which is the fail-closed half of the same behaviour.
+    const permitted = new Set(
+      actingRole(request)
+        .split(',')
+        .flatMap((role) => EDITABLE_STATUSES[role] ?? []),
+    )
+    return { ...body, editable: permitted.has(String(trackStatus)) }
+  }
+
+  const matrixGet = (trackStatus: string | null, over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => {
+      sentRole = actingRole(request)
+      return HttpResponse.json(matrixBody(request, trackStatus, over))
+    })
+
+  // Masked numeric editors re-render through their converter on every change, and every culvert row
+  // mounts its own editor at once, so `user.type` here is O(rows x characters) and has timed out CI.
+  // One change event carries the whole corrected value instead.
+  //
+  // On Schedule 7B the VALUE commits on change — `CulvertFields` binds `onChange` straight to the
+  // page's `setRowField` (CulvertFields.tsx:91) — and `onBlur` only re-applies the legacy mask for
+  // display (`onMask` → `maskRowField`, CulvertFields.tsx:105). The blur is fired anyway, because a
+  // real correction ends with the field left, and it lets an arm assert the MASKED display before
+  // saving, so an edit the converter never accepted fails at the field rather than in the request
+  // body. (Schedule 2's same-named helper needs its blur for a different reason: its derived mirror
+  // listens to that event, defect #291.)
+  const enterValue = (input: HTMLElement, value: string) => {
+    fireEvent.change(input, { target: { value } })
+    fireEvent.blur(input)
+  }
+
+  /** The write surface live: the mirror image of `expectReadOnly`, for the editable arms. */
+  const expectEditable = () => {
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeEnabled()
+    expect(culvertPanel(7801).getByLabelText('Material costs ($)')).toBeEnabled()
+    expect(culvertPanel(7801).getByLabelText('Comments')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: /Type/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+    expect(culvertPanel(7801).getByRole('button', { name: 'Delete' })).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeEnabled()
+    }
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeEnabled()
+    }
+  }
+
+  /** Every control this page can disable, for the read-only arms. */
+  const expectReadOnly = () => {
+    for (const label of [
+      'Span (mm)',
+      'Rise (mm)',
+      'Length (m)',
+      'No of Pieces',
+      'Material costs ($)',
+      'Install costs ($)',
+      'Comments',
+    ] as const) {
+      expect(culvertPanel(7801).getByLabelText(label)).toBeDisabled()
+    }
+    expect(screen.getByRole('combobox', { name: /Type/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+    expect(culvertPanel(7801).getByRole('button', { name: 'Delete' })).toBeDisabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeDisabled()
+    }
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeDisabled()
+    }
+  }
+
+  test('an ADMIN corrects a Submitted culvert and saves: PUT issued, SUC-001 verbatim (CHK-010 S01)', async () => {
+    let captured: SaveAllBody | null = null
+    let puts = 0
+    let putRole: string | null = null
+    server.use(
+      matrixGet('S'),
+      http.put(CULVERTS_URL, async ({ request }) => {
+        puts += 1
+        putRole = actingRole(request)
+        captured = (await request.json()) as SaveAllBody
+        return HttpResponse.json(
+          matrixBody(request, 'S', {
+            culverts: [{ ...mainHaul, spanSize: 1500 }],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // The whole point of 16.1's admin row: at Submitted the write surface is LIVE for this actor,
+    // and nothing asserted it until now. Both halves: this test DECLARED admin, and the document
+    // request CARRIED admin — so the served `editable` is the matrix's verdict on a stated identity,
+    // not on the silent `MOCK_USERS[0]` fallback.
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expectEditable()
+
+    const span = culvertPanel(7801).getByLabelText('Span (mm)')
+    enterValue(span, '1500')
+    // Committed THROUGH the legacy mask (`#,###,##0`), so a value the converter never accepted
+    // fails here rather than silently in the request body.
+    expect(span).toHaveValue('1,500')
+    await savePage(user)
+
+    // Verbatim SUC-001, straight from the API's `message.text` (AD-8): the bundle value is
+    // `dataSavedSuccesfullyInfoMsg=Data saved successfully`, with no trailing period.
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(puts).toBe(1)
+    // The correction itself was issued as the admin, not merely the read that preceded it.
+    expectActingAs(ILCR_ROLES.admin, putRole)
+    expect(entryFor(captured, 7801)).toMatchObject({ spanSize: 1500, revisionCount: 3 })
+  })
+
+  test('the correction request structurally cannot ask for a status transition (AC: track still S)', async () => {
+    // `trackStatus` is rendered NOWHERE on any schedule page (the tombstone shows the working
+    // context's mill status, not the document's track), so "the save did not move the status" is not
+    // assertable from the DOM. Three proxies stand in for it, and together they are stronger than a
+    // label would be:
+    //   (a) the PUT body's exact key set — no status member exists anywhere in it, at either level,
+    //       so the client cannot request a transition even if the server would honour one;
+    //   (b) MSW is strict (`onUnhandledRequest: 'error'`), so a call to any transition endpoint —
+    //       none exists in the backend today — fails this test rather than passing silently;
+    //   (c) the echo still carries `'S'` and the matrix still answers editable for this actor, so
+    //       the corrected document stays correctable.
+    let captured: SaveAllBody | null = null
+    let rawBody = ''
+    server.use(
+      matrixGet('S'),
+      http.put(CULVERTS_URL, async ({ request }) => {
+        rawBody = await request.text()
+        captured = JSON.parse(rawBody) as SaveAllBody
+        return HttpResponse.json(
+          matrixBody(request, 'S', {
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    const install = culvertPanel(7801).getByLabelText('Install costs ($)')
+    enterValue(install, '1600')
+    expect(install).toHaveValue('1,600')
+    await savePage(user)
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // (a) Exact key sets, at both levels of the batch. A new member — a status, a role, an `editable`
+    // — would fail here rather than quietly crossing the wire.
+    expect(Object.keys(captured ?? {})).toEqual(['culverts'])
+    expect(Object.keys(captured?.culverts[0] ?? {}).sort()).toEqual(['culvert', 'culvertReportId'])
+    expect(Object.keys(entryFor(captured, 7801) ?? {}).sort()).toEqual([
+      'comments',
+      'culvertPieceCount',
+      'culvertTypeCode',
+      'installCost',
+      'length',
+      'materialCost',
+      'revisionCount',
+      'riseSize',
+      'spanSize',
+    ])
+    expect(rawBody).not.toMatch(/status/i)
+    expect(rawBody).not.toMatch(/editable/i)
+
+    // (c) The served track is still `'S'` after the write, and the page is still editable on it.
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeEnabled()
+    }
+  })
+
+  test('a SUBMITTER at Submitted is read-only: inputs, Save, Check Status and Delete all disabled (S13/S17)', async () => {
+    let wrote = false
+    server.use(
+      // The SAME handler the admin arm uses. Only the acting identity differs, and the matrix does
+      // the rest — which is what makes `renderAsSubmitter` a constraint rather than a label.
+      matrixGet('S'),
+      // Handled, not omitted, so a write that DID escape is reported as a wrong request rather than
+      // as an MSW "unhandled request" failure that could be read as harness noise.
+      http.put(CULVERTS_URL, ({ request }) => {
+        wrote = true
+        return HttpResponse.json(matrixBody(request, 'S'))
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsSubmitter(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // The licensee's own submitted data is still fully visible — read-only is not "hidden" (legacy
+    // bound `disabled` and never removed a control, STA-001).
+    expectActingAs(ILCR_ROLES.submitter, sentRole)
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toHaveValue('1,200')
+    expectReadOnly()
+
+    await savePage(user)
+    expect(wrote).toBe(false)
+  })
+
+  test('an ADMIN at DRAFT is read-only — the capability 16.1 deliberately removed', async () => {
+    let wrote = false
+    server.use(
+      matrixGet('D'),
+      http.put(CULVERTS_URL, ({ request }) => {
+        wrote = true
+        return HttpResponse.json(matrixBody(request, 'D'))
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // The matrix is bidirectional: ADMIN gains Submitted and Verified and LOSES Draft, where the
+    // licensee is still working. Without this arm a gate widened to "admin may always edit" would
+    // pass every other test in the suite.
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expectReadOnly()
+
+    await savePage(user)
+    expect(wrote).toBe(false)
+  })
+
+  test('a SUBMITTER at DRAFT still edits — the discriminator that keeps the read-only arms honest', async () => {
+    // Without this, an always-false handler (or a page that disabled everything unconditionally)
+    // would satisfy both read-only arms above and look like passing evidence. Same handler shape,
+    // same track as the admin-at-Draft arm — only the identity changes, and the verdict flips.
+    server.use(matrixGet('D'))
+    const user = userEvent.setup()
+    renderAsSubmitter(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    expectActingAs(ILCR_ROLES.submitter, sentRole)
+    expectEditable()
+  })
+
+  // The two cells nobody serves. `trackStatus: 'V'` appears ZERO times across the repo's fixtures,
+  // so narrowing the backend matrix's admin row from {S,V} to {S} would leave all twelve suites
+  // green — half the admin capability (the VERIFIED correction) had no evidence at all. `'O'` and a
+  // NULL track are the fail-closed cells 16.1 pinned: not editable by anyone, for any role.
+  test.each([
+    ['V', true],
+    ['O', false],
+    [null, false],
+  ] as const)(
+    'an ADMIN on trackStatus %s is editable: %s — the cells no other fixture serves',
+    async (trackStatus, editable) => {
+      server.use(matrixGet(trackStatus))
+      const user = userEvent.setup()
+      renderAsAdmin(<Schedule7b />)
+      await openCulvert(user, 1)
+
+      expectActingAs(ILCR_ROLES.admin, sentRole)
+      if (editable) {
+        expectEditable()
+      } else {
+        expectReadOnly()
+      }
+    },
+  )
+
+  test('an ADMIN deletes at Submitted: cancel sends nothing, confirm sends the DELETE (S06/S07)', async () => {
+    // Both delete paths in one arm, in the order that makes the cancel meaningful: a cancel asserted
+    // on its own can pass on a page whose Delete is simply broken, so the same actor goes on to
+    // confirm and the DELETE must then fire.
+    let deletes = 0
+    let gets = 0
+    let deleteRole: string | null = null
+    server.use(
+      http.get(URL, ({ request }) => {
+        gets += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(
+          matrixBody(request, 'S', { culverts: [mainHaul, culvertAt(7802, 2)] }),
+        )
+      }),
+      http.delete(`${CULVERTS_URL}/7801`, ({ request }) => {
+        deletes += 1
+        deleteRole = actingRole(request)
+        return HttpResponse.json(
+          matrixBody(request, 'S', {
+            culverts: [culvertAt(7802, 1)],
+            message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+    await waitFor(() => {
+      expect(gets).toBe(1)
+    })
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+
+    // The shared `core/ConfirmDeleteModal` (header "Confirmation", Yes/No) — asserted through, never
+    // modified (user ruling 2026-09-11). Its message is the bundle's `confirmDeleteMsg` verbatim.
+    await user.click(culvertPanel(7801).getByRole('button', { name: 'Delete' }))
+    const cancelDialog = await deleteModal()
+    expect(
+      cancelDialog.getByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    await user.click(cancelDialog.getByRole('button', { name: 'No' }))
+
+    // Cancelled: no DELETE, no re-GET, no banner, and the row is still there.
+    expect(deletes).toBe(0)
+    expect(gets).toBe(1)
+    expect(screen.getByRole('button', { name: 'Culvert report Id: 1' })).toBeInTheDocument()
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+
+    // Now confirm, as the same ADMIN on the same Submitted document.
+    await user.click(culvertPanel(7801).getByRole('button', { name: 'Delete' }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(deletes).toBe(1)
+    expectActingAs(ILCR_ROLES.admin, deleteRole)
+  })
+
+  test('Check Status is available to an ADMIN at Submitted and mutates nothing (S02-S05)', async () => {
+    let posts = 0
+    let gets = 0
+    let writes = 0
+    let checkRole: string | null = null
+    server.use(
+      http.get(URL, ({ request }) => {
+        gets += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(matrixBody(request, 'S'))
+      }),
+      http.put(CULVERTS_URL, ({ request }) => {
+        writes += 1
+        return HttpResponse.json(matrixBody(request, 'S'))
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        posts += 1
+        checkRole = actingRole(request)
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+    await waitFor(() => {
+      expect(gets).toBe(1)
+    })
+
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    const checkButtons = screen.getAllByRole('button', { name: 'Check Status' })
+    for (const button of checkButtons) {
+      expect(button).toBeEnabled()
+    }
+    await user.click(checkButtons[0])
+
+    // Verbatim `scheduleRequirementsMetMsg` — 7B's own key (Schedule7bService.java:75); the sibling
+    // schedules do not all use this one, so it is read from the bundle rather than assumed.
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    // Read-only (BR-07): exactly one POST, and NOTHING else moved — no write, and a stable GET count
+    // (the confirmed-delete path re-GETs, so an unchanged count is a real "nothing ran" signal).
+    expect(posts).toBe(1)
+    expectActingAs(ILCR_ROLES.admin, checkRole)
+    expect(writes).toBe(0)
+    expect(gets).toBe(1)
+    // The document on screen is untouched by the check.
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toHaveValue('1,200')
+    expect(screen.getByText('5,500')).toBeInTheDocument()
   })
 })

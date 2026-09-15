@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule2Response from '@/interfaces/Schedule2Response'
 import type { CostBlock, CheckStatusResponse } from '@/interfaces/Schedule2Response'
@@ -26,9 +28,7 @@ import { isScheduleSaved } from '@/utils/schedule'
 import { enteredNum } from '@/utils/derivedMath'
 import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
@@ -37,7 +37,6 @@ import './index.scss'
 // ERR-001 (mill/year not selected) and the confirm-delete text are client-side chrome (a suppression
 // with no request / a confirm dialog), so their verbatim text lives here. Success/error text comes
 // from the API `message.text` / ProblemDetail.detail — never hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
@@ -106,9 +105,11 @@ const Schedule2: FC = () => {
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule2Response>({
       path: '/v1/schedule2',
+      scheduleName: 'Schedule 2',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -218,37 +219,7 @@ const Schedule2: FC = () => {
     })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 2" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 2', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -280,7 +251,24 @@ const Schedule2: FC = () => {
   // and the schedule is editable, otherwise read-only text. Right-aligned so the entered numbers line
   // up with the read-only cells above/below. The hidden `labelText` is a terse, stable a11y name (the
   // visible legacy label lives in the row's first cell).
-  const inputCell = (fieldKey: string, label: string) => (
+  // Legacy renders four indicators on this page (schedule2.xhtml): item 25's cost, item 26's volume
+  // and cost, and the comments. Every carried and derived figure gets none — nothing stores them.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: string | number | null | undefined,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator originals={originals} field={field} current={current} label={label} />
+    )
+
+  const inputCell = (
+    fieldKey: string,
+    label: string,
+    originals?: OriginalValues | null,
+    originalField?: string,
+  ) => (
     <TableCell className="schedule-2__num">
       <CommaNumberInput
         id={fieldKey}
@@ -293,11 +281,20 @@ const Schedule2: FC = () => {
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}
       />
+      {indicator(originals, originalField, label, form[fieldKey] ?? '')}
     </TableCell>
   )
 
-  const readOnlyCell = (value: number | null | undefined) => (
-    <TableCell className="schedule-2__num">{fmtNumber(value)}</TableCell>
+  const readOnlyCell = (
+    value: number | null | undefined,
+    originals?: OriginalValues | null,
+    originalField?: string,
+    label = '',
+  ) => (
+    <TableCell className="schedule-2__num">
+      {fmtNumber(value)}
+      {indicator(originals, originalField, label, value)}
+    </TableCell>
   )
 
   // The $/m³ column is currency: thousands-separated with two decimals (shared currency style).
@@ -311,8 +308,18 @@ const Schedule2: FC = () => {
       <TableCell>Purchased/Private Log Costs:</TableCell>
       {readOnlyCell(data.purchasedLogCost.volume)}
       {editable
-        ? inputCell(F_ITEM25_COST, 'Purchased Log Cost cost')
-        : readOnlyCell(data.purchasedLogCost.cost)}
+        ? inputCell(
+            F_ITEM25_COST,
+            'Purchased Log Cost cost',
+            data.purchasedLogCost.originalValues,
+            'cost',
+          )
+        : readOnlyCell(
+            data.purchasedLogCost.cost,
+            data.purchasedLogCost.originalValues,
+            'cost',
+            'Purchased Log Cost cost',
+          )}
       {perUnitCell(figures.purchasedLogCost.perUnit)}
     </TableRow>
   )
@@ -322,11 +329,26 @@ const Schedule2: FC = () => {
     <TableRow>
       <TableCell>(less) Log Sales:</TableCell>
       {editable
-        ? inputCell(F_ITEM26_VOLUME, 'Less Log Sales volume')
-        : readOnlyCell(data.lessLogSales.volume)}
+        ? inputCell(
+            F_ITEM26_VOLUME,
+            'Less Log Sales volume',
+            data.lessLogSales.originalValues,
+            'volume',
+          )
+        : readOnlyCell(
+            data.lessLogSales.volume,
+            data.lessLogSales.originalValues,
+            'volume',
+            'Less Log Sales volume',
+          )}
       {editable
-        ? inputCell(F_ITEM26_COST, 'Less Log Sales cost')
-        : readOnlyCell(data.lessLogSales.cost)}
+        ? inputCell(F_ITEM26_COST, 'Less Log Sales cost', data.lessLogSales.originalValues, 'cost')
+        : readOnlyCell(
+            data.lessLogSales.cost,
+            data.lessLogSales.originalValues,
+            'cost',
+            'Less Log Sales cost',
+          )}
       {perUnitCell(figures.lessLogSales.perUnit)}
     </TableRow>
   )
@@ -440,6 +462,13 @@ const Schedule2: FC = () => {
               <p className="schedule-2__comments">{data.comments ?? '—'}</p>
             </>
           )}
+          <OriginalValueIndicator
+            originals={data.originalValues}
+            field="comments"
+            current={editable ? (form[F_COMMENTS] ?? '') : data.comments}
+            numeric={false}
+            label="Comments"
+          />
         </Column>
 
         {actionBar(true)}

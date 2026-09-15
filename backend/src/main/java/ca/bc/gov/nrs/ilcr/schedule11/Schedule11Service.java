@@ -664,11 +664,21 @@ public class Schedule11Service {
    * plus the two costs ({@code SilvicultureReportType.java:220-233}, {@code
    * Schedule11DAO.java:216-238}); {@code schedule11.xhtml} draws exactly six.
    *
-   * <p>{@code enhancedIndicator} is wired and STRUCTURALLY INERT, which is faithful rather than
-   * lazy: {@code BASIC_SILVICULTURE_REPORT_S_VW} does not select {@code ENHANCED_IND}, so no
-   * submitted value can exist for it, and legacy's own indicator for it could never fire either
-   * (its DAO read the current value — {@code Schedule11DAO.java:226}). Widening the view is
-   * delivery-schema DDL, outside this project's sanctioned scope. Deviation D5.
+   * <p>{@code enhancedIndicator} is NOT wired, and cannot be. An earlier revision of this javadoc
+   * said it was "wired and structurally inert", following deviation D5's prescription to include
+   * the key so it is structurally present but never populated. That prescription is not
+   * implementable: {@code BASIC_SILVICULTURE_REPORT_S_VW} does not select {@code ENHANCED_IND}
+   * ({@code BasicSilvicultureReportOv.java:28-38}), so {@link
+   * Schedule11Repository.LocationSnapshotRow} has no accessor to pass — the only writable form is
+   * {@code put("enhancedIndicator", null, …)}, and {@link OriginalValues.Builder#put} discards a
+   * null submitted value, so the call would be dead code that changes no payload. Omitting it is
+   * therefore the same wire contract with nothing to mislead a reader.
+   *
+   * <p>The omission is also what reproduces legacy: its own indicator for this field could never
+   * fire, because the DAO read the CURRENT value into {@code enhancedIndicatorOriginalVal} ({@code
+   * Schedule11DAO.java:226}), which always compares equal. Widening the view is delivery-schema
+   * DDL, outside this project's sanctioned scope. Deviation D5, corrected in review of PR #452 —
+   * the story text has been amended to match this.
    *
    * <p>{@code comments} is not wired at all: legacy defines {@code commentsOriginalVal} but no
    * {@code isCommentsOriginalVal} accessor and no indicator in the view, so the licensee's original
