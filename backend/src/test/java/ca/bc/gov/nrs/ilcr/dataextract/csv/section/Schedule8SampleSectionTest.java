@@ -341,7 +341,9 @@ class Schedule8SampleSectionTest {
     @Test
     @DisplayName("is as wide as the header")
     void isHeaderWidth() {
+      // isNotEmpty() first: allSatisfy passes vacuously on an empty list.
       assertThat(section.rows(CTX, page(List.of(populatedSample())), 1))
+          .isNotEmpty()
           .allSatisfy(row -> assertThat(row).hasSize(41));
     }
 

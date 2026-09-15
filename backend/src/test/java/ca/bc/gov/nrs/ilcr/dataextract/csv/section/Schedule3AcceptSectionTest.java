@@ -121,7 +121,11 @@ class Schedule3AcceptSectionTest {
     void everyRowIsAsWideAsTheHeader() {
       List<String[]> rows = SECTION.rows(CTX, document(List.of(row("Fees", 45000, 5000))));
 
-      assertThat(rows).allSatisfy(row -> assertThat(row).hasSameSizeAs(SECTION.header()));
+      // isNotEmpty() first: allSatisfy passes vacuously on an empty list, so without it this test
+      // would go green having asserted nothing about row width.
+      assertThat(rows)
+          .isNotEmpty()
+          .allSatisfy(row -> assertThat(row).hasSameSizeAs(SECTION.header()));
     }
 
     @Test

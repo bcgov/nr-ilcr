@@ -140,7 +140,9 @@ class Schedule3UnacceptSectionTest {
     @Test
     @DisplayName("every row is exactly as wide as the header")
     void everyRowIsAsWideAsTheHeader() {
+      // isNotEmpty() first: allSatisfy passes vacuously on an empty list.
       assertThat(twoItemsAndRents())
+          .isNotEmpty()
           .allSatisfy(row -> assertThat(row).hasSameSizeAs(SECTION.header()));
     }
 
