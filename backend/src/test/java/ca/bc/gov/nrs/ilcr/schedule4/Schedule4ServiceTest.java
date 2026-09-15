@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -399,7 +400,7 @@ class Schedule4ServiceTest {
   }
 
   @Test
-  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     // Beyond Draft with nothing on file is NOT Draft: the page must still evaluate the
     // "value added since submission" branch per field, so the maps are empty rather than null.
     stubSubmittedFamily();
@@ -408,10 +409,8 @@ class Schedule4ServiceTest {
 
     Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 
-    assertNotNull(a.originalValues());
-    assertTrue(a.originalValues().isEmpty());
-    assertNotNull(categoryByCode(a, 40).originalValues());
-    assertTrue(categoryByCode(a, 40).originalValues().isEmpty());
+    assertAllNothingOnFile(a.originalValues());
+    assertAllNothingOnFile(categoryByCode(a, 40).originalValues());
   }
 
   @Test

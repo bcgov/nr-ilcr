@@ -1,7 +1,14 @@
 package ca.bc.gov.nrs.ilcr.support;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 import org.springframework.context.support.StaticMessageSource;
 
 /**
@@ -38,5 +45,35 @@ public final class OriginalValuesFixture {
   /** The tooltip text a field with this submitted value should carry. */
   public static String tooltip(String formattedValue) {
     return LABEL + " " + formattedValue;
+  }
+
+  /**
+   * What a field with <em>nothing</em> on file carries: an empty comparison value and legacy's
+   * tooltip ending right after the separator. Every {@code ILCROriginalValue*Converter} composed
+   * {@code "Original Submission Value: " + (value == null ? "" : value)} ({@code
+   * ILCROriginalValueStringConverter.java:23-26}), so the text exists even when the value does not
+   * — which is why the key is written rather than omitted.
+   */
+  public static OriginalValue nothingOnFile() {
+    return new OriginalValue("", LABEL + " ");
+  }
+
+  /**
+   * Asserts every entry of a map is {@link #nothingOnFile()} — the shape a report carries when no
+   * {@code 'S'} snapshot exists for it, which is roughly half of live rows.
+   */
+  public static void assertAllNothingOnFile(Map<String, OriginalValue> originals) {
+    assertThat(originals).isNotNull().isNotEmpty();
+    originals.forEach(
+        (field, original) ->
+            assertThat(original).as("original for %s", field).isEqualTo(nothingOnFile()));
+  }
+
+  /** The fields that actually carry a submitted value — the rest are {@link #nothingOnFile()}. */
+  public static Set<String> fieldsWithASubmittedValue(Map<String, OriginalValue> originals) {
+    return originals.entrySet().stream()
+        .filter(e -> !e.getValue().value().isEmpty())
+        .map(Map.Entry::getKey)
+        .collect(Collectors.toCollection(TreeSet::new));
   }
 }

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -445,7 +446,7 @@ class Schedule2ServiceTest {
   }
 
   @Test
-  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     // Half the live rows have no 'S' snapshot. That is NOT Draft: the page must still evaluate
     // "value added since submission" per field, so the maps are empty rather than null.
     stubSubmitted();
@@ -454,12 +455,9 @@ class Schedule2ServiceTest {
 
     Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
 
-    assertNotNull(doc.originalValues());
-    assertTrue(doc.originalValues().isEmpty());
-    assertNotNull(doc.purchasedLogCost().originalValues());
-    assertTrue(doc.purchasedLogCost().originalValues().isEmpty());
-    assertNotNull(doc.lessLogSales().originalValues());
-    assertTrue(doc.lessLogSales().originalValues().isEmpty());
+    assertAllNothingOnFile(doc.originalValues());
+    assertAllNothingOnFile(doc.purchasedLogCost().originalValues());
+    assertAllNothingOnFile(doc.lessLogSales().originalValues());
   }
 
   @Test
@@ -477,8 +475,9 @@ class Schedule2ServiceTest {
 
     Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
 
-    assertNotNull(doc.originalValues());
-    assertTrue(doc.originalValues().isEmpty());
+    // Every offered field is written, all of them empty — and, the load-bearing half, the
+    // snapshot views are never read at all for a schedule that was never saved.
+    assertAllNothingOnFile(doc.originalValues());
     verify(costSnapshots, never()).findBySummary(anyInt());
     verify(summarySnapshots, never()).findBySummaryId(anyInt());
   }

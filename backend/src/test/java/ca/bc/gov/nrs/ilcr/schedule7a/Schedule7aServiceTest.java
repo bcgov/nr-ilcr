@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -912,7 +913,9 @@ class Schedule7aServiceTest {
     assertOriginal(originals, "sitePlanCost", "900", "900");
     assertOriginal(originals, "superstructureMaterialCost", "4800", "4,800");
     // An item with no submitted row keeps no key at all.
-    assertThat(originals).doesNotContainKey("otherCost");
+    // No submitted row for this cost item: the key is written (every offered field is) but its
+    // value is empty, which is what proves the report-id join reached nothing for it.
+    assertThat(originals).containsEntry("otherCost", nothingOnFile());
   }
 
   @Test
@@ -927,11 +930,6 @@ class Schedule7aServiceTest {
     when(costSnapshots.findByBridgeReports(List.of(7601L))).thenReturn(List.of());
 
     assertThat(
-            service
-                .getSchedule7a(514, 2021, CallerRights.SUBMITTER)
-                .bridges()
-                .get(0)
-                .originalValues())
-        .isEmpty();
+        service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0).originalValues());
   }
 }

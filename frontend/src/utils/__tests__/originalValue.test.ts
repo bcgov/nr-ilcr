@@ -14,6 +14,9 @@ describe('originalValueState', () => {
       value: 'as the mill reported it',
       tooltip: 'Original Submission Value: as the mill reported it',
     },
+    // Nothing on file for this one. The server still sends the key, carrying the bare separator
+    // legacy's converters composed for a null original.
+    cost: { value: '', tooltip: 'Original Submission Value: ' },
   }
 
   describe('branch 1 — the Draft gate', () => {
@@ -121,8 +124,10 @@ describe('originalValueState', () => {
       const state = originalValueState(submitted, 'cost', '600')
 
       expect(state.changed).toBe(true)
-      // No tooltip: there is no submitted value to show. The indicator says so in its own words.
-      expect(state.tooltip).toBeNull()
+      // Legacy's own text for a null original: the converters composed
+      // `"Original Submission Value: " + ""`, so it ends after the separator
+      // (`ILCROriginalValueStringConverter.java:23-26`). The client never substitutes its own.
+      expect(state.tooltip).toBe('Original Submission Value: ')
     })
 
     it('does not flag an empty value', () => {
@@ -138,6 +143,17 @@ describe('originalValueState', () => {
       // every field a reporter tabbed through.
       expect(originalValueState(submitted, 'cost', '   ', false).changed).toBe(false)
       expect(originalValueState(submitted, 'cost', '   ').changed).toBe(false)
+    })
+  })
+
+  describe('a field with no entry at all — no original-value wiring', () => {
+    it('flags nothing, however the field is filled', () => {
+      // Distinct from branch 3. The server writes a key for every field it offers, including those
+      // with nothing on file, so an absent key means this field has no indicator wired — and
+      // legacy rendered none for those either (F9/D9). Flagging here would put an indicator on a
+      // field legacy never marked, with no tooltip text to show in it.
+      expect(originalValueState(submitted, 'unwired', '600').changed).toBe(false)
+      expect(originalValueState(submitted, 'unwired', '600').tooltip).toBeNull()
     })
   })
 

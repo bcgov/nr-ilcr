@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -829,7 +830,7 @@ class Schedule5ServiceTest {
       // A category with nothing on file still carries an EMPTY map, not a null one: beyond Draft
       // the
       // page must evaluate the added-since-submission branch for it too.
-      assertThat(served.cateringAndFood().originalValues()).isNotNull().isEmpty();
+      assertAllNothingOnFile(served.cateringAndFood().originalValues());
       // Recoveries is the volume-less category: cost only, as legacy had it.
       assertThat(served.recoveries().originalValues()).containsOnlyKeys("cost");
       // A derived total carries none: nothing stores it.

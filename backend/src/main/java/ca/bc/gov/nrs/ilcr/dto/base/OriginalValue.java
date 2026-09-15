@@ -14,10 +14,13 @@ package ca.bc.gov.nrs.ilcr.dto.base;
  * <ul>
  *   <li><b>map is {@code null}</b> — the track is at Draft (or has no resolvable status): no
  *       indicator renders anywhere. This is legacy's {@code isSubmit()} gate.
- *   <li><b>key present</b> — a submitted value is on file; the indicator shows when the current
- *       value differs from {@link #value}.
- *   <li><b>key absent</b> — no submitted value is on file for that field (legacy's {@code
- *       originalVal == null}); the indicator shows whenever the current value is non-empty.
+ *   <li><b>key present, {@link #value} non-empty</b> — a submitted value is on file; the indicator
+ *       shows when the current value differs from it.
+ *   <li><b>key present, {@link #value} empty</b> — no submitted value is on file for that field
+ *       (legacy's {@code originalVal == null}); the indicator shows whenever the current value is
+ *       non-empty, carrying the bare {@code "Original Submission Value: "} legacy composed here.
+ *   <li><b>key absent</b> — the field has no original-value wiring, so no indicator renders. Legacy
+ *       rendered none for these either (F9/D9).
  * </ul>
  *
  * <p>Read-only and server-computed: echoed on GET and on the AD-8 save echo, and ignored if it ever

@@ -181,9 +181,10 @@ describe('Schedule 1 — original-value indicators', () => {
     )
   })
 
-  it('flags a value added since submission, saying so in its own words', async () => {
-    // No key for `cost` means nothing was submitted for it — roughly half the live rows are in this
-    // state. Legacy showed its tooltip trailing off after the colon; this says what it means.
+  it('flags a value added since submission, with legacy\u2019s empty tooltip', async () => {
+    // An empty `value` for `cost` means nothing was submitted for it — roughly half the live rows
+    // are in this state — and the server sends legacy's own tooltip for it, which ends right after
+    // the separator (`ILCROriginalValueStringConverter.java:23-26`).
     serve(
       submittedDoc({
         lineItems: [
@@ -194,6 +195,7 @@ describe('Schedule 1 — original-value indicators', () => {
             perUnit: 0.12,
             originalValues: {
               volume: { value: '60000', tooltip: 'Original Submission Value: 60,000' },
+              cost: { value: '', tooltip: 'Original Submission Value: ' },
             },
           },
         ],
@@ -206,8 +208,6 @@ describe('Schedule 1 — original-value indicators', () => {
     expect(indicator).toHaveAccessibleName(
       'Standing Tree to Loaded Truck cost differs from the originally submitted value',
     )
-    expect(indicator).toHaveAccessibleDescription(
-      'No value was originally submitted by the Licensee',
-    )
+    expect(indicator).toHaveAccessibleDescription('Original Submission Value:')
   })
 })
