@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
@@ -34,6 +36,11 @@ type Props = {
   readonly onChange: <K extends keyof RecordFormValues>(key: K, value: string) => void
   // Re-apply a numeric field's legacy display mask once the user leaves it (blur, not change).
   readonly onMask: (key: MaskedField) => void
+  /**
+   * The Licensee's submitted values for this row (Story 16.2, BR-04) — undefined on the Add panel,
+   * null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 const ContractualWorkFields: FC<Props> = ({
@@ -45,7 +52,29 @@ const ContractualWorkFields: FC<Props> = ({
   servedCostPerUnit,
   onChange,
   onMask,
+  originals,
 }) => {
+  // Legacy rendered twelve indicators on this row (Schedule9DO.java:438-476 minus the unused
+  // cost-comments accessor). $/Unit is derived and gets none.
+  //
+  // Three of the form's field names differ from the served document's, because the form holds a
+  // bare code where the document holds a code/description pair. The map is explicit rather than
+  // derived so a rename on either side fails loudly instead of silently dropping an indicator.
+  const ORIGINAL_FIELD: Partial<Record<keyof RecordFormValues, string>> = {
+    contractualItemCode: 'contractualItem',
+    unitCode: 'unitType',
+    sourceCode: 'source',
+  }
+
+  const indicator = (field: keyof RecordFormValues, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={ORIGINAL_FIELD[field] ?? field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const text = (
     field: keyof RecordFormValues,
     label: string,
@@ -55,19 +84,22 @@ const ContractualWorkFields: FC<Props> = ({
       onBlur?: () => void
     } = {},
   ) => (
-    <TextInput
-      id={`${idPrefix}-${field}`}
-      labelText={label}
-      size="sm"
-      disabled={disabled || Boolean(inputProps.disabled)}
-      value={form[field]}
-      invalid={Boolean(errors[field])}
-      invalidText={errors[field]}
-      autoComplete="off"
-      onChange={(event) => onChange(field, event.target.value)}
-      inputMode={inputProps.inputMode}
-      onBlur={inputProps.onBlur}
-    />
+    <div className="schedule-9__field">
+      <TextInput
+        id={`${idPrefix}-${field}`}
+        labelText={label}
+        size="sm"
+        disabled={disabled || Boolean(inputProps.disabled)}
+        value={form[field]}
+        invalid={Boolean(errors[field])}
+        invalidText={errors[field]}
+        autoComplete="off"
+        onChange={(event) => onChange(field, event.target.value)}
+        inputMode={inputProps.inputMode}
+        onBlur={inputProps.onBlur}
+      />
+      {indicator(field, label, field === 'comments' ? false : undefined)}
+    </div>
   )
 
   const masked = (
@@ -84,23 +116,27 @@ const ContractualWorkFields: FC<Props> = ({
   ) => {
     const options = items as CodeDescription[]
     return (
-      <Dropdown<CodeDescription>
-        id={`${idPrefix}-${field}`}
-        titleText={label}
-        label="Select"
-        items={options}
-        itemToString={(item) => item?.description ?? ''}
-        // `null`, not `undefined`: undefined hands control back to downshift's internal state, so a
-        // cleared code would leave the old label on screen. The cast is Carbon's own type
-        // inconsistency (onChange yields `ItemType | null`, the prop is declared `| undefined`).
-        selectedItem={
-          (options.find((item) => item.code === form[field]) ?? null) as CodeDescription | undefined
-        }
-        disabled={disabled}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-        onChange={({ selectedItem }) => onChange(field, selectedItem?.code ?? '')}
-      />
+      <div className="schedule-9__field">
+        <Dropdown<CodeDescription>
+          id={`${idPrefix}-${field}`}
+          titleText={label}
+          label="Select"
+          items={options}
+          itemToString={(item) => item?.description ?? ''}
+          // `null`, not `undefined`: undefined hands control back to downshift's internal state, so a
+          // cleared code would leave the old label on screen. The cast is Carbon's own type
+          // inconsistency (onChange yields `ItemType | null`, the prop is declared `| undefined`).
+          selectedItem={
+            (options.find((item) => item.code === form[field]) ?? null) as
+              CodeDescription | undefined
+          }
+          disabled={disabled}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+          onChange={({ selectedItem }) => onChange(field, selectedItem?.code ?? '')}
+        />
+        {indicator(field, label, false)}
+      </div>
     )
   }
 

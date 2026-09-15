@@ -7,10 +7,10 @@ import java.util.List;
  * The Schedule 7B (Culvert Costs) aggregate document — the pinned Story 13.1 wire contract (AD-12).
  * {@code trackStatus} is the Schedules 1–10 track code ({@code ILCR_MILL_REPORT_STATUS_CODE}, BR-01
  * — Schedule 7B has no track of its own); {@code editable} is server-authoritative ({@code
- * EDIT_SCHEDULE} ∧ {@code trackStatus == "D"}). {@code culverts} is the ordered list of stored
- * culverts (empty is a valid document); {@code codeLists} carries the Type dropdown options. {@code
- * message} is populated only on a mutating (Story 13.2) response echo — Jackson {@code non_null}
- * omits it on the GET, so the GET wire is unchanged.
+ * EDIT_SCHEDULE} ∧ the role×status matrix — see {@code editable} below). {@code culverts} is the
+ * ordered list of stored culverts (empty is a valid document); {@code codeLists} carries the Type
+ * dropdown options. {@code message} is populated only on a mutating (Story 13.2) response echo —
+ * Jackson {@code non_null} omits it on the GET, so the GET wire is unchanged.
  *
  * @param millId the mill id
  * @param year the reporting year

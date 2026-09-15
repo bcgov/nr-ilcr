@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type {
   SubPageDocument,
@@ -537,6 +538,16 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                       updateRow(index, 'description', event.target.value)
                     }}
                   />
+                  {/* Legacy tracked the description and the cost on these rows and NOT the volume —
+                      the volume is the camp's stamped amount, shared by every row rather than stored
+                      per row (Schedule5DAO.java:288-300). */}
+                  <OriginalValueIndicator
+                    originals={served?.originalValues}
+                    field="description"
+                    current={row.description}
+                    numeric={false}
+                    label="Description"
+                  />
                 </TableCell>
                 {/* Volume and $/m³ are read-only on both pages (:72/:85 and :69/:81). The volume is
                     the stamped camp-level amount, identical on every row. */}
@@ -558,6 +569,12 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                     onBlur={() => {
                       commitRows()
                     }}
+                  />
+                  <OriginalValueIndicator
+                    originals={served?.originalValues}
+                    field="cost"
+                    current={row.cost}
+                    label="Cost $"
                   />
                 </TableCell>
                 <TableCell className="schedule-5-sub-page__num">

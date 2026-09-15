@@ -1,6 +1,8 @@
 import type { FC } from 'react'
 import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { CulvertCodeLists, CulvertCodeOption } from '@/interfaces/Schedule7bResponse'
 import { numStrGroup } from '@/utils/number'
 import type { CulvertErrors, CulvertFormValues, CostField, MaskedField } from './validation'
@@ -34,6 +36,11 @@ type Props = {
   // Re-apply a numeric field's legacy display mask once the user leaves it. On blur rather than on
   // change so inserting a separator (or a forced decimal) mid-word cannot move the caret while typing.
   readonly onMask: (key: MaskedField) => void
+  /**
+   * The Licensee's submitted values for this row (Story 16.2, BR-04) — undefined on the Add panel,
+   * which has no stored row to have submitted anything, and null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 const CulvertFields: FC<Props> = ({
@@ -45,7 +52,20 @@ const CulvertFields: FC<Props> = ({
   serverTotal,
   onChange,
   onMask,
+  originals,
 }) => {
+  // Legacy paired EVERY one of these nine fields with an original-value indicator
+  // (schedule7B.xhtml:315-322,336-343,352-359,374-381,399-406,428-431,447-450,509-516). The
+  // derived Total has none, matching legacy.
+  const indicator = (field: keyof CulvertFormValues, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const text = (
     field: keyof CulvertFormValues,
     label: string,
@@ -55,21 +75,24 @@ const CulvertFields: FC<Props> = ({
     } = {},
   ) => {
     return (
-      <TextInput
-        id={`${idPrefix}-${field}`}
-        labelText={label}
-        size="sm"
-        disabled={disabled}
-        value={form[field]}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-        // Legacy carried `autocomplete="off"` on every one of these inputs (schedule7B.xhtml:99,
-        // :113, :138, :151, :175, :185 and the row equivalents) — a culvert's measurements are not
-        // the kind of value a browser should be offering from a previous form.
-        autoComplete="off"
-        onChange={(event) => onChange(field, event.target.value)}
-        {...inputProps}
-      />
+      <div className="schedule-7b__field">
+        <TextInput
+          id={`${idPrefix}-${field}`}
+          labelText={label}
+          size="sm"
+          disabled={disabled}
+          value={form[field]}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+          // Legacy carried `autocomplete="off"` on every one of these inputs (schedule7B.xhtml:99,
+          // :113, :138, :151, :175, :185 and the row equivalents) — a culvert's measurements are not
+          // the kind of value a browser should be offering from a previous form.
+          autoComplete="off"
+          onChange={(event) => onChange(field, event.target.value)}
+          {...inputProps}
+        />
+        {indicator(field, label)}
+      </div>
     )
   }
 
@@ -94,25 +117,33 @@ const CulvertFields: FC<Props> = ({
           parts. */}
       <Column sm={4} md={8} lg={16}>
         <div className="schedule-7b__field-grid">
-          <Dropdown<CulvertCodeOption>
-            id={`${idPrefix}-culvertTypeCode`}
-            titleText="Type"
-            label="Select"
-            items={items}
-            itemToString={(item) => item?.description ?? ''}
-            // `null`, not `undefined`: an undefined `selectedItem` hands the control back to
-            // downshift's internal state, so a cleared code would leave the old label on screen. The
-            // cast is Carbon's own type inconsistency — its `onChange` hands back `ItemType | null`
-            // while the prop is declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
-            selectedItem={
-              (items.find((item) => item.code === form.culvertTypeCode) ?? null) as
-                CulvertCodeOption | undefined
-            }
-            disabled={disabled}
-            invalid={Boolean(errors.culvertTypeCode)}
-            invalidText={errors.culvertTypeCode}
-            onChange={({ selectedItem }) => onChange('culvertTypeCode', selectedItem?.code ?? '')}
-          />
+          {/* Wrapped exactly as `text()` wraps its inputs: the control and its indicator have to be
+              ONE grid item, or an indicator that appears takes a cell of its own and pushes Span and
+              Rise out of the row. */}
+          <div className="schedule-7b__field">
+            <Dropdown<CulvertCodeOption>
+              id={`${idPrefix}-culvertTypeCode`}
+              titleText="Type"
+              label="Select"
+              items={items}
+              itemToString={(item) => item?.description ?? ''}
+              // `null`, not `undefined`: an undefined `selectedItem` hands the control back to
+              // downshift's internal state, so a cleared code would leave the old label on screen.
+              // The cast is Carbon's own type inconsistency — its `onChange` hands back
+              // `ItemType | null` while the prop is declared `ItemType | undefined`
+              // (Dropdown.d.ts:13 vs :123).
+              selectedItem={
+                (items.find((item) => item.code === form.culvertTypeCode) ?? null) as
+                  CulvertCodeOption | undefined
+              }
+              disabled={disabled}
+              invalid={Boolean(errors.culvertTypeCode)}
+              invalidText={errors.culvertTypeCode}
+              onChange={({ selectedItem }) => onChange('culvertTypeCode', selectedItem?.code ?? '')}
+            />
+            {/* A dropdown compares its stored CODE, which is what legacy compared too. */}
+            {indicator('culvertTypeCode', 'Type', false)}
+          </div>
           {masked('spanSize', 'Span (mm)', 'numeric')}
           {masked('riseSize', 'Rise (mm)', 'numeric')}
 
@@ -167,6 +198,7 @@ const CulvertFields: FC<Props> = ({
           invalidText={errors.comments}
           onChange={(event) => onChange('comments', event.target.value)}
         />
+        {indicator('comments', 'Comments', false)}
       </Column>
     </Grid>
   )

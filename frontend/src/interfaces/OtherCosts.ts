@@ -3,12 +3,17 @@
 // not in the JSON. perUnit and totals are server-computed (read-only) — never recompute client-side.
 
 import type { MessageInfo } from '@/interfaces/Schedule1Response'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 
 export interface OtherCostRow {
   readonly id: number
   readonly description: string
   readonly cost: number | null
   readonly perUnit: number | null
+  // The Licensee's submitted description and cost for this row (Story 16.2, BR-04) — the two fields
+  // legacy's row template rendered indicators for. Absent at Draft. The volume is shared across the
+  // rows rather than per row, so it has no per-row original.
+  readonly originalValues?: OriginalValues | null
 }
 
 export interface OtherCostsDocument {
