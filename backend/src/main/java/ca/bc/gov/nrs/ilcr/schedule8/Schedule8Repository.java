@@ -817,7 +817,23 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       String skidTypeCode,
       Integer coniferousVolume,
       Integer deciduousVolume,
-      BigDecimal originalRate) {}
+      BigDecimal originalRate) {
+
+    /**
+     * A row with nothing on file, for a sample carrying no {@code 'S'} snapshot at all.
+     *
+     * <p>Substituting this lets the original-value assembly run its normal per-field {@code put}
+     * calls instead of short-circuiting, so every field is still written — as an empty value
+     * carrying legacy's bare {@code "Original Submission Value: "} — rather than omitted. An
+     * omitted key now means "this field has no indicator wiring", which would render no indicator
+     * at all for a sample the operator has since filled in.
+     */
+    static SampleSnapshotRow nothingOnFile(int id) {
+      return new SampleSnapshotRow(
+          id, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+          null, null, null, null, null);
+    }
+  }
 
   /** One submitted rate row from {@code THE.TREE_TO_TRUCK_RATE_DTL_S_VW} (Story 16.2, BR-04). */
   record RateSnapshotRow(

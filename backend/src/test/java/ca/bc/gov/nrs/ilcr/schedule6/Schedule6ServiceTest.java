@@ -1,5 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.fieldsWithASubmittedValue;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -386,12 +389,15 @@ class Schedule6ServiceTest {
     // mirroring how the current-side record is split.
     assertOriginal(originals, "areaType", "TFL", "TFL");
     assertOriginal(originals, "tflNumber", "08", "08");
-    assertEquals(Set.of("areaType", "tflNumber"), originals.keySet());
+    // Only these two carry a submitted VALUE. supplyBlock is written like every offered field
+    // but stays empty, which is how the TFL/supply-block split still reads off the payload.
+    assertEquals(Set.of("areaType", "tflNumber"), fieldsWithASubmittedValue(originals));
+    assertEquals(nothingOnFile(), originals.get("supplyBlock"));
   }
 
   @Test
-  @DisplayName("beyond Draft with nothing on file the maps are empty, never null")
-  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+  @DisplayName("beyond Draft with nothing on file every field carries legacy’s empty tooltip")
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     stub(
         "S",
         List.of(new RoadRecordRow(8003, "01", "01B", null, "note", 0)),
@@ -401,9 +407,7 @@ class Schedule6ServiceTest {
 
     Schedule6Response doc = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
 
-    assertNotNull(doc.originalValues());
-    assertTrue(doc.originalValues().isEmpty());
-    assertNotNull(doc.roadRecords().get(0).originalValues());
-    assertTrue(doc.roadRecords().get(0).originalValues().isEmpty());
+    assertAllNothingOnFile(doc.originalValues());
+    assertAllNothingOnFile(doc.roadRecords().get(0).originalValues());
   }
 }

@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -912,12 +914,14 @@ class Schedule7aServiceTest {
     assertOriginal(originals, "sitePlanCost", "900", "900");
     assertOriginal(originals, "superstructureMaterialCost", "4800", "4,800");
     // An item with no submitted row keeps no key at all.
-    assertThat(originals).doesNotContainKey("otherCost");
+    // No submitted row for this cost item: the key is written (every offered field is) but its
+    // value is empty, which is what proves the report-id join reached nothing for it.
+    assertThat(originals).containsEntry("otherCost", nothingOnFile());
   }
 
   @Test
-  @DisplayName("original values: beyond Draft with nothing on file the map is empty, never null")
-  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+  @DisplayName("original values: beyond Draft with nothing on file every field carries the label")
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     stubCodeOptions();
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
     when(repository.findBridges(514, 2021))
@@ -926,12 +930,7 @@ class Schedule7aServiceTest {
     when(repository.findBridgeSnapshots(514, 2021)).thenReturn(List.of());
     when(costSnapshots.findByBridgeReports(List.of(7601L))).thenReturn(List.of());
 
-    assertThat(
-            service
-                .getSchedule7a(514, 2021, CallerRights.SUBMITTER)
-                .bridges()
-                .get(0)
-                .originalValues())
-        .isEmpty();
+    assertAllNothingOnFile(
+        service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0).originalValues());
   }
 }

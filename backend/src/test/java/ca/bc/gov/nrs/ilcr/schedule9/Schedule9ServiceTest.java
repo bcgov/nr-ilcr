@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -247,8 +248,8 @@ class Schedule9ServiceTest {
   }
 
   @Test
-  @DisplayName("beyond Draft with nothing on file the map is empty, never null")
-  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+  @DisplayName("beyond Draft with nothing on file every field carries legacy’s empty tooltip")
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     stub(
         "S",
         List.of(record(9002, new BigDecimal("100"))),
@@ -259,7 +260,6 @@ class Schedule9ServiceTest {
     Map<String, OriginalValue> originals =
         service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0).originalValues();
 
-    assertNotNull(originals);
-    assertTrue(originals.isEmpty());
+    assertAllNothingOnFile(originals);
   }
 }
