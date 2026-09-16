@@ -18,10 +18,16 @@ deliberately RED** and track DIV-1 below. No Bug/Regression entries.
 **UPDATED 2026-09-15 — triage round.** DIV-1 is now ticketed as
 [**bcgov/nr-ilcr#476**](https://github.com/bcgov/nr-ilcr/issues/476) (read the caveat under its **Ticket**
 bullet before fixing it — the ticket's title describes the symptom, and fixing only that makes Schedule 5
-*less* safe). **EVERY GAP AND SPEC ENTRY IS NOW CLOSED.** GAP-4 by adding the one scenario that reaches the per-camp
-"met" line; SPEC-1, SPEC-2, SPEC-3 and SPEC-4 by correcting the planning artifacts. DIV-1 is the only
-entry still open, and it is open by design — it is a ticketed app defect awaiting a fix, not an unresolved
-question.
+*less* safe). **EVERY SPEC GAP IS NOW CLOSED** — SPEC-1, SPEC-2, SPEC-3 and SPEC-4, by correcting the planning
+artifacts — and **GAP-4** by adding the one scenario that reaches the per-camp "met" line. Two entries
+remain open, for different reasons:
+
+- **DIV-1** is open by design: a ticketed app defect awaiting a fix (#476), not an unresolved question.
+- **GAP-5 is new, found 2026-09-16 while preparing the PR, and it is the one real hole left.** Schedule 5
+  has **no accessibility coverage whatsoever** — no `@a11y` scenario, no axe sweep — and it is the only
+  domain in the suite without any. That is half of what issue #97 asks for. The 25-slice catalogue does
+  not ask for it (accessibility is an NFR, not a slice), which is exactly why "all 25 slices authored"
+  read as complete. See GAP-5.
 
 **A legacy screenshot supplied 2026-09-16 settled SPEC-3 on the facts.** With five camps and one
 incomplete, legacy shows a RED panel of that camp's three missing fields **and** a BLUE panel carrying
@@ -295,6 +301,37 @@ logged here, because in both the difference is mechanism rather than behaviour:
     message family it serves, exactly as S24's green companion does. If a slice is minted later, the tag
     is a one-line change.
   - **Status:** CLOSED 2026-09-15 — coverage exists and is GREEN. Raised 2026-09-10.
+
+- **GAP-5 — OPEN: Schedule 5 has NO accessibility coverage at all, and it is the only domain in the suite
+  without any. Found 2026-09-16 while preparing the Story 28.4 PR.**
+  - **What this means in plain language.** Every other subject area in this suite sweeps its screens with
+    axe for WCAG 2.1 AA violations. Schedule 5 does not sweep anything. There is no
+    `accessibility.feature`, no `@a11y` tag and no axe call anywhere under `features/sch5/` — 15 feature
+    files, 32 scenarios, zero accessibility assertions.
+  - **Measured, not assumed** (2026-09-16): `--grep "@sch5.*@a11y"` lists **0 tests**, and
+    `grep -rn "@a11y\|axe" features/sch5/` returns nothing. By comparison every sibling has coverage —
+    sec 4 feature files, sch4 3, sch11 3, sch1 2, sch2 2, sch3 1.
+  - **It contradicts the suite's own stated rule.** `e2e/README.md` § Scenario tags says: *"**Every
+    accessibility scenario is `@a11y`**, in every domain."* Schedule 5 is the exception that sentence does
+    not allow for.
+  - **And it is half of what the story asks for.** The tracking issue is
+    **[#97 — \[28.4\] End-to-End *and Accessibility* Verification for Schedule 5](https://github.com/bcgov/nr-ilcr/issues/97)**.
+    The end-to-end half is complete (25 of 25 slices); the accessibility half has not been started. Story
+    28.3's PR (#402) swept four structurally distinct Schedule 3 renders and reported all four clean — that
+    is the standard this domain has not yet met.
+  - **Why it went unnoticed:** no slice in the 25-slice catalogue asks for it. Accessibility is an NFR
+    (NFR1 / the epic's AC4), not a use-case slice, so a catalogue-driven completeness check —
+    "all 25 slices authored" — reports DONE with this missing. GAP-4 had the same shape: real behaviour
+    that no slice describes.
+  - **What it would take.** The renders are already identified by `render-states.feature` and the panel
+    work: the Schedule 5 main page with the camp list, the open camp panel (new and edit are the same
+    panel in different modes), the two expense sub-pages, and the read-only non-Draft view. Each needs an
+    axe sweep with the pointer parked before measuring, so contrast is judged at rest and the tracked
+    app-wide hover defect (#314, now closed) is not re-found here — the technique PR #402 established.
+  - **Suggested fix:** one `accessibility.feature` in this UC folder, following sch4's three-file pattern,
+    on existing anchors — the sweeps read, they do not write, so no new anchor capacity is needed.
+  - **Status:** OPEN — evidenced and measured, not adjudicated. This is the remaining work on #97 and the
+    PR says so rather than claiming the issue is closed.
 
 ---
 
