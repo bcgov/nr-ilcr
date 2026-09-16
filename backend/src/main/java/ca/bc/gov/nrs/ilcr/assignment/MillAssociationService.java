@@ -77,12 +77,23 @@ public class MillAssociationService {
    * One mill's associations as the mill record lists them — both states by default, because the
    * legacy panel showed inactive rows beside active ones (each with its own toggle).
    *
+   * <p>Deliberately NOT {@code @Transactional}. {@link #resolveNames} makes one outbound directory
+   * call per distinct GUID, and under a transaction every one of them would run while this thread
+   * holds an Oracle connection: the client allows 5s to connect and 10s to read, nothing caps the
+   * row count, and the fail-soft handling covers a directory that FAILS, not one that merely
+   * crawls. A dozen licensees against a slow-but-answering directory would hold a pooled connection
+   * for minutes — the precise coupling the timeouts in {@code application.yml} exist to prevent.
+   *
+   * <p>The two reads are independent selects feeding a display list, so nothing here needs snapshot
+   * isolation; Spring Data JDBC runs each in its own transaction. Legacy resolved names per row too
+   * — and worse, {@code ILCRUserService.getILCRUsers:284-301} made TWO WebADE calls per row (user
+   * info, then roles) — so this is legacy's shape with legacy's flaw removed, not a departure.
+   *
    * @param millId the mill
    * @param includeEnded whether ended/inactive associations are included
    * @return the mill's associations
    * @throws MillMaintenanceException 404 when the mill is unknown or not yet imported
    */
-  @Transactional(readOnly = true)
   public List<MillSubmitter> listByMill(long millId, boolean includeEnded) {
     AdminMillEntity mill = requireTrackedMill(millId);
     List<MillUserXrefEntity> rows =

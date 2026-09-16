@@ -350,7 +350,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                             can be ruled out, because no endpoint serves the current value. */}
                         {account?.activeInd !== 'Y' && (
                           <Button
-                            kind="ghost"
+                            kind="tertiary"
                             size="sm"
                             disabled={busy}
                             aria-label="Activate account"
@@ -362,7 +362,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                         )}
                         {account?.activeInd !== 'N' && (
                           <Button
-                            kind="ghost"
+                            kind="danger--tertiary"
                             size="sm"
                             disabled={busy}
                             aria-label="Deactivate account"
@@ -437,7 +437,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                               mutually exclusive — there is one row per pair and no history. */}
                           {row.activeDate != null && (
                             <Button
-                              kind="ghost"
+                              kind="danger--tertiary"
                               size="sm"
                               disabled={busy}
                               aria-label={`Deactivate mill ${dash(row.millNumber)}`}
@@ -449,7 +449,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                           )}
                           {row.inactiveDate != null && (
                             <Button
-                              kind="ghost"
+                              kind="tertiary"
                               size="sm"
                               disabled={busy}
                               aria-label={`Activate mill ${dash(row.millNumber)}`}

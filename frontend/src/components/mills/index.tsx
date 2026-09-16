@@ -582,7 +582,7 @@ const Mills: FC = () => {
                     `clear(false)` does not clear the selection (MillsMB.java:513-519) — and no
                     message is emitted, the artefacts being silent on one. */}
                   <Button
-                    kind="ghost"
+                    kind="tertiary"
                     renderIcon={Edit}
                     // Disabled while a write is in flight, like every other write-adjacent control:
                     // adopting another mill mid-write makes millIdRef drop the response, so a
@@ -669,7 +669,7 @@ const Mills: FC = () => {
                                   and a deactivated row offer Activate. */}
                               {active ? (
                                 <Button
-                                  kind="ghost"
+                                  kind="danger--tertiary"
                                   size="sm"
                                   disabled={busy}
                                   aria-label={`Deactivate user ${row.userGuid}`}
@@ -680,7 +680,7 @@ const Mills: FC = () => {
                                 </Button>
                               ) : (
                                 <Button
-                                  kind="ghost"
+                                  kind="tertiary"
                                   size="sm"
                                   disabled={busy}
                                   // Live and unqualified even on a Closed mill. BR-02 is ONE
@@ -700,7 +700,7 @@ const Mills: FC = () => {
                                   silently, exactly as legacy's hard redirect did; there is no
                                   unsaved-changes prompt on this screen and none is to be added. */}
                               <Button
-                                kind="ghost"
+                                kind="tertiary"
                                 size="sm"
                                 aria-label={`View user ${row.userGuid}`}
                                 renderIcon={View}
