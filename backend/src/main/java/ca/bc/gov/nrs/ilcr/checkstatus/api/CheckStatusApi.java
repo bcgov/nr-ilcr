@@ -1,8 +1,11 @@
 package ca.bc.gov.nrs.ilcr.checkstatus.api;
 
 import ca.bc.gov.nrs.ilcr.checkstatus.dto.CheckStatusSweepResponse;
+import ca.bc.gov.nrs.ilcr.checkstatus.dto.VerifyReportResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -16,7 +19,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  * is right, but it departs from the "actions are POST sub-resources" convention. And {@code
  * /api/v1/check-status} is a new top-level resource rather than a schedule sub-resource — the root
  * is spoken for by the epic family, which adds {@code /submit}, {@code /verify}, {@code
- * /set-to-draft} and {@code /set-to-submit} beneath it (Stories 15.3, 17, 18).
+ * /set-to-draft} and {@code /set-to-submit} beneath it (Stories 15.3, 17, 18). The first of those
+ * sub-resources, {@code POST /verify}, has now landed and does follow the POST-sub-resource
+ * convention; the GET's departure is the sweep's alone.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings, and this is forced, not stylistic:
  * the legacy ERR-001 text ("Please Select Mill and Reporting Year in the Home Page. ", trailing
@@ -44,4 +49,34 @@ public interface CheckStatusApi {
   ResponseEntity<CheckStatusSweepResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year);
+
+  /**
+   * Verify a submitted Schedules 1&ndash;10 track — the Submitted&rarr;Verified transition that is
+   * the ministry's sign-off for rate setting (UC-CHK-007/012, FR5). Method authorization runs
+   * first: no {@code SET_REPORT_STATUS} → 403, which is every Licensee. For an authorized caller,
+   * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
+   * {@code checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002; one or
+   * more schedules failing validation → 409 {@code reportNotSubmittedErrorMsg}; a track that is not
+   * Submitted, which covers a no-op, both illegal Draft&harr;Verified jumps and a stored NULL
+   * status code → 409 {@code reportSubmissionErrorMsg}; a concurrent change to the status row → 409
+   * {@code scheduleRevisionConflictErrorMsg}; a write that cannot be persisted → 500 {@code
+   * reportSubmissionErrorMsg}, everything rolled back.
+   *
+   * <p>The two 409s that share {@code reportSubmissionErrorMsg} with the 500 are distinguishable
+   * only by status code, never by response body — legacy reused one message for both conditions and
+   * AD-8 keeps its text verbatim.
+   *
+   * <p>The Schedule 11 track is untouched: it has its own status and its own workflow.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying both the audit actor and the directory
+   *     GUID the auditor cross-reference is looked up by
+   * @return 200 with the new track status and the verbatim success message
+   */
+  @PostMapping("/verify")
+  ResponseEntity<VerifyReportResponse> verifySchedules1To10(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
 }

@@ -17,6 +17,7 @@ DDL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../backend/src/test/resources/db" 
 # Local-only additive migrations to (re)apply, in order. Add new V-files here as they are introduced.
 MIGRATIONS=(
   "V20260825__the_ilcr_user_and_mill_user_xref.sql"
+  "V20260915__the_mill_report_status_auditor_columns.sql"
 )
 
 echo "Applying local ILCR DDL to container '${CONTAINER}' (PDB ${PDB})..."

@@ -53,5 +53,22 @@ public enum Action {
    * the permission set to UI copy and left the icon-only import button gated by the degenerate name
    * {@code mills/}. Authorization here names the capability, not the control (AD-7).
    */
-  MAINTAIN_MILLS
+  MAINTAIN_MILLS,
+  /**
+   * Move a report track's status on the Check Status page — verify a submitted Schedules 1&ndash;10
+   * track, and (when those stories land) reverse it back to Submitted or Draft. ADMIN-only: a
+   * SUBMITTER hitting these APIs is denied 403.
+   *
+   * <p>Deliberately one action for all three admin-driven transitions rather than one per button,
+   * for the same reason as {@link #MAINTAIN_MILLS}: legacy derived a WebADE action from each
+   * button's label, coupling the permission set to UI copy. Legacy's own gates were also
+   * inconsistent here &mdash; {@code canUserSetToDraft}/{@code canUserSetToSubmit} tested for
+   * Administrator exactly, while {@code canUserVerifyReport} merely tested "not a Licensee", so an
+   * unrecognised role passed. Both collapse onto this one action under the two-group model.
+   *
+   * <p>Deliberately NOT {@link #EDIT_SCHEDULE}: a SUBMITTER holds that, so reusing it would answer
+   * a licensee's verify attempt with the status matrix's 409 rather than an authorization 403.
+   * Submitting is the licensee's own transition and is not covered by this action.
+   */
+  SET_REPORT_STATUS
 }

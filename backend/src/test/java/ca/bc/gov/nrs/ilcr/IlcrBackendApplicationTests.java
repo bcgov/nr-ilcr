@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr;
 
+import ca.bc.gov.nrs.ilcr.checkstatus.ReportTransitionRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -62,6 +63,11 @@ class IlcrBackendApplicationTests {
   @MockitoBean private CostDetailSnapshotRepository costDetailSnapshotRepository;
 
   @MockitoBean private ReportSummarySnapshotRepository reportSummarySnapshotRepository;
+
+  // The report-status transition repository (Story 17.1) — same story: a Spring Data JDBC
+  // repository, so absent with the datasource off, and the check-status controller now depends on
+  // it through the transition service.
+  @MockitoBean private ReportTransitionRepository reportTransitionRepository;
 
   @Test
   void contextLoads() {}

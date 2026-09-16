@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.configuration;
 
 import ca.bc.gov.nrs.ilcr.assignment.IlcrUserRepository;
 import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
+import ca.bc.gov.nrs.ilcr.checkstatus.ReportTransitionRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.millinformation.MillInformationRepository;
 import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
@@ -36,8 +37,8 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
  * <p>Scoped to the repository packages so scanning only picks up the Spring Data repository
  * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link
  * Schedule3Repository}, {@link Schedule4Repository}, {@link MillContextRepository}, {@link
- * Schedule11Repository}). Gated on the same {@code ilcr.datasource.enabled} flag as the datasource
- * so contexts without a datasource are unaffected.
+ * Schedule11Repository}, {@link ReportTransitionRepository}). Gated on the same {@code
+ * ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are unaffected.
  */
 @Configuration
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -62,6 +63,7 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       MillReportStatusRepository.class,
       IlcrUserRepository.class,
       MillUserXrefRepository.class,
-      MillMaintenanceRepository.class
+      MillMaintenanceRepository.class,
+      ReportTransitionRepository.class
     })
 public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {}

@@ -1,0 +1,491 @@
+package ca.bc.gov.nrs.ilcr.checkstatus;
+
+import ca.bc.gov.nrs.ilcr.millcontext.MillReportStatusEntity;
+import java.util.Optional;
+import org.springframework.data.jdbc.repository.query.Modifying;
+import org.springframework.data.jdbc.repository.query.Query;
+import org.springframework.data.repository.Repository;
+import org.springframework.data.repository.query.Param;
+
+/**
+ * SQL for a report-status transition on the Schedules 1&ndash;10 track, Spring Data JDBC with
+ * explicit queries (AD-3). No decisions live here.
+ *
+ * <p>This is the only writer of {@code THE.ILCR_MILL_REPORT_STATUS} and the only writer of {@code
+ * THE.ILCR_REPORT_CATEGORY.CATEGORY_STATE_CODE}. Both rows are INSERTed when a reporting year is
+ * opened ({@code ReportingYearRepository}) and were never updated before this.
+ *
+ * <p>The audit sweep reproduces legacy's {@code SubmitReportDAO.submitReport} loop: a transition
+ * stamps the actor and timestamp on every table holding the track's data &mdash; <strong>thirteen
+ * distinct tables reached by twenty statements</strong>, because {@code ILCR_COST_REPORT_DETAIL}
+ * hangs off eight different parents and is stamped once per parent &mdash; and changes business
+ * data on only two. Thirteen + those two is the "fifteen tables" the story's ACs speak of; all
+ * three numbers describe the same sweep. Legacy walked Hibernate object graphs row by row; these
+ * are set-based UPDATEs scoped by the same keys, which means one timestamp per statement instead of
+ * one per row. Nothing reads the difference.
+ *
+ * <p>{@code SYSDATE} or {@code SYSTIMESTAMP} is chosen per table, matching that table's {@code
+ * UPDATE_TIMESTAMP} column type: six are {@code DATE NOT NULL} ({@code ILCR_REPORT_CATEGORY},
+ * {@code CAMP_REPORT}, {@code ROAD_MAINTENANCE_REPORT}, {@code CONTRACTUAL_WORK_REPORT}, {@code
+ * ROAD_CONSTRUCTION_REPRT}, {@code ROAD_CONSTRUCTION_REPRT_DTL}), the rest {@code TIMESTAMP}.
+ *
+ * <p>Only the status row carries an optimistic lock. The sweeps deliberately leave {@code
+ * REVISION_COUNT} alone, as legacy did, so a schedule save holding revision <em>n</em> still
+ * succeeds after a transition has touched its audit columns.
+ */
+@org.springframework.stereotype.Repository
+public interface ReportTransitionRepository extends Repository<MillReportStatusEntity, Long> {
+
+  /**
+   * Take the row lock and read the revision in one statement, before any guard runs — the
+   * lock-then-guard-then-write order {@code MillMaintenanceService.deactivate} established.
+   * Schedule 1's first-save takes {@code FOR UPDATE} on this same row, so the two serialize here
+   * rather than deadlocking later.
+   *
+   * <p>{@code NVL(...,0)} here and on both the guard and the increment in {@link
+   * #updateTrackStatusWithAuditor}: {@code REVISION_COUNT} is {@code NUMBER(10) DEFAULT 0} and
+   * <em>nullable</em>, and a DEFAULT only applies to an INSERT that omits the column. Without it a
+   * legacy row holding NULL returns empty here and answers 404 for a report that exists; and had it
+   * reached the write, {@code REVISION_COUNT = :revisionCount} never matches NULL, so verify would
+   * answer 409 stale-revision on every retry, forever.
+   *
+   * @param millId the mill
+   * @param year the reporting year
+   * @return the current revision (0 when the stored value is NULL), or empty when the mill/year has
+   *     no status row
+   */
+  @Query(
+      """
+      SELECT NVL(s.REVISION_COUNT, 0)
+        FROM THE.ILCR_MILL_REPORT_STATUS s
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+         FOR UPDATE
+      """)
+  Optional<Integer> lockAndReadRevision(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * The acting user's mill-user cross-reference key, which is what the report records as its
+   * auditor. Returns empty when the user holds no association for the mill — legacy then wrote NULL
+   * into both auditor columns, which this story reproduces.
+   *
+   * <p><strong>Usually empty in production, by design.</strong> Only an administrator holds {@code
+   * SET_REPORT_STATUS}, and an administrator is normally tied to no mill, so a real verify will
+   * commonly write NULL into both auditor columns and {@code UPDATE_USERID} is then the only trace
+   * of who signed off. That is legacy-faithful, not a defect — but do not read the four auditor
+   * columns as a reliable record of the verifier.
+   *
+   * <p>No active/inactive-date predicate, deliberately: legacy's named query is {@code FROM
+   * ILCRMillUserXref mux WHERE mux.id.ilcr_mill_id = :mill_id AND mux.id.user_guid = :user_guid}
+   * ({@code model/ILCRMillUserXref.java:26}) with no date filter, and the ratified user/mill
+   * association decision records the legacy account-active flag as non-enforcing and replicated
+   * as-is. Adding the filter the mill-scope gate uses would be a parity deviation, not a fix.
+   *
+   * <p>Returns the column rather than a flag because this is an existence check whose result is the
+   * FK value: {@code ILCR_MILL_USER_XREF.ILCR_MILL_ID} is an FK to {@code
+   * ILCR_MILL_STATUS_XREF.ILCR_MILL_STATUS_XREF_ID}, which equals {@code MILL_ID} only by the
+   * snapshot's 1:1 invariant — so the value read back is not independent evidence of the lookup.
+   *
+   * @param millId the mill, matched against {@code ILCR_MILL_ID} (an FK to {@code
+   *     ILCR_MILL_STATUS_XREF_ID}, not the mill's own natural id)
+   * @param userGuid the acting user's directory GUID
+   * @return the cross-reference's mill id, or empty when there is no such association
+   */
+  @Query(
+      """
+      SELECT x.ILCR_MILL_ID
+        FROM THE.ILCR_MILL_USER_XREF x
+       WHERE x.ILCR_MILL_ID = :millId
+         AND x.USER_GUID = :userGuid
+      """)
+  Optional<Long> findUserXrefMillId(
+      @Param("millId") long millId, @Param("userGuid") String userGuid);
+
+  /**
+   * Move the Schedules 1&ndash;10 track status and record the auditor, guarded on the revision read
+   * under the lock. {@code MILL_SILVICULTUR_STATUS_CODE} is deliberately absent from the SET list:
+   * the Schedule 11 track is independent and never moves with this one (AD-9).
+   *
+   * <p>Both auditor columns are always assigned, including to NULL, because that is what legacy's
+   * Hibernate association write did when the acting user had no cross-reference.
+   *
+   * <p>⚠️ <strong>Correct for {@code S→V} only — do NOT reuse this method for the
+   * reversals.</strong> Legacy ({@code SubmitReportDAO.updateILCRMillReportStatus:403-414}) skips
+   * the association block <em>entirely</em> when the target is {@code 'D'}, leaving both pairs
+   * untouched, and writes the <em>licensee</em> pair (not the auditor pair) when the target is
+   * {@code 'S'}. Only a non-{@code D}, non-{@code S} target writes the auditor pair. So {@code S→D}
+   * or {@code V→S} routed through this statement would null out an auditor legacy preserves. The
+   * rule tables in {@link ReportTransitionService} are genuinely shared; this write path is not —
+   * Story 15.3 and Epic 18 need their own SET lists.
+   *
+   * @param millId the mill
+   * @param year the reporting year
+   * @param statusCode the target status code
+   * @param auditorMillId the auditor cross-reference's mill id, or null
+   * @param auditorUserGuid the auditor's directory GUID, or null
+   * @param revisionCount the revision read under the lock
+   * @param user the acting user for the audit column
+   * @return rows updated: 1 on success, 0 when stale
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_REPORT_STATUS
+         SET ILCR_MILL_REPORT_STATUS_CODE = :statusCode,
+             AUDITOR_MILL_ID = :auditorMillId,
+             AUDITOR_USER_GUID = :auditorUserGuid,
+             REVISION_COUNT = NVL(REVISION_COUNT, 0) + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND NVL(REVISION_COUNT, 0) = :revisionCount
+      """)
+  int updateTrackStatusWithAuditor(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("statusCode") String statusCode,
+      @Param("auditorMillId") Long auditorMillId,
+      @Param("auditorUserGuid") String auditorUserGuid,
+      @Param("revisionCount") int revisionCount,
+      @Param("user") String user);
+
+  /**
+   * Advance the ten Schedules 1&ndash;10 category rows to the state legacy's transition pair table
+   * yields. Category {@code '11'} is Schedule 11's and is excluded: a mill/year carries eleven
+   * category rows, and a 1&ndash;10 transition moves exactly ten of them.
+   *
+   * @param millId the mill
+   * @param year the reporting year
+   * @param categoryState the target category state code
+   * @param user the acting user for the audit column
+   * @return rows updated, expected to be ten
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_REPORT_CATEGORY
+         SET CATEGORY_STATE_CODE = :categoryState,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID IN ('1','2','3','4','5','6','7','8','9','10')
+      """)
+  int advanceCategoryStates(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("categoryState") String categoryState,
+      @Param("user") String user);
+
+  // -----------------------------------------------------------------------------------------------
+  // Audit sweep — thirteen distinct tables via twenty statements, actor and timestamp only.
+  // Schedules 1/2/3 share the summary table, and ILCR_COST_REPORT_DETAIL is stamped once per parent
+  // FK (eight of them), which is why the statement count exceeds the table count. Schedule 11's
+  // BASIC_SILVICULTURE_REPORT is absent by design: legacy's 1-10 loop never touched it.
+  // -----------------------------------------------------------------------------------------------
+
+  /**
+   * Schedules 1, 2 and 3 summaries. Scoped to those three categories because the table also holds
+   * rows for categories legacy's 1&ndash;10 loop did not stamp through this path.
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_REPORT_SUMMARY
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID IN ('1','2','3')
+      """)
+  int stampReportSummaries(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** The cost details hanging off those three summaries. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_REPORT_SUMMARY_ID IN (
+               SELECT s.ILCR_REPORT_SUMMARY_ID
+                 FROM THE.ILCR_REPORT_SUMMARY s
+                WHERE s.ILCR_MILL_ID = :millId
+                  AND s.REPORT_YEAR = :year
+                  AND s.ILCR_CATEGORY_ID IN ('1','2','3'))
+      """)
+  int stampSummaryCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 4 transportation reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.TRANSPORTATION_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampTransportationReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 4 cost details. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TRANSPORTATION_REPORT_ID IN (
+               SELECT t.TRANSPORTATION_REPORT_ID
+                 FROM THE.TRANSPORTATION_REPORT t
+                WHERE t.ILCR_MILL_ID = :millId
+                  AND t.REPORT_YEAR = :year)
+      """)
+  int stampTransportationCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 5 camp reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.CAMP_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampCampReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 5 cost details. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE CAMP_REPORT_ID IN (
+               SELECT c.CAMP_REPORT_ID
+                 FROM THE.CAMP_REPORT c
+                WHERE c.ILCR_MILL_ID = :millId
+                  AND c.REPORT_YEAR = :year)
+      """)
+  int stampCampCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 6 road maintenance reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ROAD_MAINTENANCE_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampRoadMaintenanceReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 6 cost details. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ROAD_MAINTENANCE_REPORT_ID IN (
+               SELECT r.ROAD_MAINTENANCE_REPORT_ID
+                 FROM THE.ROAD_MAINTENANCE_REPORT r
+                WHERE r.ILCR_MILL_ID = :millId
+                  AND r.REPORT_YEAR = :year)
+      """)
+  int stampRoadMaintenanceCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 7A bridge reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.BRIDGE_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampBridgeReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 7A cost details. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE BRIDGE_REPORT_ID IN (
+               SELECT b.BRIDGE_REPORT_ID
+                 FROM THE.BRIDGE_REPORT b
+                WHERE b.ILCR_MILL_ID = :millId
+                  AND b.REPORT_YEAR = :year)
+      """)
+  int stampBridgeCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 7B culvert reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.CULVERT_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampCulvertReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 7B cost details. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE CULVERT_REPORT_ID IN (
+               SELECT c.CULVERT_REPORT_ID
+                 FROM THE.CULVERT_REPORT c
+                WHERE c.ILCR_MILL_ID = :millId
+                  AND c.REPORT_YEAR = :year)
+      """)
+  int stampCulvertCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 8 tree-to-truck reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.TREE_TO_TRUCK_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampTreeToTruckReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 8 detail rows. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TREE_TO_TRUCK_REPORT_ID IN (
+               SELECT t.TREE_TO_TRUCK_REPORT_ID
+                 FROM THE.TREE_TO_TRUCK_REPORT t
+                WHERE t.ILCR_MILL_ID = :millId
+                  AND t.REPORT_YEAR = :year)
+      """)
+  int stampTreeToTruckDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 8 rate-detail rows, two levels below the report. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.TREE_TO_TRUCK_RATE_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID IN (
+               SELECT d.TREE_TO_TRUCK_DETAIL_REPORT_ID
+                 FROM THE.TREE_TO_TRUCK_DETAIL_REPORT d
+                WHERE d.TREE_TO_TRUCK_REPORT_ID IN (
+                        SELECT t.TREE_TO_TRUCK_REPORT_ID
+                          FROM THE.TREE_TO_TRUCK_REPORT t
+                         WHERE t.ILCR_MILL_ID = :millId
+                           AND t.REPORT_YEAR = :year))
+      """)
+  int stampTreeToTruckRateDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 9 contractual work reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.CONTRACTUAL_WORK_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampContractualWorkReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 9 cost details. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE CONTRACTUAL_WORK_REPORT_ID IN (
+               SELECT c.CONTRACTUAL_WORK_REPORT_ID
+                 FROM THE.CONTRACTUAL_WORK_REPORT c
+                WHERE c.ILCR_MILL_ID = :millId
+                  AND c.REPORT_YEAR = :year)
+      """)
+  int stampContractualWorkCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 10 road construction reports. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ROAD_CONSTRUCTION_REPRT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int stampRoadConstructionReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 10 detail rows. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ROAD_CONSTRUCTION_REPRT_DTL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ROAD_CONSTRUCTION_REPRT_ID IN (
+               SELECT r.ROAD_CONSTRUCTION_REPRT_ID
+                 FROM THE.ROAD_CONSTRUCTION_REPRT r
+                WHERE r.ILCR_MILL_ID = :millId
+                  AND r.REPORT_YEAR = :year)
+      """)
+  int stampRoadConstructionDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  /** Schedule 10 cost details, which hang off the detail row rather than the report. */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (
+               SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID
+                 FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+                WHERE d.ROAD_CONSTRUCTION_REPRT_ID IN (
+                        SELECT r.ROAD_CONSTRUCTION_REPRT_ID
+                          FROM THE.ROAD_CONSTRUCTION_REPRT r
+                         WHERE r.ILCR_MILL_ID = :millId
+                           AND r.REPORT_YEAR = :year))
+      """)
+  int stampRoadConstructionCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+}
