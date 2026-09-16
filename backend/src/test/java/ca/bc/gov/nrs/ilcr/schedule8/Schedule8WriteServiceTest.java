@@ -86,7 +86,8 @@ class Schedule8WriteServiceTest {
   }
 
   private void draft() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
   }
 
   private static Schedule8PageRequest pageEdit() {
@@ -288,7 +289,8 @@ class Schedule8WriteServiceTest {
 
   @Test
   void saveSample_nonDraft_throwsNotEditable() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
     assertThrows(
         ScheduleNotEditableException.class,
         () ->
