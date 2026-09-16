@@ -138,7 +138,7 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514, 2021));
     when(sweepService.sweep(514, 2021)).thenReturn(emptySweep());
-    when(reportSubmission.canSubmit(SUBMITTER, "D")).thenReturn(true);
+    when(reportSubmission.canSubmit(SUBMITTER, "D", 514)).thenReturn(true);
 
     CheckStatusSweepResponse body = controller.checkStatus("514", "2021", SUBMITTER).getBody();
 
@@ -146,8 +146,8 @@ class CheckStatusControllerTest {
     assertThat(body.schedules1To10().canSubmit()).isTrue();
     assertThat(body.schedules1To10().statusCode()).isEqualTo("D");
     assertThat(body.schedule11().canSubmit()).isNull();
-    verify(reportSubmission).canSubmit(SUBMITTER, "D");
-    verify(reportSubmission, never()).canSubmit(any(), isNull());
+    verify(reportSubmission).canSubmit(SUBMITTER, "D", 514);
+    verify(reportSubmission, never()).canSubmit(any(), isNull(), anyLong());
   }
 
   @Test
@@ -169,8 +169,9 @@ class CheckStatusControllerTest {
     assertThat(response.getBody().message().key()).isEqualTo("sch1-10SubmittedMsg");
     assertThat(response.getBody().message().text())
         .isEqualTo("Schedules 1-10 are successfully submitted.");
-    InOrder order = inOrder(millContextService, transitionService);
+    InOrder order = inOrder(millContextService, reportSubmission, transitionService);
     order.verify(millContextService).validateMillYearActive("760", "2021");
+    order.verify(reportSubmission).validateSubmitterMillAccess(SUBMITTER, 760);
     order.verify(transitionService).submit(760, 2021, SUBMITTER, "dev-submitter");
     verifyNoInteractions(sweepService);
   }

@@ -41,10 +41,11 @@ public interface CheckStatusApi {
    * closed for the year → 409 ERR-002.
    *
    * <p>{@code schedules1To10.canSubmit} (Story 15.3) is whether Submit is OFFERED to this caller:
-   * the caller holds {@code SUBMIT_REPORT} and the track is at Draft — the legacy button rule, with
-   * validity ignored, so a Licensee whose schedules still fail is offered the button and learns
-   * from the click (409 {@code reportNotSubmittedErrorMsg}) exactly as in legacy. {@code
-   * schedule11.canSubmit} is absent until Epic 26.
+   * the caller holds {@code SUBMIT_REPORT}, remains within that action's SUBMITTER mill scope, and
+   * the track is at Draft — the legacy button rule, with validity ignored, so a Licensee whose
+   * schedules still fail is offered the button and learns from the click (409 {@code
+   * reportNotSubmittedErrorMsg}) exactly as in legacy. {@code schedule11.canSubmit} is absent until
+   * Epic 26.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
@@ -61,9 +62,10 @@ public interface CheckStatusApi {
    * Submit the Schedules 1–10 track for ministry review — Draft → Submitted (UC-CHK-002
    * S01/S03/S08, FR5, Story 15.3). No body: the client confirms in its own dialog; the server
    * enforces everything the dialog protected. Method authorization runs first: no {@code
-   * SUBMIT_REPORT} → 403 (an {@code ILCR_ADMIN} can never submit, as legacy's Auditor/Administrator
-   * never could). Then, in order: missing/blank/non-numeric params → 400 ERR-001; a mill outside
-   * the caller's scope → 403; no {@code ILCR_MILL_REPORT_STATUS} row → 404 {@code
+   * SUBMIT_REPORT} → 403 (ADMIN-only callers do not hold it). A caller holding both ADMIN and
+   * SUBMITTER retains the action under Epic 16, but only within the SUBMITTER role's active mill
+   * assignment. Then, in order: missing/blank/non-numeric params → 400 ERR-001; a mill outside the
+   * caller's scope → 403; no {@code ILCR_MILL_REPORT_STATUS} row → 404 {@code
    * checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002. Inside ONE write
    * transaction that locks the status row first: track not at Draft → 409 {@code
    * reportSubmissionErrorMsg} (legacy's guard text); any of the eleven Schedule 1–10 checks failing

@@ -1,8 +1,11 @@
 package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,12 +18,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
@@ -44,6 +50,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
           + " contact ILCR application support.";
 
   @Autowired private JdbcTemplate jdbc;
+  @MockitoSpyBean private MillContextService millContextService;
   private final ObjectMapper json = new ObjectMapper();
 
   private record Outcome(int status, JsonNode body, long millis) {}
@@ -51,10 +58,30 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
   @Test
   @DisplayName("761/2021: exactly one 200, one 409 reportSubmissionErrorMsg; S committed once")
   void twoSubmits_exactlyOneCommits() throws Exception {
-    CountDownLatch start = new CountDownLatch(1);
+    CountDownLatch firstHasLock = new CountDownLatch(1);
+    CountDownLatch releaseFirst = new CountDownLatch(1);
+    CountDownLatch secondReachedLockedRead = new CountDownLatch(1);
+    AtomicInteger lockedReads = new AtomicInteger();
+    doAnswer(
+            invocation -> {
+              int read = lockedReads.incrementAndGet();
+              if (read == 1) {
+                Object result = invocation.callRealMethod();
+                firstHasLock.countDown();
+                if (!releaseFirst.await(30, TimeUnit.SECONDS)) {
+                  throw new IllegalStateException(
+                      "Timed out waiting to release the winning submit");
+                }
+                return result;
+              }
+              secondReachedLockedRead.countDown();
+              return invocation.callRealMethod();
+            })
+        .when(millContextService)
+        .lockTrackStatusCodes(761, 2021);
+
     Callable<Outcome> racer =
         () -> {
-          start.await(10, TimeUnit.SECONDS);
           long began = System.nanoTime();
           MvcResult result =
               mockMvc
@@ -76,11 +103,26 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
     List<Outcome> outcomes = new ArrayList<>();
     try {
       Future<Outcome> first = pool.submit(racer);
+      assertThat(firstHasLock.await(30, TimeUnit.SECONDS))
+          .as("the first submit must acquire the production status-row lock")
+          .isTrue();
+
       Future<Outcome> second = pool.submit(racer);
-      start.countDown();
+      assertThat(secondReachedLockedRead.await(30, TimeUnit.SECONDS))
+          .as("the second submit must reach the same production locked read")
+          .isTrue();
+      assertThatThrownBy(() -> second.get(1, TimeUnit.SECONDS))
+          .as("the second submit must wait while the first transaction owns the row lock")
+          .isInstanceOf(TimeoutException.class);
+      assertThatThrownBy(() -> first.get(1, TimeUnit.SECONDS))
+          .as("the first submit is deliberately paused with its transaction open")
+          .isInstanceOf(TimeoutException.class);
+
+      releaseFirst.countDown();
       outcomes.add(first.get(90, TimeUnit.SECONDS));
       outcomes.add(second.get(90, TimeUnit.SECONDS));
     } finally {
+      releaseFirst.countDown();
       pool.shutdownNow();
     }
 

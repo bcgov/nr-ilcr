@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doCallRealMethod;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -59,12 +58,13 @@ class Schedule1CrownPushTest {
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     when(repository.findTrackStatusForUpdate(MILL, YEAR))
         .thenReturn(Optional.of("D")); // Draft → editable
-    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
 
     boolean pushed =
         service.applyCrownTimberVolume(MILL, YEAR, volume, CallerRights.SUBMITTER, USER);
 
     assertTrue(pushed);
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
     // The aggregate revision is bumped (AR11) so a stale-token main-page save is rejected.
     verify(repository).touchSummary(SUMMARY_ID, USER);
     // Fixed-line items get a VOLUME-only upsert; the item-19 Other-Costs rows are overwritten en
@@ -94,7 +94,6 @@ class Schedule1CrownPushTest {
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     when(repository.findTrackStatusForUpdate(MILL, YEAR))
         .thenReturn(Optional.of("S")); // submitted, not Draft
-    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     boolean pushed =
         service.applyCrownTimberVolume(
@@ -103,6 +102,8 @@ class Schedule1CrownPushTest {
     // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown
     // push.
     assertFalse(pushed);
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
     verify(repository, never()).touchSummary(anyInt(), any());
     verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
     verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());

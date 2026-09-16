@@ -230,7 +230,6 @@ class ReportTrackTransitionServiceTest {
   @DisplayName("AC 3: a track not at Draft -> 409 reportSubmissionErrorMsg BEFORE the gate runs")
   void notDraft_409_neverRunsTheGate() {
     trackAt("S");
-    when(reportSubmission.canSubmit(submitter, "S")).thenReturn(false);
 
     assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
         .isInstanceOfSatisfying(
@@ -246,7 +245,6 @@ class ReportTrackTransitionServiceTest {
   @DisplayName("a row with a NULL 1-10 code is a 409, not a 404 — the row exists")
   void nullCode_409() {
     trackAt(null);
-    when(reportSubmission.canSubmit(submitter, null)).thenReturn(false);
 
     assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
         .isInstanceOf(ReportTransitionRejectedException.class);
@@ -283,6 +281,37 @@ class ReportTrackTransitionServiceTest {
               assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg");
             });
     verify(repository, never()).advanceCategoryState(anyLong(), anyInt(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("AC 7: a validation-read DataAccessException uses reportSubmissionErrorMsg")
+  void validationReadFailure_500() {
+    trackAt("D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR))
+        .thenThrow(new DataAccessResourceFailureException("validation read failed"));
+
+    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportSubmissionException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(repository, millUserXrefRepository);
+  }
+
+  @Test
+  @DisplayName("AC 7: a licensee-read DataAccessException uses reportSubmissionErrorMsg")
+  void licenseeReadFailure_500() {
+    trackAt("D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate(true);
+    when(millUserXrefRepository.findAssignment(MILL, GUID))
+        .thenThrow(new DataAccessResourceFailureException("assignment read failed"));
+
+    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportSubmissionException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(repository);
   }
 
   @Test

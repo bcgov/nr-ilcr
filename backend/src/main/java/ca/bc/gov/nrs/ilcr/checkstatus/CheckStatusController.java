@@ -20,11 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
  * The Check Status endpoints (Stories 15.1 and 15.3). Each authorizes by naming an action (AD-7) —
  * {@code VIEW_SCHEDULE} for the sweep, exactly as the twelve per-schedule check-status endpoints
  * do, and {@code SUBMIT_REPORT} for the transition — and delegates ALL mill/year validation to
- * {@link MillContextService} as its first line (AD-4). Mill scope arrives with it: {@code
- * validateMillYearActive}'s first statement is {@code validateMillAccess}, so a submitter reaching
- * for another mill's report is 403'd without any check here. Nothing else is re-checked in this
- * class, and there is no {@code isAuthenticated()}: the epic's "any signed-in user" phrasing is
- * imprecise and is not the spec (FR2 requires role AND mill scope).
+ * {@link MillContextService} as its first line (AD-4). Mill scope normally arrives with it: {@code
+ * validateMillYearActive}'s first statement is {@code validateMillAccess}. Submit adds one
+ * action-specific check for a dual-role ADMIN+SUBMITTER because ADMIN's browsing scope must not
+ * widen SUBMITTER's submission scope. There is no {@code isAuthenticated()}: the epic's "any
+ * signed-in user" phrasing is imprecise and is not the spec (FR2 requires role AND mill scope).
  *
  * <p>This is the ONE guard the sweep owns (AC 9). None of the twelve in-process validations checks
  * its own context, and six of them report an absent or closed mill-year as a vacuous MET — so the
@@ -65,7 +65,8 @@ public class CheckStatusController implements CheckStatusApi {
       CheckStatusSweepResponse sweep = sweepService.sweep(context.millId(), context.year());
       // The offer flag rides on the 1-10 track only; Schedule 11's rule arrives with Epic 26.
       TrackCheckResult schedules1To10 = sweep.schedules1To10();
-      boolean offered = reportSubmission.canSubmit(authentication, schedules1To10.statusCode());
+      boolean offered =
+          reportSubmission.canSubmit(authentication, schedules1To10.statusCode(), context.millId());
       return ResponseEntity.ok(
           new CheckStatusSweepResponse(
               sweep.millId(),
@@ -83,6 +84,7 @@ public class CheckStatusController implements CheckStatusApi {
       String millId, String year, Authentication authentication) {
     try {
       MillYearContext context = millContextService.validateMillYearActive(millId, year);
+      reportSubmission.validateSubmitterMillAccess(authentication, context.millId());
       String key =
           transitionService.submit(
               context.millId(), context.year(), authentication, authentication.getName());

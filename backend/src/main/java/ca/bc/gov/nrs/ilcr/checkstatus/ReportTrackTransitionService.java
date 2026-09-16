@@ -92,7 +92,6 @@ public class ReportTrackTransitionService {
    */
   @Transactional
   public String submit(long millId, int year, Authentication authentication, String user) {
-    TrackTransition transition = TrackTransition.SUBMIT;
     ScheduleTrack track = ScheduleTrack.SCHEDULES_1_TO_10;
 
     TrackStatusCodes codes =
@@ -100,20 +99,24 @@ public class ReportTrackTransitionService {
             .lockTrackStatusCodes(millId, year)
             .orElseThrow(ScheduleNotFoundException::new);
     String current = codes.schedules1To10Code();
+    TrackTransition transition =
+        TrackTransition.resolve(current, TrackTransition.SUBMIT.to())
+            .filter(TrackTransition.SUBMIT::equals)
+            .orElseThrow(ReportTransitionRejectedException::new);
     if (!reportSubmission.canSubmit(authentication, current)) {
       log.debug("Submit refused for millId={} year={}: track not at Draft", millId, year);
       throw new ReportTransitionRejectedException();
     }
 
-    TrackCheckResult gate =
-        TrackCheckResult.of(current, sweepService.checkTrack(track, millId, year));
-    if (!gate.requirementsMet()) {
-      log.debug("Submit refused for millId={} year={}: validation gate not met", millId, year);
-      throw new ReportNotSubmittedException();
-    }
-
-    Licensee licensee = resolveLicensee(authentication, millId);
     try {
+      TrackCheckResult gate =
+          TrackCheckResult.of(current, sweepService.checkTrack(track, millId, year));
+      if (!gate.requirementsMet()) {
+        log.debug("Submit refused for millId={} year={}: validation gate not met", millId, year);
+        throw new ReportNotSubmittedException();
+      }
+
+      Licensee licensee = resolveLicensee(authentication, millId);
       requireOneRow(
           repository.updateTrackStatus(
               millId, year, current, transition.to(), licensee.millId(), licensee.userGuid(), user),

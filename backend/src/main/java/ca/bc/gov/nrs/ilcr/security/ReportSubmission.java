@@ -1,8 +1,12 @@
 package ca.bc.gov.nrs.ilcr.security;
 
 import ca.bc.gov.nrs.ilcr.dto.base.Role;
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
+import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,9 +33,12 @@ public class ReportSubmission {
   static final String DRAFT = "D";
 
   private final SchedulePermissions permissions;
+  private final MillContextRepository millContextRepository;
 
-  public ReportSubmission(SchedulePermissions permissions) {
+  public ReportSubmission(
+      SchedulePermissions permissions, MillContextRepository millContextRepository) {
     this.permissions = permissions;
+    this.millContextRepository = millContextRepository;
   }
 
   /**
@@ -46,6 +53,40 @@ public class ReportSubmission {
     return DRAFT.equals(trackStatusCode) && holdsSubmitAction(authentication);
   }
 
+  /**
+   * Whether Submit is offered for this mill after applying the action's contextual scope.
+   *
+   * <p>Epic 16 deliberately unions capabilities across every role held. A caller carrying both
+   * ADMIN and SUBMITTER therefore keeps {@link Action#SUBMIT_REPORT}, but ADMIN's all-mills
+   * browsing scope does not widen that action: the caller must still have an active submitter
+   * assignment to the mill. Single-role submitters have already passed the shared mill-context
+   * guard, so only the dual-role case needs the additional read.
+   *
+   * @param authentication the current authentication
+   * @param trackStatusCode the Schedules 1–10 track status
+   * @param millId the mill whose report would be submitted
+   * @return true only when the role/status rule and the Submit-specific mill scope both pass
+   */
+  public boolean canSubmit(Authentication authentication, String trackStatusCode, long millId) {
+    return canSubmit(authentication, trackStatusCode)
+        && hasSubmitterMillAccess(authentication, millId);
+  }
+
+  /**
+   * Enforce Submit-specific mill scope at request entry.
+   *
+   * <p>This intentionally does not hold an assignment lock for the transaction. Authorization is a
+   * request-entry snapshot: a concurrent revocation affects the next request, matching the legacy
+   * interaction and the Story 15.3 review decision.
+   *
+   * @throws AccessDeniedException when a dual-role caller is not actively assigned to the mill
+   */
+  public void validateSubmitterMillAccess(Authentication authentication, long millId) {
+    if (!hasSubmitterMillAccess(authentication, millId)) {
+      throw new AccessDeniedException("Mill is not associated to the submitting caller.");
+    }
+  }
+
   private boolean holdsSubmitAction(Authentication authentication) {
     if (authentication == null || !authentication.isAuthenticated()) {
       return false;
@@ -57,5 +98,36 @@ public class ReportSubmission {
       }
     }
     return false;
+  }
+
+  private boolean hasSubmitterMillAccess(Authentication authentication, long millId) {
+    if (!holdsRole(authentication, Role.ADMIN)) {
+      return true;
+    }
+    String userGuid = directoryGuid(authentication);
+    return userGuid != null
+        && !userGuid.isBlank()
+        && millContextRepository.userHasActiveAssignment(millId, userGuid);
+  }
+
+  private static boolean holdsRole(Authentication authentication, Role expected) {
+    if (authentication == null || !authentication.isAuthenticated()) {
+      return false;
+    }
+    return authentication.getAuthorities().stream()
+        .map(GrantedAuthority::getAuthority)
+        .map(Role::fromValue)
+        .anyMatch(expected::equals);
+  }
+
+  private static String directoryGuid(Authentication authentication) {
+    Object principal = authentication == null ? null : authentication.getPrincipal();
+    if (principal instanceof Jwt jwt) {
+      return JwtPrincipalUtil.getIdpUserId(jwt);
+    }
+    if (principal instanceof MockUserPrincipal mock) {
+      return mock.userGuid();
+    }
+    return null;
   }
 }

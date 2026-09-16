@@ -2,15 +2,23 @@ package ca.bc.gov.nrs.ilcr.security;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import java.util.Arrays;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
  * Unit test for {@link ReportSubmission} — the legacy Submit-button rule ({@code
@@ -19,9 +27,19 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
  * input, so there is nothing to vary on that axis — the click reveals a failing gate, exactly as
  * legacy.
  */
+@ExtendWith(MockitoExtension.class)
 class ReportSubmissionTest {
 
-  private final ReportSubmission rule = new ReportSubmission(new SchedulePermissions());
+  private static final long MILL = 760L;
+  private static final String GUID = "CANONSUBMITTERBBBBCCCCDDDD000001";
+
+  @Mock private MillContextRepository millContextRepository;
+  private ReportSubmission rule;
+
+  @BeforeEach
+  void setUp() {
+    rule = new ReportSubmission(new SchedulePermissions(), millContextRepository);
+  }
 
   private Authentication auth(String... authorities) {
     return new UsernamePasswordAuthenticationToken(
@@ -29,7 +47,7 @@ class ReportSubmissionTest {
   }
 
   @ParameterizedTest(name = "{0} at {1} -> {2}")
-  @DisplayName("SUBMITTER at Draft only; ADMIN never; S/V/O/null never")
+  @DisplayName("SUBMITTER at Draft only; ADMIN-only never; S/V/O/null never")
   @CsvSource({
     "ILCR_SUBMITTER, D, true",
     "ILCR_SUBMITTER, S, false",
@@ -60,6 +78,16 @@ class ReportSubmissionTest {
   }
 
   @Test
+  @DisplayName("dual-role Submit keeps the SUBMITTER mill-assignment scope")
+  void bothRoles_scopeIsTheSubmitterAssignment() {
+    Authentication both = dualRoleJwt();
+    when(millContextRepository.userHasActiveAssignment(MILL, GUID)).thenReturn(true, false);
+
+    assertTrue(rule.canSubmit(both, "D", MILL));
+    assertFalse(rule.canSubmit(both, "D", MILL));
+  }
+
+  @Test
   @DisplayName("no authentication, or an unauthenticated one, is never offered Submit")
   void nullOrAnonymous_notOffered() {
     assertFalse(rule.canSubmit(null, "D"));
@@ -67,5 +95,20 @@ class ReportSubmissionTest {
         new UsernamePasswordAuthenticationToken("u", "p");
     assertFalse(anonymous.isAuthenticated());
     assertFalse(rule.canSubmit(anonymous, "D"));
+  }
+
+  private static Authentication dualRoleJwt() {
+    Jwt jwt =
+        Jwt.withTokenValue("t")
+            .header("alg", "none")
+            .claim("custom:idp_user_id", GUID)
+            .claim("cognito:groups", List.of("ILCR_ADMIN", "ILCR_SUBMITTER"))
+            .build();
+    return new UsernamePasswordAuthenticationToken(
+        jwt,
+        "N/A",
+        List.of(
+            new SimpleGrantedAuthority("ILCR_ADMIN"),
+            new SimpleGrantedAuthority("ILCR_SUBMITTER")));
   }
 }

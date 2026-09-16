@@ -58,8 +58,9 @@ public enum Action {
    * Submit the Schedules 1–10 track for ministry review (UC-CHK-002, FR5) — the Check Status page's
    * Submit button. SUBMITTER-only: legacy {@code UserSessionMB.canUserSubmitReport():502-521}
    * enabled the button for {@code ILCR_LICENSEE} alone, and PRD FR5 keeps "ministry users cannot
-   * submit on a Licensee's behalf" as a role rule, so an ADMIN hitting the submit API is denied 403
-   * (the {@link #MAINTAIN_CODE_TABLES} precedent, inverted). Holding the action says only that
+   * submit on a Licensee's behalf" as a role rule. ADMIN alone therefore receives 403. Epic 16
+   * unions capabilities for a dual-role ADMIN+SUBMITTER, but this action retains SUBMITTER mill
+   * scope: the caller must be actively assigned to the mill. Holding the action says only that
    * Submit may be OFFERED; whether it succeeds is the track status and the ten-schedule validation
    * gate, decided in the domain service.
    */
