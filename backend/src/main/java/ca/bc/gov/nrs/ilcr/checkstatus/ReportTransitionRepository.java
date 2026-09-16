@@ -24,10 +24,16 @@ import org.springframework.data.repository.query.Param;
  * are set-based UPDATEs scoped by the same keys, which means one timestamp per statement instead of
  * one per row. Nothing reads the difference.
  *
- * <p>{@code SYSDATE} or {@code SYSTIMESTAMP} is chosen per table, matching that table's {@code
- * UPDATE_TIMESTAMP} column type: six are {@code DATE NOT NULL} ({@code ILCR_REPORT_CATEGORY},
- * {@code CAMP_REPORT}, {@code ROAD_MAINTENANCE_REPORT}, {@code CONTRACTUAL_WORK_REPORT}, {@code
- * ROAD_CONSTRUCTION_REPRT}, {@code ROAD_CONSTRUCTION_REPRT_DTL}), the rest {@code TIMESTAMP}.
+ * <p><strong>{@code SYSDATE} everywhere, and that is delivery-verified rather than
+ * inferred.</strong> All fifteen tables this class writes hold {@code UPDATE_TIMESTAMP} as {@code
+ * DATE NOT NULL} in delivery {@code THE} (probed on {@code fortmp1}, 2026-09-16, Oracle 19.10). An
+ * earlier cut chose {@code SYSDATE} for six and {@code SYSTIMESTAMP} for nine, on the strength of
+ * the <em>test snapshot's</em> types — the snapshot declares several as {@code TIMESTAMP} and is
+ * simply wrong about delivery. Writing {@code SYSTIMESTAMP} into a {@code DATE} column is not an
+ * error (Oracle narrows it implicitly, dropping the fractional seconds) which is exactly why no
+ * test could catch it. {@code SYSDATE} is correct against both shapes, since {@code DATE} widens to
+ * {@code TIMESTAMP} without loss, and it matches legacy, whose single Java-side value carried date
+ * precision.
  *
  * <p>Nothing here touches {@code REVISION_COUNT} — not the sweeps and not the status write — as
  * legacy did not, so a schedule save holding revision <em>n</em> still succeeds after a transition
@@ -117,7 +123,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              AUDITOR_MILL_ID = :auditorMillId,
              AUDITOR_USER_GUID = :auditorUserGuid,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
       """)
@@ -190,7 +196,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID IN ('1','2','3')
@@ -204,7 +210,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID IN (
                SELECT s.ILCR_REPORT_SUMMARY_ID
                  FROM THE.ILCR_REPORT_SUMMARY s
@@ -221,7 +227,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.TRANSPORTATION_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
       """)
@@ -234,7 +240,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID IN (
                SELECT t.TRANSPORTATION_REPORT_ID
                  FROM THE.TRANSPORTATION_REPORT t
@@ -263,7 +269,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CAMP_REPORT_ID IN (
                SELECT c.CAMP_REPORT_ID
                  FROM THE.CAMP_REPORT c
@@ -293,7 +299,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_MAINTENANCE_REPORT_ID IN (
                SELECT r.ROAD_MAINTENANCE_REPORT_ID
                  FROM THE.ROAD_MAINTENANCE_REPORT r
@@ -310,7 +316,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.BRIDGE_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '7'
@@ -324,7 +330,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BRIDGE_REPORT_ID IN (
                SELECT b.BRIDGE_REPORT_ID
                  FROM THE.BRIDGE_REPORT b
@@ -341,7 +347,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.CULVERT_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '7'
@@ -355,7 +361,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CULVERT_REPORT_ID IN (
                SELECT c.CULVERT_REPORT_ID
                  FROM THE.CULVERT_REPORT c
@@ -372,7 +378,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.TREE_TO_TRUCK_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
       """)
@@ -385,7 +391,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_REPORT_ID IN (
                SELECT t.TREE_TO_TRUCK_REPORT_ID
                  FROM THE.TREE_TO_TRUCK_REPORT t
@@ -408,7 +414,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.TREE_TO_TRUCK_RATE_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID IN (
                SELECT d.TREE_TO_TRUCK_DETAIL_REPORT_ID
                  FROM THE.TREE_TO_TRUCK_DETAIL_REPORT d
@@ -441,7 +447,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CONTRACTUAL_WORK_REPORT_ID IN (
                SELECT c.CONTRACTUAL_WORK_REPORT_ID
                  FROM THE.CONTRACTUAL_WORK_REPORT c
@@ -489,7 +495,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (
                SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID
                  FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d

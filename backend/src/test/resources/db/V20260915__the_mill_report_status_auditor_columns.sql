@@ -20,10 +20,25 @@
 -- consequence for tests: an auditor GUID with no matching xref row inserts cleanly in test scope
 -- though delivery would reject it.
 --
--- NOT independently confirmed against the delivery database. The column names and the composite-FK
--- shape come from the legacy mapping, which is authoritative for names but has been an unreliable
--- guide to physical shape before (see the V20260910 header). Confirm against THE on fortmp1 before
--- this is relied on beyond test scope.
+-- CONFIRMED against the delivery database 2026-09-16 (THE on fortmp1, Oracle 19c 19.10.0.0.0,
+-- read-only ALL_TAB_COLUMNS probe). All four columns exist with these exact names and compatible
+-- types -- AUDITOR_MILL_ID / LICENSEE_MILL_ID are NUMBER(10) nullable and AUDITOR_USER_GUID /
+-- LICENSEE_USER_GUID are VARCHAR2(32) nullable -- so the Story 17.1 UPDATE cannot raise ORA-00904,
+-- and VARCHAR2(32) is an exact fit for the 32-char directory GUID. The earlier caveat here (names
+-- inferred from the legacy Hibernate mapping, unconfirmed) is discharged.
+--
+-- The SAME probe found three places where THIS SNAPSHOT diverges from delivery on the base table,
+-- recorded here because they mislead anyone reading V1 as if it were delivery's shape:
+--   * ILCR_MILL_REPORT_STATUS_CODE and MILL_SILVICULTUR_STATUS_CODE are NOT NULL in delivery;
+--     V1 declares both nullable. Code tolerating a null track code therefore guards a state
+--     delivery cannot hold.
+--   * REVISION_COUNT is NUMBER(5) NOT NULL in delivery; V1 has NUMBER(10) DEFAULT 0, nullable.
+--   * Every UPDATE_TIMESTAMP on the fifteen tables Story 17.1 writes is DATE NOT NULL in delivery,
+--     while V1 and its successors declare several as TIMESTAMP. That one had teeth: the sweep chose
+--     SYSTIMESTAMP for nine statements on the snapshot's authority, which Oracle narrows silently
+--     into a DATE column, so no test could have caught it. All twenty now use SYSDATE.
+-- V1 is NOT edited to fix these (shipped migrations are immutable, AD-10). They are cross-cutting
+-- snapshot debt, not Story 17.1 scope.
 
 ALTER TABLE THE.ILCR_MILL_REPORT_STATUS ADD (
   AUDITOR_MILL_ID     NUMBER(10),
