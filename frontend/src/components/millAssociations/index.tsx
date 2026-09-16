@@ -346,32 +346,34 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                       <TableCell>{dash(account?.roleName)}</TableCell>
                       <TableCell>{dash(account?.activeInd)}</TableCell>
                       <TableCell>
-                        {/* STA-001: mutually exclusive once the flag is known. Until then neither
+                        <div className="mills__row-actions">
+                          {/* STA-001: mutually exclusive once the flag is known. Until then neither
                             can be ruled out, because no endpoint serves the current value. */}
-                        {account?.activeInd !== 'Y' && (
-                          <Button
-                            kind="tertiary"
-                            size="sm"
-                            disabled={busy}
-                            aria-label="Activate account"
-                            renderIcon={CheckmarkOutline}
-                            onClick={() => setAccountActive(true)}
-                          >
-                            Activate
-                          </Button>
-                        )}
-                        {account?.activeInd !== 'N' && (
-                          <Button
-                            kind="danger--tertiary"
-                            size="sm"
-                            disabled={busy}
-                            aria-label="Deactivate account"
-                            renderIcon={Misuse}
-                            onClick={() => setAccountActive(false)}
-                          >
-                            Deactivate
-                          </Button>
-                        )}
+                          {account?.activeInd !== 'Y' && (
+                            <Button
+                              kind="tertiary"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="Activate account"
+                              renderIcon={CheckmarkOutline}
+                              onClick={() => setAccountActive(true)}
+                            >
+                              Activate
+                            </Button>
+                          )}
+                          {account?.activeInd !== 'N' && (
+                            <Button
+                              kind="danger--tertiary"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="Deactivate account"
+                              renderIcon={Misuse}
+                              onClick={() => setAccountActive(false)}
+                            >
+                              Deactivate
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -433,32 +435,34 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                         <TableCell>{dash(legacyDate(row.activeDate))}</TableCell>
                         <TableCell>{dash(legacyDate(row.inactiveDate))}</TableCell>
                         <TableCell>
-                          {/* STA-002: the control keys off the dates, which the toggle keeps
+                          <div className="mills__row-actions">
+                            {/* STA-002: the control keys off the dates, which the toggle keeps
                               mutually exclusive — there is one row per pair and no history. */}
-                          {row.activeDate != null && (
-                            <Button
-                              kind="danger--tertiary"
-                              size="sm"
-                              disabled={busy}
-                              aria-label={`Deactivate mill ${dash(row.millNumber)}`}
-                              renderIcon={Misuse}
-                              onClick={() => end(row)}
-                            >
-                              Deactivate
-                            </Button>
-                          )}
-                          {row.inactiveDate != null && (
-                            <Button
-                              kind="tertiary"
-                              size="sm"
-                              disabled={busy}
-                              aria-label={`Activate mill ${dash(row.millNumber)}`}
-                              renderIcon={CheckmarkOutline}
-                              onClick={() => assign(row.millId)}
-                            >
-                              Activate
-                            </Button>
-                          )}
+                            {row.activeDate != null && (
+                              <Button
+                                kind="danger--tertiary"
+                                size="sm"
+                                disabled={busy}
+                                aria-label={`Deactivate mill ${dash(row.millNumber)}`}
+                                renderIcon={Misuse}
+                                onClick={() => end(row)}
+                              >
+                                Deactivate
+                              </Button>
+                            )}
+                            {row.inactiveDate != null && (
+                              <Button
+                                kind="tertiary"
+                                size="sm"
+                                disabled={busy}
+                                aria-label={`Activate mill ${dash(row.millNumber)}`}
+                                renderIcon={CheckmarkOutline}
+                                onClick={() => assign(row.millId)}
+                              >
+                                Activate
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

@@ -231,6 +231,26 @@ body {
     justify-content: center;
   }
 
+  // The per-row controls in a grid's Actions cell, on BOTH administration screens. Side by side
+  // rather than stacked, and equal width: a Carbon button sizes to its own label, so `Deactivate`
+  // and `View` differ in width and drop onto separate lines as the column narrows. `flex: 1 1 0`
+  // is what makes them equal — a shared `min-width` alone would still leave the longer label
+  // wider. Written bare, NOT prefixed with `.schedule-page`: this block already IS
+  // `.schedule-page`, and prefixing would compile to a doubled selector that matches nothing.
+  // Declares NO height — the one app-wide control height from _overrides.scss governs, as
+  // controlHeightContract pins.
+  .mills__row-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.5rem;
+
+    .#{$bcgov-prefix}--btn {
+      flex: 1 1 0;
+      min-width: 7.5rem;
+    }
+  }
+
   // #312 (Table Maintenance, screen item 1): the Code List drop-list should not span the entire
   // screen width — cap it to a content-appropriate width, left-aligned under its heading.
   .code-tables__selector {

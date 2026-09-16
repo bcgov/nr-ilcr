@@ -664,55 +664,60 @@ const Mills: FC = () => {
                               {isNeverActivated(row) ? '—' : dash(legacyDate(row.inactiveDate))}
                             </TableCell>
                             <TableCell>
-                              {/* The SINGLE applicable action (mills.xhtml:136-143), fired
+                              {/* Side by side and equal width: the two controls are peers, and a Carbon button
+                                  sizes to its own label, so "Deactivate" and "View" would otherwise differ in
+                                  width and wrap onto separate lines as the column narrows. */}
+                              <div className="mills__row-actions">
+                                {/* The SINGLE applicable action (mills.xhtml:136-143), fired
                                   immediately — legacy confirmed neither. Both a never-activated
                                   and a deactivated row offer Activate. */}
-                              {active ? (
-                                <Button
-                                  kind="danger--tertiary"
-                                  size="sm"
-                                  disabled={busy}
-                                  aria-label={`Deactivate user ${row.userGuid}`}
-                                  renderIcon={Misuse}
-                                  onClick={() => toggleUser(row, 'deactivate')}
-                                >
-                                  Deactivate
-                                </Button>
-                              ) : (
-                                <Button
-                                  kind="tertiary"
-                                  size="sm"
-                                  disabled={busy}
-                                  // Live and unqualified even on a Closed mill. BR-02 is ONE
-                                  // screen's guard, not a system-wide invariant: the shipped users
-                                  // surface can still create an active association on a closed
-                                  // mill, and that is ratified parity. A disabled control or a
-                                  // "cannot" tooltip here would state a rule ILCR does not hold.
-                                  aria-label={`Activate user ${row.userGuid}`}
-                                  renderIcon={CheckmarkOutline}
-                                  onClick={() => toggleUser(row, 'activate')}
-                                >
-                                  Activate
-                                </Button>
-                              )}
-                              {/* S10, on EVERY row — legacy has no `rendered` guard on View
+                                {active ? (
+                                  <Button
+                                    kind="danger--tertiary"
+                                    size="sm"
+                                    disabled={busy}
+                                    aria-label={`Deactivate user ${row.userGuid}`}
+                                    renderIcon={Misuse}
+                                    onClick={() => toggleUser(row, 'deactivate')}
+                                  >
+                                    Deactivate
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    kind="tertiary"
+                                    size="sm"
+                                    disabled={busy}
+                                    // Live and unqualified even on a Closed mill. BR-02 is ONE
+                                    // screen's guard, not a system-wide invariant: the shipped users
+                                    // surface can still create an active association on a closed
+                                    // mill, and that is ratified parity. A disabled control or a
+                                    // "cannot" tooltip here would state a rule ILCR does not hold.
+                                    aria-label={`Activate user ${row.userGuid}`}
+                                    renderIcon={CheckmarkOutline}
+                                    onClick={() => toggleUser(row, 'activate')}
+                                  >
+                                    Activate
+                                  </Button>
+                                )}
+                                {/* S10, on EVERY row — legacy has no `rendered` guard on View
                                   (mills.xhtml:144-151). Navigating away loses unsaved contact edits
                                   silently, exactly as legacy's hard redirect did; there is no
                                   unsaved-changes prompt on this screen and none is to be added. */}
-                              <Button
-                                kind="tertiary"
-                                size="sm"
-                                aria-label={`View user ${row.userGuid}`}
-                                renderIcon={View}
-                                onClick={() =>
-                                  navigate({
-                                    to: '/mill-associations',
-                                    search: { userGuid: row.userGuid },
-                                  })
-                                }
-                              >
-                                View
-                              </Button>
+                                <Button
+                                  kind="tertiary"
+                                  size="sm"
+                                  aria-label={`View user ${row.userGuid}`}
+                                  renderIcon={View}
+                                  onClick={() =>
+                                    navigate({
+                                      to: '/mill-associations',
+                                      search: { userGuid: row.userGuid },
+                                    })
+                                  }
+                                >
+                                  View
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         )
