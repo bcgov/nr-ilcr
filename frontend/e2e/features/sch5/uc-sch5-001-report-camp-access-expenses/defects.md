@@ -7,9 +7,10 @@
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
 >
-> The **2026-09-15** round below (DIV-1 ticketed; GAP-4/SPEC-1/SPEC-2 closed) was carried out **at BA/QA
-> direction**, not on the authoring agent's own judgement — which is the only way an entry here changes
-> status. SPEC-3 and SPEC-4 were explicitly held back for discussion in the same instruction.
+> The **2026-09-15/16** rounds below (DIV-1 ticketed; GAP-4/SPEC-1/SPEC-2/SPEC-4 closed) were carried out
+> **at BA/QA direction**, not on the authoring agent's own judgement — which is the only way an entry here
+> changes status. **SPEC-3 remains OPEN by the same authority:** its evidence is now conclusive (a running
+> legacy screen, 2026-09-16), but the remaining question is a product decision rather than a factual one.
 
 **As of 2026-09-11 the UC is COMPLETE: all 25 slices are authored.** 23 are green; **S24 and S25 are
 deliberately RED** and track DIV-1 below. No Bug/Regression entries.
@@ -17,11 +18,19 @@ deliberately RED** and track DIV-1 below. No Bug/Regression entries.
 **UPDATED 2026-09-15 — triage round.** DIV-1 is now ticketed as
 [**bcgov/nr-ilcr#476**](https://github.com/bcgov/nr-ilcr/issues/476) (read the caveat under its **Ticket**
 bullet before fixing it — the ticket's title describes the symptom, and fixing only that makes Schedule 5
-*less* safe). **GAP-4, SPEC-1 and SPEC-2 are CLOSED**: GAP-4 by adding the one scenario that reaches the
-per-camp "met" line, SPEC-1 and SPEC-2 by correcting the planning documents. **SPEC-3 and SPEC-4 remain
-OPEN and are deliberately not actioned** — both are pending a discussion, because each asks the Ministry a
-product question rather than a test one (SPEC-3: should a passing camp be confirmed by name at all?
-SPEC-4: which control is the Other-Camp description asymmetry actually in?).
+*less* safe). **GAP-4, SPEC-1, SPEC-2 and SPEC-4 are CLOSED**: GAP-4 by adding the one scenario that reaches
+the per-camp "met" line, the three SPEC gaps by correcting the planning documents.
+
+**SPEC-3 is the only entry still open, and it is no longer open on the facts.** A legacy screenshot
+supplied 2026-09-16 settles them: with five camps and one incomplete, legacy shows a RED panel of that
+camp's three missing fields **and** a BLUE panel carrying `All requirements for <camp> have been met.` once
+per passing camp, with **no** schedule-level banner. That is the mixed state, and it confirms what this
+file argued from source — the per-camp line exists and belongs to the FAIL branch only, so S06's and S20's
+expectation of it on a PASS is what is wrong. The screenshot also corroborates the composed finding's exact
+byte shape, the met line's trailing full stop, and the one-line-per-passing-camp loop. What is left is a
+product call, not a reading: correct the four documents, or decide the Ministry wants a per-camp
+confirmation on a full pass too (an app change). Either way nothing is blocked — the suite pins today's
+behaviour.
 
 **One divergence, and it arrived exactly where it was predicted.** Every earlier entry here was a
 SPEC gap — each time the app and the legacy-derived Gherkin disagreed, the **Gherkin** was wrong about
@@ -388,11 +397,50 @@ logged here, because in both the difference is mechanism rather than behaviour:
     on **S06, S20, `UC-SCH5-001-detailed.md:151` and the epic AC** — four documents, one root cause.
   - **A knock-on worth its own entry:** because the per-camp line is unreachable from both S06 and
     S20, nothing in the catalogue exercises it at all. See GAP-4.
-  - **Status:** OPEN — spec correction owed (or a product decision). Found 2026-09-09, confirmed
-    twice since.
+  - **CONFIRMED A FOURTH TIME 2026-09-16 — and this time from a RUNNING LEGACY SCREEN, not from source.**
+    BA/QA supplied a screenshot of legacy Schedule 5 (DLVR data, mill 727 / year 2017) taken after
+    pressing Check Status with **five** camps present, one of them incomplete. It shows, verbatim:
+    - a RED error panel — three lines, all for the failing camp `test1`:
+      `Camp Report Name : test1 - Road Distance to Operating Area: Value Required`, and the same shape for
+      `Size of Camp` and `Associated Camp Volume`;
+    - a BLUE info panel — one line per PASSING camp:
+      `All requirements for camp 2 have been met.` and likewise for `camp 3`, `camp 1`, `test 8`;
+    - **no schedule-level banner at all.**
 
-- **SPEC-4 — OPEN: S22 is built on a premise that is false in BOTH systems. The Other Camp add-form
-  DOES require a description.**
+    That is decisive, and it settles the question in the direction this entry already argued: the per-camp
+    "met" line is real in legacy and appears **only when the schedule FAILS while individual camps pass** —
+    exactly the branch structure read out of `Schedule5MB.java:324-326`. It does **not** appear on a pass,
+    which is what S06 and S20 script and what makes them wrong. So the app is right, the four documents are
+    still wrong, and the correction owed is unchanged.
+
+    Three incidental confirmations worth keeping, all byte-level:
+    - the composed finding's shape — `Camp Report Name : <name> - <field>: Value Required`, **no space
+      before the final colon** — matches `CHECK_MISSING_MESSAGE` exactly, independently of the resolver's
+      own comment;
+    - the met line carries a **trailing full stop** (`… have been met.`) while the schedule banner does
+      not, which is what `CHECK_STATUS_MESSAGES.campMet` encodes;
+    - legacy emits a met line for **every** passing camp (four of them here), which is the loop
+      `Schedule5Service.checkStatus` reproduces.
+  - **It also independently validates GAP-4's new scenario**, which asserts precisely this state (a failing
+    schedule, a passing camp named in its own met line) — authored from the source branch structure one day
+    before the screenshot arrived, and matching it.
+  - **One cosmetic difference the screenshot exposes, NOT logged as a defect:** legacy splits the two
+    panels by severity as **error (red)** and **info (blue)**; the rewrite renders them as Carbon
+    `warning` and `success` respectively (`schedule5/index.tsx:1444, 1457`, keyed off `outcome` and
+    `requirementsMet`). The message TEXT is identical and severity is carried by a title word rather than
+    colour alone, which is this suite's accessibility standard — so it is mechanism, not behaviour.
+    Flagged here only so a future reader comparing the screenshot to the app does not re-open it as a
+    finding. If the Ministry wants the legacy info/error pairing exactly, that is a styling decision.
+  - **Status:** OPEN — **evidence is now conclusive; what remains is purely a BA/QA decision**, which is
+    why this stays open rather than being closed alongside SPEC-1/2/4. Either (a) correct the four
+    documents (S06, S20, `UC-SCH5-001-detailed.md:151`, the epic AC) to match legacy and the app, or
+    (b) decide the Ministry actually wants a per-camp confirmation on a full pass too — which is a product
+    change against the app, not a test fix, and would make the app's current behaviour the defect. The
+    suite asserts today's behaviour either way, so nothing is blocked. Found 2026-09-09; confirmed
+    2026-09-10 (S06), 2026-09-10 (S20), and 2026-09-16 (legacy screenshot).
+
+- **SPEC-4 — CLOSED 2026-09-16: S22 was built on a premise that is false in BOTH systems. The Other Camp
+  add-form DOES require a description.**
   - **What's wrong.** `UC-SCH5-001-S22.feature` scripts "a source-confirmed asymmetry — the
     add-form's description field has no `required="true"`, unlike the Access Expenses equivalent, so
     Add succeeds and Save is what blocks it". Its first scenario therefore expects a blank-description
@@ -416,10 +464,35 @@ logged here, because in both the difference is mechanism rather than behaviour:
   - **How the test was re-grounded.** S22 now asserts both halves: the add-form rejection (so the
     corrected premise is itself pinned) AND the real deferred-to-Save path via the grid row,
     including the negative — no error on change — that distinguishes it from S21.
-  - **Fix:** correct S22 in the `ilcr-bmad` planning repo, and AC3 with it. Note this is the same
-    deviation (A) that also mis-records the cost bands — though the Gherkin gets the BANDS right
-    (S23's header note matches the source exactly), so only the required-attribute half is wrong here.
-  - **Status:** OPEN — spec correction owed on S22 and AC3. Found 2026-09-10.
+  - **RE-VERIFIED FIRST-HAND before correcting anything, 2026-09-16.** All four description inputs were
+    read straight out of the legacy source rather than trusted from this entry:
+    `schedule5CampExpenses.xhtml:39` (add) and `:66` (row); `schedule5AccessExpenses.xhtml:32` (add) and
+    `:60` (row) — **every one carries `required="true"`**. The `f:ajax event="change"` sits on the Access
+    row only (`:63`); the Camp row has none (`:64-67`). So the premise really is false, and the real
+    asymmetry really is the grid row's TIMING.
+  - **Fix APPLIED 2026-09-16** in the `ilcr-bmad` planning repo — the four-document pass Story 7.4's Open
+    Question 1 had already asked for, plus the Gherkin:
+    - `UC-SCH5-001-S22.feature` — retitled *"…Description Cleared in the Grid, Blocked at Sub-Page Save"*
+      and rewritten to three scenarios: the add-form refusing a blank outright (so the false premise
+      cannot quietly return), the cleared-stored-row path with the **negative** that distinguishes it from
+      S21 (no error on change), and the restore-and-save recovery.
+    - `UC-SCH5-001-slices.md` — the S22 section (trigger, outcome, Controls, Messages, Fields), its
+      summary row, and its gap-analysis line; plus a note on S21's row control recording the `f:ajax`
+      immediacy that S22 lacks, since the contrast is the point.
+    - `UC-SCH5-001-technical.md` — both control rows and the Field Reference row, with a dated correction
+      note in the same house style as the 2026-08-11 cost-bounds correction.
+    - `UC-SCH5-001-detailed.md` — the Field Reference row, and the Assumptions bullet that asserted the
+      asymmetry is now **withdrawn** rather than silently deleted.
+    - `epics.md` — Story 7.4's sub-page validation AC (the "AC3" this entry originally named; the
+      implementation story had already superseded it with AC10).
+    - `gherkin/README.md` — S22's row name.
+  - **The suite needed no change:** `sub-page-validation.feature`'s `@S22` scenario already asserted both
+    halves — the add-form rejection AND the deferred grid-row check — and is GREEN. The documents have
+    caught up to the test, not the other way round.
+  - **Story 7.4 had independently reached the same conclusion** in implementation (deviation (A), AC10),
+    so this closes a documentation gap that was already known to the implementer and left deliberately
+    for a separate pass.
+  - **Status:** CLOSED 2026-09-16. Found 2026-09-10.
 
 ---
 
