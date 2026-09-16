@@ -101,6 +101,17 @@ public class MillAssociationService {
    * empty answer per {@link UserLookupClient#findBusinessBceid}'s own contract, not a failure) all
    * leave the affected row(s) with no directory entry, and {@link #toSubmitter} renders them from
    * database state alone.
+   *
+   * <p>The catch below is deliberately widened past {@link DirectoryUnavailableException}: per
+   * {@link UserLookupClient}'s own javadoc, a malformed relative URI escapes as {@link
+   * IllegalArgumentException} ("not a RestClientException, so it escapes the failure translation
+   * entirely"), an oversized token lifetime as {@link java.time.DateTimeException}, and
+   * misconfiguration at construction as {@link IllegalStateException} — none of them {@link
+   * DirectoryUnavailableException}, and any one of them from a single grandfathered GUID would
+   * otherwise turn a working panel into a 500. {@link DirectoryUnavailableException} still means
+   * the whole directory is down and stops the loop for every row; any OTHER {@link
+   * RuntimeException} is narrower — it can only mean this one GUID could not be resolved, so it is
+   * logged and skipped, and the loop continues to the next GUID.
    */
   private Map<String, DirectoryUser> resolveNames(List<MillUserXrefEntity> rows) {
     UserLookupClient client = lookup.getIfAvailable();
@@ -118,6 +129,13 @@ public class MillAssociationService {
         // rather than let one outage fail the panel or retry-storm an already-struggling directory.
         log.warn("Directory unavailable; serving mill associations without names", unavailable);
         return Map.of();
+      } catch (RuntimeException escapee) {
+        // Anything else the client can throw (a malformed URI, an overflowed token lifetime, a
+        // misconfiguration) is specific to this one GUID, not the directory as a whole: skip it and
+        // keep resolving the rest of the page. No PII in the log line — no GUID, username or mill.
+        log.warn(
+            "Directory lookup failed for one association; leaving that row without a name",
+            escapee);
       }
     }
     return resolved;

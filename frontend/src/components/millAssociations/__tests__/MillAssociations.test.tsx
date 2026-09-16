@@ -1,9 +1,18 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { act, getDefaultNormalizer } from '@testing-library/react'
 import { render, screen, userEvent, waitFor, within } from '@/test-utils'
 import { server } from '@/test-setup'
 import MillAssociations from '../index'
+
+const navigateSpy = vi.fn()
+// Spread over the REAL module, not a one-export replacement: a whole-module mock fails every test
+// in this file with an opaque undefined-import error the moment the page (or anything it renders)
+// picks up a second router export. Follows the same pattern as Mills.test.tsx's own navigateSpy.
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useNavigate: () => navigateSpy,
+}))
 
 const API = 'http://localhost:3000/api'
 const LOOKUP = `${API}/v1/users/lookup`
@@ -92,6 +101,7 @@ const drainEventLoop = async (turns = 20) => {
 }
 
 beforeEach(() => {
+  navigateSpy.mockReset()
   server.use(
     http.get(MILLS, () => HttpResponse.json(MILL_LIST)),
     http.get(LOOKUP, () => HttpResponse.json([ADA])),
@@ -218,6 +228,22 @@ describe('Users page — the screen itself', () => {
     expect(screen.getByRole('heading', { name: 'Associated Mills' })).toBeInTheDocument()
   })
 
+  test('every Associated Mills row carries a View control that navigates to the Mills screen', async () => {
+    const user = userEvent.setup()
+    // users.xhtml:84-88 gives every row a View button with no `rendered` guard — both an active
+    // and an ended row must carry one, so this pins that it is not conditioned on the row's status.
+    assignmentsAre(activeOn670, endedOn671)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    await user.click(within(rowFor('670')).getByRole('button', { name: /^view mill/i }))
+
+    // routes/mills.tsx takes no search param, so the navigation carries no mill identity — the
+    // reciprocal of mills/index.tsx's own `navigate({ to: '/mill-associations', search: {...} } )`.
+    expect(navigateSpy).toHaveBeenCalledWith({ to: '/mills' })
+    expect(within(rowFor('671')).getByRole('button', { name: /^view mill/i })).toBeInTheDocument()
+  })
+
   test('server order is preserved — the table never re-sorts what the backend pinned', async () => {
     const user = userEvent.setup()
     // Deliberately not ascending by mill number: findByUser pins ascending MILL ID, and 672 here
@@ -259,6 +285,48 @@ describe('Users page — display name (AC2)', () => {
     await user.click(await screen.findByRole('option', { name: 'ALOVELAC' }))
 
     expect(await screen.findByText(GUID)).toBeInTheDocument()
+  })
+
+  test('First Name and Last Name render as separate columns, sourced from the directory (users.xhtml:25-30)', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(LOOKUP, () =>
+        HttpResponse.json([{ ...ADA, firstName: 'Ada', lastName: 'Lovelace' }]),
+      ),
+    )
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    const headers = within(await screen.findByRole('table', { name: /user details/i }))
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent)
+    // Legacy order is First Name THEN Last Name (users.xhtml:25-30), replacing the single Name
+    // column this surface used to render.
+    expect(headers).toEqual(['User ID', 'First Name', 'Last Name', 'Role', 'Active', 'Actions'])
+
+    const account = screen.getByRole('table', { name: /user details/i })
+    expect(within(account).getByRole('cell', { name: 'Ada' })).toBeInTheDocument()
+    expect(within(account).getByRole('cell', { name: 'Lovelace' })).toBeInTheDocument()
+  })
+
+  test('a resolved user with no last name shows a dash there, not the first-name fallback', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(LOOKUP, () => HttpResponse.json([{ ...ADA, firstName: 'Ada', lastName: null }])),
+    )
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    // Indexed, not by dash text: Role and Active are ALSO dashes here (no write has resolved the
+    // account yet), so a name-based cell query would match more than one cell. Columns are
+    // [User ID, First Name, Last Name, Role, Active, Actions].
+    const cells = within(await screen.findByRole('table', { name: /user details/i })).getAllByRole(
+      'cell',
+    )
+    expect(cells[1].textContent).toBe('Ada')
+    expect(cells[2].textContent).toBe('—')
   })
 })
 
@@ -615,9 +683,10 @@ describe('Users page — the account flag (AC5)', () => {
 
     expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
     // Nothing is known about the flag, so nothing may be claimed about it. Columns are
-    // [User ID, Name, Role, Active, Actions]; a rejected write must leave Active unresolved.
+    // [User ID, First Name, Last Name, Role, Active, Actions]; a rejected write must leave Active
+    // unresolved.
     const cells = within(screen.getByRole('table', { name: /user details/i })).getAllByRole('cell')
-    expect(cells[3].textContent).toBe('—')
+    expect(cells[4].textContent).toBe('—')
   })
 })
 

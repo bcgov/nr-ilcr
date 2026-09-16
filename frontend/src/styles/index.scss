@@ -154,7 +154,7 @@ body {
   }
 
   // Users administration: the two legacy panels (User Details, Associated Mills) are `SubPanel`s
-  // now (users.xhtml:19, :52), so they stack via `.sub-panel + .sub-panel` (:189) rather than a
+  // now (users.xhtml:19, :52), so they stack via `.sub-panel + .sub-panel` (:182) rather than a
   // bespoke `.mill-associations__section` rule.
 
   // The directory provider + user-id controls share a row, as do the mill picker and its Add

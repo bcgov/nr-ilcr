@@ -395,6 +395,40 @@ class MillAssociationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "A non-DirectoryUnavailableException RuntimeException skips only that GUID's row — its"
+          + " neighbour still resolves")
+  void listByMill_skipsOnlyTheGuidThatThrowsAnUnexpectedRuntimeException() {
+    // GUID_B is the one that misbehaves; GUID is its neighbour and must still resolve — proving
+    // the loop continues instead of aborting the whole page the way DirectoryUnavailableException
+    // does. IllegalArgumentException stands in for the escapee the client's own javadoc names (a
+    // malformed relative URI), but the catch itself must not be specific to any one subtype.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(inactiveRow(1, GUID_B), activeRow(0, GUID)));
+    when(lookup.findBusinessBceid("userGuid", GUID_B))
+        .thenThrow(new IllegalArgumentException("malformed relative URI"));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
+
+    MillSubmitter resolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID)).findFirst().orElseThrow();
+    MillSubmitter skipped =
+        rows.stream().filter(row -> row.userGuid().equals(GUID_B)).findFirst().orElseThrow();
+
+    assertThat(resolved.firstName()).isEqualTo("Bob");
+    assertThat(resolved.lastName()).isEqualTo("Smith");
+    assertThat(resolved.bceid()).isEqualTo("BSMITH");
+
+    assertThat(skipped.firstName()).isNull();
+    assertThat(skipped.bceid()).isNull();
+    // Both GUIDs are still asked about — unlike the directory-outage case, this is not fatal to
+    // the loop.
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID_B);
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID);
+  }
+
+  @Test
   @DisplayName("An unconfigured lookup client leaves every row bare without attempting a lookup")
   void listByMill_leavesNamesAbsentWhenTheLookupClientIsNotConfigured() {
     MillAssociationService withoutLookup =

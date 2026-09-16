@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
   Column,
@@ -13,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Misuse } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Misuse, View } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import SubPanel from '@/components/core/SubPanel'
@@ -78,6 +79,7 @@ type MillAssociationsProps = {
 }
 
 const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
+  const navigate = useNavigate()
   const [mills, setMills] = useState<MillSummary[]>([])
   const [selectedMill, setSelectedMill] = useState<MillSummary | null>(null)
 
@@ -298,7 +300,13 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
     )
   }
 
+  // Falls back to the existing displayName-or-guid label when the directory carries no name
+  // parts at all (an unresolved or name-less record) — an unresolved user still shows SOMETHING
+  // identifying, it is just not invented. Once firstName is present the fallback never applies, so
+  // lastName renders its own dash rather than borrowing the fallback.
   const userLabel = selectedUser ? (selectedUser.displayName ?? selectedUser.userGuid) : ''
+  const firstNameLabel = selectedUser ? (selectedUser.firstName ?? userLabel) : ''
+  const lastNameLabel = selectedUser ? dash(selectedUser.lastName) : ''
 
   return (
     <div className="app-page schedule-page">
@@ -325,7 +333,8 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                   <TableHead>
                     <TableRow>
                       <TableHeader>User ID</TableHeader>
-                      <TableHeader>Name</TableHeader>
+                      <TableHeader>First Name</TableHeader>
+                      <TableHeader>Last Name</TableHeader>
                       <TableHeader>Role</TableHeader>
                       <TableHeader>Active</TableHeader>
                       <TableHeader>Actions</TableHeader>
@@ -334,7 +343,8 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                   <TableBody>
                     <TableRow>
                       <TableCell>{selectedUser.idpUsername}</TableCell>
-                      <TableCell>{userLabel}</TableCell>
+                      <TableCell>{firstNameLabel}</TableCell>
+                      <TableCell>{lastNameLabel}</TableCell>
                       <TableCell>{dash(account?.roleName)}</TableCell>
                       <TableCell>{dash(account?.activeInd)}</TableCell>
                       <TableCell>
@@ -451,6 +461,20 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                               Activate
                             </Button>
                           )}
+                          {/* users.xhtml:84-88, every row, no `rendered` guard — the reciprocal of
+                              the Mills page's own per-row View (mills/index.tsx:698-716). The
+                              Mills route (routes/mills.tsx) takes no search param, so this carries
+                              no mill identity — legacy's own hand-off went through session state
+                              (userSessionMB.millSelected), which this app has no equivalent of. */}
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            aria-label={`View mill ${dash(row.millNumber)}`}
+                            renderIcon={View}
+                            onClick={() => navigate({ to: '/mills' })}
+                          >
+                            View
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

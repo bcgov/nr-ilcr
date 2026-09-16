@@ -61,12 +61,20 @@ export interface AccountResponse {
   readonly message: string
 }
 
-/** One directory candidate for the picker. Holding one proves nothing about role or mill access. */
+/**
+ * One directory candidate for the picker. Holding one proves nothing about role or mill access.
+ *
+ * `firstName`/`lastName` are carried beside `displayName`, never instead of it (backend
+ * DirectoryUser.java:14-17): the User Details table renders legacy's separate First Name / Last
+ * Name columns from these, while `displayName` still drives the picker's own labelling.
+ */
 export interface DirectoryUser {
   readonly userGuid: string
   readonly displayName?: string | null
   readonly idpUsername: string
   readonly identityProvider: string
+  readonly firstName?: string | null
+  readonly lastName?: string | null
 }
 
 /** The one warning outcome of an assign: the pair was already active, so nothing changed. */
