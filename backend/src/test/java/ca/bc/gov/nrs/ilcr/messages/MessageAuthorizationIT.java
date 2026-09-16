@@ -37,6 +37,10 @@ class MessageAuthorizationIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/messages";
   private static final String COPY_KEY = "sch5.copy.msg";
+
+  /** SUC-001, added to the allowlist by the Data Extract CSV story. */
+  private static final String EXTRACT_SUCCESS_KEY = "dataExtractedSuccesfullyInfoMsg";
+
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -85,6 +89,28 @@ class MessageAuthorizationIT extends AbstractOracleIT {
                 .value(
                     "To complete copy of Camp: Cedar Flats Camp, "
                         + "provide a new Camp Name and invoke save."));
+  }
+
+  @Test
+  @DisplayName("the Data Extract success key resolves for BOTH roles, like the others")
+  void extractSuccessKeyResolvesForBothRoles() throws Exception {
+    // Added to the allowlist by the Data Extract CSV story. The extract endpoint itself is
+    // ADMIN-only, but this key is gated on VIEW_SCHEDULE like every other entry — it is a static
+    // sentence, not admin data, and narrowing the gate per key would invent a second rule for no
+    // benefit. A submitter can fetch the sentence and has no endpoint to use it on.
+    mockMvc
+        .perform(get(ENDPOINT).param("key", EXTRACT_SUCCESS_KEY).with(canonicalSubmitter()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.text").value("Data extraction successfully."));
+
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", EXTRACT_SUCCESS_KEY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.key").value(EXTRACT_SUCCESS_KEY))
+        .andExpect(jsonPath("$.text").value("Data extraction successfully."));
   }
 
   @Test

@@ -21,6 +21,7 @@ export const ROUTES = {
   homeContent: '/home-content',
   millAssociations: '/mill-associations',
   mills: '/mills',
+  dataExtract: '/data-extract',
   millInformationReport: '/mill-information-report',
   millStatusReport: '/mill-status-report',
   printSchedules: '/print-schedules',
@@ -113,6 +114,9 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     name: 'Generate Reports',
     adminOnly: true,
     items: [
+      // First, as legacy had it (menu.xhtml:39): Data Extract led the Generate Reports submenu,
+      // ahead of both mill reports.
+      { name: 'Data Extract', path: ROUTES.dataExtract },
       { name: 'Mill Information Report', path: ROUTES.millInformationReport },
       // Legacy's own menu label for millReportStatus.xhtml (menu.xhtml:41) — "Mill Status Report",
       // not "Mill Report Status". The page title matches it.

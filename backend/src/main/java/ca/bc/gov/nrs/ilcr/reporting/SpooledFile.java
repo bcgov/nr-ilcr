@@ -13,66 +13,66 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 
 /**
- * A COMPLETE PDF on disk, ready to be sent as the response body: the whole export has already
+ * A COMPLETE file on disk, ready to be sent as the response body: the whole write has already
  * succeeded by the time this exists.
  *
- * <p>This type is the pivot that makes an export failure a normal error instead of a corrupt
- * download. {@link RenderedReport} exported straight to the servlet output stream, so the 200 and
- * the {@code application/pdf} headers were committed before the exporter had produced a single
- * byte; anything that went wrong from that point on — a {@code JRException} deep in the export, the
- * async request timing out — could no longer change the status code, and the browser saved whatever
- * prefix had arrived. {@link PdfSpooler} moves that export in front of the response instead, and
- * what reaches the controller is this: a file whose length is known.
+ * <p>This type is the pivot that makes a generation failure a normal error instead of a corrupt
+ * download. The report endpoints used to export straight to the servlet output stream, so the 200
+ * and the content headers were committed before the exporter had produced a single byte; anything
+ * that went wrong from that point on — a {@code JRException} deep in the export, the async request
+ * timing out — could no longer change the status code, and the browser saved whatever prefix had
+ * arrived. {@link FileSpooler} moves that write in front of the response instead, and what reaches
+ * the controller is this: a file whose length is known.
  *
  * <p>A known length is the second half of the guarantee, and the reason spooling beats simply
  * catching more exceptions. The response carries a real {@code Content-Length}, so the body is
  * length-delimited rather than chunked, and a transfer that stops early is a protocol-level short
  * read: the browser fails the request and {@code fetch}/XHR reject, rather than handing the caller
- * a short body that looks like a success. Every failed export is therefore distinguishable from a
- * successful one — before the response commits it is a {@code problem+json} error, and after it
+ * a short body that looks like a success. Every failed generation is therefore distinguishable from
+ * a successful one — before the response commits it is a {@code problem+json} error, and after it
  * commits it is a failed request. Neither outcome saves a file.
  *
- * <p>Spooling to a file rather than a {@code byte[]} keeps Story 29.2's constraint intact: the PDF
- * is never accumulated on the JVM heap, so a big "all schedules" print or several concurrent prints
- * cost temp-file space (the same disk budget the fill's virtualizer already uses) instead of heap.
+ * <p>Spooling to a file rather than a {@code byte[]} keeps Story 29.2's constraint intact: the body
+ * is never accumulated on the JVM heap, so a big "all schedules" print, a wide multi-mill extract,
+ * or several concurrent downloads cost temp-file space instead of heap.
  *
  * <p>{@link #close()} deletes the file. The streaming caller closes it in try-with-resources, so it
  * runs on the success path, on an IO failure mid-send, and on a client disconnect alike.
  */
-class ExportedPdf implements AutoCloseable {
+public class SpooledFile implements AutoCloseable {
 
-  private static final Logger log = LoggerFactory.getLogger(ExportedPdf.class);
+  private static final Logger log = LoggerFactory.getLogger(SpooledFile.class);
 
   private final Path file;
   private final long size;
 
-  ExportedPdf(Path file, long size) {
+  SpooledFile(Path file, long size) {
     this.file = file;
     this.size = size;
   }
 
   /**
-   * The exported PDF's exact length in bytes, for the response's {@code Content-Length}.
+   * The file's exact length in bytes, for the response's {@code Content-Length}.
    *
-   * <p>Measured from the finished file, never predicted: it is only meaningful because the export
+   * <p>Measured from the finished file, never predicted: it is only meaningful because the write
    * has already completed, which is the whole point of spooling first.
    */
-  long size() {
+  public long size() {
     return size;
   }
 
   /**
-   * Copy the finished PDF to {@code out}. Used by tests and by any caller that owns the stream; the
-   * response itself goes out through {@link #asResource()}.
+   * Copy the finished file to {@code out}. Used by tests and by any caller that owns the stream;
+   * the response itself goes out through {@link #asResource()}.
    *
    * <p>{@link Files#copy} streams through a small buffer and does not close {@code out}.
    */
-  void writeTo(OutputStream out) throws IOException {
+  public void writeTo(OutputStream out) throws IOException {
     Files.copy(file, out);
   }
 
   /**
-   * The finished PDF as a response body, deleting itself once the response has been written.
+   * The finished file as a response body, deleting itself once the response has been written.
    *
    * <p>A {@link Resource} rather than a {@code StreamingResponseBody}, and that is a deliberate
    * reversal of how these endpoints used to answer. Streaming existed to keep the EXPORT off the
@@ -91,10 +91,12 @@ class ExportedPdf implements AutoCloseable {
    *
    * <p>Deletion rides on the stream's {@code close()}, which the converter always calls — on a
    * completed write and on a client disconnect alike. A response that never opens the stream at all
-   * leaves the file for the spool directory's own reaping; {@link #close()} stays available for the
-   * paths that never reach a response.
+   * (a client gone between the build finishing and the converter starting) leaves the file behind:
+   * NOTHING in the application sweeps the spool directory today, so such a file lives until the pod
+   * is replaced or someone reaps it by hand. {@link #close()} stays available for the paths that
+   * never reach a response.
    */
-  Resource asResource() {
+  public Resource asResource() {
     return new FileSystemResource(file) {
       @Override
       public InputStream getInputStream() throws IOException {
@@ -105,7 +107,7 @@ class ExportedPdf implements AutoCloseable {
             try {
               super.close();
             } finally {
-              ExportedPdf.this.close();
+              SpooledFile.this.close();
             }
           }
         };
@@ -129,7 +131,7 @@ class ExportedPdf implements AutoCloseable {
     try {
       Files.deleteIfExists(file);
     } catch (IOException | UncheckedIOException e) {
-      log.warn("Could not delete the spooled report file {} — it will need reaping", file, e);
+      log.warn("Could not delete the spooled file {} — it will need reaping", file, e);
     }
   }
 }

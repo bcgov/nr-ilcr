@@ -38,6 +38,9 @@ class MessageControllerTest {
 
   private static final String COPY_KEY = "sch5.copy.msg";
 
+  /** SUC-001, added to the allowlist by the Data Extract CSV story. */
+  private static final String EXTRACT_SUCCESS_KEY = "dataExtractedSuccesfullyInfoMsg";
+
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -64,6 +67,20 @@ class MessageControllerTest {
                 .value(
                     "To complete copy of Camp: Cedar Flats Camp, "
                         + "provide a new Camp Name and invoke save."));
+  }
+
+  @Test
+  @DisplayName("resolves the Data Extract success key, misspelling and all")
+  void resolvesDataExtractSuccessKey() throws Exception {
+    // SUC-001, which legacy queued AFTER it had streamed the file and so never rendered. The key's
+    // misspelling is legacy's own and is not corrected: the bundle is keyed by it. The text is
+    // asserted verbatim because the page's only permitted client literal is a mirror of it, and a
+    // drift between the two would make that fallback silently wrong.
+    mockMvc
+        .perform(get("/api/v1/messages").param("key", EXTRACT_SUCCESS_KEY))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.key").value(EXTRACT_SUCCESS_KEY))
+        .andExpect(jsonPath("$.text").value("Data extraction successfully."));
   }
 
   @Test
