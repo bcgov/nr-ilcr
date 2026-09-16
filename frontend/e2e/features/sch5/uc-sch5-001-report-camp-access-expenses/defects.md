@@ -7,10 +7,10 @@
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
 >
-> The **2026-09-15/16** rounds below (DIV-1 ticketed; GAP-4/SPEC-1/SPEC-2/SPEC-4 closed) were carried out
-> **at BA/QA direction**, not on the authoring agent's own judgement — which is the only way an entry here
-> changes status. **SPEC-3 remains OPEN by the same authority:** its evidence is now conclusive (a running
-> legacy screen, 2026-09-16), but the remaining question is a product decision rather than a factual one.
+> The **2026-09-15/16** rounds below (DIV-1 ticketed; GAP-4 and all four SPEC gaps closed) were carried
+> out **at BA/QA direction**, not on the authoring agent's own judgement — which is the only way an entry
+> here changes status. SPEC-3's product question ("should a passing camp be confirmed by name on a full
+> pass?") was answered by BA/QA on 2026-09-16: **no — keep legacy's behaviour and correct the documents.**
 
 **As of 2026-09-11 the UC is COMPLETE: all 25 slices are authored.** 23 are green; **S24 and S25 are
 deliberately RED** and track DIV-1 below. No Bug/Regression entries.
@@ -18,19 +18,24 @@ deliberately RED** and track DIV-1 below. No Bug/Regression entries.
 **UPDATED 2026-09-15 — triage round.** DIV-1 is now ticketed as
 [**bcgov/nr-ilcr#476**](https://github.com/bcgov/nr-ilcr/issues/476) (read the caveat under its **Ticket**
 bullet before fixing it — the ticket's title describes the symptom, and fixing only that makes Schedule 5
-*less* safe). **GAP-4, SPEC-1, SPEC-2 and SPEC-4 are CLOSED**: GAP-4 by adding the one scenario that reaches
-the per-camp "met" line, the three SPEC gaps by correcting the planning documents.
+*less* safe). **EVERY GAP AND SPEC ENTRY IS NOW CLOSED.** GAP-4 by adding the one scenario that reaches the per-camp
+"met" line; SPEC-1, SPEC-2, SPEC-3 and SPEC-4 by correcting the planning artifacts. DIV-1 is the only
+entry still open, and it is open by design — it is a ticketed app defect awaiting a fix, not an unresolved
+question.
 
-**SPEC-3 is the only entry still open, and it is no longer open on the facts.** A legacy screenshot
-supplied 2026-09-16 settles them: with five camps and one incomplete, legacy shows a RED panel of that
-camp's three missing fields **and** a BLUE panel carrying `All requirements for <camp> have been met.` once
-per passing camp, with **no** schedule-level banner. That is the mixed state, and it confirms what this
-file argued from source — the per-camp line exists and belongs to the FAIL branch only, so S06's and S20's
-expectation of it on a PASS is what is wrong. The screenshot also corroborates the composed finding's exact
-byte shape, the met line's trailing full stop, and the one-line-per-passing-camp loop. What is left is a
-product call, not a reading: correct the four documents, or decide the Ministry wants a per-camp
-confirmation on a full pass too (an app change). Either way nothing is blocked — the suite pins today's
-behaviour.
+**A legacy screenshot supplied 2026-09-16 settled SPEC-3 on the facts.** With five camps and one
+incomplete, legacy shows a RED panel of that camp's three missing fields **and** a BLUE panel carrying
+`All requirements for <camp> have been met.` once per passing camp, with **no** schedule-level banner. That
+is the mixed state, and it confirms what this file argued from source: the per-camp line is real and
+belongs to the FAIL branch only, so S06's and S20's expectation of it on a PASS was the error. BA/QA chose
+to correct the documents; the app keeps legacy's behaviour.
+
+**The most useful thing SPEC-3 leaves behind is a process finding, not a text fix.** Three of its four
+named targets had already been corrected on 2026-08-10 — the error survived only in the **Gherkin**, which
+that audit never swept. Since the e2e suite is authored from the Gherkin, the refuted expectation stayed
+live exactly where it did damage, and the same defect had to be diagnosed twice a month apart. The audit
+notes now name the Gherkin as a fifth artifact. **Any future correction pass that stops at the planning
+documents will repeat this.**
 
 **One divergence, and it arrived exactly where it was predicted.** Every earlier entry here was a
 SPEC gap — each time the app and the legacy-derived Gherkin disagreed, the **Gherkin** was wrong about
@@ -366,8 +371,8 @@ logged here, because in both the difference is mechanism rather than behaviour:
   - **Status:** CLOSED 2026-09-15 — both slices corrected. Found 2026-09-09, downstream effect confirmed
     the same day.
 
-- **SPEC-3 — OPEN: three planning documents say Check Status shows a per-camp "requirements met" line
-  on a pass. Neither the new app nor LEGACY does.**
+- **SPEC-3 — CLOSED 2026-09-16: three planning documents said Check Status shows a per-camp "requirements
+  met" line on a pass. Neither the new app nor LEGACY does.**
   - **What's wrong.** `UC-SCH5-001-S06.feature:26-27` expects TWO messages when everything is complete:
     the schedule banner *and* "All requirements for North Camp have been met." Only the schedule banner
     appears. The same wrong expectation is in `UC-SCH5-001-detailed.md:151` and in the epic's AC.
@@ -431,13 +436,43 @@ logged here, because in both the difference is mechanism rather than behaviour:
     colour alone, which is this suite's accessibility standard — so it is mechanism, not behaviour.
     Flagged here only so a future reader comparing the screenshot to the app does not re-open it as a
     finding. If the Ministry wants the legacy info/error pairing exactly, that is a styling decision.
-  - **Status:** OPEN — **evidence is now conclusive; what remains is purely a BA/QA decision**, which is
-    why this stays open rather than being closed alongside SPEC-1/2/4. Either (a) correct the four
-    documents (S06, S20, `UC-SCH5-001-detailed.md:151`, the epic AC) to match legacy and the app, or
-    (b) decide the Ministry actually wants a per-camp confirmation on a full pass too — which is a product
-    change against the app, not a test fix, and would make the app's current behaviour the defect. The
-    suite asserts today's behaviour either way, so nothing is blocked. Found 2026-09-09; confirmed
-    2026-09-10 (S06), 2026-09-10 (S20), and 2026-09-16 (legacy screenshot).
+  - **DECIDED 2026-09-16 (BA/QA): correct the documents — option (a). The app keeps legacy's behaviour.**
+  - **AND THE FIX WAS SMALLER THAN THIS ENTRY CLAIMED, because most of it had already been done.** Before
+    changing anything, all four named targets were re-read. Three of them were **already correct**,
+    corrected on **2026-08-10** (PR #242 review, Scho sign-off) — months before this entry was raised:
+    - `epics.md` Story 7.2 AC — already reads "SUC-004 **alone** … with SUC-005 appearing **only** for the
+      camps that individually pass inside that mixed result";
+    - `UC-SCH5-001-detailed.md` — Basic Flow step 7 already reads "**and nothing else**", and its SUC-005
+      row already reads "**only when the SCHEDULE has failed**";
+    - `UC-SCH5-001-slices.md` S06 — already reads "**No per-camp lines are emitted**";
+    - `UC-SCH5-001-technical.md` SUC-005 row — already corrected too.
+
+    So this entry's own "four documents, one correction" fix line was **stale when it was written**: it
+    named documents that no longer carried the error.
+  - **What was ACTUALLY still wrong was the GHERKIN, which that 2026-08-10 audit never covered.** Its own
+    sign-off line lists the four *planning* documents and stops there —
+    `implementation-artifacts/tests/UC-SCH5-001/gherkin/` was not swept. So:
+    - `UC-SCH5-001-S06.feature:27` still asserted the per-camp line on a pass;
+    - `UC-SCH5-001-S20.feature:35` still asserted SUC-005 after its only camp was completed — doubly
+      unreachable, since one camp passing makes the SCHEDULE pass.
+
+    **That is the whole reason this was found twice.** The e2e suite is authored FROM the Gherkin, so the
+    refuted expectation was still live where it mattered most, and it had to be settled a second time a
+    month later. Both feature files are now corrected and carry the reasoning inline, and the audit note
+    in all three planning documents has been extended to say the Gherkin is a fifth artifact — the one
+    downstream automation is actually written from. That is the durable fix; the two feature edits are not.
+  - **Fix APPLIED 2026-09-16:** `UC-SCH5-001-S06.feature` (asserts the per-camp line's ABSENCE, matching
+    the suite), `UC-SCH5-001-S20.feature` (asserts the SCHEDULE banner plus the absence of both the
+    finding and the per-camp line), and the extended audit notes in `UC-SCH5-001-detailed.md`,
+    `UC-SCH5-001-slices.md` and `UC-SCH5-001-technical.md` — each also recording the legacy screenshot as
+    observed evidence.
+  - **No suite change:** `check-status.feature` and `check-status-missing.feature` already asserted exactly
+    this, which is what made the Gherkin's drift visible in the first place.
+  - **Still open, and deliberately not decided here:** whether the 25-slice catalogue should gain a slice
+    for the mixed state that GAP-4's scenario now covers. Schedule 4 carries the direct precedent in its
+    own **S31** ("mixed per-location results"), so there is a house pattern to follow if BA/QA want it.
+  - **Status:** CLOSED 2026-09-16. Found 2026-09-09; confirmed 2026-09-10 (S06), 2026-09-10 (S20), and
+    2026-09-16 against a running legacy screen.
 
 - **SPEC-4 — CLOSED 2026-09-16: S22 was built on a premise that is false in BOTH systems. The Other Camp
   add-form DOES require a description.**
