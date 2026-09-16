@@ -25,7 +25,13 @@
 -- report zero rows as a vacuous MET, so no data is needed to make the gate pass.
 --
 -- ID blocks claimed: MILL_ID 757-763, ILCR_REPORT_SUMMARY_ID 1060-1077,
--- ILCR_COST_REPORT_DETAIL_ID 2711-2912. The cost-detail block is NOT adjacent to the other
+-- ILCR_COST_REPORT_DETAIL_ID 2711-2912, plus the category-scope decoy rows added 2026-09-16:
+-- ROAD_MAINTENANCE_REPORT_ID 1078, CONTRACTUAL_WORK_REPORT_ID 1079, BRIDGE_REPORT_ID 1080,
+-- CULVERT_REPORT_ID 1081, ROAD_CONSTRUCTION_REPRT_ID 1082, TRANSPORTATION_REPORT_ID 1083,
+-- CAMP_REPORT_ID 1084, TREE_TO_TRUCK_REPORT_ID 1085. These eight tables are NOT otherwise claimed
+-- by this file, and the ledger is the only collision guard across the db/ fixture set -- a later
+-- author claiming e.g. BRIDGE_REPORT_ID 1080 would hit ORA-00001 at Flyway boot and fail the whole
+-- Oracle IT suite with an error naming a table neither file discusses. The cost-detail block is NOT adjacent to the other
 -- schedule blocks on purpose: this fixture needs 166 consecutive ids and the 8xxx neighbourhood is
 -- fragmented (8720-8799 belongs to V20260814's Schedule 5 sub-pages, 8850-8869 to the biogeo
 -- catalogue, 8920-8984 to later seeds). 2711-2910 was verified clear of every integer appearing in
@@ -396,7 +402,13 @@ INSERT INTO THE.ILCR_MILL_USER_XREF (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACT
 -- rather than "still null", and the assertion cannot pass by accident on an empty column.
 --
 -- ROAD_CONSTRUCTION_REPRT needs ILCR_FOREST_REGION_CODE NOT NULL (an FK), so its decoy borrows
--- 'RNI', the code the Schedule 10 fixtures already use. All five filtered tables are covered.
+-- 'RNI', the code the Schedule 10 fixtures already use.
+--
+-- EIGHT tables, not five (corrected 2026-09-16). The first cut of this block covered only the five
+-- parents whose legacy DAO takes a category PARAMETER. Three more filter by category with the value
+-- hardcoded inside the DAO -- Schedule4DAO:390 ('4'), Schedule5DAO:308 ('5'), Schedule8DAO:134
+-- ('8'), each bound in its named query (TransportationReport:36, CampReport:36,
+-- TreeToTruckReport:35) -- so legacy filtered all eight and these three needed decoys too.
 -- ---------------------------------------------------------------------------------------------
 
 -- Schedule 6's table holding a Schedule 5 category: legacy filtered '6'.
@@ -413,3 +425,12 @@ INSERT INTO THE.CULVERT_REPORT (CULVERT_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, IL
 
 -- Schedule 10's table holding a Schedule 9 category: legacy filtered '10'.
 INSERT INTO THE.ROAD_CONSTRUCTION_REPRT (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, ILCR_FOREST_REGION_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (1082, 2021, 757, '9', 'RNI', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- Schedule 4's table holding a Schedule 6 category: legacy filtered '4' (Schedule4DAO:390).
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, UPDATE_USERID) VALUES (1083, 2021, 757, '6', 0, 'SEED', 'SEED');
+
+-- Schedule 5's table holding a Schedule 6 category: legacy filtered '5' (Schedule5DAO:308).
+INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CAMP_NAME, ISOLATED_CAMP_IND, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (1084, 2021, 757, '6', 'Decoy camp', 'N', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- Schedule 8's table holding a Schedule 6 category: legacy filtered '8' (Schedule8DAO:134).
+INSERT INTO THE.TREE_TO_TRUCK_REPORT (TREE_TO_TRUCK_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, UPDATE_USERID) VALUES (1085, 2021, 757, '6', 0, 'SEED', 'SEED');

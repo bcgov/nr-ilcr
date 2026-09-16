@@ -28,6 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class ReportTransitionWriter {
 
+  /**
+   * The category rows a 1&ndash;10 transition must advance: ten of the eleven a mill/year carries,
+   * because category {@code '11'} is Schedule 11's and never moves with this track.
+   */
+  static final int EXPECTED_CATEGORY_ROWS = 10;
+
   private final ReportTransitionRepository repository;
 
   public ReportTransitionWriter(ReportTransitionRepository repository) {
@@ -74,9 +80,12 @@ public class ReportTransitionWriter {
                 + " were updated");
       }
 
-      // ORDER IS LOAD-BEARING — stamps first, category second, as legacy did
-      // (SubmitReportDAO.submitReport:73-118 stamps each schedule's rows, then advances that
-      // schedule's category). Delivery derives ILCR_*_AUD.RECORD_STATE_CODE in a BEFORE-UPDATE row
+      // ORDER IS LOAD-BEARING — stamps first, category second, as legacy did.
+      // SubmitReportDAO.submitReport:75-118 interleaves them PER SCHEDULE (stamp schedule N, then
+      // advance category N); these are batched (all stamps, then all advances). Per row the
+      // trigger pair below sees the same values either way, so the batching is not a divergence —
+      // but the relative order of stamp-before-advance is. Delivery derives
+      // ILCR_*_AUD.RECORD_STATE_CODE in a BEFORE-UPDATE row
       // trigger from the (CATEGORY_STATE_CODE, mill status) pair, and (D,S) is the ONLY pair that
       // writes an 'S' snapshot — the snapshot Epic 16's original-value indicators read. S->V is
       // indifferent (both (A,V) and (V,V) map to 'V'), but D->S is not, and 15.3/Epic 18 extend
@@ -91,10 +100,10 @@ public class ReportTransitionWriter {
       // mill/year enrolled by an interrupted year-open really does carry fewer than eleven rows
       // (ReportingYearService's EnrolmentState.PARTIAL, error.mill.activate.partialrecords). Fail
       // loudly rather than commit a half-transitioned report behind a 200.
-      if (categories != ReportTransitionService.EXPECTED_CATEGORY_ROWS) {
+      if (categories != EXPECTED_CATEGORY_ROWS) {
         throw new ReportTransitionFailedException(
             "Expected "
-                + ReportTransitionService.EXPECTED_CATEGORY_ROWS
+                + EXPECTED_CATEGORY_ROWS
                 + " category rows to advance for millId="
                 + millId
                 + " year="

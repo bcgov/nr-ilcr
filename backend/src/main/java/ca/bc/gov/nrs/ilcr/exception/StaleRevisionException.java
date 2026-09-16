@@ -9,9 +9,10 @@ import org.springframework.http.HttpStatus;
  * scheduleRevisionConflictErrorMsg}. No legacy message text existed (legacy used Hibernate
  * {@code @Version}), so the key text is a recorded deviation (AD-8).
  *
- * <p>The guarded row is per caller, not always a schedule: the schedule writes guard {@code
- * ILCR_REPORT_SUMMARY.REVISION_COUNT}, while a report-status transition (Story 17.1, {@code
- * ReportTransitionService}) guards {@code THE.ILCR_MILL_REPORT_STATUS.REVISION_COUNT}.
+ * <p>The guarded row is {@code ILCR_REPORT_SUMMARY.REVISION_COUNT} for the schedule writes. Note
+ * the report-status transition (Story 17.1) does NOT raise this: {@code ILCR_MILL_REPORT_STATUS}
+ * carries no optimistic guard, because legacy mapped its {@code REVISION_COUNT} as a plain
+ * {@code @Column} rather than a {@code @Version} and no transition ever bumped it.
  *
  * <p>Canonical shared copy (Story 29.11) — one definition for every schedule instead of per-module
  * duplicates. {@code extends BusinessException}, so the single base-type {@code @ExceptionHandler}

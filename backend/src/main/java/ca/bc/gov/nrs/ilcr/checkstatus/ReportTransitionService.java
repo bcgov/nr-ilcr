@@ -25,21 +25,22 @@ import org.springframework.stereotype.Service;
  * a write path today.
  *
  * <p>Deliberately legacy-shaped throughout, per the 2026-09-16 ratification that legacy behaviour
- * wins for Epic 17: the gate runs outside the write transaction and takes no row lock, the status
- * row carries no optimistic guard, and a refused transition reports success.
+ * wins for Epic 17: the gate runs outside the write transaction and takes no row lock, and the
+ * status row carries no optimistic guard on its own code.
  *
  * <p><strong>PARITY LEDGER.</strong> Every point on this surface where the code does NOT do what
  * 2.0.4 did is listed here, with why — nothing implicit, so a future reader can tell a deliberate
  * choice from an oversight.
  *
  * <ul>
- *   <li><strong>A refused transition reports success.</strong> Legacy's, reproduced: {@code
- *       CheckStatusMB.submitReport:271} called the DAO as a bare statement, never captured the
- *       {@code false} that {@code isMillReportStatusValid} returned for a no-op or either illegal
- *       {@code D↔V} jump, and emitted {@code sch1-10VerifiedMsg} at {@code :283} regardless. {@code
- *       UC-CHK-007-S07} records this as a known defect; the fix was applied, then withdrawn in
- *       favour of faithfulness. The defect is carried forward <em>deliberately</em> — fixing it is
- *       a separate, tracked change, not a side effect of the rebuild.
+ *   <li><strong>A refused transition answers 409 {@code reportSubmissionErrorMsg}</strong> — which
+ *       is legacy, not a fix, once the service layer is read. {@code
+ *       ILCRService.submitReport:718-723} is {@code void} and converts the DAO's {@code false} into
+ *       {@code ILCSException(SCHEDULE_NOT_SUBMITTED)}, mapped to that key at {@code
+ *       ILCSException:50}; the bean's {@code catch} at {@code CheckStatusMB.submitReport:289-292}
+ *       shows it as an error, skipping the verified message at {@code :284}. {@code UC-CHK-007-S07}
+ *       calls this a silent-success defect, but that record stops at the bean and the DAO without
+ *       opening the service, and hedges itself as unconfirmed. Not a divergence.
  *   <li><strong>Authorization is enforced server-side.</strong> DIVERGES. Legacy gated verify only
  *       by a render-time {@code disabled=} attribute plus {@code
  *       UserSessionMB.canUserVerifyReport:523-541}, a <em>negative</em> role test ({@code !=
@@ -49,21 +50,32 @@ import org.springframework.stereotype.Service;
  *       (the story's decision D1): legacy had no confirmed message for this on this page.
  *   <li><strong>A missing status row answers 404; a stored NULL status code answers 409.</strong>
  *       DIVERGES. Legacy threw {@code NullPointerException} in both cases — {@code
- *       isMillReportStatusValid:450-455} dereferences the row and then its status association with
- *       no null check — reaching the JSF error page. A crash is not portable, so each answers a
- *       truthful error over an unchanged database, the nearest faithful analogue.
+ *       SubmitReportDAO.isMillReportStatusValid:450} dereferences the row and {@code :455} its
+ *       status association, neither null-checked — reaching the JSF error page. A crash is not
+ *       portable, so each answers a truthful error over an unchanged database. The NULL branch is
+ *       additionally unreachable in delivery: both status columns are {@code NOT NULL} there
+ *       (2026-09-16 probe), so it is defensive only.
  *   <li><strong>The gate reads the database.</strong> DIVERGES in source only, not in position:
  *       legacy's eleven validators ran against a {@code @ViewScoped} in-memory snapshot, which has
  *       no analogue in this architecture. Its <em>position</em> is legacy's — outside the write
  *       transaction, no row lock (see {@link ReportTransitionWriter}).
- *   <li><strong>One timestamp per statement, not per row.</strong> Legacy set a Java-side timestamp
- *       on each entity as it walked the graph; these are set-based UPDATEs. Same value within a
- *       transition either way, and nothing reads the difference.
+ *   <li><strong>One timestamp per statement, not per row.</strong> Legacy called {@code
+ *       AbstractHibernateDAO.getUpdateTimestamp:30-32} ({@code new Date()}) once per entity, so it
+ *       wrote a fresh millisecond-precision value per row. These are twenty set-based UPDATEs, each
+ *       evaluating {@code SYSDATE} once, so rows in one transition can differ by a second across a
+ *       statement boundary. Nothing reads these columns, so the difference is inert.
  *   <li><strong>Two guards with no legacy analogue, neither reachable where legacy behaved
  *       differently:</strong> the status write must affect exactly one row (legacy loaded the
  *       entity and saved it, so a vanished row could not arise), and the sweep must yield eleven
  *       verdicts (legacy hard-coded eleven boolean calls, so a short list could not occur). Both
  *       fail closed with verbatim legacy error text rather than inventing an outcome.
+ *   <li><strong>The gate&rarr;write race is legacy's, and is kept.</strong> Neither legacy nor this
+ *       code locks the status row, so a concurrent schedule save can invalidate the gate's verdict
+ *       before the write commits, and two concurrent verifies both succeed with the second
+ *       overwriting the auditor columns. Legacy's window was wider still, its verdict coming from a
+ *       {@code @ViewScoped} snapshot. Kept under the Epic 17 parity rule and recorded rather than
+ *       closed: closing it (an {@code expectedCurrent} predicate on the UPDATE, or a lock plus a
+ *       re-gate) would itself be a divergence.
  * </ul>
  *
  * <p>Reproduced faithfully, and therefore NOT listed above: the four-cell legality outcome, the
@@ -88,12 +100,6 @@ public class ReportTransitionService {
 
   static final String CATEGORY_AUDITED = "A";
   static final String CATEGORY_VERIFIED = "V";
-
-  /**
-   * The ten Schedules 1&ndash;10 category rows a transition must advance. Eleven exist per
-   * mill/year; category {@code '11'} is Schedule 11's and never moves with this track.
-   */
-  static final int EXPECTED_CATEGORY_ROWS = 10;
 
   /**
    * The verdicts the 1&ndash;10 gate must produce: eleven, because 7A and 7B are separate {@code
@@ -136,20 +142,18 @@ public class ReportTransitionService {
    *
    * <p>Order is legacy's: read the current codes, run the gate, check the transition is legal, then
    * write. No row lock, and the gate sits outside the write transaction &mdash; see {@link
-   * ReportTransitionWriter}. A refused transition is NOT an error: it writes nothing and returns
-   * the stored status, and the caller still sends legacy's verified message (decision D4).
+   * ReportTransitionWriter}. A refused transition writes nothing and answers 409 with legacy's own
+   * {@code reportSubmissionErrorMsg} — what legacy did, once its service layer is read.
    *
    * @param millId the mill, already validated as an active context by the caller
    * @param year the reporting year
    * @param actingUser the value for the audit columns, at most 30 characters
    * @param actorGuid the acting user's directory GUID, used to find the auditor cross-reference;
    *     null when the request carries no directory identity, which records no auditor
-   * @return the track's status code after the transition, or the unchanged stored code when the
-   *     transition was refused
+   * @return the track's status code after the transition
    * @throws ScheduleNotFoundException the mill/year has no status row
    * @throws ReportNotSubmittedException one or more schedules fail validation
    * @throws ReportTransitionRejectedException the stored status code is NULL
-   * @throws ReportTransitionFailedException the writes could not be persisted
    */
   public String verifySchedules1To10(long millId, int year, String actingUser, String actorGuid) {
 
@@ -170,30 +174,39 @@ public class ReportTransitionService {
     }
 
     // The gate runs BEFORE the write transaction and takes no row lock, as legacy did:
-    // CheckStatusMB.submitReport:247-261 evaluated all eleven validators in the managed bean and
-    // only then called the DAO, which opened its own transaction. Accepted consequence, ratified
+    // CheckStatusMB.submitReport (method at :245) evaluated all eleven validators in the bean at
+    // :257-261 and only then called the service at :274, which delegated to a DAO that opened its
+    // own transaction. Accepted consequence, ratified
     // 2026-09-16 as legacy parity: a concurrent schedule save can invalidate the verdict between
     // the gate and the write. Legacy had the same window, and a wider one — its verdict came from
     // a @ViewScoped in-memory snapshot rather than from the database.
     requireTrackPassesValidation(millId, year);
 
     if (!isTransitionLegal(current, VERIFIED)) {
-      // LEGACY PARITY, ratified 2026-09-16 (decision D4). Legacy called the DAO as a bare
-      // statement and never captured its boolean: `ilcrService.submitReport(...)` at
-      // CheckStatusMB.submitReport:271, then addInfoMessage("sch1-10VerifiedMsg") at :283
-      // unconditionally. So a refused transition — a no-op second click, or either illegal
-      // Draft<->Verified jump — wrote nothing and still told the user the report was verified.
-      // Reproduced here: no exception, nothing written, and the caller sends legacy's verified
-      // message. The returned code is the track's ACTUAL stored status, so the response never
-      // claims a state the database does not hold.
+      // 409, and this IS legacy parity — the earlier reading that legacy reported success here was
+      // wrong, and wrong because it stopped one layer short. The DAO returns false
+      // (SubmitReportDAO.isMillReportStatusValid:448 refuses a no-op and both direct D<->V jumps;
+      // submitReport:69-71 returns false without writing), and the SERVICE captures it:
+      // ILCRService.submitReport:718-723 is `public void ... throws ILCSException` and does
+      // `if (!getSubmitReportDAO().submitReport(...)) throw new
+      // ILCSException(ExceptionCode.SCHEDULE_NOT_SUBMITTED)`. ILCSException:50 maps that code to
+      // reportSubmissionErrorMsg. In the bean, that service call is the FIRST statement inside the
+      // try (CheckStatusMB.submitReport:274, method at :245), addInfoMessage("sch1-10VerifiedMsg")
+      // is at :284 AFTER it in the same try, and catch (ILCSException e) ->
+      // addErrorMessage(e.getErrorCode()) is at :289-292. A refused transition therefore threw,
+      // skipped the verified message entirely, and displayed the support-escalation error.
+      //
+      // UC-CHK-007-S07 records a "silent success" defect here. That record reads the bean and the
+      // DAO but never opens ILCRService, and its own technical sidecar hedges the finding as an
+      // unconfirmed assumption. There is no defect on this path. (There IS an adjacent one: when
+      // saveSession() returned false, legacy emitted the error AND the success message, :278-285.)
       log.info(
-          "Verify refused: {}->{} is not legal for millId={} year={}. Nothing written; returning"
-              + " the stored status with legacy's verified message (D4 parity)",
+          "Verify 409: transition {}->{} is not legal for millId={} year={}",
           current,
           VERIFIED,
           millId,
           year);
-      return current;
+      throw new ReportTransitionRejectedException();
     }
 
     return writer.write(

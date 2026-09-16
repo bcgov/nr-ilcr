@@ -260,6 +260,32 @@ class VerifyReportIT extends AbstractOracleIT {
         "SELECT UPDATE_USERID FROM THE." + table + " WHERE " + idColumn + " = ?", String.class, id);
   }
 
+  private int statusRevision(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT REVISION_COUNT FROM THE.ILCR_MILL_REPORT_STATUS"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        Integer.class,
+        Integer.valueOf(mill));
+  }
+
+  /** MIN, so one un-bumped row fails rather than being averaged away. */
+  private int minSummaryRevision(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT MIN(REVISION_COUNT) FROM THE.ILCR_REPORT_SUMMARY"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        Integer.class,
+        Integer.valueOf(mill));
+  }
+
+  private int minCategoryRevision(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT MIN(REVISION_COUNT) FROM THE.ILCR_REPORT_CATEGORY"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021"
+            + " AND ILCR_CATEGORY_ID IN ('1','2','3','4','5','6','7','8','9','10')",
+        Integer.class,
+        Integer.valueOf(mill));
+  }
+
   private int auditRowCount(String auditTable) {
     return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM THE." + auditTable, Integer.class);
   }
@@ -333,6 +359,9 @@ class VerifyReportIT extends AbstractOracleIT {
       "AC1/AC2/AC3: all-met Submitted track -> 200, S->V, ten categories -> V, auditor recorded")
   void verifiesSubmittedTrack() throws Exception {
     assertThat(trackStatus(HAPPY_MILL)).isEqualTo("S");
+    int statusRevisionBefore = statusRevision(HAPPY_MILL);
+    int summaryRevisionBefore = minSummaryRevision(HAPPY_MILL);
+    int categoryRevisionBefore = minCategoryRevision(HAPPY_MILL);
     int summaryAuditBefore = auditRowCount("ILCR_REPORT_SUMMARY_AUDIT");
     int costDetailAuditBefore = auditRowCount("ILCR_COST_REPORT_DETAIL_AUD");
 
@@ -372,8 +401,14 @@ class VerifyReportIT extends AbstractOracleIT {
     assertThat(unstampedCategoryRows(HAPPY_MILL)).isZero();
     assertThat(categoryUpdateUser(HAPPY_MILL, "11")).isEqualTo(SEED_USER);
 
-    // No REVISION_COUNT assertion: legacy mapped it as a plain @Column, never @Version, and no
-    // transition bumped it. The stored value is asserted unchanged by the fingerprint arms.
+    // REVISION_COUNT follows legacy entity by entity: the status row is NOT bumped (plain
+    // @Column), while ILCR_REPORT_SUMMARY and ILCR_REPORT_CATEGORY are (@Version at
+    // ILCRReportSummary:82 / ILCRReportCategory:39, which Hibernate incremented when the sweep
+    // dirtied them). This is load-bearing on the summary: it is the row StaleRevisionException
+    // guards, so legacy REJECTED a concurrent schedule save holding revision n after a verify.
+    assertThat(statusRevision(HAPPY_MILL)).isEqualTo(statusRevisionBefore);
+    assertThat(minSummaryRevision(HAPPY_MILL)).isEqualTo(summaryRevisionBefore + 1);
+    assertThat(minCategoryRevision(HAPPY_MILL)).isEqualTo(categoryRevisionBefore + 1);
 
     // AC3: the application inserts no _AUD row — delivery triggers own those, and the test
     // snapshot creates the shadow tables without them (V20260910), so this is directly provable.
@@ -391,6 +426,14 @@ class VerifyReportIT extends AbstractOracleIT {
     assertThat(decoyUpdateUser("BRIDGE_REPORT", "BRIDGE_REPORT_ID", 1080)).isEqualTo(SEED_USER);
     assertThat(decoyUpdateUser("CULVERT_REPORT", "CULVERT_REPORT_ID", 1081)).isEqualTo(SEED_USER);
     assertThat(decoyUpdateUser("ROAD_CONSTRUCTION_REPRT", "ROAD_CONSTRUCTION_REPRT_ID", 1082))
+        .isEqualTo(SEED_USER);
+    // The three whose DAO signature hides the category (Schedule4DAO:390, Schedule5DAO:308,
+    // Schedule8DAO:134 each bind it internally) — legacy filtered these too, which an earlier cut
+    // got wrong by reading the signatures instead of the named queries.
+    assertThat(decoyUpdateUser("TRANSPORTATION_REPORT", "TRANSPORTATION_REPORT_ID", 1083))
+        .isEqualTo(SEED_USER);
+    assertThat(decoyUpdateUser("CAMP_REPORT", "CAMP_REPORT_ID", 1084)).isEqualTo(SEED_USER);
+    assertThat(decoyUpdateUser("TREE_TO_TRUCK_REPORT", "TREE_TO_TRUCK_REPORT_ID", 1085))
         .isEqualTo(SEED_USER);
   }
 
@@ -426,20 +469,14 @@ class VerifyReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("D4 parity: the illegal D->V jump -> 200 with the verified message, NOTHING written")
-  void draftTrackIsRefusedButReportsVerified() throws Exception {
+  @DisplayName("AC5/AC10: a Draft track -> 409 reportSubmissionErrorMsg (the illegal D->V jump)")
+  void refusesADraftTrack() throws Exception {
     String before = fingerprint(DRAFT_MILL);
 
-    // Legacy invoked the DAO as a bare statement (CheckStatusMB.submitReport:271) and never
-    // captured the false that isMillReportStatusValid produced for this jump, then emitted
-    // sch1-10VerifiedMsg unconditionally at :283. Ratified as parity 2026-09-16 (decision D4).
     mockMvc
         .perform(post(ENDPOINT).param("millId", DRAFT_MILL).param("year", YEAR).with(admin()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.message.key", is("sch1-10VerifiedMsg")))
-        .andExpect(jsonPath("$.message.text", is(VERIFIED_MSG)))
-        // trackStatus is the STORED code, so the body never claims a state the database lacks.
-        .andExpect(jsonPath("$.trackStatus", is("D")));
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR_MSG)));
 
     assertThat(trackStatus(DRAFT_MILL)).isEqualTo("D");
     assertThat(categoryStates(DRAFT_MILL)).containsOnly("D");
@@ -447,19 +484,17 @@ class VerifyReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("D4 parity: a second click on an already-Verified track -> 200, NOTHING written")
-  void noOpIsRefusedButReportsVerified() throws Exception {
+  @DisplayName("AC5/AC10: a second click on an already-Verified track -> 409, nothing persisted")
+  void refusesANoOp() throws Exception {
     String before = fingerprint(VERIFIED_MILL);
 
+    // Legacy's outcome, via ILCRService.submitReport:718-723 -> ILCSException -> the bean's catch.
     mockMvc
         .perform(post(ENDPOINT).param("millId", VERIFIED_MILL).param("year", YEAR).with(admin()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.message.key", is("sch1-10VerifiedMsg")))
-        .andExpect(jsonPath("$.trackStatus", is("V")));
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR_MSG)));
 
     assertThat(trackStatus(VERIFIED_MILL)).isEqualTo("V");
-    // The fingerprint is what makes this arm mean something: legacy wrote nothing on a refusal,
-    // and a 200 must not become cover for a silent write.
     assertThat(fingerprint(VERIFIED_MILL)).isEqualTo(before);
   }
 

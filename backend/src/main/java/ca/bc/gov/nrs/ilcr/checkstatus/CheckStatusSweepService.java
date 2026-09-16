@@ -36,16 +36,18 @@ import org.springframework.stereotype.Service;
  * The Check Status sweep (Story 15.1, AD-5): every schedule's own validation called — never
  * re-implemented — for one mill/year, partitioned by track, read-only. This is the domain-level
  * aggregation both the page ({@code GET /api/v1/check-status}) and Story 15.3's submit gate call;
- * the gate re-runs {@link #checkTrack} for Schedules 1–10 inside its own write transaction and
- * leaves Schedule 11 untouched (UC-CHK-002 BR-08), which is why the two tracks are answerable
- * independently.
+ * the gate re-runs {@link #checkTrack} for Schedules 1–10 and leaves Schedule 11 untouched
+ * (UC-CHK-002 BR-08), which is why the two tracks are answerable independently. Story 17.1's
+ * transition calls it from OUTSIDE its write transaction, as legacy gated before opening one — see
+ * {@code ReportTransitionWriter}, which cites the fan-out warning below as its reason.
  *
  * <p><strong>The caller owns the mill/year guard.</strong> None of the twelve entry points
  * validates its own context, and Schedules 4, 5, 6, 8, 10 and 11 all report zero rows as a vacuous
  * MET — so a sweep over an absent or closed mill-year would answer COMPLETE instead of 404/409.
  * {@code MillContextService.validateMillYearActive} must run exactly once before this is called
- * (the controller does; 15.3 will inside its transaction). This service adds no per-schedule guard:
- * twelve redundant context reads on the path the correct-and-re-check loop presses repeatedly.
+ * (the controller does, for both the sweep and the transition). This service adds no per-schedule
+ * guard: twelve redundant context reads on the path the correct-and-re-check loop presses
+ * repeatedly.
  *
  * <p><strong>Deliberately NOT {@code @Transactional}.</strong> Ten of the twelve validations manage
  * their own {@code readOnly} transaction (the six resolvers delegate to one; Schedules 1 and 3 have

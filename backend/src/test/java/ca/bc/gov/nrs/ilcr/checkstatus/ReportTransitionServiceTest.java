@@ -183,24 +183,28 @@ class ReportTransitionServiceTest {
   }
 
   @Test
-  @DisplayName("D4 parity: a no-op writes NOTHING and returns the stored status, not an error")
-  void noOpWritesNothingAndReportsSuccess() {
+  @DisplayName("a no-op is refused as an error and never reaches the writer")
+  void noOpIsRefused() {
     givenTrackAt("V");
     givenGatePasses();
 
-    // Legacy called the DAO as a bare statement (CheckStatusMB.submitReport:271), never captured
-    // the false it returned for a no-op, and emitted sch1-10VerifiedMsg anyway at :283.
-    assertThat(service.verifySchedules1To10(MILL, YEAR, USER, GUID)).isEqualTo("V");
+    // Legacy's outcome too: the DAO's false became ILCSException(SCHEDULE_NOT_SUBMITTED) in
+    // ILCRService.submitReport:718-723, and the bean's catch rendered the error instead of the
+    // verified message. UC-CHK-007-S07 calls it a silent success, having read only the bean and
+    // the DAO.
+    assertThatThrownBy(() -> service.verifySchedules1To10(MILL, YEAR, USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class);
     verifyNoInteractions(writer);
   }
 
   @Test
-  @DisplayName("D4 parity: the illegal D->V jump also writes nothing and is not an error")
-  void draftJumpWritesNothingAndReportsSuccess() {
+  @DisplayName("the illegal D->V jump is refused as an error too, and never reaches the writer")
+  void draftJumpIsRefused() {
     givenTrackAt("D");
     givenGatePasses();
 
-    assertThat(service.verifySchedules1To10(MILL, YEAR, USER, GUID)).isEqualTo("D");
+    assertThatThrownBy(() -> service.verifySchedules1To10(MILL, YEAR, USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class);
     verifyNoInteractions(writer);
   }
 

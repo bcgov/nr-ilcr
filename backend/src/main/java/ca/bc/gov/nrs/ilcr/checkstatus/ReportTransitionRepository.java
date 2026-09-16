@@ -19,10 +19,11 @@ import org.springframework.data.repository.query.Param;
  * stamps the actor and timestamp on every table holding the track's data &mdash; <strong>thirteen
  * distinct tables reached by twenty statements</strong>, because {@code ILCR_COST_REPORT_DETAIL}
  * hangs off eight different parents and is stamped once per parent &mdash; and changes business
- * data on only two. Thirteen + those two is the "fifteen tables" the story's ACs speak of; all
- * three numbers describe the same sweep. Legacy walked Hibernate object graphs row by row; these
- * are set-based UPDATEs scoped by the same keys, which means one timestamp per statement instead of
- * one per row. Nothing reads the difference.
+ * data on only two. Five of the fifteen also have {@code REVISION_COUNT} incremented; see below.
+ * Thirteen + those two is the "fifteen tables" the story's ACs speak of; all three numbers describe
+ * the same sweep. Legacy walked Hibernate object graphs row by row; these are set-based UPDATEs
+ * scoped by the same keys, which means one timestamp per statement instead of one per row. Nothing
+ * reads the difference.
  *
  * <p><strong>{@code SYSDATE} everywhere, and that is delivery-verified rather than
  * inferred.</strong> All fifteen tables this class writes hold {@code UPDATE_TIMESTAMP} as {@code
@@ -35,10 +36,17 @@ import org.springframework.data.repository.query.Param;
  * {@code TIMESTAMP} without loss, and it matches legacy, whose single Java-side value carried date
  * precision.
  *
- * <p>Nothing here touches {@code REVISION_COUNT} — not the sweeps and not the status write — as
- * legacy did not, so a schedule save holding revision <em>n</em> still succeeds after a transition
- * has touched its audit columns. There is no row lock on this path either; see {@link
- * #updateTrackStatusWithAuditor}.
+ * <p><strong>{@code REVISION_COUNT} follows legacy entity by entity, which means five of the
+ * fifteen tables ARE bumped.</strong> Legacy's sweep dirtied each entity and let Hibernate flush
+ * it, so any entity mapping {@code revision_count} with {@code @Version} had it incremented. Five
+ * do: {@code ILCRReportSummary:82}, {@code ILCRReportCategory:39}, {@code TreeToTruckReport:116},
+ * {@code TreeToTruckDetailReport:126}, {@code TreeToTruckRateDetail:83}. The other ten — including
+ * {@code ILCRMillReportStatus}, whose column is a plain {@code @Column} — carry no {@code @Version}
+ * and were written back unchanged, so they are not bumped here either. This is load-bearing on
+ * {@code ILCR_REPORT_SUMMARY}: it is the row this codebase's own {@code StaleRevisionException}
+ * guards, so under legacy a concurrent schedule save holding revision <em>n</em> was REJECTED after
+ * a transition, and omitting the bump would silently let it through. There is no row lock on this
+ * path; see {@link #updateTrackStatusWithAuditor}.
  */
 @org.springframework.stereotype.Repository
 public interface ReportTransitionRepository extends Repository<MillReportStatusEntity, Long> {
@@ -151,6 +159,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       """
       UPDATE THE.ILCR_REPORT_CATEGORY
          SET CATEGORY_STATE_CODE = :categoryState,
+             REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
@@ -164,22 +173,27 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       @Param("user") String user);
 
   // -----------------------------------------------------------------------------------------------
-  // CATEGORY SCOPING IS LEGACY'S, AND LEGACY WAS INCONSISTENT — reproduce it exactly, do not
-  // regularize it. Five of these tables were fetched through a DAO call that passed an
-  // ilcr_category id, so the sweep only ever reached rows of that category:
+  // CATEGORY SCOPING IS LEGACY'S — all EIGHT parents, not five. An earlier cut scoped only five,
+  // on the strength of the DAO method SIGNATURES: three of them take (reportingYear, millID) with
+  // no category parameter. That was wrong. Those three hardcode the category INSIDE the DAO and
+  // their named queries bind it in the WHERE, so legacy filtered them too:
+  //   TRANSPORTATION_REPORT '4' (Schedule4DAO:390 setParameter + TransportationReport:36)
+  //   CAMP_REPORT           '5' (Schedule5DAO:308 setParameter + CampReport:36)
+  //   TREE_TO_TRUCK_REPORT  '8' (Schedule8DAO:134 setParameter + TreeToTruckReport:35)
+  // The other five pass it through the signature:
   //   ROAD_MAINTENANCE_REPORT '6'  (Schedule6DAO.getRoadMaintenanceReports:164)
   //   BRIDGE_REPORT          '7'  (Schedule7aDAO.getBridgeReports:154)
   //   CULVERT_REPORT         '7'  (Schedule7bDAO.getCulvertReports:115 — the SAME '7'; the table,
   //                                not the category, is what separates 7A from 7B)
   //   CONTRACTUAL_WORK_REPORT '9' (Schedule9DAO.getContractualWorkReports:712)
   //   ROAD_CONSTRUCTION_REPRT '10' (Schedule10DAO.findRoadConstructionReprt:776)
-  // The other three took mill/year ONLY, so they carry no category predicate here either:
-  //   TRANSPORTATION_REPORT (Schedule4DAO.getTransportationReports), CAMP_REPORT
-  //   (Schedule5DAO.getCampReports), TREE_TO_TRUCK_REPORT (Schedule8DAO.getTreeToTruckReports).
-  // Adding a filter to those three would be inventing one legacy never had; omitting it on the
-  // five would over-scope the stamp to rows legacy left alone. The five predicates also match this
-  // codebase's own convention for the same tables (e.g. Schedule9Repository scopes every read and
-  // write to ILCR_CATEGORY_ID = '9').
+  // Omitting any of them over-scopes the stamp to rows legacy left alone — silent
+  // UPDATE_USERID/UPDATE_TIMESTAMP corruption on another category's data. All eight predicates
+  // also match this codebase's own convention for these tables (e.g. Schedule9Repository scopes
+  // every read and write to ILCR_CATEGORY_ID = '9', Schedule4Repository to '4').
+  //
+  // Child tables carry no predicate of their own: legacy reached them by walking the object graph
+  // from an already-filtered parent, so the predicate lives in each subselect instead.
   //
   // Audit sweep — thirteen distinct tables via twenty statements, actor and timestamp only.
   // Schedules 1/2/3 share the summary table, and ILCR_COST_REPORT_DETAIL is stamped once per parent
@@ -195,7 +209,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
   @Query(
       """
       UPDATE THE.ILCR_REPORT_SUMMARY
-         SET UPDATE_USERID = :user,
+         SET REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -230,6 +245,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '4'
       """)
   int stampTransportationReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -245,7 +261,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT t.TRANSPORTATION_REPORT_ID
                  FROM THE.TRANSPORTATION_REPORT t
                 WHERE t.ILCR_MILL_ID = :millId
-                  AND t.REPORT_YEAR = :year)
+                  AND t.REPORT_YEAR = :year
+                  AND t.ILCR_CATEGORY_ID = '4')
       """)
   int stampTransportationCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -259,6 +276,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '5'
       """)
   int stampCampReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -274,7 +292,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT c.CAMP_REPORT_ID
                  FROM THE.CAMP_REPORT c
                 WHERE c.ILCR_MILL_ID = :millId
-                  AND c.REPORT_YEAR = :year)
+                  AND c.REPORT_YEAR = :year
+                  AND c.ILCR_CATEGORY_ID = '5')
       """)
   int stampCampCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -377,10 +396,12 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
   @Query(
       """
       UPDATE THE.TREE_TO_TRUCK_REPORT
-         SET UPDATE_USERID = :user,
+         SET REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '8'
       """)
   int stampTreeToTruckReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -390,13 +411,15 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
   @Query(
       """
       UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
-         SET UPDATE_USERID = :user,
+         SET REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_REPORT_ID IN (
                SELECT t.TREE_TO_TRUCK_REPORT_ID
                  FROM THE.TREE_TO_TRUCK_REPORT t
                 WHERE t.ILCR_MILL_ID = :millId
-                  AND t.REPORT_YEAR = :year)
+                  AND t.REPORT_YEAR = :year
+                  AND t.ILCR_CATEGORY_ID = '8')
       """)
   int stampTreeToTruckDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -413,7 +436,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
   @Query(
       """
       UPDATE THE.TREE_TO_TRUCK_RATE_DETAIL
-         SET UPDATE_USERID = :user,
+         SET REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID IN (
                SELECT d.TREE_TO_TRUCK_DETAIL_REPORT_ID
@@ -422,7 +446,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                         SELECT t.TREE_TO_TRUCK_REPORT_ID
                           FROM THE.TREE_TO_TRUCK_REPORT t
                          WHERE t.ILCR_MILL_ID = :millId
-                           AND t.REPORT_YEAR = :year))
+                           AND t.REPORT_YEAR = :year
+                           AND t.ILCR_CATEGORY_ID = '8'))
       """)
   int stampTreeToTruckRateDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
