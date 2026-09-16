@@ -183,7 +183,11 @@ const selectCedar = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole('button', { name: 'Select Mill' }))
   await user.click(within(selectMillDialog()).getByRole('button', { name: 'Search' }))
   await user.click(await screen.findByRole('button', { name: 'Select mill 670' }))
-  await screen.findByRole('region', { name: /mill details/i })
+  // NOT the region role: the Mill Details panel is unconditional since fix round 1 (mills.xhtml:22),
+  // present on first paint before any mill is adopted -- so it settles instantly and proves nothing
+  // about the click having landed. The detail body only paints once `mill && form`, so waiting on
+  // its own content is what actually waits for the adopt to complete.
+  await screen.findByText(/670 - Cedar Mill/)
 }
 
 describe('Mills page — route, empty state (AC1)', () => {
@@ -256,7 +260,10 @@ describe('Mills page — selecting a mill (AC2)', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Select mill 670' }))
 
-    expect(await screen.findByRole('region', { name: /mill details/i })).toBeInTheDocument()
+    // NOT the region role: the Mill Details panel is unconditional (mills.xhtml:22) and present
+    // before the click too, so asserting its presence here would prove nothing about the select
+    // having landed. The detail body only paints once the mill is adopted.
+    expect(await screen.findByText(/670 - Cedar Mill/)).toBeInTheDocument()
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', { name: /find and select mill$/i }),
@@ -1037,14 +1044,25 @@ describe('Mills page — the associated-user panel (AC6)', () => {
     expect(screen.getByRole('button', { name: `Deactivate user ${GUID}` })).toBeInTheDocument()
   })
 
-  test('each section sits in a titled panel', async () => {
+  test('the Associated Licensee User panel is titled, and gated on selection unlike Mill Details', async () => {
+    // Mill Details titles a panel from first paint (mills.xhtml:22, unconditional) -- asserting its
+    // heading alone with a mill already selected would prove nothing about panel gating. The
+    // Associated Licensee User heading is the one that has to APPEAR, not merely exist.
     const user = userEvent.setup()
     usersAre(ACTIVE_ROW)
     render(<Mills />)
+
+    expect(screen.getByRole('heading', { name: 'Mill Details' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Associated Licensee User' }),
+    ).not.toBeInTheDocument()
+
     await selectCedar(user)
 
-    expect(await screen.findByRole('heading', { name: 'Mill Details' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Associated Licensee User' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Mill Details' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Associated Licensee User' }),
+    ).toBeInTheDocument()
   })
 
   test('rows are requested WITHOUT includeEnded, because it defaults true on this surface', async () => {

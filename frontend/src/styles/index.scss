@@ -112,7 +112,6 @@ body {
 .schedule-11__heading,
 .code-tables__heading,
 .mill-associations__heading,
-.mills__heading,
 .check-status__heading,
 .#{$bcgov-prefix}--data-table-header__title {
   font-size: 1.25rem;
@@ -184,8 +183,10 @@ body {
 
   // Mill administration: the two legacy panels (Mill Details, Associated Licensee User) are
   // `SubPanel`s now (mills.xhtml:28, :110), so they stack with the same rhythm as any other
-  // adjacent sub-panel pair rather than a bespoke `.mills__section` rule.
-  .schedule-page .sub-panel + .sub-panel {
+  // adjacent sub-panel pair rather than a bespoke `.mills__section` rule. Bare, like every sibling
+  // rule in this block -- this already sits inside `.schedule-page { … }` (:121), so a
+  // `.schedule-page` prefix here would double up and never match.
+  .sub-panel + .sub-panel {
     margin-top: 2rem;
   }
 
@@ -218,17 +219,23 @@ body {
   }
 
   // mills.xhtml:57-95 lays the three contact controls as label-left rows inside the panel, not as
-  // a stack of label-above fields. Declares NO control height -- the one app-wide height from
+  // a stack of label-above fields. Carbon's Dropdown root carries `cds--dropdown__wrapper
+  // cds--list-box__wrapper`, not `cds--form-item` (that class belongs to TextInput/NumberInput) --
+  // so the row layout has to target the list-box wrapper, and `display: flex` has to be declared
+  // here too rather than assumed, since the list-box wrapper is not already a flex column the way
+  // `cds--form-item` is. Declares NO control height -- the one app-wide height from
   // _overrides.scss governs, as controlHeightContract pins.
-  .mills__editable .#{$bcgov-prefix}--form-item {
+  .mills__editable .#{$bcgov-prefix}--list-box__wrapper {
+    display: flex;
     flex-direction: row;
     align-items: center;
     gap: 0.5rem;
   }
 
-  // The action bar sits right-aligned within its panel (legacy's colspan="7" action row).
+  // The action bar sits CENTERED within its panel (legacy's `<p:column styleClass="center"
+  // colspan="7">` action row, mills.xhtml:97).
   .mills__actions {
-    justify-content: flex-end;
+    justify-content: center;
   }
 
   // #312 (Table Maintenance, screen item 1): the Code List drop-list should not span the entire
