@@ -1,6 +1,5 @@
 import type { FC } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
   Column,
@@ -14,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Misuse, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Misuse } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import SubPanel from '@/components/core/SubPanel'
@@ -79,7 +78,6 @@ type MillAssociationsProps = {
 }
 
 const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
-  const navigate = useNavigate()
   const [mills, setMills] = useState<MillSummary[]>([])
   const [selectedMill, setSelectedMill] = useState<MillSummary | null>(null)
 
@@ -461,20 +459,6 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                               Activate
                             </Button>
                           )}
-                          {/* users.xhtml:84-88, every row, no `rendered` guard — the reciprocal of
-                              the Mills page's own per-row View (mills/index.tsx:698-716). The
-                              Mills route (routes/mills.tsx) takes no search param, so this carries
-                              no mill identity — legacy's own hand-off went through session state
-                              (userSessionMB.millSelected), which this app has no equivalent of. */}
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            aria-label={`View mill ${dash(row.millNumber)}`}
-                            renderIcon={View}
-                            onClick={() => navigate({ to: '/mills' })}
-                          >
-                            View
-                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

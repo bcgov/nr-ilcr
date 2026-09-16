@@ -1,18 +1,9 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { act, getDefaultNormalizer } from '@testing-library/react'
 import { render, screen, userEvent, waitFor, within } from '@/test-utils'
 import { server } from '@/test-setup'
 import MillAssociations from '../index'
-
-const navigateSpy = vi.fn()
-// Spread over the REAL module, not a one-export replacement: a whole-module mock fails every test
-// in this file with an opaque undefined-import error the moment the page (or anything it renders)
-// picks up a second router export. Follows the same pattern as Mills.test.tsx's own navigateSpy.
-vi.mock('@tanstack/react-router', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  useNavigate: () => navigateSpy,
-}))
 
 const API = 'http://localhost:3000/api'
 const LOOKUP = `${API}/v1/users/lookup`
@@ -101,7 +92,6 @@ const drainEventLoop = async (turns = 20) => {
 }
 
 beforeEach(() => {
-  navigateSpy.mockReset()
   server.use(
     http.get(MILLS, () => HttpResponse.json(MILL_LIST)),
     http.get(LOOKUP, () => HttpResponse.json([ADA])),
@@ -226,22 +216,6 @@ describe('Users page — the screen itself', () => {
 
     expect(await screen.findByRole('heading', { name: 'User Details' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Associated Mills' })).toBeInTheDocument()
-  })
-
-  test('every Associated Mills row carries a View control that navigates to the Mills screen', async () => {
-    const user = userEvent.setup()
-    // users.xhtml:84-88 gives every row a View button with no `rendered` guard — both an active
-    // and an ended row must carry one, so this pins that it is not conditioned on the row's status.
-    assignmentsAre(activeOn670, endedOn671)
-    render(<MillAssociations />)
-    await selectAda(user)
-
-    await user.click(within(rowFor('670')).getByRole('button', { name: /^view mill/i }))
-
-    // routes/mills.tsx takes no search param, so the navigation carries no mill identity — the
-    // reciprocal of mills/index.tsx's own `navigate({ to: '/mill-associations', search: {...} } )`.
-    expect(navigateSpy).toHaveBeenCalledWith({ to: '/mills' })
-    expect(within(rowFor('671')).getByRole('button', { name: /^view mill/i })).toBeInTheDocument()
   })
 
   test('server order is preserved — the table never re-sorts what the backend pinned', async () => {
