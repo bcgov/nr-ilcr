@@ -22,12 +22,15 @@ bullet before fixing it — the ticket's title describes the symptom, and fixing
 artifacts — and **GAP-4** by adding the one scenario that reaches the per-camp "met" line. Two entries
 remain open, for different reasons:
 
-- **DIV-1** is open by design: a ticketed app defect awaiting a fix (#476), not an unresolved question.
-- **GAP-5 is new, found 2026-09-16 while preparing the PR, and it is the one real hole left.** Schedule 5
-  has **no accessibility coverage whatsoever** — no `@a11y` scenario, no axe sweep — and it is the only
-  domain in the suite without any. That is half of what issue #97 asks for. The 25-slice catalogue does
-  not ask for it (accessibility is an NFR, not a slice), which is exactly why "all 25 slices authored"
-  read as complete. See GAP-5.
+**GAP-5 is also now CLOSED** — it was found 2026-09-16 while preparing the PR and closed the same day on
+the review's request: Schedule 5 had **no accessibility coverage whatsoever** and was the only domain in
+the suite without any. `accessibility.feature` now sweeps all seven surfaces, **all clean**. The reason it
+was missed is the part worth keeping: **the 25-slice catalogue does not ask for accessibility** (it is an
+NFR), so "all 25 slices authored" read as complete with half of issue #97 unverified. GAP-4 had the same
+shape. **A slice catalogue is not a completeness test.**
+
+**DIV-1 is the only entry still open**, and it is open by design: a ticketed app defect awaiting a fix
+(#476), not an unresolved question.
 
 **A legacy screenshot supplied 2026-09-16 settled SPEC-3 on the facts.** With five camps and one
 incomplete, legacy shows a RED panel of that camp's three missing fields **and** a BLUE panel carrying
@@ -302,8 +305,29 @@ logged here, because in both the difference is mechanism rather than behaviour:
     is a one-line change.
   - **Status:** CLOSED 2026-09-15 — coverage exists and is GREEN. Raised 2026-09-10.
 
-- **GAP-5 — OPEN: Schedule 5 has NO accessibility coverage at all, and it is the only domain in the suite
-  without any. Found 2026-09-16 while preparing the Story 28.4 PR.**
+- **GAP-5 — CLOSED 2026-09-16: Schedule 5 had NO accessibility coverage at all, and was the only domain
+  in the suite without any. Found while preparing the Story 28.4 PR; closed the same day on the PR
+  review's request.**
+  - **What was added.** `accessibility.feature` — **7 scenarios, all GREEN, zero WCAG 2.1 AA violations**
+    on first run. It sweeps every surface issue #97 names, one scan per scenario (a scenario scanning
+    several surfaces in sequence stops at the first violation and silently skips the rest — sch4's
+    reasoning, followed here): the main page with its camp list, the NEW camp panel, the open EDIT panel,
+    **both** expense sub-pages, the read-only View, and the context-suppressed guard state.
+  - **No new step code and no new axe helper** — `pages/common/axe.ts` and the two common a11y steps are
+    already domain-agnostic, and every navigation step this needed (`I start a new camp`, `I edit the
+    {string} camp`, `I open the {string} sub-page`, `I view the {string} camp`) already existed. The gap
+    was never a tooling gap.
+  - **Four new anchors, and only four.** `a11y-list` (23051/2023), `a11y-panel` (23052/2023),
+    `a11y-subpage-camp` (24050/2023) and `a11y-subpage-access` (24051/2023) — one per sweep that SAVES a
+    camp to have something to scan, because a scenario that writes cannot share a key under
+    `fullyParallel`. The other two sweeps need none: the new-panel scan saves nothing so it rides the
+    validate-only anchor, and the read-only scan only GETs the camp S19 also reads. All folded into
+    `db-e2e/R__80_e2e_anchor_seed.sql` in the same change; preflight is now 180 checks (was 176).
+  - **No hovered-row scenario, deliberately.** The app-wide row-hover contrast defect is already tracked
+    once on sch4 (BUG-1 / issue #314). Re-finding it per domain adds noise, not information.
+  - **Status:** CLOSED 2026-09-16 — 7 sweeps, all clean. This was the second half of issue #97.
+  - ---
+  - **ORIGINAL ENTRY (raised 2026-09-16), kept because the reason it was missed is the reusable part:**
   - **What this means in plain language.** Every other subject area in this suite sweeps its screens with
     axe for WCAG 2.1 AA violations. Schedule 5 does not sweep anything. There is no
     `accessibility.feature`, no `@a11y` tag and no axe call anywhere under `features/sch5/` — 15 feature
@@ -330,8 +354,7 @@ logged here, because in both the difference is mechanism rather than behaviour:
     app-wide hover defect (#314, now closed) is not re-found here — the technique PR #402 established.
   - **Suggested fix:** one `accessibility.feature` in this UC folder, following sch4's three-file pattern,
     on existing anchors — the sweeps read, they do not write, so no new anchor capacity is needed.
-  - **Status:** OPEN — evidenced and measured, not adjudicated. This is the remaining work on #97 and the
-    PR says so rather than claiming the issue is closed.
+  - **Status:** superseded by the CLOSED summary above.
 
 ---
 

@@ -22,6 +22,16 @@ GAP-2 are resolved; GAP-3 (S19's missing camp) is resolved; **GAP-4 is resolved 
 per-camp "met" line now has the one scenario that can reach it (see below). DIV-1 is ticketed as
 [bcgov/nr-ilcr#476](https://github.com/bcgov/nr-ilcr/issues/476).
 
+**ACCESSIBILITY ADDED 2026-09-16 (GAP-5) — `accessibility.feature`, 7 scenarios, ALL CLEAN.** NFR1 / the
+second half of issue #97. Sweeps the main page + camp list, the NEW camp panel, the open EDIT panel, both
+expense sub-pages, the read-only View, and the context-suppressed guard — one axe scan per scenario, since
+a scenario scanning several surfaces stops at the first violation and skips the rest. Four anchors were
+minted for the sweeps that save a camp (23051/23052/24050/24051 in 2023); the new-panel and read-only
+sweeps are pure GETs and ride the validate-only and read-only anchors. **No hovered-row scenario on
+purpose** — the app-wide row-hover contrast defect is tracked once, on sch4 (issue #314). Schedule 5 had
+been the only domain in the suite with no accessibility coverage at all, and nothing flagged it because
+**no slice in the catalogue asks for it**.
+
 **ONE SCENARIO BEYOND THE 25 SLICES, ADDED 2026-09-15 (GAP-4).** `check-status.feature` now carries
 *"A failing schedule still reports the camps that passed, by name"* (`@p2 @S06 @SUC-005`) on its own
 anchor, **23050/2023**. It is the only state in which the app emits
@@ -76,7 +86,7 @@ any other fixture pins is ≤ 2021, **"year ≥ 2022 belongs to sch5" is a struc
 than a convention: a cross-domain collision is not expressible in the new range. 16050/2022 is left
 empty ON PURPOSE as S18's 404 fixture and is registered in `DELIBERATELY_ABSENT`.
 
-**Anchor inventory (26 pinned, all verified through the API):** 25 empty editable Drafts (24 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). Four were minted after the original fan-out. The first three share the SAME structural reason — a scenario that writes cannot share a key under `fullyParallel`: **17052/2023** (2026-09-09) for S12, whose second arm corrects the blank field and SAVES; **22050/2023** (2026-09-10) for S23's ACCESS half, because visiting both sub-pages of one camp runs into the dirty-panel confirm; and **22051/2023** (2026-09-11) for S24's green companion, which was first written to share S24's own anchor and raced against it — both seed a camp of the same name, so the loser 409'd and its cleanup then deleted the winner's camp mid-run. That third one is the rule being learned the hard way rather than read: **dedication is per SCENARIO, not per slice.** The fourth, **23050/2023** (2026-09-15, GAP-4), is minted for a different reason: it is the only anchor that deliberately holds **two** camps mid-scenario, because the per-camp "met" line cannot be reached with one. It is still empty AT REST like every other mutating anchor, so preflight's "no camps" assertion covers it unchanged.
+**Anchor inventory (30 pinned, all verified through the API):** 25 empty editable Drafts (24 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). Four were minted after the original fan-out. The first three share the SAME structural reason — a scenario that writes cannot share a key under `fullyParallel`: **17052/2023** (2026-09-09) for S12, whose second arm corrects the blank field and SAVES; **22050/2023** (2026-09-10) for S23's ACCESS half, because visiting both sub-pages of one camp runs into the dirty-panel confirm; and **22051/2023** (2026-09-11) for S24's green companion, which was first written to share S24's own anchor and raced against it — both seed a camp of the same name, so the loser 409'd and its cleanup then deleted the winner's camp mid-run. That third one is the rule being learned the hard way rather than read: **dedication is per SCENARIO, not per slice.** The fourth, **23050/2023** (2026-09-15, GAP-4), is minted for a different reason: it is the only anchor that deliberately holds **two** camps mid-scenario, because the per-camp "met" line cannot be reached with one. It is still empty AT REST like every other mutating anchor, so preflight's "no camps" assertion covers it unchanged.
 
 **The read-only anchor is the one exception to "empty at rest", and preflight states it as such.** Every other anchor must hold no camps; 16050/2023 must hold exactly one, the seeded `E2E View Camp`. Both are asserted, with messages that distinguish the two ways it can go wrong — zero camps means the patch was never applied, two or more means S19's "a single View button" is no longer unambiguous.
 

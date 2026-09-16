@@ -5,6 +5,10 @@ import {
   CAMP_DESC_BLANK_ANCHOR,
   CHECK_MISSING_ANCHOR,
   CHECK_MIXED_ANCHOR,
+  A11Y_LIST_ANCHOR,
+  A11Y_PANEL_ANCHOR,
+  A11Y_SUBPAGE_CAMP_ANCHOR,
+  A11Y_SUBPAGE_ACCESS_ANCHOR,
   SUBPAGE_COST_ANCHOR,
   SUBPAGE_COST_ACCESS_ANCHOR,
   CHECK_MET_ANCHOR,
@@ -91,6 +95,10 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   'check-unsaved-fix': CHECK_UNSAVED_FIX_ANCHOR,
   'check-panel-gate': CHECK_PANEL_GATE_ANCHOR,
   'check-mixed': CHECK_MIXED_ANCHOR,
+  'a11y-list': A11Y_LIST_ANCHOR,
+  'a11y-panel': A11Y_PANEL_ANCHOR,
+  'a11y-subpage-camp': A11Y_SUBPAGE_CAMP_ANCHOR,
+  'a11y-subpage-access': A11Y_SUBPAGE_ACCESS_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -306,7 +314,7 @@ When('I change the road distance and the Catering and Food cost', async ({ sched
  * proves an UPDATE happened rather than the page re-rendering what was already there — the totals
  * alone would also be satisfied by a create.
  */
-Then('the edited camp carries the recalculated totals', async ({ request, world }, ) => {
+Then('the edited camp carries the recalculated totals', async ({ request, world }) => {
   await expect
     .poll(
       async () => {
@@ -421,9 +429,21 @@ Then(
   async ({ schedule5Page }, key, description) => {
     const def = subPage(key);
 
+    // SINGLE BY CONSTRUCTION (PR #479 review). This used to assert on every Description input in the
+    // list at once (`subPageDescriptions`), which resolves to one element only while the list holds a
+    // single row — the moment a second row exists (another scenario's residue, or this step reused on a
+    // longer list) `toHaveValue` hits Playwright's strict mode and throws "resolved to N elements"
+    // instead of comparing anything.
+    //
+    // The value assertion now goes through the app's own per-row id (`sub-page-row-description-0`),
+    // which is one element by definition and does not depend on the DOM value ATTRIBUTE at all. Index 0
+    // is deterministic here: this step runs in the scenarios that have just added the FIRST row.
+    //
     // The Description cell is an INPUT, so assert its value rather than the row's text. Volume is
-    // read-only TEXT in the same row (index.tsx:541-545) and renders through fmtVolume, i.e. grouped.
-    await expect(schedule5Page.subPageDescriptions(def.listHeader)).toHaveValue(description);
+    // read-only TEXT in the same row (index.tsx:541-545) and renders through fmtVolume, i.e. grouped —
+    // and it is asserted on the row LOCATED BY that description, so the two are tied to one row rather
+    // than merely both being present somewhere in the list.
+    await expect(schedule5Page.subPageRowInput(0, 'description')).toHaveValue(description);
     await expect(schedule5Page.subPageRow(def.listHeader, description)).toContainText(
       EDIT_CAMP_DISPLAY.cateringAndFoodVolume,
     );

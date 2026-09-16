@@ -164,6 +164,16 @@ DECLARE
     -- TWO camps on ONE anchor, one complete and one not -- a state no other anchor may hold, because
     -- every other one is asserted to be empty at rest and its scenario seeds a single camp.
     t_anchor(23050, 2023, 'D'),  -- GAP-4: mixed pass/fail, the per-camp met line
+    -- 23051/23052/24050/24051 in 2023 added 2026-09-16 to close e2e GAP-5 (no accessibility coverage).
+    -- One per axe sweep that SAVES a camp to have something to scan: each sweep is its own scenario (a
+    -- single scenario scanning several surfaces would stop at the first violation and skip the rest), and
+    -- a scenario that writes cannot share a key under `fullyParallel`. The new-camp-panel sweep and the
+    -- read-only sweep need no cell of their own -- they are pure GETs and ride the validate-only and
+    -- read-only anchors respectively.
+    t_anchor(23051, 2023, 'D'),  -- GAP-5: axe on the main page + camp list
+    t_anchor(23052, 2023, 'D'),  -- GAP-5: axe on the open (edit) camp panel
+    t_anchor(24050, 2023, 'D'),  -- GAP-5: axe on the Other Camp Expenses sub-page
+    t_anchor(24051, 2023, 'D'),  -- GAP-5: axe on the Other Access Expenses sub-page
     t_anchor(16050, 2023, 'S')   -- S19 read-only: Submitted, so the schedule is not editable
   );
 BEGIN

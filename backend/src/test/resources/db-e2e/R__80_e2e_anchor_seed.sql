@@ -405,6 +405,16 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- camps on ONE anchor, one complete and one not -- which no other sch5 anchor may hold, since preflight
 -- asserts every one of them is empty at rest and each scenario seeds a single camp.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 23050, 'D', 'D', 'E2E_SEED');
+-- 23051 / 23052 / 24050 / 24051 in 2023 added 2026-09-16 to close e2e GAP-5 (Schedule 5 had no
+-- accessibility coverage at all -- the only domain without any). One anchor per axe sweep that SAVES a
+-- camp to have something to scan: each sweep is its own scenario, because a scenario scanning several
+-- surfaces in sequence stops at the first violation and silently skips the rest, and a scenario that
+-- writes cannot share a (mill, year) under `fullyParallel`. The new-camp-panel and read-only sweeps need
+-- no cell of their own -- both are pure GETs riding the validate-only and read-only anchors.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 23051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 23052, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 24050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 24051, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
@@ -935,7 +945,16 @@ INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, IL
 -- NOT seeded — an empty expense list is the simpler read-only fixture, and 141 /
 -- 142 carry volume only precisely because their cost is that row sum.
 -- ----------------------------------------------------------------------------
-INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY, ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID) VALUES (4901, 2023, 16050, '5', 'E2E View Camp', 12.5, 40, 5000, 'Y', 'Read-only sample comments (E2E_SEED).', 0, 'E2E_SEED');
+-- ALL FOUR AUDIT COLUMNS ARE SUPPLIED, and they have to be. Unlike
+-- ILCR_COST_REPORT_DETAIL below — whose audit columns are nullable with an
+-- ENTRY_TIMESTAMP default (V1:95-99) — THE.CAMP_REPORT declares ENTRY_TIMESTAMP,
+-- UPDATE_USERID and UPDATE_TIMESTAMP as NOT NULL with NO default
+-- (V34:47-51). Omitting them fails the whole repeatable migration with
+-- ORA-01400, which is CI-only: a local run seeds this camp from
+-- frontend/e2e/real-test-data-patches/sch5/view-mode-camp.sql, which does supply
+-- them, so nothing here is exercised until the Flyway job runs. The column list
+-- therefore mirrors that patch (and the app's own insertCamp) exactly.
+INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY, ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (4901, 2023, 16050, '5', 'E2E View Camp', 12.5, 40, 5000, 'Y', 'Read-only sample comments (E2E_SEED).', 0, 'E2E_SEED', SYSDATE, 'E2E_SEED', SYSDATE);
 -- The twelve fixed-grid categories. NULLs are meaningful: 61 (Recoveries) is the
 -- volume-less category, 141/142 (the two Other ... rows) carry no cost of their own.
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4306, 4901,  56, 5000, 1000, NULL, 'E2E_SEED');

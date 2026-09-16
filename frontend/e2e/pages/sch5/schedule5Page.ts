@@ -57,7 +57,13 @@ export class Schedule5Page {
    */
   async openViaNavExpectingGuard(): Promise<void> {
     await navigateViaSideNav(this.page, { group: 'Schedules', link: 'Schedule 5' });
-    await expect(this.page).toHaveURL(/\/schedule-5/);
+    // ANCHORED (PR #479 review). The guard render is always the bare route — the sub-pages are reached
+    // through search params, and this path never gets that far — so `$` costs nothing and stops a
+    // hypothetical `/schedule-5x` or a deeper `/schedule-5/...` from satisfying the landing assertion.
+    // Matches this class's own `openViaNav`. NOTE: sch4's `openViaNavExpectingGuard` still carries the
+    // unanchored form (`pages/sch4/schedule4Page.ts:87`) while its other two navigations anchor; left
+    // for sch4 to change rather than edited from a Schedule 5 PR.
+    await expect(this.page).toHaveURL(/\/schedule-5$/);
   }
 
   /**
@@ -360,13 +366,25 @@ export class Schedule5Page {
     return this.subPageList(listHeader)
       .getByRole('row')
       .filter({ has: this.page.getByRole('textbox', { name: 'Description' }) })
+      // STAYS an attribute selector, and the PR #479 review's suggested replacement cannot be used:
+      // `getByDisplayValue` is a Testing Library API, NOT a Playwright one. Playwright ships
+      // getByAltText / getByLabel / getByPlaceholder / getByRole / getByTestId / getByText / getByTitle
+      // and nothing that matches a live input value, so there is no locator-level equivalent to swap to
+      // (verified against playwright-core's own types, 1.63.0 — and the swap was tried here and failed
+      // with "this.page.getByDisplayValue is not a function"). The concern behind the suggestion is real
+      // but does not bite: Carbon's TextInput renders `value` as an attribute on every controlled
+      // re-render, which is why this has matched all along. Where a row must be addressed without
+      // depending on the attribute at all, use `subPageRowInput(index, field)` — the app's own stable
+      // per-row ids — as the S04 step now does for its value assertion.
       .filter({ has: this.page.locator(`input[value="${description}"]`) });
   }
 
-  /** The Description inputs in the list — used to assert a value without depending on row order. */
-  subPageDescriptions(listHeader: string): Locator {
-    return this.subPageList(listHeader).getByRole('textbox', { name: 'Description' });
-  }
+  // `subPageDescriptions()` was REMOVED in the PR #479 review, deliberately rather than left unused.
+  // It returned every Description input in a list, which is single only while the list holds one row —
+  // so its one caller hit Playwright strict mode as soon as a second row existed. Row-scope instead
+  // (`subPageRow(...).getByRole('textbox', { name: 'Description' })`), which is single by construction.
+  // Kept as a note because a list-wide "assert the value without depending on row order" helper is an
+  // easy thing to reintroduce, and it cannot work: order-independence and strict mode are in conflict.
 
   // ---- sub-page validation (S21 / S22 / S23) --------------------------------------------------------
 

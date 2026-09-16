@@ -189,6 +189,41 @@ export const CHECK_PANEL_GATE_ANCHOR: Sch5Anchor = { key: { millId: 22051, year:
 export const CHECK_MIXED_ANCHOR: Sch5Anchor = { key: { millId: 23050, year: 2023 }, mill: MILL_20173 };
 
 /**
+ * The four ACCESSIBILITY anchors (GAP-5 / NFR1 / issue #97's second half).
+ *
+ * WHY FOUR AND NOT ONE. Each axe sweep is its own scenario — a scenario that scanned several surfaces in
+ * sequence would stop at the first violation and silently skip the rest (sch4's `accessibility.feature`
+ * header records the same reasoning). Each of these four scenarios SAVES a camp to have something to
+ * scan, and a scenario that writes cannot share a (mill, year) under `fullyParallel`. So: one anchor per
+ * writing sweep.
+ *
+ * TWO MORE SURFACES NEED NO ANCHOR OF THEIR OWN, deliberately:
+ *   - the NEW-camp panel sweep opens a blank panel and saves nothing, so it rides `VALIDATION_ANCHOR`
+ *     (the validate-only cell, whose whole contract is that nothing is ever written there);
+ *   - the READ-ONLY sweep reads `READ_ONLY_ANCHOR`'s seeded camp, which S19 also only reads.
+ * Both are pure GETs, so they cannot collide with anything — including each other.
+ *
+ * Minted 2026-09-16 in sch5's own 2023 range (eight cells were still free), so they collide with nobody.
+ */
+export const A11Y_LIST_ANCHOR: Sch5Anchor = { key: { millId: 23051, year: 2023 }, mill: MILL_20174 };
+export const A11Y_PANEL_ANCHOR: Sch5Anchor = { key: { millId: 23052, year: 2023 }, mill: MILL_20176 };
+export const A11Y_SUBPAGE_CAMP_ANCHOR: Sch5Anchor = { key: { millId: 24050, year: 2023 }, mill: MILL_7777 };
+export const A11Y_SUBPAGE_ACCESS_ANCHOR: Sch5Anchor = { key: { millId: 24051, year: 2023 }, mill: MILL_8888 };
+
+/**
+ * The camps the accessibility sweeps seed — one name per scenario, following sch4's convention.
+ *
+ * Distinct names are not required for correctness (BR-02 scopes uniqueness to a mill/year, and each of
+ * these lives on its own anchor) but they make a failure message say WHICH sweep left residue behind.
+ */
+export const A11Y_CAMPS = {
+  list: 'E2E A11y Camp',
+  panel: 'E2E A11y Panel',
+  subPageCamp: 'E2E A11y Sub Camp',
+  subPageAccess: 'E2E A11y Sub Acc',
+} as const;
+
+/**
  * S15 — VALIDATE-ONLY. Nothing is ever saved here: every scenario proves an entry is REJECTED, so the
  * anchor must be one no scenario creates on. Deliberately not any mutating key above — a validate-only
  * assertion sharing a happy-path anchor is the classic way a "nothing was written" claim goes green
@@ -260,6 +295,10 @@ export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5A
   { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
   { name: 'check-panel-gate (S24 green)', anchor: CHECK_PANEL_GATE_ANCHOR },
   { name: 'check-mixed (GAP-4)', anchor: CHECK_MIXED_ANCHOR },
+  { name: 'a11y-list (GAP-5)', anchor: A11Y_LIST_ANCHOR },
+  { name: 'a11y-panel (GAP-5)', anchor: A11Y_PANEL_ANCHOR },
+  { name: 'a11y-subpage-camp (GAP-5)', anchor: A11Y_SUBPAGE_CAMP_ANCHOR },
+  { name: 'a11y-subpage-access (GAP-5)', anchor: A11Y_SUBPAGE_ACCESS_ANCHOR },
   { name: 'validation (S15)', anchor: VALIDATION_ANCHOR },
   { name: 'required-field (S12)', anchor: REQUIRED_FIELD_ANCHOR },
 ];
