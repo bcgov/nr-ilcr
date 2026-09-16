@@ -20,7 +20,6 @@ import SubPanel from '@/components/core/SubPanel'
 import DirectoryPicker from '@/components/millAssociations/DirectoryPicker'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
-import { legacyDate } from '@/utils/date'
 import type MillSummary from '@/interfaces/MillSummary'
 import {
   IDP_BCEID_BUSINESS,
@@ -432,8 +431,8 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                         <TableCell>{dash(row.millName)}</TableCell>
                         {/* users.xhtml:64-66 renders "Active"/"Inactive"; ENDED is the wire value. */}
                         <TableCell>{row.activeDate ? 'Active' : 'Inactive'}</TableCell>
-                        <TableCell>{dash(legacyDate(row.activeDate))}</TableCell>
-                        <TableCell>{dash(legacyDate(row.inactiveDate))}</TableCell>
+                        <TableCell>{dash(row.activeDate)}</TableCell>
+                        <TableCell>{dash(row.inactiveDate)}</TableCell>
                         <TableCell>
                           <div className="mills__row-actions">
                             {/* STA-002: the control keys off the dates, which the toggle keeps

@@ -160,8 +160,8 @@ describe('Users page — the screen itself', () => {
     expect(within(rowFor('670')).getByText('Active')).toBeInTheDocument()
     expect(within(rowFor('671')).getByText('Inactive')).toBeInTheDocument()
     // users.xhtml's own `f:convertDateTime pattern="dd/MM/yyyy"` (date.ts), not the wire's ISO.
-    expect(within(rowFor('670')).getByText('04/03/2026')).toBeInTheDocument()
-    expect(within(rowFor('671')).getByText('30/11/2025')).toBeInTheDocument()
+    expect(within(rowFor('670')).getByText('2026-03-04')).toBeInTheDocument()
+    expect(within(rowFor('671')).getByText('2025-11-30')).toBeInTheDocument()
   })
 
   test('a mill that no longer resolves renders as a dash rather than blanking the row', async () => {
@@ -183,17 +183,21 @@ describe('Users page — the screen itself', () => {
     expect(cells[0]).toBe('—')
     expect(cells[1]).toBe('—')
     // The row still carries its date and its action, so the assignment stays endable.
-    expect(cells[3]).toBe('02/01/2026')
+    expect(cells[3]).toBe('2026-01-02')
   })
 
-  test('assignment dates render as dd/MM/yyyy', async () => {
+  test('assignment dates render as yyyy-mm-dd', async () => {
+    // A deliberate departure from legacy, which used `f:convertDateTime pattern="dd/MM/yyyy"`
+    // (users.xhtml:66-74). ISO is the ratified house format for both administration screens, and
+    // it is what the wire already carries — so the cell renders the value untouched and there is
+    // no date parsing left to get wrong.
     const user = userEvent.setup()
     assignmentsAre(activeOn670)
     render(<MillAssociations />)
     await selectAda(user)
 
-    expect(await within(assignmentsTable()).findByText('04/03/2026')).toBeInTheDocument()
-    expect(within(assignmentsTable()).queryByText('2026-03-04')).not.toBeInTheDocument()
+    expect(await within(assignmentsTable()).findByText('2026-03-04')).toBeInTheDocument()
+    expect(within(assignmentsTable()).queryByText('04/03/2026')).not.toBeInTheDocument()
   })
 
   test('the grid carries no columns legacy does not have', async () => {

@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Edit, Misuse, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Edit, Misuse, Save, View } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import SubPanel from '@/components/core/SubPanel'
@@ -24,7 +24,6 @@ import AddUserModal from '@/components/mills/AddUserModal'
 import { canSaveContacts, toSaveRequest, type ContactForm } from '@/components/mills/validation'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
-import { legacyDate } from '@/utils/date'
 import {
   MSG_ALREADY_ASSIGNED,
   type AssignmentResponse,
@@ -471,16 +470,16 @@ const Mills: FC = () => {
                   <span>{dash(mill.statusDescription)}</span>
                 </p>
 
-                {/* mills.xhtml:41-49. Absent on a row never updated since import, which legacy
-                    could not produce but delivery data can. */}
-                {mill.updateUserid && (
-                  <p className="mills__identity">
-                    <span className="mills__label">Last Edited by :</span>
-                    <span>{mill.updateUserid}</span>
-                    <span className="mills__label">on date: </span>
-                    <span>{dash(legacyDate(mill.updateTimestamp))}</span>
-                  </p>
-                )}
+                {/* mills.xhtml:43-50, and UNCONDITIONAL as legacy had it — that row carries no
+                    `rendered` attribute, so legacy always showed the labels and simply printed
+                    nothing into them. Gating the line on updateUserid hid it outright on any row
+                    whose audit columns are empty, which is a row delivery data can produce. */}
+                <p className="mills__identity">
+                  <span className="mills__label">Last Edited by :</span>
+                  <span>{dash(mill.updateUserid)}</span>
+                  <span className="mills__label">on date: </span>
+                  <span>{dash(mill.updateTimestamp)}</span>
+                </p>
 
                 <div className="mills__editable">
                   <Dropdown<HeadOfficeItem>
@@ -596,6 +595,7 @@ const Mills: FC = () => {
                     // Advisory Save-gating (D5, AD-6): disabled only while the head-office indicator
                     // has never been chosen, so no value is written that nobody picked.
                     disabled={busy || !canSaveContacts(form)}
+                    renderIcon={Save}
                     onClick={save}
                   >
                     Save
@@ -656,12 +656,12 @@ const Mills: FC = () => {
                                 wire's status is single-valued, so that defect is unreachable
                                 (deviation (K)). */}
                             <TableCell>{active ? 'Active' : 'Inactive'}</TableCell>
-                            <TableCell>{dash(legacyDate(row.activeDate))}</TableCell>
+                            <TableCell>{dash(row.activeDate)}</TableCell>
                             <TableCell>
                               {/* A never-activated row's INACTIVE_DATE is really its creation date,
                                   so printing it under this header would state that a mill was
                                   deactivated on a day it never was (deviation (L)). */}
-                              {isNeverActivated(row) ? '—' : dash(legacyDate(row.inactiveDate))}
+                              {isNeverActivated(row) ? '—' : dash(row.inactiveDate)}
                             </TableCell>
                             <TableCell>
                               {/* Side by side and equal width: the two controls are peers, and a Carbon button

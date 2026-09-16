@@ -624,17 +624,20 @@ describe('Mills page — mill detail and the contact save (AC4)', () => {
 
     expect(await screen.findByText(/Last Edited by/)).toBeInTheDocument()
     expect(screen.getByText('IDIR\\ASMITH')).toBeInTheDocument()
-    expect(screen.getByText('04/03/2026')).toBeInTheDocument()
+    expect(screen.getByText('2026-03-04')).toBeInTheDocument()
   })
 
-  test('a mill never updated since import shows no last-edited line', async () => {
-    // mills.xhtml:41-49 is absent, not blank, when the audit columns were never populated — a
-    // shape legacy could not produce but a delivery import row can.
+  test('the last-edited line renders even when the audit columns are absent', async () => {
+    // mills.xhtml:43-44 carries NO `rendered` attribute, so legacy showed this row unconditionally
+    // and simply printed nothing into it. Gating the whole line on updateUserid hid it outright on
+    // any row whose audit columns are empty — which is what an administrator reported seeing.
     const user = userEvent.setup()
     render(<Mills />)
     await selectCedar(user)
 
-    expect(screen.queryByText(/Last Edited by/)).not.toBeInTheDocument()
+    const detail = detailPanel()
+    expect(within(detail).getByText(/Last Edited by/)).toBeInTheDocument()
+    expect(within(detail).getByText(/on date/)).toBeInTheDocument()
   })
 
   test('the contact lists come ONLY from contact-options, in the order served', async () => {
@@ -1134,8 +1137,8 @@ describe('Mills page — the associated-user panel (AC6)', () => {
 
     // web.xml:92-93 pinned the server timezone and the six f:convertDateTime sites all read
     // dd/MM/yyyy with no time. The wire sends an ISO LocalDate.
-    expect(within(rowFor(GUID)).getByText('04/03/2026')).toBeInTheDocument()
-    expect(within(rowFor(OTHER_GUID)).getByText('30/11/2025')).toBeInTheDocument()
+    expect(within(rowFor(GUID)).getByText('2026-03-04')).toBeInTheDocument()
+    expect(within(rowFor(OTHER_GUID)).getByText('2025-11-30')).toBeInTheDocument()
   })
 
   test('per-row actions are not confirmed, and send the ROW own revision', async () => {
