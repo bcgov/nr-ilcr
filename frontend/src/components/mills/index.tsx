@@ -17,6 +17,7 @@ import {
 import { Add, CheckmarkOutline, Edit, Misuse, View } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
+import SubPanel from '@/components/core/SubPanel'
 import MillSearchModal from '@/components/mills/MillSearchModal'
 import ImportMillModal from '@/components/mills/ImportMillModal'
 import AddUserModal from '@/components/mills/AddUserModal'
@@ -445,11 +446,7 @@ const Mills: FC = () => {
           {mill && form && (
             // ABSENT rather than disabled while nothing is selected: legacy gated the whole panel
             // on `rendered="#{millsMB.millSelected}"` (mills.xhtml:28).
-            <section className="mills__section" aria-labelledby="mills-detail-heading">
-              <h2 className="mills__heading" id="mills-detail-heading">
-                Mill Details
-              </h2>
-
+            <SubPanel title="Mill Details">
               {/* A PLAIN panel, not a table: legacy's `selectedMillList` is a one-row,
                   one-unheaded-column p:dataTable used purely as an EL scope trick
                   (mills.xhtml:28-30). Reproducing it as a table would invent a data grid.
@@ -466,6 +463,17 @@ const Mills: FC = () => {
                     (deviation (G)). Deriving it from millStatusCode would re-spell the data. */}
                 <span>{dash(mill.statusDescription)}</span>
               </p>
+
+              {/* mills.xhtml:41-49. Absent on a row never updated since import, which legacy could
+                  not produce but delivery data can. */}
+              {mill.updateUserid && (
+                <p className="mills__identity">
+                  <span className="mills__label">Last Edited by :</span>
+                  <span>{mill.updateUserid}</span>
+                  <span className="mills__label">on date: </span>
+                  <span>{dash(legacyDate(mill.updateTimestamp))}</span>
+                </p>
+              )}
 
               <div className="mills__editable">
                 <Dropdown<HeadOfficeItem>
@@ -586,17 +594,14 @@ const Mills: FC = () => {
                   Save
                 </Button>
               </div>
-            </section>
+            </SubPanel>
           )}
 
           {mill && (
-            <section className="mills__section" aria-labelledby="mills-users-heading">
-              {/* ONE panel, singular, verbatim (mills.xhtml:110). The `Associated Auditors` panel
-                  is RETIRED, not deferred (DL-23; 22.2 deviation (A)) — and with it the
-                  IDIR/GOVERNMENT half of the legacy user search. */}
-              <h2 className="mills__heading" id="mills-users-heading">
-                Associated Licensee User
-              </h2>
+            // ONE panel, singular, verbatim (mills.xhtml:110). The `Associated Auditors` panel is
+            // RETIRED, not deferred (DL-23; 22.2 deviation (A)) — and with it the IDIR/GOVERNMENT
+            // half of the legacy user search.
+            <SubPanel title="Associated Licensee User">
               <div className="mills__add">
                 <Button size="sm" disabled={busy} renderIcon={Add} onClick={() => setAddOpen(true)}>
                   Add
@@ -607,11 +612,9 @@ const Mills: FC = () => {
                 <Table aria-label="Associated Licensee User">
                   <TableHead>
                     <TableRow>
-                      {/* One `User` column carrying the GUID (D2, deviation (B)): legacy's First
-                          Name / last Name / BCeID have no wire source — displayName is
-                          unconditionally null on this surface and there is no BCeID field — until
-                          the directory join ships. */}
-                      <TableHeader>User</TableHeader>
+                      <TableHeader>First Name</TableHeader>
+                      <TableHeader>Last Name</TableHeader>
+                      <TableHeader>BCeID</TableHeader>
                       <TableHeader>User To Mill Status</TableHeader>
                       <TableHeader>Activation Date</TableHeader>
                       <TableHeader>Deactivation Date</TableHeader>
@@ -621,7 +624,7 @@ const Mills: FC = () => {
                   <TableBody>
                     {users.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5}>No associated users.</TableCell>
+                        <TableCell colSpan={7}>No associated users.</TableCell>
                       </TableRow>
                     ) : (
                       users.map((row) => {
@@ -633,7 +636,12 @@ const Mills: FC = () => {
                         const active = row.status === 'ACTIVE'
                         return (
                           <TableRow key={row.userGuid}>
-                            <TableCell>{row.userGuid}</TableCell>
+                            {/* Unresolved rows show the guid under BCeID -- identifier standing in
+                                for identifier. Inventing a name would state something the directory
+                                did not tell us. */}
+                            <TableCell>{dash(row.firstName)}</TableCell>
+                            <TableCell>{dash(row.lastName)}</TableCell>
+                            <TableCell>{row.bceid ?? row.userGuid}</TableCell>
                             {/* mills.xhtml:123-124 renders literally "Active"/"Inactive"; the wire
                                 value stays ENDED. Legacy's two independent `rendered` tests let a
                                 both-dates row print "InactiveActive" and offer BOTH actions — the
@@ -705,7 +713,7 @@ const Mills: FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
-            </section>
+            </SubPanel>
           )}
         </Column>
       </Grid>

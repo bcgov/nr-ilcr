@@ -28,6 +28,11 @@ export interface MillSubmitter {
   /** ISO date, no time. Absent while the assignment is active. */
   readonly inactiveDate?: string | null
   readonly revisionCount: number
+  /** Resolved from the directory at read time on the mill-administration list only; never stored. */
+  readonly firstName?: string | null
+  readonly lastName?: string | null
+  /** The BCeID username. Absent when the directory did not resolve this guid. */
+  readonly bceid?: string | null
 }
 
 /** A licensee's ILCR account row. `activeInd` is display/administrative state only — never a lockout. */

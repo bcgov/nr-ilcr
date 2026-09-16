@@ -182,15 +182,11 @@ body {
     font-size: 0.875rem;
   }
 
-  // Mill administration: the same stacked-panel rhythm as the users screen above (Mill Details,
-  // Associated Licensee User). Declares NO control heights and passes no size prop to any field —
-  // one height app-wide comes from _overrides.scss and is pinned by controlHeightContract.
-  .mills__section + .mills__section {
+  // Mill administration: the two legacy panels (Mill Details, Associated Licensee User) are
+  // `SubPanel`s now (mills.xhtml:28, :110), so they stack with the same rhythm as any other
+  // adjacent sub-panel pair rather than a bespoke `.mills__section` rule.
+  .schedule-page .sub-panel + .sub-panel {
     margin-top: 2rem;
-  }
-
-  .mills__heading {
-    margin-bottom: 0.5rem;
   }
 
   // The two entry controls, the search dialogs' criteria rows, the detail panel's three editable
@@ -219,6 +215,20 @@ body {
 
   .mills__label {
     font-weight: 600;
+  }
+
+  // mills.xhtml:57-95 lays the three contact controls as label-left rows inside the panel, not as
+  // a stack of label-above fields. Declares NO control height -- the one app-wide height from
+  // _overrides.scss governs, as controlHeightContract pins.
+  .mills__editable .#{$bcgov-prefix}--form-item {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  // The action bar sits right-aligned within its panel (legacy's colspan="7" action row).
+  .mills__actions {
+    justify-content: flex-end;
   }
 
   // #312 (Table Maintenance, screen item 1): the Code List drop-list should not span the entire

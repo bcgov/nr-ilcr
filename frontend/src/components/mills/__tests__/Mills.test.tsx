@@ -602,6 +602,29 @@ describe('Mills page — mill detail and the contact save (AC4)', () => {
     expect(within(detail).getByRole('combobox', { name: 'Division Contact :' })).toBeInTheDocument()
   })
 
+  test('the last-edited line renders from the audit columns', async () => {
+    const user = userEvent.setup()
+    searchAnswers({
+      results: [{ ...CEDAR, updateUserid: 'IDIR\\ASMITH', updateTimestamp: '2026-03-04' }],
+    })
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByText(/Last Edited by/)).toBeInTheDocument()
+    expect(screen.getByText('IDIR\\ASMITH')).toBeInTheDocument()
+    expect(screen.getByText('04/03/2026')).toBeInTheDocument()
+  })
+
+  test('a mill never updated since import shows no last-edited line', async () => {
+    // mills.xhtml:41-49 is absent, not blank, when the audit columns were never populated — a
+    // shape legacy could not produce but a delivery import row can.
+    const user = userEvent.setup()
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(screen.queryByText(/Last Edited by/)).not.toBeInTheDocument()
+  })
+
   test('the contact lists come ONLY from contact-options, in the order served', async () => {
     const user = userEvent.setup()
     render(<Mills />)
@@ -984,6 +1007,41 @@ describe('Mills page — the associated-user panel (AC6)', () => {
     expect(screen.queryByText(/associated auditors/i)).not.toBeInTheDocument()
   })
 
+  test('the legacy name columns render for an associated licensee', async () => {
+    const user = userEvent.setup()
+    usersAre({ ...ACTIVE_ROW, firstName: 'Bob', lastName: 'Smith', bceid: 'BSMITH' })
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByRole('columnheader', { name: 'First Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Last Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'BCeID' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Bob' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'BSMITH' })).toBeInTheDocument()
+  })
+
+  test('an unresolved row shows its guid under BCeID and stays actionable', async () => {
+    // ACTIVE_ROW carries no name fields: non_null drops unresolved fields from the response.
+    const user = userEvent.setup()
+    usersAre(ACTIVE_ROW)
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByRole('cell', { name: GUID })).toBeInTheDocument()
+    // The row's controls key off the guid, not the name.
+    expect(screen.getByRole('button', { name: `Deactivate user ${GUID}` })).toBeInTheDocument()
+  })
+
+  test('each section sits in a titled panel', async () => {
+    const user = userEvent.setup()
+    usersAre(ACTIVE_ROW)
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByRole('heading', { name: 'Mill Details' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Associated Licensee User' })).toBeInTheDocument()
+  })
+
   test('rows are requested WITHOUT includeEnded, because it defaults true on this surface', async () => {
     const user = userEvent.setup()
     const seen = usersAre(ACTIVE_ROW, ENDED_ROW)
@@ -1039,7 +1097,9 @@ describe('Mills page — the associated-user panel (AC6)', () => {
     const cells = within(row)
       .getAllByRole('cell')
       .map((cell) => cell.textContent)
-    expect(cells[3]).toBe('—')
+    // Deactivation Date is now the sixth column: First Name / Last Name / BCeID precede the three
+    // legacy status columns (Task 5 replaces the single guid-bearing User column).
+    expect(cells[5]).toBe('—')
   })
 
   test('dates render dd/MM/yyyy, as they did at every one of legacy six sites', async () => {
