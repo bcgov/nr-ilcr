@@ -145,28 +145,23 @@ describe('Users page — the screen itself', () => {
     const headers = within(await screen.findByRole('table', { name: /associated mills/i }))
       .getAllByRole('columnheader')
       .map((cell) => cell.textContent)
-    // The first five are the legacy columns verbatim; Mill Status is the modern join that makes a
-    // refused reactivation legible (AC2), and Actions carries the STA-002 buttons.
+    // All five are the legacy columns verbatim; Actions carries the STA-002 buttons. Legacy has no
+    // Mill Status column here (users.xhtml:56-70) — that join was a modern addition, now dropped.
     expect(headers).toEqual([
       'Mill #',
       'Mill Name',
       'User To Mill Status',
       'Activation Date',
       'Deactivation Date',
-      'Mill Status',
       'Actions',
     ])
 
     // users.xhtml:64-66 renders literally "Active" / "Inactive"; the wire value stays ENDED.
     expect(within(rowFor('670')).getByText('Active')).toBeInTheDocument()
     expect(within(rowFor('671')).getByText('Inactive')).toBeInTheDocument()
-    expect(within(rowFor('670')).getByText('2026-03-04')).toBeInTheDocument()
-    expect(within(rowFor('671')).getByText('2025-11-30')).toBeInTheDocument()
-
-    // The Mill Status cell is joined from /v1/mills by millId; a broken join key would render a
-    // dash on every row and no other assertion in this suite would notice.
-    expect(within(rowFor('670')).getByText('ACT')).toBeInTheDocument()
-    expect(within(rowFor('671')).getByText('CLS')).toBeInTheDocument()
+    // users.xhtml's own `f:convertDateTime pattern="dd/MM/yyyy"` (date.ts), not the wire's ISO.
+    expect(within(rowFor('670')).getByText('04/03/2026')).toBeInTheDocument()
+    expect(within(rowFor('671')).getByText('30/11/2025')).toBeInTheDocument()
   })
 
   test('a mill that no longer resolves renders as a dash rather than blanking the row', async () => {
@@ -187,10 +182,40 @@ describe('Users page — the screen itself', () => {
       .map((cell) => cell.textContent)
     expect(cells[0]).toBe('—')
     expect(cells[1]).toBe('—')
-    // The row still carries its dates and its action, so the assignment stays endable.
-    expect(cells[3]).toBe('2026-01-02')
-    // An unresolvable mill has no status to join either.
-    expect(cells[5]).toBe('—')
+    // The row still carries its date and its action, so the assignment stays endable.
+    expect(cells[3]).toBe('02/01/2026')
+  })
+
+  test('assignment dates render as dd/MM/yyyy', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    expect(await within(assignmentsTable()).findByText('04/03/2026')).toBeInTheDocument()
+    expect(within(assignmentsTable()).queryByText('2026-03-04')).not.toBeInTheDocument()
+  })
+
+  test('the grid carries no columns legacy does not have', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    await within(assignmentsTable()).findByRole('columnheader', { name: 'Mill #' })
+    expect(
+      within(assignmentsTable()).queryByRole('columnheader', { name: 'Mill Status' }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('each section sits in a titled panel', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    expect(await screen.findByRole('heading', { name: 'User Details' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Associated Mills' })).toBeInTheDocument()
   })
 
   test('server order is preserved — the table never re-sorts what the backend pinned', async () => {

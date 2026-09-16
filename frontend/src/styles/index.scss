@@ -111,7 +111,6 @@ body {
 .schedule-10__heading,
 .schedule-11__heading,
 .code-tables__heading,
-.mill-associations__heading,
 .check-status__heading,
 .#{$bcgov-prefix}--data-table-header__title {
   font-size: 1.25rem;
@@ -154,15 +153,9 @@ body {
     margin-bottom: 0.5rem;
   }
 
-  // Users administration: two stacked panels (User Details, Associated Mills), each led by a
-  // .mill-associations__heading — the same section rhythm Table Maintenance uses above.
-  .mill-associations__section + .mill-associations__section {
-    margin-top: 2rem;
-  }
-
-  .mill-associations__heading {
-    margin-bottom: 0.5rem;
-  }
+  // Users administration: the two legacy panels (User Details, Associated Mills) are `SubPanel`s
+  // now (users.xhtml:19, :52), so they stack via `.sub-panel + .sub-panel` (:189) rather than a
+  // bespoke `.mill-associations__section` rule.
 
   // The directory provider + user-id controls share a row, as do the mill picker and its Add
   // button. Bottom-aligned so the button sits on the control's baseline, not its label's.

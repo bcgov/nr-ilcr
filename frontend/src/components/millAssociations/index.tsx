@@ -16,9 +16,11 @@ import {
 import { Add, CheckmarkOutline, Misuse } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
+import SubPanel from '@/components/core/SubPanel'
 import DirectoryPicker from '@/components/millAssociations/DirectoryPicker'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
+import { legacyDate } from '@/utils/date'
 import type MillSummary from '@/interfaces/MillSummary'
 import {
   IDP_BCEID_BUSINESS,
@@ -296,11 +298,6 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
     )
   }
 
-  // The assignment row carries no mill status of its own, so it is joined from the mill list the
-  // picker already loads — the mill's own state is what makes a refused reactivation legible.
-  const millStatusFor = (millId: number) =>
-    mills.find((mill) => mill.millId === millId)?.millStatusCode
-
   const userLabel = selectedUser ? (selectedUser.displayName ?? selectedUser.userGuid) : ''
 
   return (
@@ -314,8 +311,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
         {lookupError && <NotificationColumn kind="error" title="Error" subtitle={lookupError} />}
 
         <Column sm={4} md={8} lg={16}>
-          <div className="mill-associations__section">
-            <h2 className="mill-associations__heading">User Details</h2>
+          <SubPanel title="User Details">
             <DirectoryPicker
               selected={selectedUser}
               disabled={busy}
@@ -374,11 +370,10 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                 </Table>
               </TableContainer>
             )}
-          </div>
+          </SubPanel>
 
           {selectedUser && (
-            <div className="mill-associations__section">
-              <h2 className="mill-associations__heading">Associated Mills</h2>
+            <SubPanel title="Associated Mills">
               <div className="mill-associations__add">
                 {/* Unfiltered, with the status shown: legacy's Find and Add Mill dialog searched
                     every mill and rendered a Status column (users.xhtml:150-176), leaving the
@@ -417,7 +412,6 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                       <TableHeader>User To Mill Status</TableHeader>
                       <TableHeader>Activation Date</TableHeader>
                       <TableHeader>Deactivation Date</TableHeader>
-                      <TableHeader>Mill Status</TableHeader>
                       <TableHeader>Actions</TableHeader>
                     </TableRow>
                   </TableHead>
@@ -428,9 +422,8 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                         <TableCell>{dash(row.millName)}</TableCell>
                         {/* users.xhtml:64-66 renders "Active"/"Inactive"; ENDED is the wire value. */}
                         <TableCell>{row.activeDate ? 'Active' : 'Inactive'}</TableCell>
-                        <TableCell>{dash(row.activeDate)}</TableCell>
-                        <TableCell>{dash(row.inactiveDate)}</TableCell>
-                        <TableCell>{dash(millStatusFor(row.millId))}</TableCell>
+                        <TableCell>{dash(legacyDate(row.activeDate))}</TableCell>
+                        <TableCell>{dash(legacyDate(row.inactiveDate))}</TableCell>
                         <TableCell>
                           {/* STA-002: the control keys off the dates, which the toggle keeps
                               mutually exclusive — there is one row per pair and no history. */}
@@ -464,7 +457,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                   </TableBody>
                 </Table>
               </TableContainer>
-            </div>
+            </SubPanel>
           )}
         </Column>
       </Grid>
