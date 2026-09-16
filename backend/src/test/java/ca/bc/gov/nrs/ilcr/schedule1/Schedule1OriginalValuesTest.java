@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -190,23 +191,26 @@ class Schedule1OriginalValuesTest {
   }
 
   @Test
-  @DisplayName("no snapshot row at all leaves the map empty, not null")
-  void noSnapshot_isEmptyNotNull() {
-    // Roughly half the live cost-detail rows are in this state. Empty-not-null is what tells the
-    // page to fall to the added-since-submission branch and flag every populated field, which is
-    // what legacy's isOriginalVal did with a null original beyond Draft.
+  @DisplayName("no snapshot row at all still carries every field, with legacy's empty tooltip")
+  void noSnapshot_carriesEmptyOriginals() {
+    // Roughly half the live cost-detail rows are in this state. Legacy still composed the tooltip
+    // for them — "Original Submission Value: " with nothing after the separator — so every offered
+    // field carries an empty-valued entry and the page flags whichever ones hold a value now.
     when(costSnapshots.findBySummary(SUMMARY_ID)).thenReturn(List.of());
     when(summarySnapshots.findBySummaryId(SUMMARY_ID)).thenReturn(Optional.empty());
 
     Schedule1Response doc = served("S");
 
-    assertThat(doc.originalValues()).isNotNull().isEmpty();
-    assertThat(item(doc, CODE_STANDING_TREE).originalValues()).isNotNull().isEmpty();
+    assertThat(doc.originalValues()).isNotNull().isNotEmpty().allSatisfy(this::isEmptyOriginal);
+    assertThat(item(doc, CODE_STANDING_TREE).originalValues())
+        .isNotNull()
+        .isNotEmpty()
+        .allSatisfy(this::isEmptyOriginal);
   }
 
   @Test
-  @DisplayName("a snapshot row present but with null figures writes no keys for them")
-  void snapshotWithNullFigures_writesNoKeys() {
+  @DisplayName("a snapshot row present but with null figures carries the same empty tooltip")
+  void snapshotWithNullFigures_carriesEmptyOriginals() {
     when(costSnapshots.findBySummary(SUMMARY_ID))
         .thenReturn(
             List.of(
@@ -217,8 +221,16 @@ class Schedule1OriginalValuesTest {
 
     Schedule1Response doc = served("S");
 
-    assertThat(item(doc, CODE_STANDING_TREE).originalValues()).isEmpty();
-    assertThat(doc.originalValues()).isEmpty();
+    assertThat(item(doc, CODE_STANDING_TREE).originalValues())
+        .isNotEmpty()
+        .allSatisfy(this::isEmptyOriginal);
+    assertThat(doc.originalValues()).isNotEmpty().allSatisfy(this::isEmptyOriginal);
+  }
+
+  /** A field with nothing on file: empty comparison value, tooltip ending after the separator. */
+  private void isEmptyOriginal(String field, OriginalValue original) {
+    assertThat(original.value()).as(field).isEmpty();
+    assertThat(original.tooltip()).as(field).isEqualTo("Original Submission Value: ");
   }
 
   @Test
