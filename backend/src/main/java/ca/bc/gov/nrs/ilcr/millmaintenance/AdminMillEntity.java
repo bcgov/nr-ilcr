@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.millmaintenance;
 
+import java.time.LocalDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
@@ -29,4 +30,6 @@ public record AdminMillEntity(
     @Column("HEAD_OFFICE_CONTACT_IND") String headOfficeContactInd,
     @Column("HEAD_OFFICE_CONTACT_ID") Long headOfficeContactId,
     @Column("DIVISION_CONTACT_ID") Long divisionContactId,
-    @Column("REVISION_COUNT") int revisionCount) {}
+    @Column("REVISION_COUNT") int revisionCount,
+    @Column("UPDATE_USERID") String updateUserid,
+    @Column("UPDATE_TIMESTAMP") LocalDate updateTimestamp) {}

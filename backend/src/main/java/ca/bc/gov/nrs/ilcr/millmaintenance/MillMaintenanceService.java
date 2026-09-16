@@ -417,7 +417,9 @@ public class MillMaintenanceService {
         e.headOfficeContactInd(),
         e.headOfficeContactId(),
         e.divisionContactId(),
-        e.revisionCount());
+        e.revisionCount(),
+        e.updateUserid(),
+        e.updateTimestamp());
   }
 
   /**

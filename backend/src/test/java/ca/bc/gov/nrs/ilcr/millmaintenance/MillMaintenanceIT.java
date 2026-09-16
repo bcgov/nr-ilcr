@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.millmaintenance;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -103,6 +104,12 @@ class MillMaintenanceIT extends AbstractOracleIT {
 
     // Restore the seeded status and contact state of the rows the status/contact tests move.
     resetMill(ACTIVE_MILL, "ACT");
+    // The deactivate-success test re-stamps these to prove the write happened; restored here so the
+    // detail-read test's assertion of the seeded placeholder values does not depend on test order.
+    jdbcTemplate.update(
+        "UPDATE THE.ILCR_MILL_STATUS_XREF SET UPDATE_USERID = 'ITUSER', "
+            + "UPDATE_TIMESTAMP = DATE '2026-09-01' WHERE ILCR_MILL_STATUS_XREF_ID = ?",
+        ACTIVE_MILL);
     resetMill(ACTIVE_MILL_WITH_USER, "ACT");
     resetMill(CLOSED_MILL, "CLS");
     resetMill(CLOSED_MILL_WITH_RECORDS, "CLS");
@@ -227,7 +234,12 @@ class MillMaintenanceIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.millName").value("Cariboo Maintain Mill"))
         .andExpect(jsonPath("$.millStatusCode").value("ACT"))
         .andExpect(jsonPath("$.statusDescription").value("Active"))
-        .andExpect(jsonPath("$.revisionCount").value(0));
+        .andExpect(jsonPath("$.revisionCount").value(0))
+        // The source for legacy's "Last Edited by : … on date: …" line (mills.xhtml:41-49,
+        // deviation (A) closed): the fixture seeds these to fixed values so this proves the
+        // projection carries real data, not merely that the columns are non-null.
+        .andExpect(jsonPath("$.updateUserid").value("ITUSER"))
+        .andExpect(jsonPath("$.updateTimestamp").value("2026-09-01"));
   }
 
   // ---------------------------------------------------------------- import (AC2)
@@ -380,8 +392,12 @@ class MillMaintenanceIT extends AbstractOracleIT {
 
     assertEquals("CLS", statusCode(ACTIVE_MILL));
     assertEquals(ADMIN_USERNAME, xrefRow(ACTIVE_MILL).get("UPDATE_USERID"));
-    // The seeded row carries no UPDATE_TIMESTAMP, so non-null proves this write stamped it — the
-    // snapshot's loosened nullability means the database would not have caught an omission.
+    // The seeded row carries the fixed placeholder 2026-09-01 (R__75), so a value that is no longer
+    // that placeholder proves this write re-stamped it — a plain non-null check would pass on the
+    // untouched seed too.
+    assertNotEquals(
+        java.sql.Timestamp.valueOf("2026-09-01 00:00:00"),
+        xrefRow(ACTIVE_MILL).get("UPDATE_TIMESTAMP"));
     assertNotNull(xrefRow(ACTIVE_MILL).get("UPDATE_TIMESTAMP"));
     assertEquals(1, ((Number) xrefRow(ACTIVE_MILL).get("REVISION_COUNT")).intValue());
   }

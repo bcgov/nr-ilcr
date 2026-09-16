@@ -375,6 +375,8 @@ class MillMaintenanceServiceTest {
         null,
         null,
         null,
-        revisionCount);
+        revisionCount,
+        "ITUSER",
+        java.time.LocalDate.of(2026, 9, 1));
   }
 }

@@ -296,7 +296,9 @@ class MillAssociationServiceTest {
         null,
         null,
         null,
-        0);
+        0,
+        "ITUSER",
+        java.time.LocalDate.of(2026, 9, 1));
   }
 
   private static MillUserXrefEntity activeRow(int revisionCount) {
