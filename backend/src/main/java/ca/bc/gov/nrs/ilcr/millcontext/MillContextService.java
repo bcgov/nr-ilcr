@@ -438,6 +438,22 @@ public class MillContextService {
   }
 
   /**
+   * Same as {@link #findSchedule11TrackStatusCode} but holding the status row under a {@code FOR
+   * UPDATE} lock for the rest of the caller's write transaction — the Schedule 11 write-path
+   * editability gate (Story 15.3, D8). Schedule 11 has no repository of its own for the status row,
+   * so its locked read lives here, on the AD-9 owner, exactly as its unlocked one does. Read paths
+   * must keep using the unlocked variant: a reader must never take a row lock.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the silviculture track code, locked; empty when no status row exists OR its
+   *     silviculture code column is null
+   */
+  public Optional<String> findSchedule11TrackStatusCodeForUpdate(long millId, int year) {
+    return repository.findTrackStatusCodesForUpdate(millId, year).map(TrackCodes::schedule11Code);
+  }
+
+  /**
    * BOTH tracks' status codes for a mill/year in one read (Story 15.1) — the cheap shape for a
    * caller that has already passed {@link #validateMillYearActive(long, int)} and needs the codes
    * without the descriptions, dates and the four-to-seven queries {@link #resolveWorkingContext}
@@ -486,6 +502,24 @@ public class MillContextService {
 
   /** Oracle's hard limit on the expressions in one {@code IN (...)} list. */
   private static final int IN_LIST_LIMIT = 1000;
+
+  /**
+   * BOTH tracks' status codes for a mill/year, with the status row locked ({@code FOR UPDATE})
+   * until the caller's write transaction ends (Story 15.3). This is what a status transition reads
+   * first: taking the lock BEFORE re-running the validation gate is what closes the check-then-act
+   * window between the gate and the transition, because every schedule's write gate now waits on
+   * the same row. Callers must be inside {@code @Transactional}; readers must never call this.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return both codes (either may be null), locked; empty when no {@code ILCR_MILL_REPORT_STATUS}
+   *     row exists
+   */
+  public Optional<TrackStatusCodes> lockTrackStatusCodes(long millId, int year) {
+    return repository
+        .findTrackStatusCodesForUpdate(millId, year)
+        .map(codes -> new TrackStatusCodes(codes.schedules1To10Code(), codes.schedule11Code()));
+  }
 
   /**
    * The display description of a report-status code ({@code Draft}, {@code Submitted}, {@code

@@ -266,6 +266,37 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
       @Param("toYear") int toYear);
 
   /**
+   * Same as {@link #findTrackStatusCodes} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row (Story 15.3, D8). This is the one locked status read
+   * millcontext owns for both tracks (AD-9): the Schedules 1–10 status transition takes it before
+   * re-running the ten-schedule gate, and the write-path editability gate of a schedule with no
+   * repository twin of its own (Schedule 11) reads through it, so a save cannot commit between the
+   * transition's gate and its commit, and a transition cannot commit between a save's gate and its
+   * write. Must run inside the write {@code @Transactional} — a {@code FOR UPDATE} outside one
+   * locks nothing, because autocommit releases it at once. A mill/year with no status row locks
+   * nothing and returns empty.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the pair of codes, locked until the caller's transaction ends; empty when no row exists
+   */
+  default Optional<TrackCodes> findTrackStatusCodesForUpdate(long millId, int year) {
+    return findMillReportStatusForUpdate(millId, year)
+        .map(e -> new TrackCodes(e.schedules1To10Code(), e.schedule11Code()));
+  }
+
+  @Query(
+      """
+      SELECT s.ILCR_MILL_ID, s.ILCR_MILL_REPORT_STATUS_CODE, s.MILL_SILVICULTUR_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS s
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<MillReportStatusEntity> findMillReportStatusForUpdate(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /**
    * The description for a report-status code from {@code THE.ILCR_MILL_REPORT_STATUS_CODE} (legacy
    * {@code ILCRMillReportStatusCode} lookup cache).
    *

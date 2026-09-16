@@ -558,13 +558,14 @@ public class Schedule6Service {
 
   /**
    * The editability gate for every write: the Schedules 1–10 track must be {@code D} (else 409).
-   * Keys on {@code ILCR_MILL_REPORT_STATUS_CODE} via the existing {@code findTrackStatus} — never
-   * the silviculture track (AD-9). Recorded hardening deviation (a): legacy gates in the UI only
+   * Keys on {@code ILCR_MILL_REPORT_STATUS_CODE} via the locked {@code findTrackStatusForUpdate}
+   * (Story 15.3, D8: the row is held so the submit transition and this write serialize) — never the
+   * silviculture track (AD-9). Recorded hardening deviation (a): legacy gates in the UI only
    * ({@code Schedule6MB.java:62} TODO). Context (400/404/409-mill) is already validated by the
    * controller before this runs (AD-4).
    */
   private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
     if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
