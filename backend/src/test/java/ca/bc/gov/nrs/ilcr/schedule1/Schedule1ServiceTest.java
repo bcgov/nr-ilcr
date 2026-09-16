@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -28,6 +29,8 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -401,5 +404,103 @@ class Schedule1ServiceTest {
     assertTrue(doc.warnings().isEmpty());
     assertTrue(doc.lineItems().isEmpty());
     assertNull(doc.schedule3CrownVolume());
+  }
+
+  // ---- Epic 21: the REPORTING read must never pre-fill (Data Extract, combined Sch 1+2 layout)
+  // ------------------------------------------------------------------------------------------
+
+  /**
+   * {@code findStoredSchedule1} is the read the Data Extract and the combined Schedule 1+2 layout
+   * take, and its whole reason to exist is the {@code allowCrownPrefill=false} flag it passes into
+   * {@code assemble}. Legacy's extract read the persisted row and printed its no-data marker for a
+   * Schedule 1 nobody had filled in ({@code Schedule1Extract.java:38}, {@code isEmptyAllSchedule}
+   * at {@code :472-486}); the S02 screen read would instead print thirteen copies of the Schedule 3
+   * Crown Timber volume and suppress that marker. Both reads are exercised against the SAME
+   * pre-fill-triggering state, so the flag is what the difference is pinned to.
+   */
+  @Nested
+  @DisplayName("findStoredSchedule1 — the reporting read never applies the BR-03 crown pre-fill")
+  class FindStoredSchedule1 {
+
+    private static final BigDecimal CROWN = new BigDecimal("7777");
+
+    /**
+     * The exact state that fires BR-03 through {@code getSchedule1}: a stored summary whose every
+     * detail row carries a NULL volume, plus a Schedule 3 Crown Timber volume. The rows carry COSTS
+     * on purpose: with no rows at all the served line-item list is empty either way, and "no line
+     * item carries the crown volume" would be vacuously true. A row with a cost but no volume is
+     * served by both reads, so the volume it comes back with is the discriminating fact.
+     */
+    private void arrangePrefillTriggeringState() {
+      // Draft, like every neighbour: it keeps the Story 16.2 snapshot reads out of a test that is
+      // about one flag, and the pre-fill rule itself does not look at the track status.
+      stub(
+          "D",
+          List.of(
+              new DetailRow(12, null, 50000, null), // volume never entered, cost present
+              new DetailRow(13, null, 40000, null),
+              new DetailRow(1, null, 500, null))); // silviculture Actual $ Spent, cost only
+      stubSchedule3(CROWN, null, null);
+      stubWarningText();
+    }
+
+    @Test
+    @DisplayName("serves the stored rows as stored: no crown volume copied, no WRN-001")
+    void findStoredSchedule1_prefillState_servesStoredDocumentWithoutCrownCopy() {
+      arrangePrefillTriggeringState();
+
+      Optional<Schedule1Response> stored =
+          service.findStoredSchedule1(MILL, YEAR, CallerRights.NONE);
+
+      assertThat(stored).as("a stored summary exists, so the read is present").isPresent();
+      Schedule1Response doc = stored.get();
+      // Only the rows that are actually stored are served (no prefilled 14-18 / 143 / 144 shells),
+      // and none of them has acquired the Schedule 3 volume.
+      assertThat(doc.lineItems())
+          .extracting(LineItem::costItemCode)
+          .containsExactlyInAnyOrder(12, 13);
+      assertThat(doc.lineItems())
+          .allSatisfy(
+              li -> {
+                assertThat(li.volume()).as("item %s volume stays null", li.costItemCode()).isNull();
+                assertThat(li.perUnit()).isNull(); // nothing to divide by
+              });
+      assertThat(lineItem(doc, 12).cost()).isEqualTo(50000); // the stored cost is untouched
+      // The silviculture rows follow the same rule: the stored row keeps its null volume, and the
+      // three rows with no stored data stay absent rather than becoming crown-volume shells.
+      assertThat(doc.silviculture().actualSpent().volume()).isNull();
+      assertThat(doc.silviculture().actualSpent().cost()).isEqualTo(500);
+      assertThat(doc.silviculture().accruedLessActual()).isNull();
+      assertThat(doc.silviculture().lessAdmin()).isNull();
+      assertThat(doc.silviculture().total()).isNull();
+      // WRN-001 is the screen's "please save what we just copied" — meaningless for a report.
+      assertThat(doc.warnings()).isEmpty();
+      // The Schedule 3 figure is still REPORTED as a source (the grand-total divisor); it is the
+      // copy into the volume fields that is suppressed, not the read of it.
+      assertThat(doc.schedule3CrownVolume()).isEqualByComparingTo(CROWN);
+    }
+
+    @Test
+    @DisplayName("positive control: findSchedule1 on the same state DOES pre-fill and warns")
+    void findSchedule1_sameState_prefillsEveryVolumeAndWarns() {
+      arrangePrefillTriggeringState();
+
+      Optional<Schedule1Response> screen = service.findSchedule1(MILL, YEAR, CallerRights.NONE);
+
+      assertThat(screen).isPresent();
+      Schedule1Response doc = screen.get();
+      // The screen read serves the FULL nine-item set, each carrying the copied crown volume —
+      // including the 14-18 / 143 / 144 items that have no stored row at all.
+      assertThat(doc.lineItems())
+          .extracting(LineItem::costItemCode)
+          .containsExactlyInAnyOrder(12, 13, 14, 15, 16, 17, 18, 143, 144);
+      assertThat(doc.lineItems())
+          .allSatisfy(li -> assertThat(li.volume()).isEqualByComparingTo(CROWN));
+      assertThat(doc.silviculture().actualSpent().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.silviculture().accruedLessActual().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.silviculture().lessAdmin().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.silviculture().total().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.warnings()).extracting(w -> w.key()).containsExactly(WARN_CROWN);
+    }
   }
 }

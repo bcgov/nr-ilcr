@@ -38,14 +38,24 @@ describe('visibleNavigationItems', () => {
     expect(gated.map((item) => item.name)).toEqual(['Administration', 'Generate Reports'])
   })
 
-  test('Generate Reports lists the two mill reports, in the legacy menu order', () => {
-    // menu.xhtml:40-41 — Mill Information Report then Mill Status Report. (Data Extract is its own
-    // later epic and is deliberately not here yet.)
+  test('Generate Reports lists all three reports, in the legacy menu order', () => {
+    // menu.xhtml:39-41 — Data Extract FIRST, then Mill Information Report, then Mill Status Report.
+    // Data Extract leading the submenu is legacy's own order, not an arbitrary append.
     const reports = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
     expect(reports?.items).toEqual([
+      { name: 'Data Extract', path: '/data-extract' },
       { name: 'Mill Information Report', path: '/mill-information-report' },
       { name: 'Mill Status Report', path: '/mill-status-report' },
     ])
+  })
+
+  test('Data Extract inherits the Generate Reports admin gate rather than declaring its own', () => {
+    // The page is administrator-only, and the guard must come from the parent menu's flag — that
+    // inheritance is what keeps ADMIN_ONLY_PATHS and the hidden menu from drifting apart.
+    const reports = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
+    const item = reports?.items?.find((child) => child.name === 'Data Extract')
+    expect(item?.path).toBe('/data-extract')
+    expect(isAdminOnlyPath('/data-extract')).toBe(true)
   })
 
   test('Administration lists Mills directly after Mill Associations, as legacy did', () => {
@@ -86,6 +96,7 @@ describe('admin-only paths (route guard source)', () => {
   test('derived from the same adminOnly items the nav hides', () => {
     expect([...ADMIN_ONLY_PATHS].sort()).toEqual([
       '/code-tables',
+      '/data-extract',
       '/home-content',
       '/mill-associations',
       '/mill-information-report',
@@ -103,6 +114,7 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/mill-information-report')).toBe(true)
     expect(isAdminOnlyPath('/mill-status-report')).toBe(true)
     expect(isAdminOnlyPath('/mills')).toBe(true)
+    expect(isAdminOnlyPath('/data-extract')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)
     // `/mills` must not swallow the caller-scoped Home mill list, which is a different concern
     // behind a different gate and is NOT admin-only.

@@ -1,4 +1,5 @@
-import { extractDetail } from '@/utils/error'
+import type { ProblemBody } from '@/interfaces/WorkingContext'
+import { extractDetail, extractMessages } from '@/utils/error'
 
 /**
  * Trigger a browser download of a {@link Blob} under {@code filename} via a temporary object URL and a
@@ -85,6 +86,37 @@ export async function assertCompletePdf(blob: Blob): Promise<void> {
   if (!head.startsWith(PDF_MAGIC) || !tail.includes(PDF_TRAILER)) {
     throw new TruncatedPdfError(INCOMPLETE)
   }
+}
+
+/**
+ * Every per-field message from an error whose response body is a {@link Blob} — the accumulating
+ * refusal list, not just the single `detail`.
+ *
+ * The blob-shaped sibling of {@link extractMessages}, for a page that posts with
+ * `responseType: 'blob'` because a SUCCESS is a file, and so receives its `problem+json` refusals
+ * as blobs too. {@link extractBlobDetail} cannot serve such a page: it returns `detail` alone, and
+ * would collapse a Data Extract 400 listing four separate refusals down to one line.
+ *
+ * Semantics are deferred to {@link extractMessages} on the parsed body rather than restated here,
+ * so the dedup/`detail`/fallback precedence cannot drift from the non-blob path. A body that is
+ * absent or unparseable yields the caller's fallback, matching what {@link extractMessages} does
+ * with a response that carried no problem body.
+ */
+export async function extractBlobMessages(error: unknown, fallback: string): Promise<string[]> {
+  // Thrown after a 200 by the stream guard, so it arrives with no response at all.
+  if (error instanceof TruncatedPdfError) {
+    return [error.message]
+  }
+  const data = (error as { response?: { data?: unknown } } | undefined)?.response?.data
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text()) as ProblemBody
+      return extractMessages({ response: { data: parsed } }, fallback)
+    } catch {
+      return [fallback]
+    }
+  }
+  return extractMessages(error, fallback)
 }
 
 /**

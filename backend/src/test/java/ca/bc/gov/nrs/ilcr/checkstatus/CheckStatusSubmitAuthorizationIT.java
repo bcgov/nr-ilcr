@@ -31,7 +31,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * mill-scope check; an ADMIN+SUBMITTER retains the action but remains bound to that same SUBMITTER
  * scope. The canonical associated submitter REACHES the transition (proven by the transition's own
  * 409 on an already-Submitted anchor), so nothing is mutated here. Draft offer and denial cases use
- * the read-only 515 anchor; mill 760 belongs exclusively to {@code CheckStatusSubmitIT} and is
+ * the read-only 515 anchor; mill 780 belongs exclusively to {@code CheckStatusSubmitIT} and is
  * permanently submitted there.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")

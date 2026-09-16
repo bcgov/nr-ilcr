@@ -70,7 +70,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * Schedule 9, Schedule 5 (camps and sub-pages both go through its locked {@code requireEditable}),
  * and the Schedule 1/3 main save and delete — are not repeated here.
  *
- * <p>Owns mill 763 ({@code R__55}: status row {@code D}/{@code D}, category rows, and two EMPTY
+ * <p>Owns mill 783 ({@code R__55}: status row {@code D}/{@code D}, category rows, and two EMPTY
  * category 1 and 3 summaries — the Schedule 1/3 sub-resource controllers guard on a summary
  * existing before their service's gate runs, so without them those routes 404 ahead of the lock).
  * Security OFF; the mock principal is a SUBMITTER, for whom {@code S} is read-only.
@@ -79,7 +79,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @TestPropertySource(properties = "ilcr.security.enabled=false")
 class DraftGateLockIT extends AbstractOracleIT {
 
-  private static final long MILL = 763L;
+  private static final long MILL = 783L;
   private static final int YEAR = 2021;
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final String NOT_EDITABLE =
@@ -415,7 +415,7 @@ class DraftGateLockIT extends AbstractOracleIT {
       lock.setLong(1, MILL);
       lock.setInt(2, YEAR);
       try (ResultSet rs = lock.executeQuery()) {
-        assertThat(rs.next()).as("mill 763/2021 must have a status row to lock").isTrue();
+        assertThat(rs.next()).as("mill 783/2021 must have a status row to lock").isTrue();
         assertThat(rs.getString(1)).isEqualTo("D");
       }
     }

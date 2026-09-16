@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * the canonical submitter's GUID ({@code ilcr.security.mock-user-guid}), which {@code R__70}
  * associates to every seeded mill — so the licensee lookup finds a row.
  *
- * <p>Fixtures ({@code R__55}): mill 760 is submitted here exactly once (AC 1) and mill 762 is the
+ * <p>Fixtures ({@code R__55}): mill 780 is submitted here exactly once (AC 1) and mill 782 is the
  * rollback case (AC 7, its category row {@code '7'} removed first); both are owned solely by this
  * class. The refusal cases use read-only anchors — 515/2021 (Draft, empty → Schedules 1/2/3 fail),
  * 517/2021 ({@code S}) and 737/2021 ({@code V}) — and prove "nothing written" by fingerprinting row
@@ -130,23 +130,23 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
-      "AC 1/4: 760/2021 Draft + all ten MET -> 200 sch1-10SubmittedMsg; status S, licensee recorded,"
+      "AC 1/4: 780/2021 Draft + all ten MET -> 200 sch1-10SubmittedMsg; status S, licensee recorded,"
           + " every row touched, categories '1'..'10' at A, '11' untouched")
   void happyPath_submitsInOneTransaction() throws Exception {
-    Map<String, Object> before = statusRow(760, 2021);
+    Map<String, Object> before = statusRow(780, 2021);
     assertThat(before.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("D");
 
     mockMvc
-        .perform(submit(760, 2021))
+        .perform(submit(780, 2021))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.message.key", is("sch1-10SubmittedMsg")))
         .andExpect(jsonPath("$.message.text", is(SUBMITTED)));
 
     // The status row (BR-05, BR-08, D13).
-    Map<String, Object> after = statusRow(760, 2021);
+    Map<String, Object> after = statusRow(780, 2021);
     assertThat(after.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("S");
-    assertThat(((Number) after.get("LICENSEE_MILL_ID")).longValue()).isEqualTo(760L);
+    assertThat(((Number) after.get("LICENSEE_MILL_ID")).longValue()).isEqualTo(780L);
     assertThat(after.get("LICENSEE_USER_GUID")).isEqualTo(CANONICAL_SUBMITTER_GUID);
     assertThat(after.get("AUDITOR_MILL_ID")).isNull();
     assertThat(after.get("AUDITOR_USER_GUID")).isNull();
@@ -158,7 +158,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
     assertThat(after.get("REPORT_COMPLETED_IND")).isEqualTo("N");
 
     // The ten category rows advanced (BR-04, D12: @Version -> revision moves); '11' untouched.
-    List<Map<String, Object>> categories = categoryRows(760, 2021);
+    List<Map<String, Object>> categories = categoryRows(780, 2021);
     assertThat(categories).hasSize(11);
     for (Map<String, Object> row : categories.subList(0, 10)) {
       assertThat(row.get("CATEGORY_STATE_CODE")).as(row.toString()).isEqualTo("A");
@@ -176,7 +176,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
     List<Map<String, Object>> summaries =
         jdbc.queryForList(
             "SELECT ILCR_REPORT_SUMMARY_ID, REVISION_COUNT, UPDATE_USERID, UPDATE_TIMESTAMP"
-                + " FROM THE.ILCR_REPORT_SUMMARY WHERE ILCR_MILL_ID = 760 AND REPORT_YEAR = 2021");
+                + " FROM THE.ILCR_REPORT_SUMMARY WHERE ILCR_MILL_ID = 780 AND REPORT_YEAR = 2021");
     assertThat(summaries).hasSize(3);
     for (Map<String, Object> s : summaries) {
       assertThat(((Number) s.get("REVISION_COUNT")).intValue()).isEqualTo(1);
@@ -189,7 +189,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
                 + " SUM(REVISION_COUNT) REVISIONS"
                 + " FROM THE.ILCR_COST_REPORT_DETAIL WHERE ILCR_REPORT_SUMMARY_ID IN"
                 + " (SELECT ILCR_REPORT_SUMMARY_ID FROM THE.ILCR_REPORT_SUMMARY"
-                + "   WHERE ILCR_MILL_ID = 760 AND REPORT_YEAR = 2021)",
+                + "   WHERE ILCR_MILL_ID = 780 AND REPORT_YEAR = 2021)",
             MOCK_USER);
     assertThat(((Number) details.get("TOTAL")).intValue()).isEqualTo(36);
     assertThat(((Number) details.get("TOUCHED")).intValue()).isEqualTo(36);
@@ -199,7 +199,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
     mockMvc
         .perform(
             get("/api/v1/check-status")
-                .param("millId", "760")
+                .param("millId", "780")
                 .param("year", "2021")
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
@@ -255,32 +255,32 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
-      "AC 7/D6: 762/2021 with its category row '7' missing -> 500 reportSubmissionErrorMsg, rolled back")
+      "AC 7/D6: 782/2021 with its category row '7' missing -> 500 reportSubmissionErrorMsg, rolled back")
   void missingCategoryRow_500_rollsBack() throws Exception {
     jdbc.update(
         "DELETE FROM THE.ILCR_REPORT_CATEGORY"
-            + " WHERE ILCR_MILL_ID = 762 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '7'");
+            + " WHERE ILCR_MILL_ID = 782 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '7'");
     try {
       mockMvc
-          .perform(submit(762, 2021))
+          .perform(submit(782, 2021))
           .andExpect(status().isInternalServerError())
           .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
           .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
 
       // Rolled back: status still Draft and unbumped, no licensee, the categories before '7' still
       // Draft, the summaries untouched.
-      Map<String, Object> row = statusRow(762, 2021);
+      Map<String, Object> row = statusRow(782, 2021);
       assertThat(row.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("D");
       assertThat(((Number) row.get("REVISION_COUNT")).intValue()).isZero();
       assertThat(row.get("LICENSEE_USER_GUID")).isNull();
       assertThat(row.get("UPDATE_USERID")).isEqualTo("SEED");
-      for (Map<String, Object> category : categoryRows(762, 2021)) {
+      for (Map<String, Object> category : categoryRows(782, 2021)) {
         assertThat(category.get("CATEGORY_STATE_CODE")).as(category.toString()).isEqualTo("D");
         assertThat(((Number) category.get("REVISION_COUNT")).intValue()).isZero();
       }
       Integer touchedSummaries =
           jdbc.queryForObject(
-              "SELECT COUNT(*) FROM THE.ILCR_REPORT_SUMMARY WHERE ILCR_MILL_ID = 762"
+              "SELECT COUNT(*) FROM THE.ILCR_REPORT_SUMMARY WHERE ILCR_MILL_ID = 782"
                   + " AND REPORT_YEAR = 2021 AND (REVISION_COUNT <> 0 OR UPDATE_USERID <> 'SEED')",
               Integer.class);
       assertThat(touchedSummaries).isZero();
@@ -289,7 +289,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
           "INSERT INTO THE.ILCR_REPORT_CATEGORY (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,"
               + " CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND, REVISION_COUNT, ENTRY_USERID,"
               + " ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)"
-              + " VALUES (2021, 762, '7', 'D', 'Y', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)");
+              + " VALUES (2021, 782, '7', 'D', 'Y', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)");
     }
   }
 }

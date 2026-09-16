@@ -665,7 +665,8 @@ public class Schedule1Service {
         millId,
         year,
         caller,
-        repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null));
+        repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null),
+        true);
   }
 
   /**
@@ -686,7 +687,30 @@ public class Schedule1Service {
   public Optional<Schedule1Response> findSchedule1(long millId, int year, EditableStatuses caller) {
     return repository
         .findSummary(millId, year, SCHEDULE_1_CATEGORY)
-        .map(summary -> assemble(millId, year, caller, summary));
+        .map(summary -> assemble(millId, year, caller, summary, true));
+  }
+
+  /**
+   * The same existence-aware read WITHOUT the BR-03 crown pre-fill — the document exactly as it is
+   * stored. For a REPORTING consumer, which must show what was reported rather than what a data
+   * entry screen would offer.
+   *
+   * <p>{@link #findSchedule1} serves the S02 screen, so a mill/year whose volumes are all blank but
+   * whose Schedule 3 carries a Crown Timber volume comes back with that volume copied into all
+   * thirteen volume fields, unsaved, plus WRN-001 asking the user to save. That is right for the
+   * screen and wrong for a report: it would print thirteen volume figures for a Schedule 1 nobody
+   * has filled in, where legacy read the persisted row and printed its no-data marker.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param caller the track statuses this caller may edit
+   * @return the stored document, or empty when no Schedule 1 summary exists
+   */
+  public Optional<Schedule1Response> findStoredSchedule1(
+      long millId, int year, EditableStatuses caller) {
+    return repository
+        .findSummary(millId, year, SCHEDULE_1_CATEGORY)
+        .map(summary -> assemble(millId, year, caller, summary, false));
   }
 
   /**
@@ -696,7 +720,11 @@ public class Schedule1Service {
    * Delete on a never-saved schedule (#296 AC3, the #292 rule).
    */
   private Schedule1Response assemble(
-      long millId, int year, EditableStatuses caller, SummaryRow summary) {
+      long millId,
+      int year,
+      EditableStatuses caller,
+      SummaryRow summary,
+      boolean allowCrownPrefill) {
     List<DetailRow> details =
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
@@ -726,7 +754,7 @@ public class Schedule1Service {
     // 143, 144 + silviculture 1, 2, 139, 140 — D2 reversed per the use cases; never the Other-Costs
     // shared volume) in the SERVED document only. Nothing is persisted; the user must Save (hence
     // WRN-001 "Please check and save schedule.").
-    boolean prefill = sch3CrownVolume != null && allVolumesEmpty(details);
+    boolean prefill = allowCrownPrefill && sch3CrownVolume != null && allVolumesEmpty(details);
 
     List<LineItem> lineItems = new ArrayList<>();
     for (Integer code : LINE_ITEM_CODES) {

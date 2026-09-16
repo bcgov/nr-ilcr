@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.MvcResult;
  * Whichever thread wins, the database ends in the same state — one submission, one revision bump,
  * every category advanced once — which is what makes the assertion order-independent.
  *
- * <p>Owns mill 761 ({@code R__55}); security OFF. Records each request's wall time (the lock is
+ * <p>Owns mill 781 ({@code R__55}); security OFF. Records each request's wall time (the lock is
  * held for the whole ten-schedule gate, D10) so the Completion Notes can carry a measured number.
  */
 @DisplayName(
@@ -56,7 +56,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
   private record Outcome(int status, JsonNode body, long millis) {}
 
   @Test
-  @DisplayName("761/2021: exactly one 200, one 409 reportSubmissionErrorMsg; S committed once")
+  @DisplayName("781/2021: exactly one 200, one 409 reportSubmissionErrorMsg; S committed once")
   void twoSubmits_exactlyOneCommits() throws Exception {
     CountDownLatch firstHasLock = new CountDownLatch(1);
     CountDownLatch releaseFirst = new CountDownLatch(1);
@@ -78,7 +78,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
               return invocation.callRealMethod();
             })
         .when(millContextService)
-        .lockTrackStatusCodes(761, 2021);
+        .lockTrackStatusCodes(781, 2021);
 
     Callable<Outcome> racer =
         () -> {
@@ -87,7 +87,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
               mockMvc
                   .perform(
                       post(ENDPOINT)
-                          .param("millId", "761")
+                          .param("millId", "781")
                           .param("year", "2021")
                           .accept(MediaType.APPLICATION_JSON))
                   .andReturn();
@@ -140,7 +140,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
     Map<String, Object> row =
         jdbc.queryForMap(
             "SELECT ILCR_MILL_REPORT_STATUS_CODE, REVISION_COUNT, LICENSEE_USER_GUID"
-                + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = 761 AND REPORT_YEAR = 2021");
+                + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = 781 AND REPORT_YEAR = 2021");
     assertThat(row.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("S");
     assertThat(((Number) row.get("REVISION_COUNT")).intValue()).isEqualTo(1);
     assertThat(row.get("LICENSEE_USER_GUID")).isEqualTo(CANONICAL_SUBMITTER_GUID);
@@ -149,7 +149,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
         jdbc.queryForMap(
             "SELECT SUM(CASE WHEN CATEGORY_STATE_CODE = 'A' THEN 1 ELSE 0 END) ADVANCED,"
                 + " SUM(REVISION_COUNT) REVISIONS FROM THE.ILCR_REPORT_CATEGORY"
-                + " WHERE ILCR_MILL_ID = 761 AND REPORT_YEAR = 2021");
+                + " WHERE ILCR_MILL_ID = 781 AND REPORT_YEAR = 2021");
     assertThat(((Number) categories.get("ADVANCED")).intValue()).isEqualTo(10);
     assertThat(((Number) categories.get("REVISIONS")).intValue()).isEqualTo(10);
   }

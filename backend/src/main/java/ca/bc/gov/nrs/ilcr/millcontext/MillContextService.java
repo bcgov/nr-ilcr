@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillYearTrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
@@ -471,6 +472,38 @@ public class MillContextService {
   }
 
   /**
+   * BOTH tracks' status codes for MANY mills across a year range in one read — the bulk shape for
+   * the Data Extract, whose "Data Verified" line is a verdict over every (mill, year) pair in the
+   * selection at once. Same owner, same columns as {@link #findTrackStatusCodes(long, int)}; only
+   * the fan-out differs. A pair with no status row is absent from the result.
+   *
+   * @param millIds the mills to read; an empty list reads nothing
+   * @param fromYear the first reporting year, inclusive
+   * @param toYear the last reporting year, inclusive
+   * @return the rows found, mill id then year ascending
+   */
+  public List<MillYearTrackCodes> findTrackStatusCodes(
+      List<Long> millIds, int fromYear, int toYear) {
+    if (millIds == null || millIds.isEmpty()) {
+      return List.of();
+    }
+    if (millIds.size() <= IN_LIST_LIMIT) {
+      return repository.findTrackStatusCodes(millIds, fromYear, toYear);
+    }
+    // Oracle refuses an IN list longer than 1000 expressions (ORA-01795). A select-all over a mill
+    // table that has grown past that would otherwise fail the very first read of an extract.
+    List<MillYearTrackCodes> rows = new ArrayList<>();
+    for (int from = 0; from < millIds.size(); from += IN_LIST_LIMIT) {
+      List<Long> chunk = millIds.subList(from, Math.min(from + IN_LIST_LIMIT, millIds.size()));
+      rows.addAll(repository.findTrackStatusCodes(chunk, fromYear, toYear));
+    }
+    return rows;
+  }
+
+  /** Oracle's hard limit on the expressions in one {@code IN (...)} list. */
+  private static final int IN_LIST_LIMIT = 1000;
+
+  /**
    * BOTH tracks' status codes for a mill/year, with the status row locked ({@code FOR UPDATE})
    * until the caller's write transaction ends (Story 15.3). This is what a status transition reads
    * first: taking the lock BEFORE re-running the validation gate is what closes the check-then-act
@@ -486,5 +519,19 @@ public class MillContextService {
     return repository
         .findTrackStatusCodesForUpdate(millId, year)
         .map(codes -> new TrackStatusCodes(codes.schedules1To10Code(), codes.schedule11Code()));
+  }
+
+  /**
+   * The display description of a report-status code ({@code Draft}, {@code Submitted}, {@code
+   * Verified}, {@code Opened}) from the shared code table, or empty for an unknown code.
+   *
+   * @param code the one-letter status code
+   * @return the description, or empty
+   */
+  public Optional<String> findStatusDescription(String code) {
+    if (code == null) {
+      return Optional.empty();
+    }
+    return repository.findStatusDescription(code);
   }
 }

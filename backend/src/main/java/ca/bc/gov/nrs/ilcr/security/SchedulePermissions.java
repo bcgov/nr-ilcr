@@ -37,7 +37,8 @@ public class SchedulePermissions {
             Action.EDIT_HOME_CONTENT,
             Action.MAINTAIN_USERS,
             Action.GENERATE_MILL_REPORTS,
-            Action.MAINTAIN_MILLS));
+            Action.MAINTAIN_MILLS,
+            Action.GENERATE_DATA_EXTRACT));
     // SUBMIT_REPORT (Story 15.3) is the first action granted only by the SUBMITTER role: ADMIN
     // alone
     // is denied 403. Under Epic 16's role union, ADMIN+SUBMITTER retains the action, while

@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.security;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
@@ -15,6 +17,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -95,6 +98,46 @@ class ReportSubmissionTest {
         new UsernamePasswordAuthenticationToken("u", "p");
     assertFalse(anonymous.isAuthenticated());
     assertFalse(rule.canSubmit(anonymous, "D"));
+  }
+
+  @Test
+  @DisplayName(
+      "validateSubmitterMillAccess: a single-role submitter passes without a repository read")
+  void validateScope_singleRoleSubmitter_passesWithoutARead() {
+    rule.validateSubmitterMillAccess(auth("ILCR_SUBMITTER"), MILL);
+    verifyNoInteractions(millContextRepository);
+  }
+
+  @Test
+  @DisplayName("validateSubmitterMillAccess: a dual-role caller with no active assignment is 403'd")
+  void validateScope_dualRoleUnassigned_isDenied() {
+    when(millContextRepository.userHasActiveAssignment(MILL, GUID)).thenReturn(false);
+
+    assertThrows(
+        AccessDeniedException.class, () -> rule.validateSubmitterMillAccess(dualRoleJwt(), MILL));
+  }
+
+  @Test
+  @DisplayName("the dual-role scope reads the GUID from the typed dev/e2e mock principal too")
+  void dualRole_mockPrincipal_guidComesFromTheRecord() {
+    Authentication both =
+        new UsernamePasswordAuthenticationToken(
+            new MockUserPrincipal("dev-admin-submitter", GUID),
+            "N/A",
+            List.of(new SimpleGrantedAuthority("ADMIN"), new SimpleGrantedAuthority("SUBMITTER")));
+    when(millContextRepository.userHasActiveAssignment(MILL, GUID)).thenReturn(true);
+
+    assertTrue(rule.canSubmit(both, "D", MILL));
+  }
+
+  @Test
+  @DisplayName("a dual-role caller whose principal carries no directory GUID is never in scope")
+  void dualRole_opaquePrincipal_isDenied() {
+    Authentication both = auth("ILCR_ADMIN", "ILCR_SUBMITTER");
+
+    assertFalse(rule.canSubmit(both, "D", MILL));
+    assertThrows(AccessDeniedException.class, () -> rule.validateSubmitterMillAccess(both, MILL));
+    verifyNoInteractions(millContextRepository);
   }
 
   private static Authentication dualRoleJwt() {
