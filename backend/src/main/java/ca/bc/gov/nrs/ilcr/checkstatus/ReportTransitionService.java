@@ -24,14 +24,16 @@ import org.springframework.stereotype.Service;
  * remaining transitions extend this component rather than fork it. Only Submitted&rarr;Verified has
  * a write path today.
  *
- * <p>This component is deliberately legacy-shaped throughout, per the 2026-09-16 ratification that
- * legacy behaviour wins for Epic 17: the gate runs outside the write transaction and takes no row
- * lock, the status row carries no optimistic guard, and a refused transition returns the verified
- * message rather than an error. The three prior deviations that said otherwise were reverted. What
- * is NOT reverted, because it is architecture rather than a story-level choice: server-side
- * authorization on {@code SET_REPORT_STATUS} (legacy gated verify only by a render-time {@code
- * disabled=} attribute and a negative role test), which project policy requires the backend to
- * enforce.
+ * <p>Deliberately legacy-shaped, per the 2026-09-16 ratification that legacy behaviour wins for
+ * Epic 17 <strong>except where the use cases record a defect</strong>: the gate runs outside the
+ * write transaction and takes no row lock, and the status row carries no optimistic guard, because
+ * legacy had neither and neither is recorded as a defect.
+ *
+ * <p>Two things are deliberately NOT legacy. A refused transition answers an error rather than
+ * legacy's success message, because {@code UC-CHK-007-S07} records that silent success as a known
+ * defect and states the correct behaviour is an error. And authorization is enforced server-side on
+ * {@code SET_REPORT_STATUS}, where legacy gated verify only by a render-time {@code disabled=}
+ * attribute and a negative role test; project policy requires the backend to enforce it (AD-7).
  *
  * <p>The Schedule 11 track is never read or written here. It has its own status column and its own
  * workflow, and the two are independent (AD-9).
@@ -97,19 +99,19 @@ public class ReportTransitionService {
    *
    * <p>Order is legacy's: read the current codes, run the gate, check the transition is legal, then
    * write. No row lock, and the gate sits outside the write transaction &mdash; see {@link
-   * ReportTransitionWriter}. A refused transition is NOT an error: it writes nothing and returns
-   * the stored status, and the caller still sends legacy's verified message (decision D4).
+   * ReportTransitionWriter}. A refused transition writes nothing and answers 409: legacy reported
+   * success there, but {@code UC-CHK-007-S07} records that as a known defect, so it is not ported.
    *
    * @param millId the mill, already validated as an active context by the caller
    * @param year the reporting year
    * @param actingUser the value for the audit columns, at most 30 characters
    * @param actorGuid the acting user's directory GUID, used to find the auditor cross-reference;
    *     null when the request carries no directory identity, which records no auditor
-   * @return the track's status code after the transition, or the unchanged stored code when the
-   *     transition was refused
+   * @return the track's status code after the transition
    * @throws ScheduleNotFoundException the mill/year has no status row
    * @throws ReportNotSubmittedException one or more schedules fail validation
-   * @throws ReportTransitionRejectedException the stored status code is NULL
+   * @throws ReportTransitionRejectedException the track is not Submitted, or its stored status code
+   *     is NULL
    * @throws ReportTransitionFailedException the writes could not be persisted
    */
   public String verifySchedules1To10(long millId, int year, String actingUser, String actorGuid) {
@@ -139,22 +141,23 @@ public class ReportTransitionService {
     requireTrackPassesValidation(millId, year);
 
     if (!isTransitionLegal(current, VERIFIED)) {
-      // LEGACY PARITY, ratified 2026-09-16 (decision D4). Legacy called the DAO as a bare
-      // statement and never captured its boolean: `ilcrService.submitReport(...)` at
-      // CheckStatusMB.submitReport:271, then addInfoMessage("sch1-10VerifiedMsg") at :283
-      // unconditionally. So a refused transition — a no-op second click, or either illegal
-      // Draft<->Verified jump — wrote nothing and still told the user the report was verified.
-      // Reproduced here: no exception, nothing written, and the caller sends legacy's verified
-      // message. The returned code is the track's ACTUAL stored status, so the response never
-      // claims a state the database does not hold.
+      // A refused transition is an ERROR, not a success. Legacy reported success here — it called
+      // the DAO as a bare statement (CheckStatusMB.submitReport:271), never captured the false
+      // that isMillReportStatusValid returned for a no-op or either illegal Draft<->Verified jump,
+      // and emitted sch1-10VerifiedMsg unconditionally at :283 — but the requirements baseline
+      // records that as a DEFECT rather than behaviour to preserve. UC-CHK-007-S07 is titled
+      // "Verification Silently Reports Success Despite Rejected Transition (Known Defect)", its
+      // slice table says outright "defect — should be an error", and it calls the observed outcome
+      // a confirmed source discrepancy against the high-level UC's stated EF4 behaviour. Epic 17's
+      // parity rule is legacy-wins EXCEPT where the use cases record a defect; this is the one
+      // behaviour in the epic that they do.
       log.info(
-          "Verify refused: {}->{} is not legal for millId={} year={}. Nothing written; returning"
-              + " the stored status with legacy's verified message (D4 parity)",
+          "Verify 409: transition {}->{} is not legal for millId={} year={}",
           current,
           VERIFIED,
           millId,
           year);
-      return current;
+      throw new ReportTransitionRejectedException();
     }
 
     return writer.write(

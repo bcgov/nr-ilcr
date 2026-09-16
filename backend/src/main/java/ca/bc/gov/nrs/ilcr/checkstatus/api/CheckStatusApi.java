@@ -56,17 +56,18 @@ public interface CheckStatusApi {
    * first: no {@code SET_REPORT_STATUS} → 403, which is every Licensee. For an authorized caller,
    * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
    * {@code checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002; one or
-   * more schedules failing validation → 409 {@code reportNotSubmittedErrorMsg}; a stored NULL
+   * more schedules failing validation → 409 {@code reportNotSubmittedErrorMsg}; a track that is not
+   * Submitted, which covers a no-op, both illegal Draft&harr;Verified jumps and a stored NULL
    * status code → 409 {@code reportSubmissionErrorMsg}; a write that cannot be persisted → 500
    * {@code reportSubmissionErrorMsg}, everything rolled back.
    *
-   * <p><strong>A refused transition answers 200, not 409</strong> — a no-op second click and both
-   * illegal Draft&harr;Verified jumps write nothing and return the track's stored status with
-   * {@code sch1-10VerifiedMsg}. That is legacy: {@code CheckStatusMB.submitReport:271} invoked the
-   * DAO as a bare statement, never capturing the {@code false} it returned for exactly these cases,
-   * then emitted the verified message unconditionally at {@code :283}. Ratified as parity on
-   * 2026-09-16 (decision D4). Read {@code trackStatus} to tell a performed transition from a
-   * refused one; the body's message does not distinguish them.
+   * <p><strong>A refused transition answers 409, although legacy answered success.</strong> {@code
+   * CheckStatusMB.submitReport:271} invoked the DAO as a bare statement, never capturing the {@code
+   * false} returned for a no-op or either illegal jump, then emitted {@code sch1-10VerifiedMsg}
+   * unconditionally at {@code :283}. {@code UC-CHK-007-S07} records exactly that as a known defect
+   * ("defect — should be an error") and calls it a confirmed discrepancy against the UC's stated
+   * EF4 behaviour, so it is not ported. Epic 17's rule is legacy-wins except where the use cases
+   * record a defect; this is the one behaviour in the epic that they do.
    *
    * <p>There is no revision-conflict outcome: the status row carries no optimistic guard, because
    * legacy's {@code REVISION_COUNT} was a plain column rather than a {@code @Version} and no
