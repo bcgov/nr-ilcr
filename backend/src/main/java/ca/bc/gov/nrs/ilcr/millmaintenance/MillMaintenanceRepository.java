@@ -26,7 +26,7 @@ import org.springframework.data.repository.query.Param;
  * trigger-side revision bump.
  *
  * <p>{@code SYSDATE} rather than {@code SYSTIMESTAMP} because both timestamp columns are {@code
- * DATE} in delivery.
+ * DATE NOT NULL} in delivery (2026-09-16 probe, {@code docs/delivery-schema-probes/}).
  */
 @org.springframework.stereotype.Repository
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")

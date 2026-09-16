@@ -85,7 +85,7 @@ public class ReportingYearRepository {
         "INSERT INTO THE.ILCR_REPORTING_PERIOD "
             + "(REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, REVISION_COUNT, "
             + "ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
-            + "VALUES (:year, :start, :end, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)",
+            + "VALUES (:year, :start, :end, 0, :user, SYSDATE, :user, SYSDATE)",
         new MapSqlParameterSource()
             .addValue("year", year)
             .addValue("start", start)
@@ -149,7 +149,7 @@ public class ReportingYearRepository {
             + "REPORT_COMPLETED_IND, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, "
             + "UPDATE_TIMESTAMP) "
             + "VALUES (:year, :millId, :statusCode, :silvicultureCode, :completedInd, 0, :user, "
-            + "SYSTIMESTAMP, :user, SYSTIMESTAMP)",
+            + "SYSDATE, :user, SYSDATE)",
         new MapSqlParameterSource()
             .addValue("year", year)
             .addValue("millId", millId)
@@ -170,8 +170,8 @@ public class ReportingYearRepository {
             + "(REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CATEGORY_STATE_CODE, "
             + "REPORTABLE_DETAIL_IND, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, "
             + "UPDATE_TIMESTAMP) "
-            + "VALUES (:year, :millId, :categoryId, 'D', 'Y', 0, :user, SYSTIMESTAMP, :user, "
-            + "SYSTIMESTAMP)",
+            + "VALUES (:year, :millId, :categoryId, 'D', 'Y', 0, :user, SYSDATE, :user, "
+            + "SYSDATE)",
         new MapSqlParameterSource()
             .addValue("year", year)
             .addValue("millId", millId)

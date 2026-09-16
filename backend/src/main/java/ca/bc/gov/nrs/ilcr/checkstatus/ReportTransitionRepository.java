@@ -27,14 +27,14 @@ import org.springframework.data.repository.query.Param;
  *
  * <p><strong>{@code SYSDATE} everywhere, and that is delivery-verified rather than
  * inferred.</strong> All fifteen tables this class writes hold {@code UPDATE_TIMESTAMP} as {@code
- * DATE NOT NULL} in delivery {@code THE} (probed on {@code fortmp1}, 2026-09-16, Oracle 19.10). An
- * earlier cut chose {@code SYSDATE} for six and {@code SYSTIMESTAMP} for nine, on the strength of
- * the <em>test snapshot's</em> types — the snapshot declares several as {@code TIMESTAMP} and is
- * simply wrong about delivery. Writing {@code SYSTIMESTAMP} into a {@code DATE} column is not an
- * error (Oracle narrows it implicitly, dropping the fractional seconds) which is exactly why no
- * test could catch it. {@code SYSDATE} is correct against both shapes, since {@code DATE} widens to
- * {@code TIMESTAMP} without loss, and it matches legacy, whose single Java-side value carried date
- * precision.
+ * DATE NOT NULL} in delivery {@code THE} — probed read-only on {@code fortmp1} (Oracle 19.10) on
+ * 2026-09-16, output committed under {@code docs/delivery-schema-probes/}. An earlier cut chose
+ * {@code SYSDATE} for six statements and {@code SYSTIMESTAMP} for nine, on the strength of the
+ * <em>test snapshot's</em> types; the snapshot declares several of these columns as {@code
+ * TIMESTAMP} and is simply wrong about delivery. Writing a timestamp into a {@code DATE} column is
+ * not an error — Oracle narrows it implicitly, dropping the fractional seconds — which is exactly
+ * why no test could catch it. {@code SYSDATE} is correct against both shapes, since {@code DATE}
+ * widens to {@code TIMESTAMP} without loss.
  *
  * <p><strong>{@code REVISION_COUNT} follows legacy entity by entity, which means five of the
  * fifteen tables ARE bumped.</strong> Legacy's sweep dirtied each entity and let Hibernate flush

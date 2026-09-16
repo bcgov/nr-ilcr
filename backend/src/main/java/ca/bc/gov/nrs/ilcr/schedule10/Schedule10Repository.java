@@ -541,7 +541,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
            :#{#page.constructionPeriod()}, :#{#page.constructionDivisionName()},
            :#{#page.ilcrForestRegionCode()},
            :#{#page.tsbNumberCode()}, :#{#page.tsaNumber()}, :#{#page.tflNumberCode()},
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertPage(
       @Param("page") RoadConstructionReportEntity page,
@@ -570,7 +570,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
              TFL_NUMBER_CODE = :#{#page.tflNumberCode()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_ID = :#{#page.roadConstructionReprtId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -638,7 +638,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
            :#{#detail.stabilizingDistanceToSource()}, :#{#detail.relSoilMoistRgmClsCode()},
            :#{#detail.comments()},
            :soilMoistureCode, :asmCode,
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertRoadDetail(
       @Param("detail") RoadConstructionReportDetailEntity detail,
@@ -689,7 +689,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
              RELATIVE_SOIL_MOISTUR_RGM_CODE = :asmCode,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :#{#detail.roadConstructionReprtDtlId()}
          AND ROAD_CONSTRUCTION_REPRT_ID = :#{#detail.roadConstructionReprtId()}
          AND REVISION_COUNT = :expectedRevision
@@ -762,7 +762,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
          AND EXISTS (SELECT 1
@@ -797,7 +797,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :roadDetailId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCostLine(
       @Param("id") int id,

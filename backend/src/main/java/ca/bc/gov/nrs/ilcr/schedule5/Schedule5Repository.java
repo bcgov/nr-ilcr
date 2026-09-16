@@ -277,7 +277,7 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
           (:id, :year, :millId, '5',
            :campName, :distance, :sizeOfCamp, :campVolume,
            :isolatedCampInd, :comments,
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCamp(
       @Param("id") int id,
@@ -314,7 +314,7 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
              COMMENTS = :comments,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CAMP_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -405,7 +405,7 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
          SET VOLUME = :volume,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CAMP_REPORT_ID = :campId
          AND ILCR_REPORT_COST_ITEM_ID = :itemId
          AND ILCR_COST_REPORT_DETAIL_ID = (SELECT MIN(d.ILCR_COST_REPORT_DETAIL_ID)
@@ -440,7 +440,7 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :campId, :itemId, :volume, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCostDetail(
       @Param("id") int id,
@@ -660,7 +660,7 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :campId, :itemId, NULL, :cost, :description, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertSubPageRow(
       @Param("id") int id,
@@ -696,7 +696,7 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
          SET COST = :cost,
              ITEM_DESCRIPTION = :description,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_COST_REPORT_DETAIL_ID = :rowId
          AND CAMP_REPORT_ID = :campId
          AND ILCR_REPORT_COST_ITEM_ID = :itemId

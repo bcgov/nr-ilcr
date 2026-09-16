@@ -235,7 +235,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
                      WHERE ILCR_MILL_ID = :millId
                        AND REPORT_YEAR = :year
                        AND ILCR_CATEGORY_ID = '6')),
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertRoadReport(
       @Param("id") int id,
@@ -265,7 +265,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
              TFL_NUMBER_CODE = :tflNumberCode,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_MAINTENANCE_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -326,7 +326,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
              COST = :cost,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_MAINTENANCE_REPORT_ID = :recordId
          AND ILCR_REPORT_COST_ITEM_ID = 69
       """)
@@ -353,7 +353,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :recordId, 69, :volume, :cost, :comments, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCostDetail(
       @Param("id") int id,
@@ -376,7 +376,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
       UPDATE THE.ROAD_MAINTENANCE_REPORT
          SET COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '6'
@@ -400,7 +400,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
            REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :year, :millId, '6', NULL, NULL, NULL, :comments,
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertPlaceholder(
       @Param("id") int id,
@@ -452,7 +452,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
              TSB_NUMBER_CODE = :tsbNumberCode,
              TFL_NUMBER_CODE = :tflNumberCode,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_MAINTENANCE_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
