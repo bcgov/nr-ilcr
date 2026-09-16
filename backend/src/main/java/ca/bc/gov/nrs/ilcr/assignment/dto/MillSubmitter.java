@@ -15,6 +15,13 @@ import java.time.LocalDate;
  * name. The cost of that choice is that a departed user who no longer resolves has no name to show,
  * in which case callers fall back to the GUID rather than inventing one.
  *
+ * <p>{@code firstName}, {@code lastName} and {@code bceid} are the mill-administration list's own
+ * enrichment (legacy's separate First Name / Last Name / BCeID columns), resolved against the
+ * directory at read time exactly as {@code displayName} is, and for the same reason never
+ * persisted: {@code THE.ILCR_USER} has no name columns, and a stored copy would leave a renamed
+ * user's row stale. They are present only on this list; every other surface that serves this record
+ * carries them absent.
+ *
  * <p>{@code activeDate} and {@code inactiveDate} narrow the underlying Oracle {@code DATE} columns
  * to a date. Those columns do carry a time component in real data, so this narrowing is lossy and
  * exists only because the assignment screens display a date; the time is preserved in the entity
@@ -29,6 +36,12 @@ import java.time.LocalDate;
  * @param activeDate the date the assignment was made active; null once ended
  * @param inactiveDate the date the assignment was ended; null while active
  * @param revisionCount optimistic-lock token
+ * @param firstName the directory's given name, resolved at read time; null when the user does not
+ *     resolve
+ * @param lastName the directory's family name, resolved at read time; null when the user does not
+ *     resolve
+ * @param bceid the directory's provider username ({@code idpUsername}), resolved at read time; null
+ *     when the user does not resolve
  */
 public record MillSubmitter(
     String userGuid,
@@ -39,7 +52,10 @@ public record MillSubmitter(
     String status,
     LocalDate activeDate,
     LocalDate inactiveDate,
-    int revisionCount) {
+    int revisionCount,
+    String firstName,
+    String lastName,
+    String bceid) {
 
   /** The {@code status} value for an assignment that is currently active. */
   public static final String ACTIVE = "ACTIVE";

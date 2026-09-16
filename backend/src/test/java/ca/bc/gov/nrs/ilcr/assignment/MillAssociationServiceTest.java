@@ -10,7 +10,9 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.assignment.dto.MillSubmitter;
@@ -18,6 +20,9 @@ import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millmaintenance.AdminMillEntity;
 import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
+import ca.bc.gov.nrs.ilcr.userlookup.DirectoryUnavailableException;
+import ca.bc.gov.nrs.ilcr.userlookup.UserLookupClient;
+import ca.bc.gov.nrs.ilcr.userlookup.dto.DirectoryUser;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +33,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
@@ -48,12 +54,42 @@ class MillAssociationServiceTest {
   @Mock private MillUserXrefRepository assignments;
   @Mock private MillMaintenanceRepository mills;
   @Mock private AssignmentService accounts;
+  @Mock private UserLookupClient lookup;
 
   private MillAssociationService service;
 
+  /** An {@link ObjectProvider} over one bean, or over nothing when the client is not configured. */
+  private static ObjectProvider<UserLookupClient> providerOf(UserLookupClient client) {
+    return new ObjectProvider<>() {
+      @Override
+      public UserLookupClient getObject() {
+        return client;
+      }
+
+      @Override
+      public UserLookupClient getObject(Object... args) {
+        return client;
+      }
+
+      @Override
+      public UserLookupClient getIfAvailable() {
+        return client;
+      }
+
+      @Override
+      public UserLookupClient getIfUnique() {
+        return client;
+      }
+    };
+  }
+
+  private static DirectoryUser bob() {
+    return new DirectoryUser(GUID, "Smith, Bob", "BSMITH", "BCEIDBUSINESS", "Bob", "Smith");
+  }
+
   @BeforeEach
   void setUp() {
-    service = new MillAssociationService(assignments, mills, accounts);
+    service = new MillAssociationService(assignments, mills, accounts, providerOf(lookup));
     // lenient(): these serve most tests but not the unknown-mill refusals or the paths that never
     // reach the lock, and strict stubbing — which the rest of the class deliberately keeps — would
     // reject those.
@@ -284,6 +320,74 @@ class MillAssociationServiceTest {
         .singleElement()
         .extracting(MillSubmitter::status)
         .isEqualTo(MillSubmitter.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("The list resolves each row's GUID against the directory")
+  void listByMill_enrichesRowsFromTheDirectory() {
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    MillSubmitter row = service.listByMill(MILL_ID, true).getFirst();
+
+    assertThat(row.firstName()).isEqualTo("Bob");
+    assertThat(row.lastName()).isEqualTo("Smith");
+    assertThat(row.bceid()).isEqualTo("BSMITH");
+  }
+
+  @Test
+  @DisplayName(
+      "A directory outage leaves every row bare — the panel still renders from the database")
+  void listByMill_leavesNamesAbsentWhenTheDirectoryIsDown() {
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+    when(lookup.findBusinessBceid(any(), any())).thenThrow(new DirectoryUnavailableException());
+
+    MillSubmitter row = service.listByMill(MILL_ID, true).getFirst();
+
+    // Fail-soft: the panel still renders from database state alone.
+    assertThat(row.firstName()).isNull();
+    assertThat(row.bceid()).isNull();
+    assertThat(row.userGuid()).isEqualTo(GUID);
+  }
+
+  @Test
+  @DisplayName("An unresolved GUID leaves only its own row bare")
+  void listByMill_leavesAnUnresolvedRowBare() {
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+    // An unknown user is an EMPTY answer, not a failure (findBusinessBceid's contract).
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of());
+
+    MillSubmitter row = service.listByMill(MILL_ID, true).getFirst();
+
+    assertThat(row.firstName()).isNull();
+    assertThat(row.bceid()).isNull();
+    assertThat(row.userGuid()).isEqualTo(GUID);
+  }
+
+  @Test
+  @DisplayName("Two rows sharing a GUID resolve the directory only once")
+  void listByMill_resolvesEachDistinctGuidOnce() {
+    // Two rows for one user: add() cannot produce this, but grandfathered rows can.
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0), inactiveRow(1)));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    service.listByMill(MILL_ID, true);
+
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID);
+  }
+
+  @Test
+  @DisplayName("An unconfigured lookup client leaves every row bare without attempting a lookup")
+  void listByMill_leavesNamesAbsentWhenTheLookupClientIsNotConfigured() {
+    MillAssociationService withoutLookup =
+        new MillAssociationService(assignments, mills, accounts, providerOf(null));
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+
+    MillSubmitter row = withoutLookup.listByMill(MILL_ID, true).getFirst();
+
+    assertThat(row.firstName()).isNull();
+    assertThat(row.userGuid()).isEqualTo(GUID);
+    verifyNoInteractions(lookup);
   }
 
   private static AdminMillEntity mill(String statusCode) {

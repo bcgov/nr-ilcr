@@ -180,7 +180,10 @@ class MillAssociationControllerTest {
         status,
         active ? LocalDate.of(2026, 1, 5) : null,
         active ? null : LocalDate.of(2026, 3, 9),
-        4);
+        4,
+        null,
+        null,
+        null);
   }
 
   private void resolves(String key, String text) {
