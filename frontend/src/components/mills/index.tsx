@@ -23,6 +23,7 @@ import AddUserModal from '@/components/mills/AddUserModal'
 import { canSaveContacts, toSaveRequest, type ContactForm } from '@/components/mills/validation'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
+import { legacyDate } from '@/utils/date'
 import {
   MSG_ALREADY_ASSIGNED,
   type AssignmentResponse,
@@ -45,22 +46,6 @@ const ADMIN_MILLS = '/v1/admin/mills'
 
 /** codeTables' convention: a missing value is a dash, never a blank cell. */
 const dash = (value: string | null | undefined) => (value == null || value === '' ? '—' : value)
-
-/**
- * Legacy rendered every date on this screen through `f:convertDateTime pattern="dd/MM/yyyy"` — six
- * sites, none with a time, all in the server timezone (WEB-INF/web.xml:92-93). The wire carries an
- * ISO `LocalDate`, so this is a re-spelling of the parts and NOT a `Date` parse: constructing a
- * Date from "2026-03-04" reads it as UTC midnight and can render the previous day west of it.
- *
- * <p>Note the shipped users screen renders the same values as the raw ISO string. That divergence
- * is the users screen's, not this one's — legacy fidelity is the tie-breaker here, and converging
- * the two is a follow-up rather than a change to a shipped surface.
- */
-const legacyDate = (iso: string | null | undefined): string | null => {
-  if (iso == null || iso === '') return null
-  const [year, month, day] = iso.split('-')
-  return year && month && day ? `${day}/${month}/${year}` : iso
-}
 
 /**
  * A row this surface's own Add created reports `ENDED` carrying an `inactiveDate` that is really
