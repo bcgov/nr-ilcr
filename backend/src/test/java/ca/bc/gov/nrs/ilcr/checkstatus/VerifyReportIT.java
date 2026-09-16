@@ -27,14 +27,15 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * security off there is no token, so no directory GUID, so the auditor columns would always be NULL
  * and the auditor-recording arm could not be proved at all.
  *
- * <p>Every refusal asserts the {@code (status, detail)} pair. Two of the three failure texts are
- * the same string — legacy reused one message for a rejected transition and for a persistence
- * failure — so a body assertion alone cannot tell a 409 from a 500.
+ * <p>Every genuine failure asserts the {@code (status, detail)} pair; the two texts that coincide
+ * (a rejected transition and a persistence failure) are distinguishable only by status code.
  *
- * <p>A refused transition answers 409 even though legacy answered success: {@code UC-CHK-007-S07}
- * records that silent success as a known defect, so it is not ported. The refusal arms therefore
- * assert the error AND the before/after fingerprint, since the defect's signature is a success
- * response over an unchanged database.
+ * <p>A <em>refused</em> transition is not a failure here: per decision D4 (legacy parity, ratified
+ * 2026-09-16) a no-op or an illegal Draft&harr;Verified jump answers 200 with {@code
+ * sch1-10VerifiedMsg} and writes nothing, because legacy discarded the DAO's boolean and emitted
+ * the verified message regardless. Those arms assert the 200, the stored {@code trackStatus}, and
+ * the before/after fingerprint — the fingerprint being what keeps a 200 from covering a silent
+ * write.
  *
  * <p>Mills are this class's own ({@code R__55}). Verifying mutates the status row, ten category
  * rows and thirteen tables' audit columns, so no mill here may be shared with another suite, and
@@ -425,14 +426,20 @@ class VerifyReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("AC5/AC10: a Draft track -> 409 reportSubmissionErrorMsg (the illegal D->V jump)")
-  void refusesADraftTrack() throws Exception {
+  @DisplayName("D4 parity: the illegal D->V jump -> 200 with the verified message, NOTHING written")
+  void draftTrackIsRefusedButReportsVerified() throws Exception {
     String before = fingerprint(DRAFT_MILL);
 
+    // Legacy invoked the DAO as a bare statement (CheckStatusMB.submitReport:271) and never
+    // captured the false that isMillReportStatusValid produced for this jump, then emitted
+    // sch1-10VerifiedMsg unconditionally at :283. Ratified as parity 2026-09-16 (decision D4).
     mockMvc
         .perform(post(ENDPOINT).param("millId", DRAFT_MILL).param("year", YEAR).with(admin()))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR_MSG)));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.message.key", is("sch1-10VerifiedMsg")))
+        .andExpect(jsonPath("$.message.text", is(VERIFIED_MSG)))
+        // trackStatus is the STORED code, so the body never claims a state the database lacks.
+        .andExpect(jsonPath("$.trackStatus", is("D")));
 
     assertThat(trackStatus(DRAFT_MILL)).isEqualTo("D");
     assertThat(categoryStates(DRAFT_MILL)).containsOnly("D");
@@ -440,19 +447,19 @@ class VerifyReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("AC5/AC10: a second click on an already-Verified track -> 409, nothing persisted")
-  void refusesANoOp() throws Exception {
+  @DisplayName("D4 parity: a second click on an already-Verified track -> 200, NOTHING written")
+  void noOpIsRefusedButReportsVerified() throws Exception {
     String before = fingerprint(VERIFIED_MILL);
 
-    // UC-CHK-007-S07: legacy answered this with the verified success message and the UC records
-    // that as a known defect, so the truthful error is what ships. The message is deliberately
-    // NOT sch1-10VerifiedMsg.
     mockMvc
         .perform(post(ENDPOINT).param("millId", VERIFIED_MILL).param("year", YEAR).with(admin()))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR_MSG)));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.message.key", is("sch1-10VerifiedMsg")))
+        .andExpect(jsonPath("$.trackStatus", is("V")));
 
     assertThat(trackStatus(VERIFIED_MILL)).isEqualTo("V");
+    // The fingerprint is what makes this arm mean something: legacy wrote nothing on a refusal,
+    // and a 200 must not become cover for a silent write.
     assertThat(fingerprint(VERIFIED_MILL)).isEqualTo(before);
   }
 

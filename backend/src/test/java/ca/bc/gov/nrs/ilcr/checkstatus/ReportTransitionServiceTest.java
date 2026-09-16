@@ -183,27 +183,24 @@ class ReportTransitionServiceTest {
   }
 
   @Test
-  @DisplayName("a no-op is refused as an error and never reaches the writer (UC-CHK-007-S07)")
-  void noOpIsRefused() {
+  @DisplayName("D4 parity: a no-op writes NOTHING and returns the stored status, not an error")
+  void noOpWritesNothingAndReportsSuccess() {
     givenTrackAt("V");
     givenGatePasses();
 
-    // Legacy showed the verified message here, because CheckStatusMB.submitReport:271 called the
-    // DAO as a bare statement and never captured its false. UC-CHK-007-S07 records that as a known
-    // defect ("defect — should be an error"), so it is not ported.
-    assertThatThrownBy(() -> service.verifySchedules1To10(MILL, YEAR, USER, GUID))
-        .isInstanceOf(ReportTransitionRejectedException.class);
+    // Legacy called the DAO as a bare statement (CheckStatusMB.submitReport:271), never captured
+    // the false it returned for a no-op, and emitted sch1-10VerifiedMsg anyway at :283.
+    assertThat(service.verifySchedules1To10(MILL, YEAR, USER, GUID)).isEqualTo("V");
     verifyNoInteractions(writer);
   }
 
   @Test
-  @DisplayName("the illegal D->V jump is refused as an error too, and writes nothing")
-  void draftJumpIsRefused() {
+  @DisplayName("D4 parity: the illegal D->V jump also writes nothing and is not an error")
+  void draftJumpWritesNothingAndReportsSuccess() {
     givenTrackAt("D");
     givenGatePasses();
 
-    assertThatThrownBy(() -> service.verifySchedules1To10(MILL, YEAR, USER, GUID))
-        .isInstanceOf(ReportTransitionRejectedException.class);
+    assertThat(service.verifySchedules1To10(MILL, YEAR, USER, GUID)).isEqualTo("D");
     verifyNoInteractions(writer);
   }
 
