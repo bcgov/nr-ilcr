@@ -3,18 +3,14 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 import ca.bc.gov.nrs.ilcr.checkstatus.dto.ScheduleCheckResult;
 import ca.bc.gov.nrs.ilcr.checkstatus.dto.TrackCheckResult;
 import ca.bc.gov.nrs.ilcr.exception.ReportNotSubmittedException;
-import ca.bc.gov.nrs.ilcr.exception.ReportTransitionFailedException;
 import ca.bc.gov.nrs.ilcr.exception.ReportTransitionRejectedException;
-import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Report-status transitions on the Schedules 1&ndash;10 track. The workflow domain owns these, not
@@ -27,6 +23,15 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link #isTransitionLegal} and {@link #categoryStateFor} — are that logic in full, so the
  * remaining transitions extend this component rather than fork it. Only Submitted&rarr;Verified has
  * a write path today.
+ *
+ * <p>This component is deliberately legacy-shaped throughout, per the 2026-09-16 ratification that
+ * legacy behaviour wins for Epic 17: the gate runs outside the write transaction and takes no row
+ * lock, the status row carries no optimistic guard, and a refused transition returns the verified
+ * message rather than an error. The three prior deviations that said otherwise were reverted. What
+ * is NOT reverted, because it is architecture rather than a story-level choice: server-side
+ * authorization on {@code SET_REPORT_STATUS} (legacy gated verify only by a render-time {@code
+ * disabled=} attribute and a negative role test), which project policy requires the backend to
+ * enforce.
  *
  * <p>The Schedule 11 track is never read or written here. It has its own status column and its own
  * workflow, and the two are independent (AD-9).
@@ -73,16 +78,16 @@ public class ReportTransitionService {
 
   private final MillContextService millContextService;
   private final CheckStatusSweepService sweepService;
-  private final ReportTransitionRepository repository;
+  private final ReportTransitionWriter writer;
 
-  /** Wires the track-status read, the validation gate and the transition SQL. */
+  /** Wires the track-status read, the validation gate and the transactional write. */
   public ReportTransitionService(
       MillContextService millContextService,
       CheckStatusSweepService sweepService,
-      ReportTransitionRepository repository) {
+      ReportTransitionWriter writer) {
     this.millContextService = millContextService;
     this.sweepService = sweepService;
-    this.repository = repository;
+    this.writer = writer;
   }
 
   /**
@@ -90,43 +95,34 @@ public class ReportTransitionService {
    * eleven-schedule gate that guards submission, recording the acting user as the report's auditor
    * and advancing the ten category states.
    *
-   * <p>Order matters: lock the status row, read the current codes, re-run the gate, check the
-   * transition is legal, then write &mdash; status, audit stamps, category. The lock is taken
-   * before any guard so a concurrent schedule save serializes against this transaction rather than
-   * racing it. The write order is legacy's and is load-bearing; see the comment on the writes.
-   * (Legacy itself validated <em>before</em> opening its transaction, in {@code
-   * CheckStatusMB.submitReport}; re-running the gate inside the write transaction is this story's
-   * recorded deviation, which is why the lock is held across the fan-out.)
+   * <p>Order is legacy's: read the current codes, run the gate, check the transition is legal, then
+   * write. No row lock, and the gate sits outside the write transaction &mdash; see {@link
+   * ReportTransitionWriter}. A refused transition is NOT an error: it writes nothing and returns
+   * the stored status, and the caller still sends legacy's verified message (decision D4).
    *
    * @param millId the mill, already validated as an active context by the caller
    * @param year the reporting year
    * @param actingUser the value for the audit columns, at most 30 characters
    * @param actorGuid the acting user's directory GUID, used to find the auditor cross-reference;
    *     null when the request carries no directory identity, which records no auditor
-   * @return the track's status code after the transition
+   * @return the track's status code after the transition, or the unchanged stored code when the
+   *     transition was refused
    * @throws ScheduleNotFoundException the mill/year has no status row
    * @throws ReportNotSubmittedException one or more schedules fail validation
-   * @throws ReportTransitionRejectedException the track is not Submitted
-   * @throws StaleRevisionException the row changed between the lock and the write
+   * @throws ReportTransitionRejectedException the stored status code is NULL
    * @throws ReportTransitionFailedException the writes could not be persisted
    */
-  @Transactional
   public String verifySchedules1To10(long millId, int year, String actingUser, String actorGuid) {
-
-    // final because the guards below sit between this read and its use at the write: the value is
-    // deliberately the one taken under the lock, not a re-read.
-    final int revision =
-        repository.lockAndReadRevision(millId, year).orElseThrow(ScheduleNotFoundException::new);
 
     TrackStatusCodes codes =
         millContextService
             .findTrackStatusCodes(millId, year)
             .orElseThrow(ScheduleNotFoundException::new);
 
-    // A NULL code is NOT a missing row. The column is nullable and a null 1-10 code has been a
-    // tolerated shape since Story 1.2, so collapsing it into the Optional would answer 404
-    // "schedules have not been found" for a report that plainly exists. It is a refused
-    // transition, which is what the legality table would have said had it been reachable.
+    // A NULL code is NOT a missing row, and it is NOT a legality refusal either: legacy
+    // dereferenced the status association here and would have thrown NPE straight to the JSF error
+    // page (isMillReportStatusValid:451-455). A crash is not portable, and claiming success on a
+    // state nobody can name would be worse, so this one stays a refused transition (409).
     String current = codes.schedules1To10Code();
     if (current == null) {
       log.info(
@@ -134,77 +130,35 @@ public class ReportTransitionService {
       throw new ReportTransitionRejectedException();
     }
 
+    // The gate runs BEFORE the write transaction and takes no row lock, as legacy did:
+    // CheckStatusMB.submitReport:247-261 evaluated all eleven validators in the managed bean and
+    // only then called the DAO, which opened its own transaction. Accepted consequence, ratified
+    // 2026-09-16 as legacy parity: a concurrent schedule save can invalidate the verdict between
+    // the gate and the write. Legacy had the same window, and a wider one — its verdict came from
+    // a @ViewScoped in-memory snapshot rather than from the database.
     requireTrackPassesValidation(millId, year);
 
     if (!isTransitionLegal(current, VERIFIED)) {
+      // LEGACY PARITY, ratified 2026-09-16 (decision D4). Legacy called the DAO as a bare
+      // statement and never captured its boolean: `ilcrService.submitReport(...)` at
+      // CheckStatusMB.submitReport:271, then addInfoMessage("sch1-10VerifiedMsg") at :283
+      // unconditionally. So a refused transition — a no-op second click, or either illegal
+      // Draft<->Verified jump — wrote nothing and still told the user the report was verified.
+      // Reproduced here: no exception, nothing written, and the caller sends legacy's verified
+      // message. The returned code is the track's ACTUAL stored status, so the response never
+      // claims a state the database does not hold.
       log.info(
-          "Verify 409: transition {}->{} is not legal for millId={} year={}",
+          "Verify refused: {}->{} is not legal for millId={} year={}. Nothing written; returning"
+              + " the stored status with legacy's verified message (D4 parity)",
           current,
           VERIFIED,
           millId,
           year);
-      throw new ReportTransitionRejectedException();
+      return current;
     }
 
-    String categoryState = categoryStateFor(current, VERIFIED);
-
-    try {
-      Long auditorMillId =
-          actorGuid == null ? null : repository.findUserXrefMillId(millId, actorGuid).orElse(null);
-      String auditorGuid = auditorMillId == null ? null : actorGuid;
-
-      int updated =
-          repository.updateTrackStatusWithAuditor(
-              millId, year, VERIFIED, auditorMillId, auditorGuid, revision, actingUser);
-      if (updated == 0) {
-        throw new StaleRevisionException();
-      }
-
-      // ORDER IS LOAD-BEARING — stamps first, category second, as legacy did
-      // (SubmitReportDAO.submitReport:73-118 stamps each schedule's rows, then advances that
-      // schedule's category). Delivery derives ILCR_*_AUD.RECORD_STATE_CODE in a BEFORE-UPDATE row
-      // trigger from the (CATEGORY_STATE_CODE, mill status) pair, and (D,S) is the ONLY pair that
-      // writes an 'S' snapshot — the snapshot Epic 16's original-value indicators read. S->V is
-      // indifferent (both (A,V) and (V,V) map to 'V'), but D->S is not, and 15.3/Epic 18 extend
-      // this method. Advance the category first and submit stamps (A,S)->'A', no 'S' snapshot is
-      // ever written, and every original-value indicator silently serves nothing. The test
-      // snapshot has no triggers, so no test here can catch a re-inversion.
-      int stamped = stampAuditColumns(millId, year, actingUser);
-
-      int categories = repository.advanceCategoryStates(millId, year, categoryState, actingUser);
-      // Legacy dereferenced findReportCategory.uniqueResult() per schedule, so a missing category
-      // row failed the whole transition at once. Set-based UPDATEs skip it silently instead, and a
-      // mill/year enrolled by an interrupted year-open really does carry fewer than eleven rows
-      // (ReportingYearService's EnrolmentState.PARTIAL, error.mill.activate.partialrecords). Fail
-      // loudly rather than commit a half-transitioned report behind a 200.
-      if (categories != EXPECTED_CATEGORY_ROWS) {
-        throw new ReportTransitionFailedException(
-            "Expected "
-                + EXPECTED_CATEGORY_ROWS
-                + " category rows to advance for millId="
-                + millId
-                + " year="
-                + year
-                + " but "
-                + categories
-                + " were updated");
-      }
-
-      log.info(
-          "Verified millId={} year={}: status S->V, {} category rows -> {}, {} audit rows stamped,"
-              + " auditor recorded={}",
-          millId,
-          year,
-          categories,
-          categoryState,
-          stamped,
-          auditorMillId != null);
-
-      return VERIFIED;
-    } catch (DataAccessException persistence) {
-      log.error("Verify failed to persist for millId={} year={}", millId, year, persistence);
-      throw new ReportTransitionFailedException(persistence);
-    }
+    return writer.write(
+        millId, year, VERIFIED, categoryStateFor(current, VERIFIED), actingUser, actorGuid);
   }
 
   /**
@@ -264,36 +218,5 @@ public class ReportTransitionService {
       throw new ReportTransitionRejectedException();
     }
     return state;
-  }
-
-  /**
-   * Stamp the actor and timestamp on every table holding the track's data — thirteen of them,
-   * reproducing legacy's per-schedule sweep. Business data is untouched here.
-   *
-   * @return the total rows stamped, for the audit log line
-   */
-  private int stampAuditColumns(long millId, int year, String user) {
-    int rows = 0;
-    rows += repository.stampReportSummaries(millId, year, user);
-    rows += repository.stampSummaryCostDetails(millId, year, user);
-    rows += repository.stampTransportationReports(millId, year, user);
-    rows += repository.stampTransportationCostDetails(millId, year, user);
-    rows += repository.stampCampReports(millId, year, user);
-    rows += repository.stampCampCostDetails(millId, year, user);
-    rows += repository.stampRoadMaintenanceReports(millId, year, user);
-    rows += repository.stampRoadMaintenanceCostDetails(millId, year, user);
-    rows += repository.stampBridgeReports(millId, year, user);
-    rows += repository.stampBridgeCostDetails(millId, year, user);
-    rows += repository.stampCulvertReports(millId, year, user);
-    rows += repository.stampCulvertCostDetails(millId, year, user);
-    rows += repository.stampTreeToTruckReports(millId, year, user);
-    rows += repository.stampTreeToTruckDetails(millId, year, user);
-    rows += repository.stampTreeToTruckRateDetails(millId, year, user);
-    rows += repository.stampContractualWorkReports(millId, year, user);
-    rows += repository.stampContractualWorkCostDetails(millId, year, user);
-    rows += repository.stampRoadConstructionReports(millId, year, user);
-    rows += repository.stampRoadConstructionDetails(millId, year, user);
-    rows += repository.stampRoadConstructionCostDetails(millId, year, user);
-    return rows;
   }
 }

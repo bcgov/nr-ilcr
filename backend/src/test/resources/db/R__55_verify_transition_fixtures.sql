@@ -395,9 +395,8 @@ INSERT INTO THE.ILCR_MILL_USER_XREF (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACT
 -- UPDATE_USERID is seeded NOT NULL where the column demands it, so "not stamped" means "still SEED"
 -- rather than "still null", and the assertion cannot pass by accident on an empty column.
 --
--- ROAD_CONSTRUCTION_REPRT has no decoy: it additionally requires ILCR_FOREST_REGION_CODE NOT NULL
--- (an FK), so it is the one of the five still resting on the identical construct being reviewed
--- rather than tested. Recorded as a residual gap against decision D6.
+-- ROAD_CONSTRUCTION_REPRT needs ILCR_FOREST_REGION_CODE NOT NULL (an FK), so its decoy borrows
+-- 'RNI', the code the Schedule 10 fixtures already use. All five filtered tables are covered.
 -- ---------------------------------------------------------------------------------------------
 
 -- Schedule 6's table holding a Schedule 5 category: legacy filtered '6'.
@@ -411,3 +410,6 @@ INSERT INTO THE.BRIDGE_REPORT (BRIDGE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR
 
 -- Schedule 7B's table holding a Schedule 6 category: legacy filtered the same '7'.
 INSERT INTO THE.CULVERT_REPORT (CULVERT_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, UPDATE_USERID) VALUES (1081, 2021, 757, '6', 0, 'SEED', 'SEED');
+
+-- Schedule 10's table holding a Schedule 9 category: legacy filtered '10'.
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, ILCR_FOREST_REGION_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (1082, 2021, 757, '9', 'RNI', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);

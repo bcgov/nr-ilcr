@@ -29,40 +29,13 @@ import org.springframework.data.repository.query.Param;
  * {@code CAMP_REPORT}, {@code ROAD_MAINTENANCE_REPORT}, {@code CONTRACTUAL_WORK_REPORT}, {@code
  * ROAD_CONSTRUCTION_REPRT}, {@code ROAD_CONSTRUCTION_REPRT_DTL}), the rest {@code TIMESTAMP}.
  *
- * <p>Only the status row carries an optimistic lock. The sweeps deliberately leave {@code
- * REVISION_COUNT} alone, as legacy did, so a schedule save holding revision <em>n</em> still
- * succeeds after a transition has touched its audit columns.
+ * <p>Nothing here touches {@code REVISION_COUNT} — not the sweeps and not the status write — as
+ * legacy did not, so a schedule save holding revision <em>n</em> still succeeds after a transition
+ * has touched its audit columns. There is no row lock on this path either; see {@link
+ * #updateTrackStatusWithAuditor}.
  */
 @org.springframework.stereotype.Repository
 public interface ReportTransitionRepository extends Repository<MillReportStatusEntity, Long> {
-
-  /**
-   * Take the row lock and read the revision in one statement, before any guard runs — the
-   * lock-then-guard-then-write order {@code MillMaintenanceService.deactivate} established.
-   * Schedule 1's first-save takes {@code FOR UPDATE} on this same row, so the two serialize here
-   * rather than deadlocking later.
-   *
-   * <p>{@code NVL(...,0)} here and on both the guard and the increment in {@link
-   * #updateTrackStatusWithAuditor}: {@code REVISION_COUNT} is {@code NUMBER(10) DEFAULT 0} and
-   * <em>nullable</em>, and a DEFAULT only applies to an INSERT that omits the column. Without it a
-   * legacy row holding NULL returns empty here and answers 404 for a report that exists; and had it
-   * reached the write, {@code REVISION_COUNT = :revisionCount} never matches NULL, so verify would
-   * answer 409 stale-revision on every retry, forever.
-   *
-   * @param millId the mill
-   * @param year the reporting year
-   * @return the current revision (0 when the stored value is NULL), or empty when the mill/year has
-   *     no status row
-   */
-  @Query(
-      """
-      SELECT NVL(s.REVISION_COUNT, 0)
-        FROM THE.ILCR_MILL_REPORT_STATUS s
-       WHERE s.ILCR_MILL_ID = :millId
-         AND s.REPORT_YEAR = :year
-         FOR UPDATE
-      """)
-  Optional<Integer> lockAndReadRevision(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * The acting user's mill-user cross-reference key, which is what the report records as its
@@ -102,9 +75,19 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       @Param("millId") long millId, @Param("userGuid") String userGuid);
 
   /**
-   * Move the Schedules 1&ndash;10 track status and record the auditor, guarded on the revision read
-   * under the lock. {@code MILL_SILVICULTUR_STATUS_CODE} is deliberately absent from the SET list:
-   * the Schedule 11 track is independent and never moves with this one (AD-9).
+   * Move the Schedules 1&ndash;10 track status and record the auditor. {@code
+   * MILL_SILVICULTUR_STATUS_CODE} is deliberately absent from the SET list: the Schedule 11 track
+   * is independent and never moves with this one (AD-9).
+   *
+   * <p><strong>No optimistic guard and no {@code REVISION_COUNT} bump — legacy parity, ratified
+   * 2026-09-16.</strong> {@code ILCRMillReportStatus} maps the column as a plain
+   * {@code @Column(name="REVISION_COUNT") private int revision_count} ({@code
+   * model/ILCRMillReportStatus.java:44-45}), <em>not</em> {@code @Version}, and {@code
+   * updateILCRMillReportStatus} set only the status code, the timestamp, the actor and the
+   * auditor/licensee association — so Hibernate wrote the loaded revision straight back, unchanged.
+   * An earlier cut of this method guarded on the revision and incremented it; both were removed as
+   * deviations from legacy. The status row therefore carries no lost-update protection, exactly as
+   * it did not in 2.0.4.
    *
    * <p>Both auditor columns are always assigned, including to NULL, because that is what legacy's
    * Hibernate association write did when the acting user had no cross-reference.
@@ -123,9 +106,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
    * @param statusCode the target status code
    * @param auditorMillId the auditor cross-reference's mill id, or null
    * @param auditorUserGuid the auditor's directory GUID, or null
-   * @param revisionCount the revision read under the lock
    * @param user the acting user for the audit column
-   * @return rows updated: 1 on success, 0 when stale
+   * @return rows updated: 1 on success, 0 only if the row vanished
    */
   @Modifying
   @Query(
@@ -134,12 +116,10 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
          SET ILCR_MILL_REPORT_STATUS_CODE = :statusCode,
              AUDITOR_MILL_ID = :auditorMillId,
              AUDITOR_USER_GUID = :auditorUserGuid,
-             REVISION_COUNT = NVL(REVISION_COUNT, 0) + 1,
              UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
-         AND NVL(REVISION_COUNT, 0) = :revisionCount
       """)
   int updateTrackStatusWithAuditor(
       @Param("millId") long millId,
@@ -147,7 +127,6 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       @Param("statusCode") String statusCode,
       @Param("auditorMillId") Long auditorMillId,
       @Param("auditorUserGuid") String auditorUserGuid,
-      @Param("revisionCount") int revisionCount,
       @Param("user") String user);
 
   /**

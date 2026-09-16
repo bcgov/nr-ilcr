@@ -2,11 +2,9 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -56,10 +54,6 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
       "An error has been found submitting schedules. The error details have been logged."
           + " Please contact ILCR application support.";
 
-  /** AC12's text — a recorded AD-8 deviation, since legacy had no message for this condition. */
-  private static final String REVISION_CONFLICT_MSG =
-      "This schedule was changed by another user. Please reload and try again.";
-
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -91,13 +85,6 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
             + " WHERE ILCR_MILL_ID = 763 AND REPORT_YEAR = 2021"
             + " AND ILCR_CATEGORY_ID IN ('1','2','3','4','5','6','7','8','9','10')",
         String.class);
-  }
-
-  private int revision() {
-    return jdbcTemplate.queryForObject(
-        "SELECT REVISION_COUNT FROM THE.ILCR_MILL_REPORT_STATUS"
-            + " WHERE ILCR_MILL_ID = 763 AND REPORT_YEAR = 2021",
-        Integer.class);
   }
 
   /**
@@ -135,7 +122,6 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
   void rollsBackTheWholeTransition() throws Exception {
     assertThat(trackStatus()).isEqualTo("S");
     assertThat(categoryStates()).containsOnly("A");
-    int revisionBefore = revision();
 
     doThrow(new DataIntegrityViolationException("forced mid-sweep failure"))
         .when(repository)
@@ -150,35 +136,6 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
     // transaction; the rollback undoes every one of them.
     assertThat(trackStatus()).isEqualTo("S");
     assertThat(categoryStates()).containsOnly("A");
-    assertThat(revision()).isEqualTo(revisionBefore);
-    assertThat(stampedRows()).isZero();
-  }
-
-  @Test
-  @DisplayName(
-      "AC12: a stale status row -> 409 scheduleRevisionConflictErrorMsg, nothing persisted")
-  void staleRevisionAnswers409ThroughTheEndpoint() throws Exception {
-    assertThat(trackStatus()).isEqualTo("S");
-    int revisionBefore = revision();
-
-    // The optimistic guard matching zero rows is what a concurrent change looks like from inside
-    // the transaction. Stubbed rather than raced because the FOR UPDATE lock makes the branch
-    // unreachable single-threaded — but the HTTP outcome it maps to is the AC, and asserting it at
-    // the SQL row-count level (as the sibling IT does) never exercised the endpoint's mapping. The
-    // key is a recorded AD-8 deviation, so a wrong one would otherwise go unnoticed.
-    doReturn(0)
-        .when(repository)
-        .updateTrackStatusWithAuditor(
-            anyLong(), anyInt(), anyString(), any(), any(), anyInt(), anyString());
-
-    mockMvc
-        .perform(post(ENDPOINT).param("millId", MILL).param("year", YEAR).with(admin()))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail", is(REVISION_CONFLICT_MSG)));
-
-    assertThat(trackStatus()).isEqualTo("S");
-    assertThat(categoryStates()).containsOnly("A");
-    assertThat(revision()).isEqualTo(revisionBefore);
     assertThat(stampedRows()).isZero();
   }
 }

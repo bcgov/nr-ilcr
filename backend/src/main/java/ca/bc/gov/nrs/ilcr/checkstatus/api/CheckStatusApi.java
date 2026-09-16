@@ -56,15 +56,25 @@ public interface CheckStatusApi {
    * first: no {@code SET_REPORT_STATUS} → 403, which is every Licensee. For an authorized caller,
    * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
    * {@code checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002; one or
-   * more schedules failing validation → 409 {@code reportNotSubmittedErrorMsg}; a track that is not
-   * Submitted, which covers a no-op, both illegal Draft&harr;Verified jumps and a stored NULL
-   * status code → 409 {@code reportSubmissionErrorMsg}; a concurrent change to the status row → 409
-   * {@code scheduleRevisionConflictErrorMsg}; a write that cannot be persisted → 500 {@code
-   * reportSubmissionErrorMsg}, everything rolled back.
+   * more schedules failing validation → 409 {@code reportNotSubmittedErrorMsg}; a stored NULL
+   * status code → 409 {@code reportSubmissionErrorMsg}; a write that cannot be persisted → 500
+   * {@code reportSubmissionErrorMsg}, everything rolled back.
    *
-   * <p>The two 409s that share {@code reportSubmissionErrorMsg} with the 500 are distinguishable
-   * only by status code, never by response body — legacy reused one message for both conditions and
-   * AD-8 keeps its text verbatim.
+   * <p><strong>A refused transition answers 200, not 409</strong> — a no-op second click and both
+   * illegal Draft&harr;Verified jumps write nothing and return the track's stored status with
+   * {@code sch1-10VerifiedMsg}. That is legacy: {@code CheckStatusMB.submitReport:271} invoked the
+   * DAO as a bare statement, never capturing the {@code false} it returned for exactly these cases,
+   * then emitted the verified message unconditionally at {@code :283}. Ratified as parity on
+   * 2026-09-16 (decision D4). Read {@code trackStatus} to tell a performed transition from a
+   * refused one; the body's message does not distinguish them.
+   *
+   * <p>There is no revision-conflict outcome: the status row carries no optimistic guard, because
+   * legacy's {@code REVISION_COUNT} was a plain column rather than a {@code @Version} and no
+   * transition ever bumped it.
+   *
+   * <p>The 409 and the 500 that share {@code reportSubmissionErrorMsg} are distinguishable only by
+   * status code, never by response body — legacy reused one message for both conditions and AD-8
+   * keeps its text verbatim.
    *
    * <p>The Schedule 11 track is untouched: it has its own status and its own workflow.
    *
