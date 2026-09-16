@@ -374,3 +374,40 @@ INSERT INTO THE.ILCR_USER (USER_GUID, ILCR_ROLE_NAME, ACTIVE_IND, REVISION_COUNT
 INSERT INTO THE.ILCR_MILL_USER_XREF (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
   VALUES (757, 'VERIFYADMIN0000111122223333AAAA1', SYSDATE, NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 
+
+
+-- ---------------------------------------------------------------------------------------------
+-- CATEGORY-SCOPE DECOYS for the happy-path mill (757), added by the 2026-09-16 code review.
+--
+-- Legacy's sweep reached five of the thirteen audit tables through a DAO call that passed an
+-- ilcr_category id (ROAD_MAINTENANCE_REPORT '6', BRIDGE_REPORT '7', CULVERT_REPORT '7',
+-- CONTRACTUAL_WORK_REPORT '9', ROAD_CONSTRUCTION_REPRT '10'), so a row of any OTHER category was
+-- never stamped. The first cut of ReportTransitionRepository filtered those five on mill/year only,
+-- which would have stamped rows legacy left alone. These rows make that difference fail a test:
+-- each carries a category the sweep must NOT match, so dropping the predicate stamps them.
+--
+-- Deliberately WRONG-category, which is also why they cannot disturb the validation gate: every
+-- schedule's own reads are category-scoped (e.g. Schedule9Repository scopes to '9'), so no
+-- validator sees these rows and mill 757 stays all-met. Seeding RIGHT-category rows instead would
+-- turn each schedule's vacuous zero-row MET into a real validation needing complete cost data --
+-- which is why the original fixture seeded Schedules 1/2/3 only.
+--
+-- UPDATE_USERID is seeded NOT NULL where the column demands it, so "not stamped" means "still SEED"
+-- rather than "still null", and the assertion cannot pass by accident on an empty column.
+--
+-- ROAD_CONSTRUCTION_REPRT has no decoy: it additionally requires ILCR_FOREST_REGION_CODE NOT NULL
+-- (an FK), so it is the one of the five still resting on the identical construct being reviewed
+-- rather than tested. Recorded as a residual gap against decision D6.
+-- ---------------------------------------------------------------------------------------------
+
+-- Schedule 6's table holding a Schedule 5 category: legacy filtered '6'.
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (1078, 2021, 757, '5', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- Schedule 9's table holding a Schedule 8 category: legacy filtered '9'.
+INSERT INTO THE.CONTRACTUAL_WORK_REPORT (CONTRACTUAL_WORK_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (1079, 2021, 757, '8', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- Schedule 7A's table holding a Schedule 6 category: legacy filtered '7'.
+INSERT INTO THE.BRIDGE_REPORT (BRIDGE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_NAME, REVISION_COUNT, ENTRY_USERID, UPDATE_USERID) VALUES (1080, 2021, 757, '6', 'Decoy bridge', 0, 'SEED', 'SEED');
+
+-- Schedule 7B's table holding a Schedule 6 category: legacy filtered the same '7'.
+INSERT INTO THE.CULVERT_REPORT (CULVERT_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, UPDATE_USERID) VALUES (1081, 2021, 757, '6', 0, 'SEED', 'SEED');

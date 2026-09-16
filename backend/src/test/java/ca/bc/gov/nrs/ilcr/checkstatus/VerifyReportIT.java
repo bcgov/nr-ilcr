@@ -249,6 +249,12 @@ class VerifyReportIT extends AbstractOracleIT {
         Integer.valueOf(mill));
   }
 
+  /** A named wrong-category row's actor, which a correctly scoped sweep never touches. */
+  private String decoyUpdateUser(String table, String idColumn, long id) {
+    return jdbcTemplate.queryForObject(
+        "SELECT UPDATE_USERID FROM THE." + table + " WHERE " + idColumn + " = ?", String.class, id);
+  }
+
   private int auditRowCount(String auditTable) {
     return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM THE." + auditTable, Integer.class);
   }
@@ -376,6 +382,17 @@ class VerifyReportIT extends AbstractOracleIT {
     // snapshot creates the shadow tables without them (V20260910), so this is directly provable.
     assertThat(auditRowCount("ILCR_REPORT_SUMMARY_AUDIT")).isEqualTo(summaryAuditBefore);
     assertThat(auditRowCount("ILCR_COST_REPORT_DETAIL_AUD")).isEqualTo(costDetailAuditBefore);
+
+    // PARITY: legacy reached five of the thirteen audit tables through a DAO call carrying an
+    // ilcr_category id, so a row of another category was never stamped. R__55 seeds one
+    // wrong-category decoy in four of those tables for this mill; each must still read 'SEED'.
+    // Drop the ILCR_CATEGORY_ID predicate from the sweep and every one of these flips.
+    assertThat(decoyUpdateUser("ROAD_MAINTENANCE_REPORT", "ROAD_MAINTENANCE_REPORT_ID", 1078))
+        .isEqualTo(SEED_USER);
+    assertThat(decoyUpdateUser("CONTRACTUAL_WORK_REPORT", "CONTRACTUAL_WORK_REPORT_ID", 1079))
+        .isEqualTo(SEED_USER);
+    assertThat(decoyUpdateUser("BRIDGE_REPORT", "BRIDGE_REPORT_ID", 1080)).isEqualTo(SEED_USER);
+    assertThat(decoyUpdateUser("CULVERT_REPORT", "CULVERT_REPORT_ID", 1081)).isEqualTo(SEED_USER);
   }
 
   @Test

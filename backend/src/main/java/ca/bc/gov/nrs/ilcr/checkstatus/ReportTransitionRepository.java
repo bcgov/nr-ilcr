@@ -179,6 +179,23 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
       @Param("user") String user);
 
   // -----------------------------------------------------------------------------------------------
+  // CATEGORY SCOPING IS LEGACY'S, AND LEGACY WAS INCONSISTENT — reproduce it exactly, do not
+  // regularize it. Five of these tables were fetched through a DAO call that passed an
+  // ilcr_category id, so the sweep only ever reached rows of that category:
+  //   ROAD_MAINTENANCE_REPORT '6'  (Schedule6DAO.getRoadMaintenanceReports:164)
+  //   BRIDGE_REPORT          '7'  (Schedule7aDAO.getBridgeReports:154)
+  //   CULVERT_REPORT         '7'  (Schedule7bDAO.getCulvertReports:115 — the SAME '7'; the table,
+  //                                not the category, is what separates 7A from 7B)
+  //   CONTRACTUAL_WORK_REPORT '9' (Schedule9DAO.getContractualWorkReports:712)
+  //   ROAD_CONSTRUCTION_REPRT '10' (Schedule10DAO.findRoadConstructionReprt:776)
+  // The other three took mill/year ONLY, so they carry no category predicate here either:
+  //   TRANSPORTATION_REPORT (Schedule4DAO.getTransportationReports), CAMP_REPORT
+  //   (Schedule5DAO.getCampReports), TREE_TO_TRUCK_REPORT (Schedule8DAO.getTreeToTruckReports).
+  // Adding a filter to those three would be inventing one legacy never had; omitting it on the
+  // five would over-scope the stamp to rows legacy left alone. The five predicates also match this
+  // codebase's own convention for the same tables (e.g. Schedule9Repository scopes every read and
+  // write to ILCR_CATEGORY_ID = '9').
+  //
   // Audit sweep — thirteen distinct tables via twenty statements, actor and timestamp only.
   // Schedules 1/2/3 share the summary table, and ILCR_COST_REPORT_DETAIL is stamped once per parent
   // FK (eight of them), which is why the statement count exceeds the table count. Schedule 11's
@@ -286,6 +303,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '6'
       """)
   int stampRoadMaintenanceReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -301,7 +319,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT r.ROAD_MAINTENANCE_REPORT_ID
                  FROM THE.ROAD_MAINTENANCE_REPORT r
                 WHERE r.ILCR_MILL_ID = :millId
-                  AND r.REPORT_YEAR = :year)
+                  AND r.REPORT_YEAR = :year
+                  AND r.ILCR_CATEGORY_ID = '6')
       """)
   int stampRoadMaintenanceCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -315,6 +334,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '7'
       """)
   int stampBridgeReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -330,7 +350,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT b.BRIDGE_REPORT_ID
                  FROM THE.BRIDGE_REPORT b
                 WHERE b.ILCR_MILL_ID = :millId
-                  AND b.REPORT_YEAR = :year)
+                  AND b.REPORT_YEAR = :year
+                  AND b.ILCR_CATEGORY_ID = '7')
       """)
   int stampBridgeCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -344,6 +365,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '7'
       """)
   int stampCulvertReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -359,7 +381,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT c.CULVERT_REPORT_ID
                  FROM THE.CULVERT_REPORT c
                 WHERE c.ILCR_MILL_ID = :millId
-                  AND c.REPORT_YEAR = :year)
+                  AND c.REPORT_YEAR = :year
+                  AND c.ILCR_CATEGORY_ID = '7')
       """)
   int stampCulvertCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -393,7 +416,14 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
   int stampTreeToTruckDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
 
-  /** Schedule 8 rate-detail rows, two levels below the report. */
+  /**
+   * Schedule 8 rate-detail rows, two levels below the report.
+   *
+   * <p>Schedule 8 has NO cost-detail sweep, and that is legacy's own behaviour, not an omission
+   * here: {@code SubmitReportDAO.updateTreeToTruckReports:249-266} walks report &rarr; detail
+   * &rarr; rate-detail and is the one per-schedule method that never calls {@code
+   * updateCostReportDetailSchedule}. Do not add one.
+   */
   @Modifying
   @Query(
       """
@@ -421,6 +451,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '9'
       """)
   int stampContractualWorkReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -436,7 +467,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT c.CONTRACTUAL_WORK_REPORT_ID
                  FROM THE.CONTRACTUAL_WORK_REPORT c
                 WHERE c.ILCR_MILL_ID = :millId
-                  AND c.REPORT_YEAR = :year)
+                  AND c.REPORT_YEAR = :year
+                  AND c.ILCR_CATEGORY_ID = '9')
       """)
   int stampContractualWorkCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -450,6 +482,7 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '10'
       """)
   int stampRoadConstructionReports(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -465,7 +498,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                SELECT r.ROAD_CONSTRUCTION_REPRT_ID
                  FROM THE.ROAD_CONSTRUCTION_REPRT r
                 WHERE r.ILCR_MILL_ID = :millId
-                  AND r.REPORT_YEAR = :year)
+                  AND r.REPORT_YEAR = :year
+                  AND r.ILCR_CATEGORY_ID = '10')
       """)
   int stampRoadConstructionDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
@@ -484,7 +518,8 @@ public interface ReportTransitionRepository extends Repository<MillReportStatusE
                         SELECT r.ROAD_CONSTRUCTION_REPRT_ID
                           FROM THE.ROAD_CONSTRUCTION_REPRT r
                          WHERE r.ILCR_MILL_ID = :millId
-                           AND r.REPORT_YEAR = :year))
+                           AND r.REPORT_YEAR = :year
+                           AND r.ILCR_CATEGORY_ID = '10'))
       """)
   int stampRoadConstructionCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
