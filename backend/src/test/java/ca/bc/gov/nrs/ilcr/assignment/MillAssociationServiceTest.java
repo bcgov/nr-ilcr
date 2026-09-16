@@ -49,6 +49,7 @@ class MillAssociationServiceTest {
 
   private static final long MILL_ID = 751L;
   private static final String GUID = "UNITMILL1BBBCCCCDDDDEEEEFFFF0001";
+  private static final String GUID_B = "UNITMILL2BBBCCCCDDDDEEEEFFFF0002";
   private static final String ADMIN = "TESTADMN";
 
   @Mock private MillUserXrefRepository assignments;
@@ -339,29 +340,46 @@ class MillAssociationServiceTest {
   @DisplayName(
       "A directory outage leaves every row bare — the panel still renders from the database")
   void listByMill_leavesNamesAbsentWhenTheDirectoryIsDown() {
-    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+    // Two distinct GUIDs so a regression that keeps asking per-row after the first failure is
+    // caught by the times(1) below, not hidden by there being only one GUID to ask about.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(activeRow(0, GUID), inactiveRow(1, GUID_B)));
     when(lookup.findBusinessBceid(any(), any())).thenThrow(new DirectoryUnavailableException());
 
-    MillSubmitter row = service.listByMill(MILL_ID, true).getFirst();
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
 
-    // Fail-soft: the panel still renders from database state alone.
-    assertThat(row.firstName()).isNull();
-    assertThat(row.bceid()).isNull();
-    assertThat(row.userGuid()).isEqualTo(GUID);
+    // Fail-soft: the panel still renders from database state alone, for every row.
+    assertThat(rows).allSatisfy(row -> assertThat(row.firstName()).isNull());
+    assertThat(rows).allSatisfy(row -> assertThat(row.bceid()).isNull());
+    // The outage stops the loop outright: a second GUID must never be asked about.
+    verify(lookup, times(1)).findBusinessBceid(any(), any());
   }
 
   @Test
-  @DisplayName("An unresolved GUID leaves only its own row bare")
+  @DisplayName("An unresolved GUID leaves only its own row bare — its neighbour still resolves")
   void listByMill_leavesAnUnresolvedRowBare() {
-    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+    // GUID_B (the empty answer) is listed FIRST: an implementation that stopped the whole
+    // resolution on the first empty answer, rather than just skipping that one GUID, would
+    // leave GUID unresolved too -- this ordering is what makes that regression visible.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(inactiveRow(1, GUID_B), activeRow(0, GUID)));
     // An unknown user is an EMPTY answer, not a failure (findBusinessBceid's contract).
-    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of());
+    when(lookup.findBusinessBceid("userGuid", GUID_B)).thenReturn(List.of());
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
 
-    MillSubmitter row = service.listByMill(MILL_ID, true).getFirst();
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
 
-    assertThat(row.firstName()).isNull();
-    assertThat(row.bceid()).isNull();
-    assertThat(row.userGuid()).isEqualTo(GUID);
+    MillSubmitter resolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID)).findFirst().orElseThrow();
+    MillSubmitter unresolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID_B)).findFirst().orElseThrow();
+
+    assertThat(resolved.firstName()).isEqualTo("Bob");
+    assertThat(resolved.lastName()).isEqualTo("Smith");
+    assertThat(resolved.bceid()).isEqualTo("BSMITH");
+
+    assertThat(unresolved.firstName()).isNull();
+    assertThat(unresolved.bceid()).isNull();
   }
 
   @Test
@@ -406,12 +424,20 @@ class MillAssociationServiceTest {
   }
 
   private static MillUserXrefEntity activeRow(int revisionCount) {
+    return activeRow(revisionCount, GUID);
+  }
+
+  private static MillUserXrefEntity activeRow(int revisionCount, String userGuid) {
     return new MillUserXrefEntity(
-        MILL_ID, GUID, LocalDateTime.now(), null, revisionCount, ADMIN, null, ADMIN, null);
+        MILL_ID, userGuid, LocalDateTime.now(), null, revisionCount, ADMIN, null, ADMIN, null);
   }
 
   private static MillUserXrefEntity inactiveRow(int revisionCount) {
+    return inactiveRow(revisionCount, GUID);
+  }
+
+  private static MillUserXrefEntity inactiveRow(int revisionCount, String userGuid) {
     return new MillUserXrefEntity(
-        MILL_ID, GUID, null, LocalDateTime.now(), revisionCount, ADMIN, null, ADMIN, null);
+        MILL_ID, userGuid, null, LocalDateTime.now(), revisionCount, ADMIN, null, ADMIN, null);
   }
 }

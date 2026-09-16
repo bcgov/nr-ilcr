@@ -14,6 +14,9 @@ import ca.bc.gov.nrs.ilcr.assignment.dto.AssignSubmitterRequest;
 import ca.bc.gov.nrs.ilcr.assignment.dto.AssignmentResponse;
 import ca.bc.gov.nrs.ilcr.assignment.dto.EndAssignmentRequest;
 import ca.bc.gov.nrs.ilcr.assignment.dto.MillSubmitter;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.JsonPath;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
@@ -165,6 +168,44 @@ class MillAssociationControllerTest {
     controller.add(670L, new AssignSubmitterRequest(USER_GUID), authentication());
 
     verify(service).add(670L, USER_GUID, "dev-admin");
+  }
+
+  @Test
+  @DisplayName("a resolved association serializes the directory fields as firstName/lastName/bceid")
+  void listSerializesTheDirectoryFieldsWhenResolved() throws Exception {
+    // The frontend binds to these exact wire names (AC/Task 3 of the mill-administration legacy
+    // fidelity plan); a plain Java-field assertion on MillSubmitter would not catch a Jackson
+    // naming mismatch (e.g. a @JsonProperty typo) the way serializing the real response body does.
+    // activeDate/inactiveDate are left null: this test's whole subject is the three directory
+    // fields, and serializing a real LocalDate needs the jackson-datatype-jsr310 module the app
+    // registers via Boot's auto-configuration but this plain unit test's ObjectMapper does not.
+    MillSubmitter resolved =
+        new MillSubmitter(
+            USER_GUID,
+            null,
+            670L,
+            "0670",
+            "CEDAR MILL",
+            MillSubmitter.ACTIVE,
+            null,
+            null,
+            4,
+            "Bob",
+            "Smith",
+            "BSMITH");
+    when(service.listByMill(670L, true)).thenReturn(List.of(resolved));
+
+    ResponseEntity<List<MillSubmitter>> response = controller.list(670L, true, authentication());
+
+    // Mirrors the app's own spring.jackson.default-property-inclusion: non_null, so a null field
+    // is genuinely absent from the JSON, not merely null -- the same shape the frontend will see.
+    ObjectMapper mapper =
+        new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    String json = mapper.writeValueAsString(response.getBody());
+
+    assertThat((String) JsonPath.read(json, "$[0].firstName")).isEqualTo("Bob");
+    assertThat((String) JsonPath.read(json, "$[0].lastName")).isEqualTo("Smith");
+    assertThat((String) JsonPath.read(json, "$[0].bceid")).isEqualTo("BSMITH");
   }
 
   // -------------------------------------------------------------- helpers
