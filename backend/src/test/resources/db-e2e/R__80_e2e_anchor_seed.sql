@@ -399,6 +399,12 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- 22051/2023 added 2026-09-11 for S24's GREEN panel-gate companion. Sharing S24's anchor raced:
 -- both seed a camp of the same name, so the loser 409'd and its cleanup deleted the winner's camp.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 22051, 'D', 'D', 'E2E_SEED');
+-- 23050/2023 added 2026-09-15 to close e2e GAP-4. The per-camp "All requirements for <camp> have been
+-- met." line is emitted ONLY when the SCHEDULE fails and some individual camp passes: on a pass
+-- Schedule5Service returns the schedule banner with camps=[] (:946-950). Reaching it therefore needs TWO
+-- camps on ONE anchor, one complete and one not -- which no other sch5 anchor may hold, since preflight
+-- asserts every one of them is empty at rest and each scenario seeds a single camp.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 23050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------

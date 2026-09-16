@@ -158,6 +158,12 @@ DECLARE
     -- S24's own anchor and the two raced: both seed a camp of the same name, so the loser 409'd and
     -- its cleanup then deleted the winner's camp mid-run. Dedication is per SCENARIO, always.
     t_anchor(22051, 2023, 'D'),  -- S24 green: Check Status is gated by the open panel
+    -- 23050/2023 added 2026-09-15 to close e2e GAP-4. The per-camp "All requirements for <camp> have
+    -- been met." line is only ever emitted when the SCHEDULE fails and some individual camp passes
+    -- (Schedule5Service:946-950 returns the schedule banner with camps=[] on a pass). Reaching it needs
+    -- TWO camps on ONE anchor, one complete and one not -- a state no other anchor may hold, because
+    -- every other one is asserted to be empty at rest and its scenario seeds a single camp.
+    t_anchor(23050, 2023, 'D'),  -- GAP-4: mixed pass/fail, the per-camp met line
     t_anchor(16050, 2023, 'S')   -- S19 read-only: Submitted, so the schedule is not editable
   );
 BEGIN

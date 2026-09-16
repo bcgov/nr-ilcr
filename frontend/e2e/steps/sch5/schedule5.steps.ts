@@ -4,6 +4,7 @@ import {
   ACCESS_DESC_BLANK_ANCHOR,
   CAMP_DESC_BLANK_ANCHOR,
   CHECK_MISSING_ANCHOR,
+  CHECK_MIXED_ANCHOR,
   SUBPAGE_COST_ANCHOR,
   SUBPAGE_COST_ACCESS_ANCHOR,
   CHECK_MET_ANCHOR,
@@ -89,6 +90,7 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   'check-unsaved-violation': CHECK_UNSAVED_VIOLATION_ANCHOR,
   'check-unsaved-fix': CHECK_UNSAVED_FIX_ANCHOR,
   'check-panel-gate': CHECK_PANEL_GATE_ANCHOR,
+  'check-mixed': CHECK_MIXED_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */

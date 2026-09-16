@@ -35,3 +35,36 @@ Feature: Report Camp and Access Expenses (Schedule 5) — Check Status
     Then I should see the message "All requirements for this schedule have been met"
     # SPEC-3: legacy never reaches the per-camp loop on a pass, so this line must NOT appear.
     And I should not see the message "All requirements for North Camp have been met."
+
+  # GAP-4 — THE ONE STATE THAT EMITS THE PER-CAMP "MET" LINE, and the reason this scenario exists.
+  #
+  # S06 above and S20 (check-status-missing.feature) both assert that
+  # "All requirements for <camp> have been met." is ABSENT, because in each of them the schedule either
+  # passes outright or ends up passing, and the pass branch returns the banner with `camps: []`
+  # (Schedule5Service:946-950; legacy Schedule5MB.java:324-326). That made the line a live, user-facing
+  # message pinned in the fixtures purely so two scenarios could assert it never shows — with nothing
+  # proving it CAN. An assertion that a string never appears is only as good as the knowledge that it can.
+  #
+  # The emitting state is a MIXED one: the schedule FAILS while an individual camp PASSES. That needs two
+  # camps on one anchor, which no slice in the 25-slice catalogue describes — hence its own anchor rather
+  # than widening S06 or S20 into being about something their titles do not say.
+  #
+  # Tagged @S06 because it belongs to S06's message family (the same SUC-005 line), following the
+  # precedent of S24's green companion in check-status-unsaved.feature.
+  # ANCHOR: 23050/2023 (`CHECK_MIXED_ANCHOR`) — the only sch5 anchor that holds two camps mid-scenario.
+  @p2 @S06 @SUC-005
+  Scenario: A failing schedule still reports the camps that passed, by name
+    Given the Schedule 5 anchor "check-mixed" is an editable Draft with no camps
+    And a camp named "Complete Camp" already exists with stored descriptor and expense values
+    And a camp named "Incomplete Camp" already exists with no road distance
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 5
+    And I run Schedule 5 Check Status
+    # The passing camp gets its own confirmation — WITH a trailing full stop, unlike the schedule banner.
+    Then I should see the message "All requirements for Complete Camp have been met."
+    # ...and the failing one still names its missing field, so both per-camp verdicts arrive together.
+    And I should see the message "Camp Report Name : Incomplete Camp - Road Distance to Operating Area: Value Required"
+    # One camp short means the SCHEDULE is not met, so its banner must stay away.
+    And I should not see the message "All requirements for this schedule have been met"
+    # The met line must name the camp that passed, never the one that failed.
+    And I should not see the message "All requirements for Incomplete Camp have been met."

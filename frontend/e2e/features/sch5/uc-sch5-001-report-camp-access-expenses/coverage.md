@@ -18,8 +18,17 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 **STATUS: COMPLETE — ALL 25 SLICES AUTHORED (2026-09-11).** 23 green; **S24 and S25 are deliberately
 RED** and track defects.md DIV-1, the Schedule 5 instance of the app-wide Check-Status defect
 (bcgov/nr-ilcr#359). `npm run test:gate` filters them out of a fresh-failures run. Both GAP-1 and
-GAP-2 are resolved; GAP-3 (S19's missing camp) is resolved; GAP-4 remains open and is a gap in the
-SLICE CATALOGUE rather than in this suite.
+GAP-2 are resolved; GAP-3 (S19's missing camp) is resolved; **GAP-4 is resolved 2026-09-15** — the
+per-camp "met" line now has the one scenario that can reach it (see below). DIV-1 is ticketed as
+[bcgov/nr-ilcr#476](https://github.com/bcgov/nr-ilcr/issues/476).
+
+**ONE SCENARIO BEYOND THE 25 SLICES, ADDED 2026-09-15 (GAP-4).** `check-status.feature` now carries
+*"A failing schedule still reports the camps that passed, by name"* (`@p2 @S06 @SUC-005`) on its own
+anchor, **23050/2023**. It is the only state in which the app emits
+`campRequirementsMetMsg` — the schedule FAILING while an individual camp PASSES — which no slice in the
+catalogue describes, because reaching it needs two camps on one anchor. Tagged `@S06` (the message family
+it serves) rather than a new slice id: whether UC-SCH5-001 formally gains an S26 is BA/QA's call, and the
+tag is a one-line change if it does. Same precedent as S24's green companion.
 
 **S20–S23 added 2026-09-10.** S20 as `check-status-missing.feature`, and S21/S22/S23 together as
 `sub-page-validation.feature` — the three belong in one file because they are the same asymmetry seen
@@ -67,7 +76,7 @@ any other fixture pins is ≤ 2021, **"year ≥ 2022 belongs to sch5" is a struc
 than a convention: a cross-domain collision is not expressible in the new range. 16050/2022 is left
 empty ON PURPOSE as S18's 404 fixture and is registered in `DELIBERATELY_ABSENT`.
 
-**Anchor inventory (25 pinned, all verified through the API):** 24 empty editable Drafts (23 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). Three were minted after the original fan-out, each for the SAME structural reason — a scenario that writes cannot share a key under `fullyParallel`: **17052/2023** (2026-09-09) for S12, whose second arm corrects the blank field and SAVES; **22050/2023** (2026-09-10) for S23's ACCESS half, because visiting both sub-pages of one camp runs into the dirty-panel confirm; and **22051/2023** (2026-09-11) for S24's green companion, which was first written to share S24's own anchor and raced against it — both seed a camp of the same name, so the loser 409'd and its cleanup then deleted the winner's camp mid-run. That third one is the rule being learned the hard way rather than read: **dedication is per SCENARIO, not per slice.**
+**Anchor inventory (26 pinned, all verified through the API):** 25 empty editable Drafts (24 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). Four were minted after the original fan-out. The first three share the SAME structural reason — a scenario that writes cannot share a key under `fullyParallel`: **17052/2023** (2026-09-09) for S12, whose second arm corrects the blank field and SAVES; **22050/2023** (2026-09-10) for S23's ACCESS half, because visiting both sub-pages of one camp runs into the dirty-panel confirm; and **22051/2023** (2026-09-11) for S24's green companion, which was first written to share S24's own anchor and raced against it — both seed a camp of the same name, so the loser 409'd and its cleanup then deleted the winner's camp mid-run. That third one is the rule being learned the hard way rather than read: **dedication is per SCENARIO, not per slice.** The fourth, **23050/2023** (2026-09-15, GAP-4), is minted for a different reason: it is the only anchor that deliberately holds **two** camps mid-scenario, because the per-camp "met" line cannot be reached with one. It is still empty AT REST like every other mutating anchor, so preflight's "no camps" assertion covers it unchanged.
 
 **The read-only anchor is the one exception to "empty at rest", and preflight states it as such.** Every other anchor must hold no camps; 16050/2023 must hold exactly one, the seeded `E2E View Camp`. Both are asserted, with messages that distinguish the two ways it can go wrong — zero camps means the patch was never applied, two or more means S19's "a single View button" is no longer unambiguous.
 
@@ -82,7 +91,7 @@ through the API (`happy-path.feature`); S02 reopen-and-edit with a `revisionCoun
 (`copy.feature`); S04/S05 the Other Camp and Other Access expense sub-pages, the second through the
 CFM-004 save-first confirm from an unsaved camp (`sub-page.feature`); S06 Check Status on a passing
 schedule, asserting the per-camp line is ABSENT (`check-status.feature`, SPEC-3); S07 delete behind the
-CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`); S16/S17/S18 the three EF2 guards and S19 the read-only render, all in `render-states.feature`; S20 Check Status naming a missing field and falling silent once it is supplied (`check-status-missing.feature`); S21/S22/S23 the two sub-pages' required-timing and cost-band asymmetries (`sub-page-validation.feature`); S24/S25 the BR-11 pair, deliberately red, plus the green panel-gate pin behind them (`check-status-unsaved.feature`).
+CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`); S16/S17/S18 the three EF2 guards and S19 the read-only render, all in `render-states.feature`; S20 Check Status naming a missing field and falling silent once it is supplied (`check-status-missing.feature`); S21/S22/S23 the two sub-pages' required-timing and cost-band asymmetries (`sub-page-validation.feature`); S24/S25 the BR-11 pair, deliberately red, plus the green panel-gate pin behind them (`check-status-unsaved.feature`); and, beyond the catalogue, the mixed pass/fail state that is the only way to reach the per-camp "met" line (`check-status.feature`, GAP-4).
 
 ## Slice ledger
 
@@ -93,7 +102,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S03 | Copy an Existing Camp and Save With a New Name | Alternative | **covered** | `copy.feature` `@p1 @S03 @WRN-001` — GREEN. Resolves WRN-001's `[UNKNOWN]`; found SPEC-2 |
 | S04 | Enter Other Camp/Access Expenses on Sub-Page (existing camp) | Alternative | **covered** | `sub-page.feature` `@p1 @S04` — GREEN |
 | S05 | Enter Other Camp/Access Expenses on Sub-Page (new, unsaved camp) | Alternative | **covered** | `sub-page.feature` `@p1 @S05 @CFM-004` — GREEN |
-| S06 | Check Status — All Requirements Met | Alternative | **covered** | `check-status.feature` `@p1 @S06` — GREEN. Asserts the per-camp line is ABSENT; found SPEC-3 |
+| S06 | Check Status — All Requirements Met | Alternative | **covered** | `check-status.feature` `@p1 @S06` — GREEN. Asserts the per-camp line is ABSENT; found SPEC-3. Carries a second `@p2 @SUC-005` scenario (GAP-4) proving that line DOES appear in the one state that emits it — a failing schedule with a passing camp |
 | S07 | Delete an Existing Camp | Alternative | **covered** | `delete.feature` `@p1 @S07 @CFM-001` — GREEN |
 | S08 | Same Camp Name Allowed in a Different Mill/Year | Alternative | **covered** | `same-name.feature` `@p1 @S08 @BR-02` — GREEN. The one slice needing two anchors |
 | S09 | Recoveries Amount Reduces the Camp Total | Alternative | **covered** | `recoveries.feature` `@p1 @S09 @BR-04` — GREEN. Client-side mirror, never saves. Does NOT cover per-category `$/m³` — see note |
@@ -164,8 +173,11 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
   supplied. Once the only camp passes, the SCHEDULE passes, and the pass branch returns the schedule
   banner with `camps: []` — the per-camp loop is in the `else` branch. So the per-camp "met" line is
   reachable ONLY when the schedule fails and some individual camp passes, and **no slice in the
-  catalogue puts the system in that state.** `campMet` is therefore still an un-exercised message;
-  that is a genuine residual gap, recorded here rather than papered over by bending S20.
+  catalogue puts the system in that state.** That was GAP-4, and rather than bend S20 into covering it,
+  **a dedicated scenario was added 2026-09-15** (`check-status.feature`, `@p2 @S06 @SUC-005`, anchor
+  23050/2023): two camps on one anchor, one complete and one missing its road distance. `campMet` is now
+  exercised, and S06's and S20's assertions that it is ABSENT are worth something — an assertion that a
+  string never appears is only as good as the knowledge that it can.
 
 - **S19's two read-only mechanisms are different, and both are asserted.** It would be easy to write
   one "the panel is read-only" step and think the slice covered. Schedule 5 does it two ways at once:

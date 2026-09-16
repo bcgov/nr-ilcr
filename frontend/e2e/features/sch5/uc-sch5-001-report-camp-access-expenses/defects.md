@@ -6,9 +6,22 @@
 >
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
+>
+> The **2026-09-15** round below (DIV-1 ticketed; GAP-4/SPEC-1/SPEC-2 closed) was carried out **at BA/QA
+> direction**, not on the authoring agent's own judgement — which is the only way an entry here changes
+> status. SPEC-3 and SPEC-4 were explicitly held back for discussion in the same instruction.
 
 **As of 2026-09-11 the UC is COMPLETE: all 25 slices are authored.** 23 are green; **S24 and S25 are
 deliberately RED** and track DIV-1 below. No Bug/Regression entries.
+
+**UPDATED 2026-09-15 — triage round.** DIV-1 is now ticketed as
+[**bcgov/nr-ilcr#476**](https://github.com/bcgov/nr-ilcr/issues/476) (read the caveat under its **Ticket**
+bullet before fixing it — the ticket's title describes the symptom, and fixing only that makes Schedule 5
+*less* safe). **GAP-4, SPEC-1 and SPEC-2 are CLOSED**: GAP-4 by adding the one scenario that reaches the
+per-camp "met" line, SPEC-1 and SPEC-2 by correcting the planning documents. **SPEC-3 and SPEC-4 remain
+OPEN and are deliberately not actioned** — both are pending a discussion, because each asks the Ministry a
+product question rather than a test one (SPEC-3: should a passing camp be confirmed by name at all?
+SPEC-4: which control is the Other-Camp description asymmetry actually in?).
 
 **One divergence, and it arrived exactly where it was predicted.** Every earlier entry here was a
 SPEC gap — each time the app and the legacy-derived Gherkin disagreed, the **Gherkin** was wrong about
@@ -28,10 +41,12 @@ trade to BA/QA.
 
 ## Divergence (app behaves differently from the legacy-derived spec)
 
-- **DIV-1 — OPEN: Check Status cannot judge what is on screen. Schedule 5 does not give a WRONG
-  answer like its siblings — it gives NO answer.** Tracked upstream as the app-wide
-  **bcgov/nr-ilcr#359**; this is the Schedule 5 instance and it presents differently from the other
-  four.
+- **DIV-1 — OPEN (triaged, ticketed): Check Status cannot judge what is on screen. Schedule 5 does not
+  give a WRONG answer like its siblings — it gives NO answer.** Ticketed in its own right as
+  **[bcgov/nr-ilcr#476](https://github.com/bcgov/nr-ilcr/issues/476)**, because the Schedule 5 instance
+  presents differently from the other four and needs its own reproduction steps; the app-wide family is
+  **bcgov/nr-ilcr#359**, which is where the shared endpoint change belongs. Fixing #476 without #359's
+  change is the trap — see the note under **Ticket** below.
   - **What this means in plain language.** A reporter edits a required value, then asks Check Status
     whether the schedule is ready. On Schedules 1, 2, 4 and 11 they get an answer about the
     last-SAVED version, so it can be confidently wrong. On Schedule 5 they get no answer at all: the
@@ -71,7 +86,27 @@ trade to BA/QA.
     cannot detect — they are already red.
   - **Fifth instance of one defect, not a fifth defect.** Schedules 1, 2, 4 and 11 carry it; Schedule
     6 is the only correct implementation. One fix turns them all green.
-  - **Status:** OPEN — reproduced, evidenced, not adjudicated. Found 2026-09-11.
+  - **Ticket:** [bcgov/nr-ilcr#476](https://github.com/bcgov/nr-ilcr/issues/476) — *"[BUGFIX]: Schedule 5
+    - 'Check Status' button should be available when the camp is in edit mode"*. Raised from this entry;
+    the issue body cites it by name.
+  - **READ THIS BEFORE FIXING — the ticket's title describes the SYMPTOM, and fixing only that makes
+    things worse.** #476 asks for the button to be enabled while a camp is in edit mode. Enabling it is
+    *half* the fix: `POST /api/v1/schedule5/check-status` carries **no request body**, so an enabled
+    button would run a check that still cannot see the screen — and Schedule 5 would stop being the safe
+    outlier and start returning #359's confidently-wrong verdict about the last-SAVED camp. The endpoint
+    has to be taught to read the screen's values in the same change, following Schedule 6's
+    `Schedule6CheckRequest` (the one correct implementation). **The green companion scenario below is the
+    tripwire for exactly this:** enable the button without changing the endpoint and it goes RED, which is
+    the intended alarm, not a regression in the test.
+  - **Priority / env:** p1 · local seeded DB · Chrome.
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to send the on-screen values with the
+    check-status request and evaluate those; QA re-verifies and closes this entry when the fix lands. Both
+    `@discovered-divergence` scenarios assert the CORRECT behaviour, so they go green on their own, at
+    which point their tags and `[DISCOVERED …]` title markers come off together — **both, or the fix is
+    half-done** (see "Both arms are red" above). No test change is needed. Found 2026-09-11; triaged
+    2026-09-15.
+  - **Test:** `check-status-unsaved.feature` ×2 (`@S24`, `@S25`) — RED by design; plus one GREEN companion
+    (`@p2`) pinning the panel gate.
 
 ### Everything else that was checked, and found clean
 
@@ -204,10 +239,11 @@ logged here, because in both the difference is mechanism rather than behaviour:
   - **Final state.** S01–S23 green; S24/S25 authored as deliberately-red `@discovered-divergence`
     scenarios tracking DIV-1, plus a green companion pinning the mechanism behind them. Originally
     raised on 2026-09-09 covering S02–S25, when only S01 existed.
-  - **The watch item below was right.** It predicted Schedule 5 would reproduce the BR-12/#359 family
-    and that this would be a fifth instance of one defect rather than a new one. It did — though not
-    in the form expected: the prediction assumed a wrong VERDICT, and what Schedule 5 actually does is
-    refuse to answer. See DIV-1.
+  - **The watch item this entry carried was right.** While S24/S25 were still unauthored it predicted
+    that Schedule 5 would reproduce the BR-11/BR-12 `#359` family — Check Status judging the SAVED
+    document and ignoring the screen — and that this would be a fifth instance of one app-wide defect
+    rather than a new one. It did, though not in the form expected: the prediction assumed a wrong
+    VERDICT, and what Schedule 5 actually does is refuse to answer. See DIV-1.
   - **25 anchors are now pinned, not 22.** Three were minted after the original fan-out, each for the
     same structural reason — a scenario that writes cannot share a key under `fullyParallel`:
     17052/2023 (S12's saving arm), 22050/2023 (S23's ACCESS half) and 22051/2023 (S24's green
@@ -215,35 +251,43 @@ logged here, because in both the difference is mechanism rather than behaviour:
     raced; the write-up is in the fixture.
   - **Status:** RESOLVED 2026-09-11.
 
-- **GAP-4 — OPEN: the per-camp "requirements met" message is never exercised, and no slice in the
-  catalogue can exercise it.**
+- **GAP-4 — CLOSED 2026-09-15: the per-camp "requirements met" message is now exercised. A scenario was
+  added rather than an existing one widened.**
   - **What this means in plain language.** When Check Status passes for the whole schedule, the app
     shows one banner. When it fails, it lists what is missing per camp — and any camp that is itself
     complete gets its own "All requirements for <camp> have been met." line. That per-camp line only
     ever appears in the second case: schedule failing, one camp passing.
-  - **Why no test covers it.** S06 has one complete camp, so the schedule passes and the line is
+  - **Why no test covered it.** S06 has one complete camp, so the schedule passes and the line is
     suppressed (that is SPEC-3). S20 has one incomplete camp, and once it is fixed the schedule
     passes — so the line is suppressed there too. Reaching it needs TWO camps on one anchor, one
     complete and one not, and **no slice in the 25-slice catalogue describes that state.**
-  - **Why it is worth recording rather than quietly adding.** The message is real, live and
+  - **Why it was worth recording rather than quietly adding.** The message is real, live and
     user-facing (`campRequirementsMetMsg`), and it is pinned in the fixtures precisely so S06 and S20
     can assert its ABSENCE. An assertion that a string never appears is only as good as the knowledge
     that it CAN appear. Silently widening S20 to two camps would cover it while making S20 about
     something its own title does not describe.
-  - **Suggested fix:** a new slice, not an edit to an existing one. It needs one anchor and one extra
-    camp. Raised 2026-09-10.
-  - **Status:** OPEN — BA/QA's call whether the catalogue gains a slice.
-  - **Watch item.** S24/S25 are the BR-12 "Check Status includes unsaved edits" pair. Schedules 1, 2, 4
-    and 11 all carry an OPEN `@discovered-divergence` there (issue #359 — Check Status judges the SAVED
-    document and ignores the screen). Expect Schedule 5 to reproduce it; if it does, that is a fifth
-    instance of one app-wide defect, not a new one.
-  - **Status:** OPEN — ready to author. Raised 2026-09-09.
+  - **What was done.** A new scenario in `check-status.feature` — *"A failing schedule still reports the
+    camps that passed, by name"* (`@p2 @S06 @SUC-005`) — seeds one complete camp and one with no road
+    distance on a single anchor, then asserts all four facts that state produces: the passing camp's met
+    line (with its trailing full stop), the failing camp's composed missing-field line, the ABSENCE of the
+    schedule banner, and that the met line names the camp that passed rather than the one that failed.
+    Both `Given` steps already existed and take a camp name, so no new step code was needed.
+  - **It needed a new anchor, and only one.** `CHECK_MIXED_ANCHOR` = **23050/2023**, minted in sch5's own
+    2023 range (nine cells there were still free) and folded into `db-e2e/R__80_e2e_anchor_seed.sql` in
+    the same change, per this folder's rule. It is the only sch5 anchor that holds two camps mid-scenario;
+    it is still empty AT REST, so preflight's "no camps" assertion is unchanged.
+  - **Tagged `@S06`, not a new slice id.** The catalogue question — whether UC-SCH5-001 formally gains an
+    S26 — is still BA/QA's, and nothing here presumes it: the scenario carries the slice tag of the
+    message family it serves, exactly as S24's green companion does. If a slice is minted later, the tag
+    is a one-line change.
+  - **Status:** CLOSED 2026-09-15 — coverage exists and is GREEN. Raised 2026-09-10.
 
 ---
 
 ## Spec gaps (the source specification is wrong, ambiguous or incomplete)
 
-- **SPEC-1 — OPEN: the Schedule 5 Gherkin README undercounts its own slices (says 23, there are 25).**
+- **SPEC-1 — CLOSED 2026-09-15: the Schedule 5 Gherkin README undercounted its own slices (said 23,
+  there are 25).**
   - **What's wrong.** `UC-SCH5-001/gherkin/README.md` states "**Total feature files:** 23 (one per slice
     in the slice catalog)", but its own table lists S01–S25, 25 `.feature` files exist on disk, and
     `UC-SCH5-001-slices.md` defines 25 slices.
@@ -257,12 +301,19 @@ logged here, because in both the difference is mechanism rather than behaviour:
     header would have planned 23 slices and silently dropped the two most defect-prone ones.
   - **Verified harmless in one direction:** nothing is missing from the Gherkin itself. All 25 slices
     exist as files and all 25 are in the catalog; only the summary line is stale.
-  - **Fix:** change "23" to "25" in that README (a file in the `ilcr-bmad` planning repo, not this one).
-  - **Status:** OPEN — trivial doc fix, owned by whoever maintains the planning artifacts. Found
-    2026-09-09.
+  - **Fix APPLIED 2026-09-15** in the `ilcr-bmad` planning repo:
+    - `UC-SCH5-001/gherkin/README.md` — "**Total feature files:** 23" → **25**.
+    - **A second copy of the same stale count was found while fixing it:**
+      `UC-SCH5-001-slices.md` said "Total slices after gap analysis: **23**" while listing 25 rows and 25
+      detail sections. Corrected to 25, and the breakdown above it now accounts for where the last two
+      came from — S24/S25 were added by a later cross-schedule rule sweep, after the original gap
+      analysis, which is exactly why both totals went stale rather than either being a typo.
+    - Verified by counting: 25 table rows = 25 `.feature` files on disk = 25 slice sections = the stated
+      totals in both documents.
+  - **Status:** CLOSED 2026-09-15. Found 2026-09-09.
 
-- **SPEC-2 — OPEN: S03 says a copied camp keeps the source's name. Neither the new app nor LEGACY does
-  that — the name is deliberately blanked.**
+- **SPEC-2 — CLOSED 2026-09-15: S03 said a copied camp keeps the source's name. Neither the new app nor
+  LEGACY does that — the name is deliberately blanked.**
   - **What's wrong.** `UC-SCH5-001-S03.feature:29` asserts the copy panel opens "pre-filled with
     'North Camp''s descriptive fields and expense amounts, **including
     `schedule5Form:newCampName` set to 'North Camp'**". In the running app the Camp Name comes back
@@ -284,15 +335,27 @@ logged here, because in both the difference is mechanism rather than behaviour:
     is flagged in coverage.md.
   - **Also note:** the blank name is *why* WRN-001 exists — "provide a new Camp Name and invoke save"
     is an instruction, not a warning about a clash.
-  - **Fix:** correct S03 **and S14** in the `ilcr-bmad` planning repo. The E2E tests already follow
-    legacy and are GREEN.
+  - **Fix APPLIED 2026-09-15** in the `ilcr-bmad` planning repo, on both slices plus the documents that
+    name them:
+    - `UC-SCH5-001-S03.feature` — the copy panel now opens with `schedule5Form:newCampName` left **BLANK**
+      instead of "set to 'North Camp'", with a header note citing `CampReportType.java:120-121` so the
+      next reader does not "correct" it back.
+    - `UC-SCH5-001-S14.feature` — **re-grounded onto the right error, not just re-worded.** Retitled
+      *"Save a Copied Camp Without **Naming** It (**Required** Name Error)"*; both scenarios now expect
+      FLD-001 *"Camp Name is required."* rather than ERR-001 *"Camp name already exists."*, and the header
+      records that the duplicate error is UNREACHABLE by this route and that BR-02's duplicate rule is
+      S13's subject instead — so closing this does not quietly drop coverage of the duplicate rule.
+    - `UC-SCH5-001-slices.md` — the S14 section, its summary row, its gap-analysis line, its Controls note
+      ("arrives BLANK") and its Messages row (ERR-001 → FLD-001).
+    - `gherkin/README.md` — the S14 row's name.
+    - The E2E tests already followed legacy and are GREEN; nothing in the suite changed.
   - **CONFIRMED DOWNSTREAM 2026-09-09, as predicted.** S14 has since been authored and it behaves
     exactly as this entry forecast: saving an unrenamed copy is rejected with **"Camp Name is
     required."**, not the duplicate-name error S14 scripts. The duplicate error is UNREACHABLE by that
     route — with a blank name there is nothing to duplicate. So S14 needs the same correction as S03,
     and it is a different message, not a re-worded one.
-  - **Status:** OPEN — spec correction owed on TWO slices (S03 and S14). Found 2026-09-09, downstream
-    effect confirmed the same day.
+  - **Status:** CLOSED 2026-09-15 — both slices corrected. Found 2026-09-09, downstream effect confirmed
+    the same day.
 
 - **SPEC-3 — OPEN: three planning documents say Check Status shows a per-camp "requirements met" line
   on a pass. Neither the new app nor LEGACY does.**

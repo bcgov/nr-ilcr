@@ -168,6 +168,27 @@ export const CHECK_UNSAVED_FIX_ANCHOR: Sch5Anchor = { key: { millId: 12050, year
 export const CHECK_PANEL_GATE_ANCHOR: Sch5Anchor = { key: { millId: 22051, year: 2023 }, mill: MILL_20172 };
 
 /**
+ * GAP-4 — the ONLY anchor that deliberately ends up holding TWO camps, and it has to.
+ *
+ * The per-camp "All requirements for <camp> have been met." line (`campRequirementsMetMsg`) is emitted
+ * only when the SCHEDULE fails and some individual camp passes: on a pass `Schedule5Service.checkStatus`
+ * returns the schedule banner with `camps: []` and never enters the per-camp loop (:946-950, mirroring
+ * legacy `Schedule5MB.java:324-326`). That is SPEC-3, and it is why S06 and S20 both assert this line is
+ * ABSENT — a pass is the one state it cannot appear in.
+ *
+ * So the line was live, user-facing and pinned in the fixtures purely so two scenarios could assert its
+ * absence, with nothing proving it can ever appear. An assertion that a string never shows is only as good
+ * as the knowledge that it CAN. This anchor is the mixed state that proves it: one complete camp, one
+ * missing its road distance.
+ *
+ * Its own cell, per the dedication rule — it writes. It is still EMPTY AT REST like every other mutating
+ * anchor (both camps are created by the scenario and removed by the cleanup registry), so it belongs in
+ * `EDITABLE_DRAFT_ANCHORS` and preflight's "no camps" assertion holds unchanged; it is only during the
+ * scenario that it carries two. Minted 2026-09-15 in sch5's own 2023 range, so it collides with nobody.
+ */
+export const CHECK_MIXED_ANCHOR: Sch5Anchor = { key: { millId: 23050, year: 2023 }, mill: MILL_20173 };
+
+/**
  * S15 — VALIDATE-ONLY. Nothing is ever saved here: every scenario proves an entry is REJECTED, so the
  * anchor must be one no scenario creates on. Deliberately not any mutating key above — a validate-only
  * assertion sharing a happy-path anchor is the classic way a "nothing was written" claim goes green
@@ -238,6 +259,7 @@ export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5A
   { name: 'check-unsaved-violation (S24)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
   { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
   { name: 'check-panel-gate (S24 green)', anchor: CHECK_PANEL_GATE_ANCHOR },
+  { name: 'check-mixed (GAP-4)', anchor: CHECK_MIXED_ANCHOR },
   { name: 'validation (S15)', anchor: VALIDATION_ANCHOR },
   { name: 'required-field (S12)', anchor: REQUIRED_FIELD_ANCHOR },
 ];
@@ -651,6 +673,38 @@ export const CHECK_MISSING_MESSAGE =
 
 /** What S20's second arm types into the field Check Status complained about. */
 export const CHECK_MISSING_FIX_DISTANCE = '12.5';
+
+// ---------------------------------------------------------------------------------------------------
+// GAP-4 — the MIXED state: one camp passing, one failing, on one anchor.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The two camps the GAP-4 scenario seeds, deliberately named so the assertions cannot pass by accident.
+ *
+ * DISTINCT NAMES, and not the usual "North Camp" both times: the per-camp messages are composed FROM the
+ * camp name, so two camps sharing one name would make "the met line names the right camp" unprovable —
+ * and BR-02 forbids it within a mill/year anyway.
+ */
+export const CHECK_MIXED_COMPLETE_CAMP_NAME = 'Complete Camp';
+export const CHECK_MIXED_INCOMPLETE_CAMP_NAME = 'Incomplete Camp';
+
+/**
+ * The per-camp PASS line for the complete camp — the string GAP-4 exists to reach.
+ *
+ * Built through `CHECK_STATUS_MESSAGES.campMet` rather than re-typed, so the trailing full stop (which
+ * the schedule-level banner does NOT carry) stays in one place.
+ */
+export const CHECK_MIXED_MET_MESSAGE = CHECK_STATUS_MESSAGES.campMet(
+  CHECK_MIXED_COMPLETE_CAMP_NAME,
+);
+
+/**
+ * And the failing camp's composed finding, in the same byte-exact shape as `CHECK_MISSING_MESSAGE` —
+ * asserted alongside the met line so the scenario proves the response carries BOTH per-camp verdicts,
+ * not merely that it stopped being a pass.
+ */
+export const CHECK_MIXED_MISSING_MESSAGE =
+  `Camp Report Name : ${CHECK_MIXED_INCOMPLETE_CAMP_NAME} - Road Distance to Operating Area: Value Required`;
 
 // ---------------------------------------------------------------------------------------------------
 // S24 / S25 — BR-11: does Check Status judge the SCREEN or the last SAVED document?
