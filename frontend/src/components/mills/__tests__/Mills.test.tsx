@@ -187,15 +187,16 @@ const selectCedar = async (user: ReturnType<typeof userEvent.setup>) => {
 }
 
 describe('Mills page — route, empty state (AC1)', () => {
-  test('the empty state offers exactly two controls, and no panel at all', async () => {
+  test('the empty state shows the Mill Details panel holding the two entry buttons, and no user panel', async () => {
     render(<Mills />)
 
-    expect(await screen.findByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Import Mill' })).toBeInTheDocument()
+    // mills.xhtml:22 opens `<p:panel header="Mill Details">` UNCONDITIONALLY; only its contents
+    // switch (:23-27 the entry buttons vs. :28 the detail body). The Associated Licensee User
+    // panel is the one legacy gates entirely on selection (:110, `millSelected`).
+    const detail = await screen.findByRole('region', { name: /mill details/i })
+    expect(within(detail).getByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
+    expect(within(detail).getByRole('button', { name: 'Import Mill' })).toBeInTheDocument()
 
-    // ABSENT, not disabled: legacy gates all three panels on `rendered="#{millsMB.millSelected}"`
-    // (mills.xhtml:28, :110), so there is nothing to tab into before a mill is chosen.
-    expect(screen.queryByRole('region', { name: /mill details/i })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('table', { name: /associated licensee user/i }),
     ).not.toBeInTheDocument()
@@ -526,7 +527,11 @@ describe('Mills page — importing a mill (AC3)', () => {
     )
 
     expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: /mill details/i })).not.toBeInTheDocument()
+    // The panel itself is unconditional (mills.xhtml:22); a refused import leaves no mill adopted,
+    // so it still shows the un-selected entry buttons rather than a detail body.
+    const panel = screen.getByRole('region', { name: /mill details/i })
+    expect(within(panel).getByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   })
 
   test('an already-tracked mill is refused 409 with its verbatim text', async () => {

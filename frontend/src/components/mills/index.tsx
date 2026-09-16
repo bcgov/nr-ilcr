@@ -430,172 +430,180 @@ const Mills: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16}>
-          {/* STA-001 state 1. The two entry controls render only while nothing is selected, exactly
-              as legacy gated them on `showSelectMillButton` (mills.xhtml:24, :26). */}
-          {!mill && (
-            <div className="mills__entry">
-              <Button renderIcon={Edit} onClick={() => setSelectOpen(true)}>
-                Select Mill
-              </Button>
-              <Button kind="secondary" renderIcon={Add} onClick={() => setImportOpen(true)}>
-                Import Mill
-              </Button>
-            </div>
-          )}
+          {/* mills.xhtml:22 opens this panel UNCONDITIONALLY — only its contents switch: the entry
+              buttons (:23-27, `showSelectMillButton`) while nothing is selected, the detail body
+              (:28, `millSelected`) once a mill is. Gating the whole SubPanel on selection (as an
+              earlier pass here did) left the empty state with two bare buttons and no panel at
+              all, which is exactly the "doesn't look like legacy" divergence this work exists to
+              close. */}
+          <SubPanel title="Mill Details">
+            {/* STA-001 state 1. The two entry controls render only while nothing is selected,
+                exactly as legacy gated them on `showSelectMillButton` (mills.xhtml:24, :26). */}
+            {!mill && (
+              <div className="mills__entry">
+                <Button renderIcon={Edit} onClick={() => setSelectOpen(true)}>
+                  Select Mill
+                </Button>
+                <Button kind="secondary" renderIcon={Add} onClick={() => setImportOpen(true)}>
+                  Import Mill
+                </Button>
+              </div>
+            )}
 
-          {mill && form && (
-            // ABSENT rather than disabled while nothing is selected: legacy gated the whole panel
-            // on `rendered="#{millsMB.millSelected}"` (mills.xhtml:28).
-            <SubPanel title="Mill Details">
-              {/* A PLAIN panel, not a table: legacy's `selectedMillList` is a one-row,
-                  one-unheaded-column p:dataTable used purely as an EL scope trick
-                  (mills.xhtml:28-30). Reproducing it as a table would invent a data grid.
-                  Nothing here is editable but the three controls — legacy writes nothing on
-                  THE.MILL, so there is no rename and no create-mill anywhere. */}
-              <p className="mills__identity">
-                <span className="mills__label">Mill #:</span>
-                {/* One node, because the mill number and name read as one identity. The number
-                    carries NO thousands separator: legacy fed a BigDecimal into MessageFormat and
-                    printed "1,234", the wire carries a String (22.1 deviation (E)/(F)). */}
-                <span>{`${dash(mill.millNumber)} - ${dash(mill.millName)}`}</span>
-                <span className="mills__label">Status: </span>
-                {/* The SERVER's description — "Active" or "Close", the code table's own text
-                    (deviation (G)). Deriving it from millStatusCode would re-spell the data. */}
-                <span>{dash(mill.statusDescription)}</span>
-              </p>
-
-              {/* mills.xhtml:41-49. Absent on a row never updated since import, which legacy could
-                  not produce but delivery data can. */}
-              {mill.updateUserid && (
+            {mill && form && (
+              // ABSENT rather than disabled while nothing is selected: legacy gated this body
+              // on `rendered="#{millsMB.millSelected}"` (mills.xhtml:28).
+              <>
+                {/* A PLAIN panel, not a table: legacy's `selectedMillList` is a one-row,
+                    one-unheaded-column p:dataTable used purely as an EL scope trick
+                    (mills.xhtml:28-30). Reproducing it as a table would invent a data grid.
+                    Nothing here is editable but the three controls — legacy writes nothing on
+                    THE.MILL, so there is no rename and no create-mill anywhere. */}
                 <p className="mills__identity">
-                  <span className="mills__label">Last Edited by :</span>
-                  <span>{mill.updateUserid}</span>
-                  <span className="mills__label">on date: </span>
-                  <span>{dash(legacyDate(mill.updateTimestamp))}</span>
+                  <span className="mills__label">Mill #:</span>
+                  {/* One node, because the mill number and name read as one identity. The number
+                      carries NO thousands separator: legacy fed a BigDecimal into MessageFormat
+                      and printed "1,234", the wire carries a String (22.1 deviation (E)/(F)). */}
+                  <span>{`${dash(mill.millNumber)} - ${dash(mill.millName)}`}</span>
+                  <span className="mills__label">Status: </span>
+                  {/* The SERVER's description — "Active" or "Close", the code table's own text
+                      (deviation (G)). Deriving it from millStatusCode would re-spell the data. */}
+                  <span>{dash(mill.statusDescription)}</span>
                 </p>
-              )}
 
-              <div className="mills__editable">
-                <Dropdown<HeadOfficeItem>
-                  id="mill-head-office"
-                  titleText="Head Office :"
-                  label="Select"
-                  items={[...HEAD_OFFICE_ITEMS]}
-                  itemToString={(item) => item?.label ?? ''}
-                  // `null`, never `undefined`: an undefined selectedItem flips Carbon to
-                  // uncontrolled and keeps the PREVIOUS mill's value painted after a switch.
-                  selectedItem={headOfficeItem}
-                  disabled={busy}
-                  onChange={({ selectedItem }) =>
-                    setForm((prev) =>
-                      prev ? { ...prev, headOfficeContactInd: selectedItem?.code ?? null } : prev,
-                    )
-                  }
-                />
-                {/* Both selectors are populated from the SAME list and have no cross-exclusion —
+                {/* mills.xhtml:41-49. Absent on a row never updated since import, which legacy
+                    could not produce but delivery data can. */}
+                {mill.updateUserid && (
+                  <p className="mills__identity">
+                    <span className="mills__label">Last Edited by :</span>
+                    <span>{mill.updateUserid}</span>
+                    <span className="mills__label">on date: </span>
+                    <span>{dash(legacyDate(mill.updateTimestamp))}</span>
+                  </p>
+                )}
+
+                <div className="mills__editable">
+                  <Dropdown<HeadOfficeItem>
+                    id="mill-head-office"
+                    titleText="Head Office :"
+                    label="Select"
+                    items={[...HEAD_OFFICE_ITEMS]}
+                    itemToString={(item) => item?.label ?? ''}
+                    // `null`, never `undefined`: an undefined selectedItem flips Carbon to
+                    // uncontrolled and keeps the PREVIOUS mill's value painted after a switch.
+                    selectedItem={headOfficeItem}
+                    disabled={busy}
+                    onChange={({ selectedItem }) =>
+                      setForm((prev) =>
+                        prev ? { ...prev, headOfficeContactInd: selectedItem?.code ?? null } : prev,
+                      )
+                    }
+                  />
+                  {/* Both selectors are populated from the SAME list and have no cross-exclusion —
                     the same contact may hold both slots, as in legacy. The server orders by
                     CONTACT_NAME (22.1 D4a), so the order is taken as given. The list is
                     deliberately UNFILTERED, so BR-09 is the server's call and is never
                     pre-validated here. */}
-                <Dropdown<ContactOption>
-                  id="mill-head-office-contact"
-                  titleText="Head Office Contact :"
-                  label="Select"
-                  items={contactItems}
-                  itemToString={(item) => item?.contactName ?? ''}
-                  selectedItem={contactItem(form.headOfficeContactId)}
-                  disabled={busy}
-                  onChange={({ selectedItem }) =>
-                    setForm((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            // The explicit "(None)" choice is a DELETE, not a no-op: legacy's
-                            // blank selection stored null (MillDAO.java:226-234).
-                            headOfficeContactId:
-                              !selectedItem || selectedItem.clientContactId < 0
-                                ? null
-                                : selectedItem.clientContactId,
-                          }
-                        : prev,
-                    )
-                  }
-                />
-                <Dropdown<ContactOption>
-                  id="mill-division-contact"
-                  titleText="Division Contact :"
-                  label="Select"
-                  items={contactItems}
-                  itemToString={(item) => item?.contactName ?? ''}
-                  selectedItem={contactItem(form.divisionContactId)}
-                  disabled={busy}
-                  onChange={({ selectedItem }) =>
-                    setForm((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            divisionContactId:
-                              !selectedItem || selectedItem.clientContactId < 0
-                                ? null
-                                : selectedItem.clientContactId,
-                          }
-                        : prev,
-                    )
-                  }
-                />
-              </div>
+                  <Dropdown<ContactOption>
+                    id="mill-head-office-contact"
+                    titleText="Head Office Contact :"
+                    label="Select"
+                    items={contactItems}
+                    itemToString={(item) => item?.contactName ?? ''}
+                    selectedItem={contactItem(form.headOfficeContactId)}
+                    disabled={busy}
+                    onChange={({ selectedItem }) =>
+                      setForm((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              // The explicit "(None)" choice is a DELETE, not a no-op: legacy's
+                              // blank selection stored null (MillDAO.java:226-234).
+                              headOfficeContactId:
+                                !selectedItem || selectedItem.clientContactId < 0
+                                  ? null
+                                  : selectedItem.clientContactId,
+                            }
+                          : prev,
+                      )
+                    }
+                  />
+                  <Dropdown<ContactOption>
+                    id="mill-division-contact"
+                    titleText="Division Contact :"
+                    label="Select"
+                    items={contactItems}
+                    itemToString={(item) => item?.contactName ?? ''}
+                    selectedItem={contactItem(form.divisionContactId)}
+                    disabled={busy}
+                    onChange={({ selectedItem }) =>
+                      setForm((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              divisionContactId:
+                                !selectedItem || selectedItem.clientContactId < 0
+                                  ? null
+                                  : selectedItem.clientContactId,
+                            }
+                          : prev,
+                      )
+                    }
+                  />
+                </div>
 
-              <div className="mills__actions">
-                {/* STA-001: exactly one of these, chosen by the status CODE — presence/absence,
+                <div className="mills__actions">
+                  {/* STA-001: exactly one of these, chosen by the status CODE — presence/absence,
                     never enable/disable (MillsMB.java:359-364). Neither is confirmed; legacy has
                     no p:confirm on either (mills.xhtml:100-101). */}
-                {isActive ? (
-                  <Button
-                    kind="danger--tertiary"
-                    disabled={busy}
-                    renderIcon={Misuse}
-                    onClick={() => changeStatus('deactivate')}
-                  >
-                    Deactivate
-                  </Button>
-                ) : (
-                  <Button
-                    kind="tertiary"
-                    disabled={busy}
-                    renderIcon={CheckmarkOutline}
-                    onClick={() => changeStatus('activate')}
-                  >
-                    Activate
-                  </Button>
-                )}
-                {/* D4: implemented WORKING. Legacy's button called `searchSelectMill.show()` on the
+                  {isActive ? (
+                    <Button
+                      kind="danger--tertiary"
+                      disabled={busy}
+                      renderIcon={Misuse}
+                      onClick={() => changeStatus('deactivate')}
+                    >
+                      Deactivate
+                    </Button>
+                  ) : (
+                    <Button
+                      kind="tertiary"
+                      disabled={busy}
+                      renderIcon={CheckmarkOutline}
+                      onClick={() => changeStatus('activate')}
+                    >
+                      Activate
+                    </Button>
+                  )}
+                  {/* D4: implemented WORKING. Legacy's button called `searchSelectMill.show()` on the
                     pre-4.0 global widget namespace with no shim and updated the dialog containers
                     rather than the inner form (mills.xhtml:102), so it almost certainly never
                     opened. The current mill stays selected until a new row is chosen — legacy's
                     `clear(false)` does not clear the selection (MillsMB.java:513-519) — and no
                     message is emitted, the artefacts being silent on one. */}
-                <Button
-                  kind="ghost"
-                  renderIcon={Edit}
-                  // Disabled while a write is in flight, like every other write-adjacent control:
-                  // adopting another mill mid-write makes millIdRef drop the response, so a
-                  // completed write's outcome would vanish without a message.
-                  disabled={busy}
-                  onClick={() => setSelectOpen(true)}
-                >
-                  Change Mill
-                </Button>
-                <Button
-                  // Advisory Save-gating (D5, AD-6): disabled only while the head-office indicator
-                  // has never been chosen, so no value is written that nobody picked.
-                  disabled={busy || !canSaveContacts(form)}
-                  onClick={save}
-                >
-                  Save
-                </Button>
-              </div>
-            </SubPanel>
-          )}
+                  <Button
+                    kind="ghost"
+                    renderIcon={Edit}
+                    // Disabled while a write is in flight, like every other write-adjacent control:
+                    // adopting another mill mid-write makes millIdRef drop the response, so a
+                    // completed write's outcome would vanish without a message.
+                    disabled={busy}
+                    onClick={() => setSelectOpen(true)}
+                  >
+                    Change Mill
+                  </Button>
+                  <Button
+                    // Advisory Save-gating (D5, AD-6): disabled only while the head-office indicator
+                    // has never been chosen, so no value is written that nobody picked.
+                    disabled={busy || !canSaveContacts(form)}
+                    onClick={save}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </>
+            )}
+          </SubPanel>
 
           {mill && (
             // ONE panel, singular, verbatim (mills.xhtml:110). The `Associated Auditors` panel is
