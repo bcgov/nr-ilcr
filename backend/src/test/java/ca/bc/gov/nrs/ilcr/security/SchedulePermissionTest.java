@@ -93,6 +93,21 @@ class SchedulePermissionTest {
     assertTrue(permissions.hasPermission(auth("ILCR_ADMIN"), "MAINTAIN_CODE_TABLES"));
   }
 
+  // SUBMIT_REPORT (Story 15.3): the first SUBMITTER-only action — legacy enabled the Check Status
+  // Submit button for ILCR_LICENSEE alone (UserSessionMB.canUserSubmitReport:502-509), so an ADMIN
+  // is denied 403 at the endpoint rather than refused later by the status guard.
+  @Test
+  void submitter_grantsSubmitReport() {
+    assertTrue(permissions.grants(Role.SUBMITTER, Action.SUBMIT_REPORT));
+    assertTrue(permissions.hasPermission(auth("ILCR_SUBMITTER"), "SUBMIT_REPORT"));
+  }
+
+  @Test
+  void admin_deniedSubmitReport() {
+    assertFalse(permissions.grants(Role.ADMIN, Action.SUBMIT_REPORT));
+    assertFalse(permissions.hasPermission(auth("ILCR_ADMIN"), "SUBMIT_REPORT"));
+  }
+
   @Test
   void hasPermission_submitterAuthority_view() {
     assertTrue(permissions.hasPermission(auth("SUBMITTER"), "VIEW_SCHEDULE"));

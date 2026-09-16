@@ -155,7 +155,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC2: totalCost = material + install, computed server-side")
     void totalIsMaterialPlusInstall() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
 
@@ -170,7 +171,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC2: a single null operand is treated as absent, not as zero")
     void oneNullOperandYieldsTheOther() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 900, null));
 
@@ -186,7 +188,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC2: both costs absent -> totalCost null, NEVER 0 (legacy sumBigDecimalAreas)")
     void bothNullOperandsYieldNull() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, null, null));
 
@@ -202,7 +205,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC3: costs route by item id — 77 material, 78 install, never swapped")
     void costsRouteByItemId() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       // Deliberately listed install-first so a positional bug would surface.
       when(repository.findCostDetails(MILL, YEAR))
@@ -218,7 +222,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC3: rowCounter is the 1-based index in CULVERT_REPORT_ID order")
     void rowCounterIsOneBased() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR))
           .thenReturn(List.of(completeRound(7801), completeRound(7802), completeRound(7803)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
@@ -231,7 +236,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC3: a whole length serializes at scale 1 (12 -> 12.0)")
     void lengthNormalizedToOneDecimal() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR))
           .thenReturn(List.of(row(7801, "R", 1200, 900, new BigDecimal("12"), 3, null)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
@@ -249,7 +255,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC4: the Type list is read for THIS reporting year")
     void typeListIsYearScoped() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
@@ -265,18 +272,21 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).editable()).isTrue();
       assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.NONE).editable()).isFalse();
 
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
       assertThat(service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).editable()).isFalse();
     }
 
     @Test
     @DisplayName("AC6: an empty culvert list is a valid document, not an error")
     void emptyListIsValid() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
@@ -538,7 +548,8 @@ class Schedule7bServiceTest {
   class Writes {
 
     private void draft() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       lenient().when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     }
@@ -550,7 +561,8 @@ class Schedule7bServiceTest {
      * means to exercise.
      */
     private void draftWith(long... culvertIds) {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       lenient()
           .when(repository.findCulverts(MILL, YEAR))
           .thenReturn(
@@ -594,7 +606,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC5: every write is Draft-gated on the 1-10 track")
     void writesAreDraftGated() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
       CulvertRequest added = validRequest(null);
       CulvertRequest corrected = validRequest(0);
       CulvertSaveAllRequest batch =
@@ -622,7 +635,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC5: a missing report-status row is not Draft either")
     void absentTrackStatusIsNotDraft() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.empty());
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
       CulvertRequest added = validRequest(null);
 
       assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, CallerRights.SUBMITTER, USER))
@@ -896,8 +910,9 @@ class Schedule7bServiceTest {
 
       assertThat(echoed.trackStatus()).isEqualTo("D");
       assertThat(echoed.editable()).isTrue();
-      // Exactly one status read: the Draft gate. The echo must not issue a second one.
-      verify(repository, times(1)).findTrackStatus(MILL, YEAR);
+      // Exactly one status read: the locked Draft gate. The echo must not issue a second one.
+      verify(repository, times(1)).findTrackStatusForUpdate(MILL, YEAR);
+      verify(repository, never()).findTrackStatus(MILL, YEAR);
     }
   }
 
@@ -908,7 +923,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("beyond Draft a culvert carries the eight keys legacy renders, and no total")
     void beyondDraftServesTheSubmittedFigures() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
       when(repository.findCulvertSnapshots(MILL, YEAR))
@@ -944,7 +960,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
     void draftSkipsTheSnapshotReads() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
 

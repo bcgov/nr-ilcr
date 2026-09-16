@@ -484,4 +484,40 @@ class MillContextServiceTest {
 
     assertTrue(service.findTrackStatusCodes(514L, YEAR).isEmpty());
   }
+
+  // --- Story 15.3: the locked reads a status transition and the Schedule 11 write gate take ---
+
+  @Test
+  void lockTrackStatusCodes_mapsBothCodesFromTheLockedRow() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", "S")));
+
+    var codes = service.lockTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertEquals("S", codes.schedule11Code());
+  }
+
+  @Test
+  void lockTrackStatusCodes_noStatusRow_isEmpty() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR)).thenReturn(Optional.empty());
+
+    assertTrue(service.lockTrackStatusCodes(514L, YEAR).isEmpty());
+  }
+
+  @Test
+  void findSchedule11TrackStatusCodeForUpdate_readsTheSilvicultureColumnOnly() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("S", "D")));
+
+    assertEquals("D", service.findSchedule11TrackStatusCodeForUpdate(514L, YEAR).orElseThrow());
+  }
+
+  @Test
+  void findSchedule11TrackStatusCodeForUpdate_nullSilvicultureCode_isEmpty() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", null)));
+
+    assertTrue(service.findSchedule11TrackStatusCodeForUpdate(514L, YEAR).isEmpty());
+  }
 }

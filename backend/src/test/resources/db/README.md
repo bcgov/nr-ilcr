@@ -195,6 +195,7 @@ sense against this directory, `mvn clean` before believing it.
    no data — which is itself three of the cases under test: the verbatim `** NO STATUS **` cell, a
    missing status row forcing `Data Verified: No`, and the combined Schedule 1+2 layout emitting no
    mini-table header for a year with no rows.
+   | Check Status submit (15.3) | **780–783**    | `R__55`; 780–782 Draft + all-ten-MET (one per mutating test), 783 status row + empty cat-1/3 summaries (1409–1410); summaries 1400–1410 for `DraftGateLockIT`; `MILL_NUMBER` 1780–1783 |
 
    **Mill administration (`R__75`, UC-MILL-001)** — the maintain-mills surface needs four shapes this
    snapshot could not otherwise supply. `750` and `756` are ministry mills with **no**

@@ -67,6 +67,9 @@ class Schedule1OtherCostsServiceTest {
         .when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY, null, null, 0)));
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(trackStatus));
+    lenient()
+        .when(repository.findTrackStatusForUpdate(MILL, YEAR))
+        .thenReturn(Optional.of(trackStatus));
   }
 
   private void stubRows(BigDecimal sharedVolume, List<OtherCostDetailRow> rows) {

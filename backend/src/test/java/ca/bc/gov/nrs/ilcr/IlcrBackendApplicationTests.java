@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr;
 
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
+import ca.bc.gov.nrs.ilcr.checkstatus.ReportTrackTransitionRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -62,6 +64,9 @@ class IlcrBackendApplicationTests {
   @MockitoBean private CostDetailSnapshotRepository costDetailSnapshotRepository;
 
   @MockitoBean private ReportSummarySnapshotRepository reportSummarySnapshotRepository;
+  // Story 15.3: the submit transition's writer and the licensee lookup it records (BR-05).
+  @MockitoBean private ReportTrackTransitionRepository reportTrackTransitionRepository;
+  @MockitoBean private MillUserXrefRepository millUserXrefRepository;
 
   @Test
   void contextLoads() {}
