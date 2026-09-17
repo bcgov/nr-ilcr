@@ -483,13 +483,13 @@ public class Schedule10Service {
    * <p>Legacy has no server-side check at all — its gate is the rendered {@code disabled} attribute
    * — so a crafted post reaches its DAO unimpeded. This is the house hardening rather than parity.
    *
-   * <p>The status read is deliberately not locked. A concurrent transition between this check and
-   * the write is theoretically possible, but no endpoint in the application can move a track today,
-   * and the locked variant belongs to the status-transition work where it can be applied
-   * consistently.
+   * <p>The status read takes the {@code FOR UPDATE} row lock (Story 15.3, D8): the submit endpoint
+   * can now move the track, and it locks the same row before re-running the ten-schedule gate, so
+   * the two serialize — a save cannot land between the transition's gate and its commit, and a
+   * transition cannot land between this gate and the write it guards.
    */
   private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
     if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }

@@ -400,7 +400,7 @@ public class Schedule7aService {
    * current status (else 409, BR-01/AD-9).
    */
   private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
     if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }

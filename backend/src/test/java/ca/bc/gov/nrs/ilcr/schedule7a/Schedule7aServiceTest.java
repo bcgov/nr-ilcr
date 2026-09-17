@@ -126,7 +126,8 @@ class Schedule7aServiceTest {
   @DisplayName("totals: grand total includes site plan; material/deliver/install sum SS+abutment")
   void totals_computedFromLegacyArithmetic() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021))
@@ -161,7 +162,8 @@ class Schedule7aServiceTest {
   @DisplayName("totals: null-tolerant — a total with no contributing cost is null, not 0")
   void totals_nullWhenNoContributingCost() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     // Only site plan present — material/deliver/install have no operands.
@@ -179,7 +181,8 @@ class Schedule7aServiceTest {
   @DisplayName("totals: null-tolerant addition returns the lone present operand")
   void totals_partialNullAddition() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     // material: SS present, abutment absent → returns SS; deliver: SS absent, abutment present.
@@ -200,7 +203,8 @@ class Schedule7aServiceTest {
   @DisplayName("read tolerates a null built date and null measurements")
   void read_nullDateAndMeasurements() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(
             List.of(
@@ -238,11 +242,13 @@ class Schedule7aServiceTest {
     when(repository.findBridges(anyLong(), anyInt())).thenReturn(List.of());
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
 
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     assertThat(service.getSchedule7a(514, 2021, CallerRights.NONE).editable())
         .isFalse(); // no EDIT_SCHEDULE
 
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     assertThat(service.getSchedule7a(517, 2021, CallerRights.SUBMITTER).editable())
         .isFalse(); // not Draft
     assertThat(service.getSchedule7a(517, 2021, CallerRights.SUBMITTER).trackStatus())
@@ -253,7 +259,8 @@ class Schedule7aServiceTest {
   @DisplayName("rowCounter is the 1-based list index across bridges")
   void rowCounter_isOneBasedIndex() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(
             List.of(
@@ -377,7 +384,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("add rejects a write outside Draft (409)")
   void add_rejectedOutsideDraft() {
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     BridgeRequest request = validRequest(null);
     assertThatThrownBy(() -> service.addBridge(517, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
@@ -386,7 +394,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("add rejects a malformed yyyy-MM date (400)")
   void add_rejectsBadDate() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     BridgeRequest bad =
         new BridgeRequest(
             "Loc",
@@ -421,7 +430,8 @@ class Schedule7aServiceTest {
   @DisplayName("add rejects an unknown code value (400)")
   void add_rejectsUnknownCode() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     BridgeRequest bad =
         new BridgeRequest(
             "North Fork",
@@ -456,7 +466,8 @@ class Schedule7aServiceTest {
   @DisplayName("update disambiguates a stale revision (409) from an unknown id (404)")
   void update_staleVsNotFound() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
     BridgeRequest request = validRequest(0);
 
@@ -475,7 +486,8 @@ class Schedule7aServiceTest {
   @DisplayName("add writes ALL TEN cost rows, a null cost as a NULL row (legacy storage shape)")
   void add_writesAllTenCostRowsIncludingNulls() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.nextBridgeReportId()).thenReturn(7601L);
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
@@ -523,7 +535,8 @@ class Schedule7aServiceTest {
   @DisplayName("add rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void add_persistenceFailure() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.nextBridgeReportId()).thenReturn(7601L);
     doThrow(new DataIntegrityViolationException("insert failed"))
         .when(repository)
@@ -538,7 +551,8 @@ class Schedule7aServiceTest {
   @DisplayName("update writes the correction, upserts its costs, and recomputes")
   void update_persistsAndRecomputes() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
@@ -556,7 +570,8 @@ class Schedule7aServiceTest {
   @DisplayName("update rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void update_persistenceFailure() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     doThrow(new DataIntegrityViolationException("update failed"))
         .when(repository)
         .updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
@@ -571,7 +586,8 @@ class Schedule7aServiceTest {
   @DisplayName("delete removes the cost children BEFORE the bridge, then recomputes (S04)")
   void delete_removesBridgeAndCosts() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.deleteBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
@@ -592,7 +608,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete: a parent delete that affects 0 rows is a 404, not a false success (S04)")
   void delete_parentVanishedMidFlight() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     // The probe passes, then the row is gone by the time the delete runs (a concurrent delete won).
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.deleteBridge(7601, 514, 2021)).thenReturn(0);
@@ -608,7 +625,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete of an unknown id → 404 and never touches either delete")
   void delete_unknownId() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
 
     assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, CallerRights.SUBMITTER))
@@ -620,7 +638,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete of another mill's bridge id → 404, never removing that mill's rows")
   void delete_otherMillsBridge() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     // The id exists, but not under this mill/year — countBridge is mill/year/category-scoped, so
     // the
     // check still refuses. (It has to be scoped: the cost delete keys on the bridge id alone.)
@@ -634,7 +653,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void delete_persistenceFailure() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     doThrow(new DataIntegrityViolationException("delete failed"))
         .when(repository)
@@ -647,7 +667,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete outside Draft is rejected before any repository write (409)")
   void delete_rejectedOutsideDraft() {
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
 
     assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(ScheduleNotEditableException.class);
@@ -658,7 +679,8 @@ class Schedule7aServiceTest {
   @DisplayName("code lists are scoped to the REPORTING YEAR, not served unfiltered")
   void codeLists_scopedToReportingYear() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2019)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
 
@@ -677,7 +699,8 @@ class Schedule7aServiceTest {
   @DisplayName("a write validates its codes against the reporting year's effective list")
   void writeValidatesCodesForTheReportingYear() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2019)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
@@ -691,7 +714,8 @@ class Schedule7aServiceTest {
   @DisplayName("save-all writes every bridge in one call and recomputes once (legacy page Save)")
   void saveAll_persistsEveryBridge() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2021))
         .thenReturn(
@@ -710,13 +734,14 @@ class Schedule7aServiceTest {
     verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
     verify(repository, times(10)).upsertCost(eq(7602L), anyInt(), anyInt(), eq("user"));
     // The Draft gate is read once for the batch, not once per bridge.
-    verify(repository).findTrackStatus(514, 2021);
+    verify(repository).findTrackStatusForUpdate(514, 2021);
   }
 
   @Test
   @DisplayName("save-all rejects a duplicate bridge id with 400, not a misleading 409")
   void saveAll_duplicateIdIsBadRequest() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     BridgeSaveAllRequest request = saveAll(7601L, 7601L);
 
     // Left to run, the second pass would meet the revision its own first pass bumped and 409 —
@@ -731,7 +756,8 @@ class Schedule7aServiceTest {
   @DisplayName("save-all reads each code table ONCE for the batch, not once per bridge")
   void saveAll_readsCodeTablesOncePerBatch() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
@@ -746,7 +772,8 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("save-all is rejected outside Draft before any bridge is written")
   void saveAll_rejectedOutsideDraft() {
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     BridgeSaveAllRequest request = saveAll(7601L);
 
     assertThatThrownBy(
@@ -759,7 +786,8 @@ class Schedule7aServiceTest {
   @DisplayName("save-all propagates a stale revision on ANY entry, so the batch rolls back whole")
   void saveAll_staleEntryAbortsTheBatch() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     // First bridge writes, second is stale — the exception must escape so @Transactional rolls the
     // first one back too. A partial save would leave the reporter unable to tell what persisted.
     when(repository.updateBridge(any(), eq(514L), eq(2021), anyInt(), any()))
@@ -778,7 +806,8 @@ class Schedule7aServiceTest {
   @DisplayName("save-all rejects an unknown bridge id with 404")
   void saveAll_unknownIdIsNotFound() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
     BridgeSaveAllRequest request = saveAll(9999L);
@@ -792,7 +821,8 @@ class Schedule7aServiceTest {
   @DisplayName("save-all surfaces ERR-004 when the persistence layer fails")
   void saveAll_persistenceFailure() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     doThrow(new DataIntegrityViolationException("update failed"))
         .when(repository)
         .updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
@@ -856,7 +886,8 @@ class Schedule7aServiceTest {
   @DisplayName("original values: at Draft nothing is exposed and neither snapshot view is read")
   void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
@@ -872,7 +903,8 @@ class Schedule7aServiceTest {
   @DisplayName("original values: attributes and costs join on the bridge report id")
   void originalValues_submitted_joinBridgeAndCostSnapshotsOnTheReportId() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
@@ -923,7 +955,8 @@ class Schedule7aServiceTest {
   @DisplayName("original values: beyond Draft with nothing on file every field carries the label")
   void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));

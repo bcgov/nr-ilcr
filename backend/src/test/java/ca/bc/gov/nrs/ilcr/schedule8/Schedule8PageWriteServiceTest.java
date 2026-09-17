@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -106,7 +107,8 @@ class Schedule8PageWriteServiceTest {
 
   @Test
   void nonDraft_throwsNotEditable() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
     assertThrows(
         ScheduleNotEditableException.class,
         () -> service.savePage(MILL, YEAR, create(null, "B"), CallerRights.SUBMITTER, USER));
@@ -118,7 +120,8 @@ class Schedule8PageWriteServiceTest {
 
   @Test
   void editWithStaleRevision_throwsStale() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.pageExists(8800, MILL, YEAR)).thenReturn(true); // ownership guard (H1) passes
     when(repository.bumpPageRevision(8800, 5, USER)).thenReturn(0);
     Schedule8PageRequest edit =
@@ -135,7 +138,8 @@ class Schedule8PageWriteServiceTest {
 
   @Test
   void create_insertsThenBumpsRevision_andClearsSupplyBlockWhenTfl() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.insertPage(
             anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
             any(), any(), any(), any()))
@@ -167,7 +171,8 @@ class Schedule8PageWriteServiceTest {
 
   @Test
   void delete_unknownPage_isNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.pageExists(99999, MILL, YEAR)).thenReturn(false);
     service.deletePage(MILL, YEAR, 99999, CallerRights.SUBMITTER);
     verify(repository, never()).deletePage(anyInt());
@@ -175,7 +180,8 @@ class Schedule8PageWriteServiceTest {
 
   @Test
   void delete_existingPage_cascades() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.pageExists(8810, MILL, YEAR)).thenReturn(true);
     service.deletePage(MILL, YEAR, 8810, CallerRights.SUBMITTER);
     verify(repository).deletePage(8810);

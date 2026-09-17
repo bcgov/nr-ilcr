@@ -76,6 +76,7 @@ class Schedule3SubPageServiceTest {
 
   private void stubDraft() {
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient()
         .when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY, "N", "c", 0)));

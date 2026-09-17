@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,9 +12,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Acceptance test — the sweep's mill/year context guards (Story 15.1 AC 5/6/9; UC-CHK-001 S05/S06).
- * Security OFF (the mock ILCR_SUBMITTER holds VIEW_SCHEDULE) so these isolate the guard, not authz
- * (403 is proven in {@link CheckStatusAuthorizationIT}).
+ * Acceptance test — the mill/year context guards of the sweep (Story 15.1 AC 5/6/9; UC-CHK-001
+ * S05/S06) and of the submit endpoint (Story 15.3 AC 8; UC-CHK-002 S04/S05), which runs the SAME
+ * guard, once, before its transaction — so a malformed, unknown or closed context never reaches the
+ * status-row lock. Security OFF (the mock ILCR_SUBMITTER holds VIEW_SCHEDULE and SUBMIT_REPORT) so
+ * these isolate the guard, not authz (403 is proven in {@link CheckStatusAuthorizationIT} and
+ * {@link CheckStatusSubmitAuthorizationIT}).
  *
  * <p>Every case asserts the verbatim {@code detail} text, never merely "not 200": Schedules 4, 5,
  * 6, 8, 10 and 11 all report zero rows as a vacuous MET, so a sweep that skipped the guard would
@@ -24,6 +28,7 @@ import org.junit.jupiter.api.Test;
 class CheckStatusContextGuardIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/check-status";
+  private static final String SUBMIT = "/api/v1/check-status/submit";
   private static final String PROBLEM_JSON = "application/problem+json";
 
   /**
@@ -94,6 +99,60 @@ class CheckStatusContextGuardIT extends AbstractOracleIT {
   void millClosedForYear_returns409() throws Exception {
     mockMvc
         .perform(get(ENDPOINT).param("millId", "516").param("year", "2021"))
+        .andExpect(status().isConflict())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_002)));
+  }
+
+  // --- POST /submit runs the same guard (Story 15.3 AC 8) ---------------------------------------
+
+  @Test
+  @DisplayName(
+      "15.3 S04: submit with missing millId -> 400 ERR-001 verbatim, trailing space included")
+  void submit_missingMillId_returns400ErrOne() throws Exception {
+    mockMvc
+        .perform(post(SUBMIT).param("year", "2021"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_001)));
+  }
+
+  @Test
+  @DisplayName("15.3 S04: submit with non-numeric year -> 400 ERR-001, never Spring's own 400")
+  void submit_nonNumericYear_returns400ErrOne() throws Exception {
+    mockMvc
+        .perform(post(SUBMIT).param("millId", "514").param("year", "twenty21"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_001)));
+  }
+
+  @Test
+  @DisplayName("15.3 S05: submit for an unknown mill -> 404 with the CHECK STATUS not-found text")
+  void submit_unknownMill_returns404CheckStatusNotFound() throws Exception {
+    mockMvc
+        .perform(post(SUBMIT).param("millId", "999999").param("year", "2021"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(CHECK_STATUS_NOT_FOUND)));
+  }
+
+  @Test
+  @DisplayName(
+      "15.3 S05: submit for a known mill, year with no status row -> 404 check-status not-found")
+  void submit_knownMillAbsentYear_returns404CheckStatusNotFound() throws Exception {
+    mockMvc
+        .perform(post(SUBMIT).param("millId", "514").param("year", "1999"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(CHECK_STATUS_NOT_FOUND)));
+  }
+
+  @Test
+  @DisplayName("15.3 D14: submit for a mill closed (CLS) for the year -> 409 ERR-002 verbatim")
+  void submit_millClosedForYear_returns409() throws Exception {
+    mockMvc
+        .perform(post(SUBMIT).param("millId", "516").param("year", "2021"))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is(ERR_002)));

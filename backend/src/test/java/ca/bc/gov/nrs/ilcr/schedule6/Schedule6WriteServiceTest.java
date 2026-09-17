@@ -72,7 +72,8 @@ class Schedule6WriteServiceTest {
   @InjectMocks private Schedule6Service service;
 
   private void stubDraft() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findRoadRecords(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.nextRoadReportId()).thenReturn(9501);
@@ -131,7 +132,8 @@ class Schedule6WriteServiceTest {
   @ValueSource(strings = {"99", "2", "52B", "0", " ", ""})
   @DisplayName("BR-03: a TFL number that resolves no RMG -> InvalidTflNumberException, no write")
   void invalidTfl_rejected(String tflNumber) {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     assertThrows(
         InvalidTflNumberException.class,
         () ->
@@ -144,7 +146,8 @@ class Schedule6WriteServiceTest {
   @Test
   @DisplayName("BR-03: a TFL record with the number missing entirely -> InvalidTflNumberException")
   void missingTfl_rejected() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     assertThrows(
         InvalidTflNumberException.class,
         () ->
@@ -159,7 +162,8 @@ class Schedule6WriteServiceTest {
       "BR-09: the lone placeholder is CLAIMED (classification onto that row + its detail); "
           + "no fresh insert, no new id drawn")
   void addRecord_claimsLonePlaceholder() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8331, null, null, null, "kept comment", 0)));
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
@@ -177,7 +181,8 @@ class Schedule6WriteServiceTest {
   @Test
   @DisplayName("BR-09: a raced claim (0 rows) falls back to a fresh insert")
   void addRecord_claimRace_fallsBackToInsert() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8331, null, null, null, "gc", 0)));
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
@@ -197,7 +202,8 @@ class Schedule6WriteServiceTest {
           + "concurrent general-comments save cannot be reverted, so the replication invariant itself is "
           + "proven by Schedule6WriteIT.addRecord_carriesCurrentGeneralComment, not here")
   void addRecord_insertsThenDetail_inOrder() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8334, "01", "01B", null, "the shared comment", 0)));
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
@@ -224,7 +230,8 @@ class Schedule6WriteServiceTest {
       "AR11 (ported from updateRecord): an entry hits (1 row) -> the detail is UPSERTED "
           + "after the master update")
   void saveDocument_upsertsDetailAfterMasterUpdate() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8336, "01", "01B", null, null, 0)));
     when(repository.updateRoadReport(8336, MILL, YEAR, 0, null, null, "18", USER)).thenReturn(1);
@@ -247,7 +254,8 @@ class Schedule6WriteServiceTest {
       "AR11 (ported from updateRecord): 0 rows + id absent -> 404; 0 rows + id present -> "
           + "409 stale; nothing upserted")
   void saveDocument_disambiguates404From409() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(79999, "01", "01B", null, null, 0)));
     when(repository.updateRoadReport(79999, MILL, YEAR, 0, "01", "01B", null, USER)).thenReturn(0);
@@ -288,7 +296,8 @@ class Schedule6WriteServiceTest {
           + "through)")
   void saveDocument_placeholderEntryId_is404(String shape) {
     String blank = "NULL".equals(shape) ? null : " ";
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8330, blank, blank, blank, "lone", 0)));
     Schedule6SaveRequest saveRequest =
@@ -311,7 +320,8 @@ class Schedule6WriteServiceTest {
           + "service is a clean 400 (RevisionCountRequiredException), never an NPE and never a "
           + "coerced 409")
   void saveDocument_nullRevisionCount_is400() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8336, "01", "01B", null, null, 0)));
     Schedule6SaveRequest saveRequest =
@@ -333,7 +343,8 @@ class Schedule6WriteServiceTest {
       "A TSA area type wider than TSA_NUMBER VARCHAR2(2) is a clean 400, not an ORA-12899 "
           + "500 — the DTO's @Size(max=3) exists for the \"TFL\" literal, so 3 chars reach here")
   void tsaAreaTypeTooWide_is400() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     assertThrows(
         InvalidClassificationCodeException.class,
         () ->
@@ -352,7 +363,8 @@ class Schedule6WriteServiceTest {
       "BR-09 (ported from saveGeneralComments): rows exist -> updateAllComments "
           + "(replication); no placeholder ops")
   void saveDocument_commentWithRows_replicates() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8334, "01", "01B", null, "old", 0)));
     when(repository.updateRoadReport(8334, MILL, YEAR, 0, "01", "01B", null, USER)).thenReturn(1);
@@ -391,7 +403,8 @@ class Schedule6WriteServiceTest {
       "BR-09 (ported from saveGeneralComments): placeholder-only + blank -> "
           + "deletePlaceholder; zero rows + blank -> no-op")
   void saveDocument_commentBlankBranches() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8330, null, null, null, "lone", 0)))
         .thenReturn(List.of());
@@ -415,7 +428,8 @@ class Schedule6WriteServiceTest {
           + "add) falls back to clearing COMMENTS in place — never a silent no-op behind \"Data "
           + "saved successfully\"")
   void saveDocument_commentDeleteMatchesNothing_fallsBackToClear() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8330, " ", " ", " ", "lone", 0)));
     when(repository.deletePlaceholder(8330, MILL, YEAR)).thenReturn(0);
@@ -432,7 +446,8 @@ class Schedule6WriteServiceTest {
       "BR-09 (ported from saveGeneralComments): real rows + blank comment -> the clear "
           + "replicates NULL onto every row (not a placeholder delete)")
   void saveDocument_commentRecordsPlusBlank_replicatesNull() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8334, "01", "01B", null, "old", 0)));
     when(repository.updateRoadReport(8334, MILL, YEAR, 0, "01", "01B", null, USER)).thenReturn(1);
@@ -457,7 +472,8 @@ class Schedule6WriteServiceTest {
       "Task 5: a stored real row absent from the submitted list -> OmittedRoadRecordsException, "
           + "nothing written")
   void saveDocument_omitsAStoredRealRow_throws() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(
             List.of(
@@ -483,7 +499,8 @@ class Schedule6WriteServiceTest {
       "Task 5: a placeholder row does NOT count as omitted -- the lone-comment state stays "
           + "savable with only the real row submitted")
   void saveDocument_placeholderNotCountedAsOmitted_succeeds() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(
             List.of(
@@ -509,7 +526,8 @@ class Schedule6WriteServiceTest {
   @ValueSource(strings = {"S", "V", "A"})
   @DisplayName("Deviation (a): every write requires the 1-10 track Draft")
   void nonDraftTrack_rejectsAllWrites(String track) {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of(track));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
     assertThrows(
         ScheduleNotEditableException.class,
         () ->
@@ -532,7 +550,8 @@ class Schedule6WriteServiceTest {
   @Test
   @DisplayName("A missing track-status row can never be Draft -> 409")
   void missingTrackStatus_rejects() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.empty());
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
     assertThrows(
         ScheduleNotEditableException.class,
         () ->
@@ -593,7 +612,8 @@ class Schedule6WriteServiceTest {
   }
 
   private void stubDeleteDraft(List<RoadRecordRow> stored) {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR)).thenReturn(stored);
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.nextRoadReportId()).thenReturn(9600);
@@ -701,7 +721,8 @@ class Schedule6WriteServiceTest {
   @ValueSource(strings = {"S", "V", "A"})
   @DisplayName("Deviation (a): the delete is Draft-gated like every other write")
   void deleteOnNonDraftTrack_rejects(String track) {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of(track));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
 
     assertThrows(
         ScheduleNotEditableException.class,
@@ -715,7 +736,8 @@ class Schedule6WriteServiceTest {
   @DisplayName(
       "AD-11: a DataAccessException on the delete path surfaces as ScheduleNotSavedException")
   void deleteDataAccessFailure_translated() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenThrow(new DataAccessResourceFailureException("boom"));
 
