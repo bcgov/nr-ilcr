@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.millmaintenance;
 
+import java.time.LocalDateTime;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
@@ -18,6 +19,14 @@ import org.springframework.data.relational.core.mapping.Table;
  *
  * <p>{@code millNumber} is a String although the column is {@code NUMBER(15)}: it is a display
  * identifier that is never arithmetic, and the house contract carries it that way everywhere.
+ *
+ * <p>{@code updateTimestamp} is a {@link LocalDateTime} because the column is one — {@code
+ * TIMESTAMP(6)}, pinned by {@code MillMaintenanceSchemaIT}, written {@code SYSDATE} so it carries a
+ * real time of day. The display contract is day precision (see {@link
+ * ca.bc.gov.nrs.ilcr.millmaintenance.dto.AdminMill}), but the narrowing belongs at that boundary,
+ * not here: mapping a timestamp column straight into a {@code LocalDate} leaves the truncation to
+ * whichever driver-and-JVM-default-zone conversion Spring picks, which is neither visible in this
+ * file nor pinned by a test.
  */
 @Table(schema = "THE", name = "ILCR_MILL_STATUS_XREF")
 public record AdminMillEntity(
@@ -29,4 +38,6 @@ public record AdminMillEntity(
     @Column("HEAD_OFFICE_CONTACT_IND") String headOfficeContactInd,
     @Column("HEAD_OFFICE_CONTACT_ID") Long headOfficeContactId,
     @Column("DIVISION_CONTACT_ID") Long divisionContactId,
-    @Column("REVISION_COUNT") int revisionCount) {}
+    @Column("REVISION_COUNT") int revisionCount,
+    @Column("UPDATE_USERID") String updateUserid,
+    @Column("UPDATE_TIMESTAMP") LocalDateTime updateTimestamp) {}

@@ -45,7 +45,13 @@ class MillMaintenanceSchemaIT extends AbstractOracleIT {
         // 30 characters is what makes the raw custom:idp_username claim the only usable identity:
         // the 32-char directory GUID and the 36-char subject both overflow it.
         .containsEntry("ENTRY_USERID", "VARCHAR2(30)")
-        .containsEntry("UPDATE_USERID", "VARCHAR2(30)");
+        .containsEntry("UPDATE_USERID", "VARCHAR2(30)")
+        // The read path column too: the source of legacy's "Last Edited by / on date" line
+        // (mills.xhtml:41-49, deviation (A)), so a delivery-side rename fails here rather than as a
+        // silently-absent field on the wire. Rendered as TIMESTAMP(6)(11): renderType() appends
+        // DATA_LENGTH after the type name itself already carrying its own (6) precision, since
+        // TIMESTAMP has no DATA_PRECISION/DATA_SCALE in ALL_TAB_COLUMNS the way NUMBER does.
+        .containsEntry("UPDATE_TIMESTAMP", "TIMESTAMP(6)(11)");
   }
 
   @Test

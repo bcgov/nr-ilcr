@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.millmaintenance.dto;
 
+import java.time.LocalDate;
+
 /**
  * A mill on the administration surface: identity, ILCR status, and the head-office/contact
  * selections the screen edits.
@@ -12,6 +14,13 @@ package ca.bc.gov.nrs.ilcr.millmaintenance.dto;
  * <p>{@code revisionCount} is the optimistic-lock token: a write echoes the value it last read.
  * Legacy had none here and silently let the last writer win.
  *
+ * <p>{@code updateUserid} and {@code updateTimestamp} are the source for legacy's "Last Edited by :
+ * … on date: …" line (mills.xhtml:41-49), which this projection previously carried no columns for —
+ * closing that gap (deviation (A)). The audit pair was always written by this application's own
+ * status and contact saves; only the read path omitted them. The time-of-day is discarded because
+ * legacy's own rendering did (an {@code f:convertDateTime pattern="dd/MM/yyyy"}), so a {@link
+ * java.time.LocalDate} is the faithful carrier, not an instant.
+ *
  * @param millId the mill id, which is also its cross-reference id
  * @param millNumber the mill number as a display string, never arithmetic
  * @param millName the mill name
@@ -21,6 +30,8 @@ package ca.bc.gov.nrs.ilcr.millmaintenance.dto;
  * @param headOfficeContactId the selected head-office contact, or null
  * @param divisionContactId the selected division contact, or null
  * @param revisionCount the row's current revision, echoed back on write
+ * @param updateUserid the administrator who last saved the row
+ * @param updateTimestamp the date the row was last saved, day precision only
  */
 public record AdminMill(
     long millId,
@@ -31,7 +42,9 @@ public record AdminMill(
     String headOfficeContactInd,
     Long headOfficeContactId,
     Long divisionContactId,
-    int revisionCount) {
+    int revisionCount,
+    String updateUserid,
+    LocalDate updateTimestamp) {
 
   /** The active status code. */
   public static final String ACTIVE = "ACT";

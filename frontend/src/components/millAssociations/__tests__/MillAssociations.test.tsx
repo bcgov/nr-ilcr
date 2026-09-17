@@ -145,28 +145,25 @@ describe('Users page — the screen itself', () => {
     const headers = within(await screen.findByRole('table', { name: /associated mills/i }))
       .getAllByRole('columnheader')
       .map((cell) => cell.textContent)
-    // The first five are the legacy columns verbatim; Mill Status is the modern join that makes a
-    // refused reactivation legible (AC2), and Actions carries the STA-002 buttons.
+    // The first five are the legacy columns verbatim; Actions carries the STA-002 buttons. Legacy
+    // has no Mill Status column here (users.xhtml:56-70) — a modern addition, now dropped.
     expect(headers).toEqual([
       'Mill #',
       'Mill Name',
       'User To Mill Status',
       'Activation Date',
       'Deactivation Date',
-      'Mill Status',
       'Actions',
     ])
 
     // users.xhtml:64-66 renders literally "Active" / "Inactive"; the wire value stays ENDED.
     expect(within(rowFor('670')).getByText('Active')).toBeInTheDocument()
     expect(within(rowFor('671')).getByText('Inactive')).toBeInTheDocument()
+    // ISO, the ratified house format for both administration screens, rendered from the wire
+    // untouched -- NOT legacy's own `f:convertDateTime pattern="dd/MM/yyyy"`. That departure has its
+    // own test below ('assignment dates render as yyyy-mm-dd'), which pins the negative too.
     expect(within(rowFor('670')).getByText('2026-03-04')).toBeInTheDocument()
     expect(within(rowFor('671')).getByText('2025-11-30')).toBeInTheDocument()
-
-    // The Mill Status cell is joined from /v1/mills by millId; a broken join key would render a
-    // dash on every row and no other assertion in this suite would notice.
-    expect(within(rowFor('670')).getByText('ACT')).toBeInTheDocument()
-    expect(within(rowFor('671')).getByText('CLS')).toBeInTheDocument()
   })
 
   test('a mill that no longer resolves renders as a dash rather than blanking the row', async () => {
@@ -187,10 +184,44 @@ describe('Users page — the screen itself', () => {
       .map((cell) => cell.textContent)
     expect(cells[0]).toBe('—')
     expect(cells[1]).toBe('—')
-    // The row still carries its dates and its action, so the assignment stays endable.
+    // The row still carries its date and its action, so the assignment stays endable.
     expect(cells[3]).toBe('2026-01-02')
-    // An unresolvable mill has no status to join either.
-    expect(cells[5]).toBe('—')
+  })
+
+  test('assignment dates render as yyyy-mm-dd', async () => {
+    // A deliberate departure from legacy, which used `f:convertDateTime pattern="dd/MM/yyyy"`
+    // (users.xhtml:66-74). ISO is the ratified house format for both administration screens, and
+    // it is what the wire already carries — so the cell renders the value untouched and there is
+    // no date parsing left to get wrong.
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    expect(await within(assignmentsTable()).findByText('2026-03-04')).toBeInTheDocument()
+    expect(within(assignmentsTable()).queryByText('04/03/2026')).not.toBeInTheDocument()
+  })
+
+  test('the grid carries no columns legacy does not have', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    await within(assignmentsTable()).findByRole('columnheader', { name: 'Mill #' })
+    expect(
+      within(assignmentsTable()).queryByRole('columnheader', { name: 'Mill Status' }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('each section sits in a titled panel', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    expect(await screen.findByRole('heading', { name: 'User Details' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Associated Mills' })).toBeInTheDocument()
   })
 
   test('server order is preserved — the table never re-sorts what the backend pinned', async () => {
@@ -234,6 +265,48 @@ describe('Users page — display name (AC2)', () => {
     await user.click(await screen.findByRole('option', { name: 'ALOVELAC' }))
 
     expect(await screen.findByText(GUID)).toBeInTheDocument()
+  })
+
+  test('First Name and Last Name render as separate columns, sourced from the directory (users.xhtml:25-30)', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(LOOKUP, () =>
+        HttpResponse.json([{ ...ADA, firstName: 'Ada', lastName: 'Lovelace' }]),
+      ),
+    )
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    const headers = within(await screen.findByRole('table', { name: /user details/i }))
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent)
+    // Legacy order is First Name THEN Last Name (users.xhtml:25-30), replacing the single Name
+    // column this surface used to render.
+    expect(headers).toEqual(['User ID', 'First Name', 'Last Name', 'Role', 'Active', 'Actions'])
+
+    const account = screen.getByRole('table', { name: /user details/i })
+    expect(within(account).getByRole('cell', { name: 'Ada' })).toBeInTheDocument()
+    expect(within(account).getByRole('cell', { name: 'Lovelace' })).toBeInTheDocument()
+  })
+
+  test('a resolved user with no last name shows a dash there, not the first-name fallback', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(LOOKUP, () => HttpResponse.json([{ ...ADA, firstName: 'Ada', lastName: null }])),
+    )
+    assignmentsAre(activeOn670)
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    // Indexed, not by dash text: Role and Active are ALSO dashes here (no write has resolved the
+    // account yet), so a name-based cell query would match more than one cell. Columns are
+    // [User ID, First Name, Last Name, Role, Active, Actions].
+    const cells = within(await screen.findByRole('table', { name: /user details/i })).getAllByRole(
+      'cell',
+    )
+    expect(cells[1].textContent).toBe('Ada')
+    expect(cells[2].textContent).toBe('—')
   })
 })
 
@@ -310,6 +383,58 @@ describe('Users page — assign and reactivate (AC3)', () => {
     expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
     // Refused means unchanged: the row must not have been optimistically flipped.
     expect(within(rowFor('671')).getByText('Inactive')).toBeInTheDocument()
+  })
+
+  test('the row Activate uses the reviving users-screen endpoint, not the mill-record add', async () => {
+    const user = userEvent.setup()
+    const rows: unknown[] = [endedOn671]
+    assignmentsFrom(rows)
+    // The negative control. There are TWO POSTs over this one cross-reference and they disagree on
+    // purpose: the users-screen `/v1/mills/{id}/submitters` revives an ended pair (AssignmentService
+    // .assign), while the mill-record `/v1/admin/mills/{id}/users` warns and writes nothing against
+    // ANY existing pair, ended included (MillAssociationService.add). Routing Activate at the admin
+    // one would leave the row inactive and show the duplicate warning -- the concern raised on PR
+    // #481. Asserting the right URL was called does not catch that on its own; a handler that FAILS
+    // if the admin path is ever touched does.
+    let adminPathCalled = false
+    const revived = {
+      userGuid: GUID,
+      millId: 671,
+      millNumber: '671',
+      millName: 'Closed Mill',
+      status: 'ACTIVE',
+      activeDate: '2026-08-26',
+      revisionCount: 3,
+    }
+    server.use(
+      http.post(`${API}/v1/admin/mills/:millId/users`, () => {
+        adminPathCalled = true
+        // What the mill-record add really answers for an existing pair: the row unchanged, plus
+        // the duplicate key. Served rather than erroring so a regression fails on the flag and the
+        // unchanged row, not on an artificial network failure.
+        return HttpResponse.json({
+          assignment: endedOn671,
+          messageKey: 'user.not.associated.to.mill',
+          message: 'User AAAA -   is not associated to mill 671 - Closed Mill.',
+        })
+      }),
+      http.post(`${API}/v1/mills/:millId/submitters`, () => {
+        rows[0] = revived
+        return HttpResponse.json({
+          assignment: revived,
+          messageKey: 'user.activate.mill',
+          message: 'Mill 671 - Closed Mill has been activated for user AAAA -  .',
+        })
+      }),
+    )
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    await user.click(within(rowFor('671')).getByRole('button', { name: /activate/i }))
+
+    // The row actually flips, which is the behaviour the endpoint choice exists to produce.
+    expect(await within(rowFor('671')).findByText('Active')).toBeInTheDocument()
+    expect(adminPathCalled).toBe(false)
   })
 
   test('the row Activate posts the row own mill and the selected user GUID', async () => {
@@ -590,9 +715,10 @@ describe('Users page — the account flag (AC5)', () => {
 
     expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
     // Nothing is known about the flag, so nothing may be claimed about it. Columns are
-    // [User ID, Name, Role, Active, Actions]; a rejected write must leave Active unresolved.
+    // [User ID, First Name, Last Name, Role, Active, Actions]; a rejected write must leave Active
+    // unresolved.
     const cells = within(screen.getByRole('table', { name: /user details/i })).getAllByRole('cell')
-    expect(cells[3].textContent).toBe('—')
+    expect(cells[4].textContent).toBe('—')
   })
 })
 
