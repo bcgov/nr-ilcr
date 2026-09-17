@@ -223,8 +223,6 @@ const CheckStatus: FC = () => {
 
   const requestSubmit = () => {
     if (saving) return
-    setMessage(null)
-    setActionError(null)
     setConfirming(true)
   }
 
@@ -233,6 +231,8 @@ const CheckStatus: FC = () => {
 
   const confirmSubmit = () => {
     setConfirming(false)
+    setMessage(null)
+    setActionError(null)
     setSaving(true)
     focusOutcomeRef.current = true
     apiService
@@ -265,7 +265,13 @@ const CheckStatus: FC = () => {
     isAdmin,
     { notDraft: HINT_NOT_DRAFT, notSubmitted: HINT_NOT_SUBMITTED },
     // `=== true`: the field is ABSENT (never `false`) where the server has no verdict to give.
-    { offered: data.schedules1To10.canSubmit === true, onClick: requestSubmit, busy: saving },
+    {
+      offered: data.schedules1To10.canSubmit === true,
+      onClick: requestSubmit,
+      // A 200 means this transition is complete. Keep the pair locked even if the re-sweep is still
+      // in flight or fails and the hook deliberately preserves the last good (Draft) payload.
+      busy: saving || message !== null,
+    },
   )
   const actions11 = trackActions(
     data.schedule11,

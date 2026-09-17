@@ -1233,6 +1233,26 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     expect(submit.count).toBe(1)
   })
 
+  test('AC 3: opening and cancelling a retry preserves the previous outcome banner', async () => {
+    fakeReads()
+    const submit = submitHandler(() => problem(409, NOT_SUBMITTED))
+    const user = userEvent.setup()
+    await mountSettled()
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(NOT_SUBMITTED)).toBeInTheDocument()
+    await expectSubmits1To10('enabled')
+    expect(submit.count).toBe(1)
+
+    const prompt = await pressSubmit(user)
+    expect(screen.getByText(NOT_SUBMITTED)).toBeInTheDocument()
+    await user.click(prompt.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
+    expect(screen.getByText(NOT_SUBMITTED)).toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    expect(submit.count).toBe(1)
+  })
+
   // ---- AC 4 / AC 5b: the gate 409 re-syncs the panels (D8) ------------------------------------
 
   test('AC 4 / AC 5b: the gate 409 renders verbatim, the verdicts and bars survive, and the re-sweep puts the newly-failing schedule on screen', async () => {
@@ -1361,6 +1381,7 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
   test.each([
     ['500', () => problem(500, 'Schedule 5 could not be evaluated.')],
     ['network failure', () => HttpResponse.error()],
+    ['mismatched mill/year 200', () => HttpResponse.json(sweep({ millId: 999, year: 2017 }))],
   ])(
     'AC 6: a %s on the post-200 re-sweep keeps the success banner, the verdicts and the bars, and never flashes the spinner over the page',
     async (_label, failure) => {
@@ -1386,12 +1407,15 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
       expect(screen.queryByRole('status', LOADING)).not.toBeInTheDocument()
       expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
       expect(screen.getByText(SUBMITTED)).toBeInTheDocument()
+      await expectSubmits1To10('disabled')
 
       release()
       await drainEventLoop()
       expectVerdictsAndBarsPresent()
       expect(screen.getByText(SUBMITTED)).toBeInTheDocument()
       expect(screen.queryByText('Schedule 5 could not be evaluated.')).not.toBeInTheDocument()
+      expect(screen.queryByText(LOAD_FAILED)).not.toBeInTheDocument()
+      await expectSubmits1To10('disabled')
     },
   )
 
@@ -1524,7 +1548,9 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     release()
     expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
     expect(submit.count).toBe(1)
-    await expectSubmits1To10('enabled') // the lock releases once the request settles
+    // A 200 completes the transition. Even if this deliberately stale fake still says Draft, the
+    // successful action stays locked while the server-sourced refresh catches up (or fails).
+    await expectSubmits1To10('disabled')
   })
 
   // ---- Stale context -------------------------------------------------------------------------
