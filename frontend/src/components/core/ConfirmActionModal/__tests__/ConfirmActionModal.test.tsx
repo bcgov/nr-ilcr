@@ -40,6 +40,19 @@ describe('ConfirmActionModal', () => {
     expect(document.querySelector('.cds--modal--danger')).toBeNull()
   })
 
+  test('both answers are regular-sized buttons WITH icons — the same chrome as ConfirmNavigationModal (#312 Overall 11)', () => {
+    setup()
+    for (const name of ['Yes', 'Cancel']) {
+      const button = screen.getByRole('button', { name })
+      // renderIcon adds an <svg>; the accessible name stays the label (the icon is decorative).
+      expect(button.querySelector('svg')).not.toBeNull()
+      expect(button.className).not.toMatch(/--btn--sm\b/)
+    }
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveClass('cds--btn--primary')
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveClass('cds--btn--secondary')
+    expect(document.querySelector('.confirm-action-modal')).not.toBeNull()
+  })
+
   test('the confirm label fires onConfirm once and never onCancel', async () => {
     const { onConfirm, onCancel } = setup()
     await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
@@ -49,11 +62,14 @@ describe('ConfirmActionModal', () => {
 
   test('the cancel label, the close control and Escape each fire onCancel and never onConfirm', async () => {
     const { onConfirm, onCancel } = setup()
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(onCancel).toHaveBeenCalledTimes(1)
-    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onCancel).toHaveBeenCalledTimes(2)
+    // Escape is handled by the dialog, so it must hold focus — as it does for a user once it opens.
+    screen.getByRole('button', { name: 'Yes' }).focus()
     await userEvent.keyboard('{Escape}')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onCancel).toHaveBeenCalledTimes(2)
+    // The close control last: ComposedModal also closes itself on it, and the caller unmounts anyway.
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onCancel).toHaveBeenCalledTimes(3)
     expect(onConfirm).not.toHaveBeenCalled()
   })

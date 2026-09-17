@@ -1208,7 +1208,9 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     prompt = await pressSubmit(user, 1)
     await user.click(prompt.getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(openDialog()).toBeNull())
-    await pressSubmit(user, 0)
+    prompt = await pressSubmit(user, 0)
+    // Escape is handled by the dialog, so it must hold focus — as it does for a user once it opens.
+    prompt.getByRole('button', { name: 'Yes' }).focus()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(openDialog()).toBeNull())
 
