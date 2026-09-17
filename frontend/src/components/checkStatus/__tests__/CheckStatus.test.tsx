@@ -961,6 +961,7 @@ const NOT_SUBMITTED =
   'The report cannot be submitted. One or more of the Schedules have not passed validation. Please review and correct any errors.'
 const SUBMISSION_ERROR =
   'An error has been found submitting schedules. The error details have been logged. Please contact ILCR application support.'
+const NOT_DRAFT = 'Schedules 1-10 are no longer in Draft and cannot be submitted.'
 const ERR_001 = 'Please Select Mill and Reporting Year in the Home Page. '
 
 const LOADING = { name: 'Loading Check Status' }
@@ -1274,14 +1275,14 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
       // Someone else (or this user's other tab) already submitted: the server is at S.
       reads.state.sweep = json(SUBMITTED_SWEEP)
       reads.state.context = json(millContextBody('S'))
-      return problem(409, SUBMISSION_ERROR)
+      return problem(409, NOT_DRAFT)
     })
     const user = userEvent.setup()
     await mountSettled()
     const contextCallsAtMount = reads.calls.context
 
     await confirmSubmit(user)
-    expect(await screen.findByText(SUBMISSION_ERROR)).toBeInTheDocument()
+    expect(await screen.findByText(NOT_DRAFT)).toBeInTheDocument()
     expect(screen.getByText('Action failed')).toBeInTheDocument()
     await waitFor(() => expect(reads.calls.sweep).toBe(2))
     await waitFor(() => expect(reads.calls.context).toBe(contextCallsAtMount + 1))

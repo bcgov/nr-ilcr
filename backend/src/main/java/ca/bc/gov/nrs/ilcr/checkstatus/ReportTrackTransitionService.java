@@ -86,7 +86,8 @@ public class ReportTrackTransitionService {
    * @param user the caller's audit name ({@code Authentication.getName()})
    * @return the legacy bundle key of the success message
    * @throws ScheduleNotFoundException no status row for the mill/year (the controller re-keys it)
-   * @throws ReportTransitionRejectedException 409 &mdash; the track is not at Draft
+   * @throws ReportTransitionRejectedException 409 {@code submitNotDraftErrorMsg} &mdash; the track
+   *     is not at Draft
    * @throws ReportNotSubmittedException 409 &mdash; at least one of the eleven checks fails
    * @throws ReportSubmissionException 500 &mdash; a write failed or affected no row; rolled back
    */
@@ -102,10 +103,10 @@ public class ReportTrackTransitionService {
     TrackTransition transition =
         TrackTransition.resolve(current, TrackTransition.SUBMIT.to())
             .filter(TrackTransition.SUBMIT::equals)
-            .orElseThrow(ReportTransitionRejectedException::new);
+            .orElseThrow(() -> new ReportTransitionRejectedException(TrackTransition.SUBMIT));
     if (!reportSubmission.canSubmit(authentication, current)) {
       log.debug("Submit refused for millId={} year={}: track not at Draft", millId, year);
-      throw new ReportTransitionRejectedException();
+      throw new ReportTransitionRejectedException(TrackTransition.SUBMIT);
     }
 
     try {
