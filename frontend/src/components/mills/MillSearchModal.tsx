@@ -14,6 +14,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { Reset, Search } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import {
@@ -160,10 +161,10 @@ const MillSearchModal: FC<MillSearchModalProps> = ({ onSelect, onClose }) => {
           selectedItem={status}
           onChange={({ selectedItem }) => setStatus(selectedItem ?? ANY_STATUS)}
         />
-        <Button type="submit" size="sm" disabled={searching}>
+        <Button type="submit" size="sm" renderIcon={Search} disabled={searching}>
           Search
         </Button>
-        <Button size="sm" kind="secondary" disabled={searching} onClick={clear}>
+        <Button size="sm" kind="secondary" renderIcon={Reset} disabled={searching} onClick={clear}>
           Clear
         </Button>
       </form>

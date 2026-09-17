@@ -16,6 +16,7 @@ import {
 import { Add, CheckmarkOutline, Misuse } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
+import SubPanel from '@/components/core/SubPanel'
 import DirectoryPicker from '@/components/millAssociations/DirectoryPicker'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
@@ -296,12 +297,13 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
     )
   }
 
-  // The assignment row carries no mill status of its own, so it is joined from the mill list the
-  // picker already loads — the mill's own state is what makes a refused reactivation legible.
-  const millStatusFor = (millId: number) =>
-    mills.find((mill) => mill.millId === millId)?.millStatusCode
-
+  // Falls back to the existing displayName-or-guid label when the directory carries no name
+  // parts at all (an unresolved or name-less record) — an unresolved user still shows SOMETHING
+  // identifying, it is just not invented. Once firstName is present the fallback never applies, so
+  // lastName renders its own dash rather than borrowing the fallback.
   const userLabel = selectedUser ? (selectedUser.displayName ?? selectedUser.userGuid) : ''
+  const firstNameLabel = selectedUser ? (selectedUser.firstName ?? userLabel) : ''
+  const lastNameLabel = selectedUser ? dash(selectedUser.lastName) : ''
 
   return (
     <div className="app-page schedule-page">
@@ -314,8 +316,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
         {lookupError && <NotificationColumn kind="error" title="Error" subtitle={lookupError} />}
 
         <Column sm={4} md={8} lg={16}>
-          <div className="mill-associations__section">
-            <h2 className="mill-associations__heading">User Details</h2>
+          <SubPanel title="User Details">
             <DirectoryPicker
               selected={selectedUser}
               disabled={busy}
@@ -329,7 +330,8 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                   <TableHead>
                     <TableRow>
                       <TableHeader>User ID</TableHeader>
-                      <TableHeader>Name</TableHeader>
+                      <TableHeader>First Name</TableHeader>
+                      <TableHeader>Last Name</TableHeader>
                       <TableHeader>Role</TableHeader>
                       <TableHeader>Active</TableHeader>
                       <TableHeader>Actions</TableHeader>
@@ -338,47 +340,49 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                   <TableBody>
                     <TableRow>
                       <TableCell>{selectedUser.idpUsername}</TableCell>
-                      <TableCell>{userLabel}</TableCell>
+                      <TableCell>{firstNameLabel}</TableCell>
+                      <TableCell>{lastNameLabel}</TableCell>
                       <TableCell>{dash(account?.roleName)}</TableCell>
                       <TableCell>{dash(account?.activeInd)}</TableCell>
                       <TableCell>
-                        {/* STA-001: mutually exclusive once the flag is known. Until then neither
+                        <div className="mills__row-actions">
+                          {/* STA-001: mutually exclusive once the flag is known. Until then neither
                             can be ruled out, because no endpoint serves the current value. */}
-                        {account?.activeInd !== 'Y' && (
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            disabled={busy}
-                            aria-label="Activate account"
-                            renderIcon={CheckmarkOutline}
-                            onClick={() => setAccountActive(true)}
-                          >
-                            Activate
-                          </Button>
-                        )}
-                        {account?.activeInd !== 'N' && (
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            disabled={busy}
-                            aria-label="Deactivate account"
-                            renderIcon={Misuse}
-                            onClick={() => setAccountActive(false)}
-                          >
-                            Deactivate
-                          </Button>
-                        )}
+                          {account?.activeInd !== 'Y' && (
+                            <Button
+                              kind="tertiary"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="Activate account"
+                              renderIcon={CheckmarkOutline}
+                              onClick={() => setAccountActive(true)}
+                            >
+                              Activate
+                            </Button>
+                          )}
+                          {account?.activeInd !== 'N' && (
+                            <Button
+                              kind="danger--tertiary"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="Deactivate account"
+                              renderIcon={Misuse}
+                              onClick={() => setAccountActive(false)}
+                            >
+                              Deactivate
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>
             )}
-          </div>
+          </SubPanel>
 
           {selectedUser && (
-            <div className="mill-associations__section">
-              <h2 className="mill-associations__heading">Associated Mills</h2>
+            <SubPanel title="Associated Mills">
               <div className="mill-associations__add">
                 {/* Unfiltered, with the status shown: legacy's Find and Add Mill dialog searched
                     every mill and rendered a Status column (users.xhtml:150-176), leaving the
@@ -417,7 +421,6 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                       <TableHeader>User To Mill Status</TableHeader>
                       <TableHeader>Activation Date</TableHeader>
                       <TableHeader>Deactivation Date</TableHeader>
-                      <TableHeader>Mill Status</TableHeader>
                       <TableHeader>Actions</TableHeader>
                     </TableRow>
                   </TableHead>
@@ -430,41 +433,42 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                         <TableCell>{row.activeDate ? 'Active' : 'Inactive'}</TableCell>
                         <TableCell>{dash(row.activeDate)}</TableCell>
                         <TableCell>{dash(row.inactiveDate)}</TableCell>
-                        <TableCell>{dash(millStatusFor(row.millId))}</TableCell>
                         <TableCell>
-                          {/* STA-002: the control keys off the dates, which the toggle keeps
+                          <div className="mills__row-actions">
+                            {/* STA-002: the control keys off the dates, which the toggle keeps
                               mutually exclusive — there is one row per pair and no history. */}
-                          {row.activeDate != null && (
-                            <Button
-                              kind="ghost"
-                              size="sm"
-                              disabled={busy}
-                              aria-label={`Deactivate mill ${dash(row.millNumber)}`}
-                              renderIcon={Misuse}
-                              onClick={() => end(row)}
-                            >
-                              Deactivate
-                            </Button>
-                          )}
-                          {row.inactiveDate != null && (
-                            <Button
-                              kind="ghost"
-                              size="sm"
-                              disabled={busy}
-                              aria-label={`Activate mill ${dash(row.millNumber)}`}
-                              renderIcon={CheckmarkOutline}
-                              onClick={() => assign(row.millId)}
-                            >
-                              Activate
-                            </Button>
-                          )}
+                            {row.activeDate != null && (
+                              <Button
+                                kind="danger--tertiary"
+                                size="sm"
+                                disabled={busy}
+                                aria-label={`Deactivate mill ${dash(row.millNumber)}`}
+                                renderIcon={Misuse}
+                                onClick={() => end(row)}
+                              >
+                                Deactivate
+                              </Button>
+                            )}
+                            {row.inactiveDate != null && (
+                              <Button
+                                kind="tertiary"
+                                size="sm"
+                                disabled={busy}
+                                aria-label={`Activate mill ${dash(row.millNumber)}`}
+                                renderIcon={CheckmarkOutline}
+                                onClick={() => assign(row.millId)}
+                              >
+                                Activate
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </TableContainer>
-            </div>
+            </SubPanel>
           )}
         </Column>
       </Grid>

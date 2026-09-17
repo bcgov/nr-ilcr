@@ -95,16 +95,21 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     icon: Settings,
     name: 'Administration',
     adminOnly: true,
+    // Legacy's submenu, verbatim in order and label (menu.xhtml:32-36): Users → Mills → Content
+    // Editing → Report Year → Table Maintenance.
+    //
+    // The PATHS deliberately keep their own names. Renaming /mill-associations to /users would mean
+    // moving the route file and rewiring the cross-screen userGuid hand-off that
+    // routes/mill-associations.tsx documents, for something no administrator sees — the label is
+    // what they read. Note the Users page's own heading already said "Users"
+    // (millAssociations/index.tsx renders `<ScheduleTombstone title="Users" />`), so the menu was
+    // the only place still calling it "Mill Associations".
     items: [
-      { name: 'Open Reporting Year', path: ROUTES.openReportingYear },
-      { name: 'Home Content', path: ROUTES.homeContent },
-      { name: 'Table Maintenance', path: ROUTES.codeTables },
-      { name: 'Mill Associations', path: ROUTES.millAssociations },
-      // Directly after the users surface, which is where legacy put it: the Administration submenu
-      // ran Users → Mills → Content Editing → Report Year → Table Maintenance (menu.xhtml:32-36).
-      // The absolute order here already diverges from legacy, but Mills' place RELATIVE to the
-      // users screen is preserved, and the two screens cross-navigate to each other (S10).
+      { name: 'Users', path: ROUTES.millAssociations },
       { name: 'Mills', path: ROUTES.mills },
+      { name: 'Content Editing', path: ROUTES.homeContent },
+      { name: 'Report Year', path: ROUTES.openReportingYear },
+      { name: 'Table Maintenance', path: ROUTES.codeTables },
     ],
   },
   {

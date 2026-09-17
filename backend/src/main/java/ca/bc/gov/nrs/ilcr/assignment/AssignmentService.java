@@ -306,6 +306,10 @@ public class AssignmentService {
    * Map one assignment row to its wire shape. {@code displayName} is left null: resolving it needs
    * the directory, which arrives with the submitter picker, and a stored copy was deliberately not
    * kept. The dates narrow to a date for display and must never be written back from this shape.
+   *
+   * <p>{@code firstName}/{@code lastName}/{@code bceid} are the mill-record association panel's own
+   * enrichment ({@link MillAssociationService#listByMill}); this users-screen path has no directory
+   * context to offer and passes null for all three, same as {@code displayName} above.
    */
   private MillSubmitter toSubmitter(MillUserXrefEntity row, MillSummary mill) {
     return new MillSubmitter(
@@ -317,7 +321,10 @@ public class AssignmentService {
         row.isActive() ? MillSubmitter.ACTIVE : MillSubmitter.ENDED,
         toDate(row.activeDate()),
         toDate(row.inactiveDate()),
-        row.revisionCount());
+        row.revisionCount(),
+        null,
+        null,
+        null);
   }
 
   private static LocalDate toDate(LocalDateTime value) {

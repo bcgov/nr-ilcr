@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button, Column, FilterableMultiSelect, Grid, Select, SelectItem } from '@carbon/react'
-import { Reset } from '@carbon/icons-react'
+import { DocumentDownload, Reset } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -523,7 +523,7 @@ const DataExtract: FC = () => {
             </div>
 
             <div className="data-extract__actions">
-              <Button disabled={busy} onClick={generate}>
+              <Button disabled={busy} renderIcon={DocumentDownload} onClick={generate}>
                 Generate Report
               </Button>
             </div>
