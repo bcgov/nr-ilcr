@@ -58,21 +58,32 @@ describe('visibleNavigationItems', () => {
     expect(isAdminOnlyPath('/data-extract')).toBe(true)
   })
 
-  test('Administration lists Mills directly after Mill Associations, as legacy did', () => {
-    // menu.xhtml:32-36 ran Users → Mills → Content Editing → Report Year → Table Maintenance. The
-    // absolute order here already diverges, but Mills' place relative to the users screen is
-    // legacy's and the two screens cross-navigate to each other (UC-MILL-001 S10).
+  test('Administration runs in legacy order, under legacy labels', () => {
+    // menu.xhtml:32-36 verbatim: Users → Mills → Content Editing → Report Year → Table Maintenance.
+    // The labels are legacy's too — "Users" is the screen this app had been calling "Mill
+    // Associations", and the page's own heading already read "Users", so the menu was the odd one
+    // out. Paths are deliberately NOT renamed: the label is what an administrator reads, and
+    // moving /mill-associations would mean rewiring the cross-screen userGuid hand-off
+    // (routes/mill-associations.tsx) for no visible gain.
     const administration = NAVIGATION_ITEMS.find((item) => item.name === 'Administration')
     const names = administration?.items?.map((child) => child.name) ?? []
-    const at = names.indexOf('Mills')
-    expect(at).toBeGreaterThan(-1)
-    expect(names[at - 1]).toBe('Mill Associations')
 
-    const item = administration?.items?.find((child) => child.name === 'Mills')
-    expect(item?.path).toBe('/mills')
+    expect(names).toEqual(['Users', 'Mills', 'Content Editing', 'Report Year', 'Table Maintenance'])
+
+    // The labels moved; the routes did not.
+    const paths = administration?.items?.map((child) => child.path) ?? []
+    expect(paths).toEqual([
+      '/mill-associations',
+      '/mills',
+      '/home-content',
+      '/open-reporting-year',
+      '/code-tables',
+    ])
+
     // Inherited from the parent menu's flag rather than declared per-item, which is what keeps the
     // route guard and the hidden menu from drifting.
     expect(isAdminOnlyPath('/mills')).toBe(true)
+    expect(isAdminOnlyPath('/mill-associations')).toBe(true)
   })
 
   test('Schedule 10 sits between Schedule 9 and Schedule 11, and is not admin-only', () => {

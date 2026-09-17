@@ -416,7 +416,15 @@ public class UserLookupClient {
         // key. Surfacing one would put a null userGuid in the picker and, on assignment, an xref
         // row that joins to nothing: exactly the silent breakage DirectoryUser's javadoc warns of.
         .filter(user -> StringUtils.isNotBlank(user.guid()))
-        .map(user -> new DirectoryUser(user.guid(), displayNameOf(user), user.userId(), idp))
+        .map(
+            user ->
+                new DirectoryUser(
+                    user.guid(),
+                    displayNameOf(user),
+                    user.userId(),
+                    idp,
+                    user.firstName(),
+                    user.lastName()))
         .toList();
   }
 

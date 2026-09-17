@@ -14,9 +14,10 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Edit, Misuse, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Edit, Misuse, Save, View } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
+import SubPanel from '@/components/core/SubPanel'
 import MillSearchModal from '@/components/mills/MillSearchModal'
 import ImportMillModal from '@/components/mills/ImportMillModal'
 import AddUserModal from '@/components/mills/AddUserModal'
@@ -45,22 +46,6 @@ const ADMIN_MILLS = '/v1/admin/mills'
 
 /** codeTables' convention: a missing value is a dash, never a blank cell. */
 const dash = (value: string | null | undefined) => (value == null || value === '' ? '—' : value)
-
-/**
- * Legacy rendered every date on this screen through `f:convertDateTime pattern="dd/MM/yyyy"` — six
- * sites, none with a time, all in the server timezone (WEB-INF/web.xml:92-93). The wire carries an
- * ISO `LocalDate`, so this is a re-spelling of the parts and NOT a `Date` parse: constructing a
- * Date from "2026-03-04" reads it as UTC midnight and can render the previous day west of it.
- *
- * <p>Note the shipped users screen renders the same values as the raw ISO string. That divergence
- * is the users screen's, not this one's — legacy fidelity is the tie-breaker here, and converging
- * the two is a follow-up rather than a change to a shipped surface.
- */
-const legacyDate = (iso: string | null | undefined): string | null => {
-  if (iso == null || iso === '') return null
-  const [year, month, day] = iso.split('-')
-  return year && month && day ? `${day}/${month}/${year}` : iso
-}
 
 /**
  * A row this surface's own Add created reports `ENDED` carrying an `inactiveDate` that is really
@@ -444,174 +429,187 @@ const Mills: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16}>
-          {/* STA-001 state 1. The two entry controls render only while nothing is selected, exactly
-              as legacy gated them on `showSelectMillButton` (mills.xhtml:24, :26). */}
-          {!mill && (
-            <div className="mills__entry">
-              <Button renderIcon={Edit} onClick={() => setSelectOpen(true)}>
-                Select Mill
-              </Button>
-              <Button kind="secondary" renderIcon={Add} onClick={() => setImportOpen(true)}>
-                Import Mill
-              </Button>
-            </div>
-          )}
+          {/* mills.xhtml:22 opens this panel UNCONDITIONALLY — only its contents switch: the entry
+              buttons (:23-27, `showSelectMillButton`) while nothing is selected, the detail body
+              (:28, `millSelected`) once a mill is. Gating the whole SubPanel on selection (as an
+              earlier pass here did) left the empty state with two bare buttons and no panel at
+              all, which is exactly the "doesn't look like legacy" divergence this work exists to
+              close. */}
+          <SubPanel title="Mill Details">
+            {/* STA-001 state 1. The two entry controls render only while nothing is selected,
+                exactly as legacy gated them on `showSelectMillButton` (mills.xhtml:24, :26). */}
+            {!mill && (
+              <div className="mills__entry">
+                <Button renderIcon={Edit} onClick={() => setSelectOpen(true)}>
+                  Select Mill
+                </Button>
+                <Button kind="secondary" renderIcon={Add} onClick={() => setImportOpen(true)}>
+                  Import Mill
+                </Button>
+              </div>
+            )}
 
-          {mill && form && (
-            // ABSENT rather than disabled while nothing is selected: legacy gated the whole panel
-            // on `rendered="#{millsMB.millSelected}"` (mills.xhtml:28).
-            <section className="mills__section" aria-labelledby="mills-detail-heading">
-              <h2 className="mills__heading" id="mills-detail-heading">
-                Mill Details
-              </h2>
+            {mill && form && (
+              // ABSENT rather than disabled while nothing is selected: legacy gated this body
+              // on `rendered="#{millsMB.millSelected}"` (mills.xhtml:28).
+              <>
+                {/* A PLAIN panel, not a table: legacy's `selectedMillList` is a one-row,
+                    one-unheaded-column p:dataTable used purely as an EL scope trick
+                    (mills.xhtml:28-30). Reproducing it as a table would invent a data grid.
+                    Nothing here is editable but the three controls — legacy writes nothing on
+                    THE.MILL, so there is no rename and no create-mill anywhere. */}
+                <p className="mills__identity">
+                  <span className="mills__label">Mill #:</span>
+                  {/* One node, because the mill number and name read as one identity. The number
+                      carries NO thousands separator: legacy fed a BigDecimal into MessageFormat
+                      and printed "1,234", the wire carries a String (22.1 deviation (E)/(F)). */}
+                  <span>{`${dash(mill.millNumber)} - ${dash(mill.millName)}`}</span>
+                  <span className="mills__label">Status: </span>
+                  {/* The SERVER's description — "Active" or "Close", the code table's own text
+                      (deviation (G)). Deriving it from millStatusCode would re-spell the data. */}
+                  <span>{dash(mill.statusDescription)}</span>
+                </p>
 
-              {/* A PLAIN panel, not a table: legacy's `selectedMillList` is a one-row,
-                  one-unheaded-column p:dataTable used purely as an EL scope trick
-                  (mills.xhtml:28-30). Reproducing it as a table would invent a data grid.
-                  Nothing here is editable but the three controls — legacy writes nothing on
-                  THE.MILL, so there is no rename and no create-mill anywhere. */}
-              <p className="mills__identity">
-                <span className="mills__label">Mill #:</span>
-                {/* One node, because the mill number and name read as one identity. The number
-                    carries NO thousands separator: legacy fed a BigDecimal into MessageFormat and
-                    printed "1,234", the wire carries a String (22.1 deviation (E)/(F)). */}
-                <span>{`${dash(mill.millNumber)} - ${dash(mill.millName)}`}</span>
-                <span className="mills__label">Status: </span>
-                {/* The SERVER's description — "Active" or "Close", the code table's own text
-                    (deviation (G)). Deriving it from millStatusCode would re-spell the data. */}
-                <span>{dash(mill.statusDescription)}</span>
-              </p>
+                {/* mills.xhtml:43-50, and UNCONDITIONAL as legacy had it — that row carries no
+                    `rendered` attribute, so legacy always showed the labels and simply printed
+                    nothing into them. Gating the line on updateUserid hid it outright on any row
+                    whose audit columns are empty, which is a row delivery data can produce. */}
+                <p className="mills__identity">
+                  <span className="mills__label">Last Edited by :</span>
+                  <span>{dash(mill.updateUserid)}</span>
+                  <span className="mills__label">on date: </span>
+                  <span>{dash(mill.updateTimestamp)}</span>
+                </p>
 
-              <div className="mills__editable">
-                <Dropdown<HeadOfficeItem>
-                  id="mill-head-office"
-                  titleText="Head Office :"
-                  label="Select"
-                  items={[...HEAD_OFFICE_ITEMS]}
-                  itemToString={(item) => item?.label ?? ''}
-                  // `null`, never `undefined`: an undefined selectedItem flips Carbon to
-                  // uncontrolled and keeps the PREVIOUS mill's value painted after a switch.
-                  selectedItem={headOfficeItem}
-                  disabled={busy}
-                  onChange={({ selectedItem }) =>
-                    setForm((prev) =>
-                      prev ? { ...prev, headOfficeContactInd: selectedItem?.code ?? null } : prev,
-                    )
-                  }
-                />
-                {/* Both selectors are populated from the SAME list and have no cross-exclusion —
+                <div className="mills__editable">
+                  <Dropdown<HeadOfficeItem>
+                    id="mill-head-office"
+                    titleText="Head Office :"
+                    label="Select"
+                    items={[...HEAD_OFFICE_ITEMS]}
+                    itemToString={(item) => item?.label ?? ''}
+                    // `null`, never `undefined`: an undefined selectedItem flips Carbon to
+                    // uncontrolled and keeps the PREVIOUS mill's value painted after a switch.
+                    selectedItem={headOfficeItem}
+                    disabled={busy}
+                    onChange={({ selectedItem }) =>
+                      setForm((prev) =>
+                        prev ? { ...prev, headOfficeContactInd: selectedItem?.code ?? null } : prev,
+                      )
+                    }
+                  />
+                  {/* Both selectors are populated from the SAME list and have no cross-exclusion —
                     the same contact may hold both slots, as in legacy. The server orders by
                     CONTACT_NAME (22.1 D4a), so the order is taken as given. The list is
                     deliberately UNFILTERED, so BR-09 is the server's call and is never
                     pre-validated here. */}
-                <Dropdown<ContactOption>
-                  id="mill-head-office-contact"
-                  titleText="Head Office Contact :"
-                  label="Select"
-                  items={contactItems}
-                  itemToString={(item) => item?.contactName ?? ''}
-                  selectedItem={contactItem(form.headOfficeContactId)}
-                  disabled={busy}
-                  onChange={({ selectedItem }) =>
-                    setForm((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            // The explicit "(None)" choice is a DELETE, not a no-op: legacy's
-                            // blank selection stored null (MillDAO.java:226-234).
-                            headOfficeContactId:
-                              !selectedItem || selectedItem.clientContactId < 0
-                                ? null
-                                : selectedItem.clientContactId,
-                          }
-                        : prev,
-                    )
-                  }
-                />
-                <Dropdown<ContactOption>
-                  id="mill-division-contact"
-                  titleText="Division Contact :"
-                  label="Select"
-                  items={contactItems}
-                  itemToString={(item) => item?.contactName ?? ''}
-                  selectedItem={contactItem(form.divisionContactId)}
-                  disabled={busy}
-                  onChange={({ selectedItem }) =>
-                    setForm((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            divisionContactId:
-                              !selectedItem || selectedItem.clientContactId < 0
-                                ? null
-                                : selectedItem.clientContactId,
-                          }
-                        : prev,
-                    )
-                  }
-                />
-              </div>
+                  <Dropdown<ContactOption>
+                    id="mill-head-office-contact"
+                    titleText="Head Office Contact :"
+                    label="Select"
+                    items={contactItems}
+                    itemToString={(item) => item?.contactName ?? ''}
+                    selectedItem={contactItem(form.headOfficeContactId)}
+                    disabled={busy}
+                    onChange={({ selectedItem }) =>
+                      setForm((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              // The explicit "(None)" choice is a DELETE, not a no-op: legacy's
+                              // blank selection stored null (MillDAO.java:226-234).
+                              headOfficeContactId:
+                                !selectedItem || selectedItem.clientContactId < 0
+                                  ? null
+                                  : selectedItem.clientContactId,
+                            }
+                          : prev,
+                      )
+                    }
+                  />
+                  <Dropdown<ContactOption>
+                    id="mill-division-contact"
+                    titleText="Division Contact :"
+                    label="Select"
+                    items={contactItems}
+                    itemToString={(item) => item?.contactName ?? ''}
+                    selectedItem={contactItem(form.divisionContactId)}
+                    disabled={busy}
+                    onChange={({ selectedItem }) =>
+                      setForm((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              divisionContactId:
+                                !selectedItem || selectedItem.clientContactId < 0
+                                  ? null
+                                  : selectedItem.clientContactId,
+                            }
+                          : prev,
+                      )
+                    }
+                  />
+                </div>
 
-              <div className="mills__actions">
-                {/* STA-001: exactly one of these, chosen by the status CODE — presence/absence,
+                <div className="mills__actions">
+                  {/* STA-001: exactly one of these, chosen by the status CODE — presence/absence,
                     never enable/disable (MillsMB.java:359-364). Neither is confirmed; legacy has
                     no p:confirm on either (mills.xhtml:100-101). */}
-                {isActive ? (
-                  <Button
-                    kind="danger--tertiary"
-                    disabled={busy}
-                    renderIcon={Misuse}
-                    onClick={() => changeStatus('deactivate')}
-                  >
-                    Deactivate
-                  </Button>
-                ) : (
-                  <Button
-                    kind="tertiary"
-                    disabled={busy}
-                    renderIcon={CheckmarkOutline}
-                    onClick={() => changeStatus('activate')}
-                  >
-                    Activate
-                  </Button>
-                )}
-                {/* D4: implemented WORKING. Legacy's button called `searchSelectMill.show()` on the
+                  {isActive ? (
+                    <Button
+                      kind="danger--tertiary"
+                      disabled={busy}
+                      renderIcon={Misuse}
+                      onClick={() => changeStatus('deactivate')}
+                    >
+                      Deactivate
+                    </Button>
+                  ) : (
+                    <Button
+                      kind="tertiary"
+                      disabled={busy}
+                      renderIcon={CheckmarkOutline}
+                      onClick={() => changeStatus('activate')}
+                    >
+                      Activate
+                    </Button>
+                  )}
+                  {/* D4: implemented WORKING. Legacy's button called `searchSelectMill.show()` on the
                     pre-4.0 global widget namespace with no shim and updated the dialog containers
                     rather than the inner form (mills.xhtml:102), so it almost certainly never
                     opened. The current mill stays selected until a new row is chosen — legacy's
                     `clear(false)` does not clear the selection (MillsMB.java:513-519) — and no
                     message is emitted, the artefacts being silent on one. */}
-                <Button
-                  kind="ghost"
-                  renderIcon={Edit}
-                  // Disabled while a write is in flight, like every other write-adjacent control:
-                  // adopting another mill mid-write makes millIdRef drop the response, so a
-                  // completed write's outcome would vanish without a message.
-                  disabled={busy}
-                  onClick={() => setSelectOpen(true)}
-                >
-                  Change Mill
-                </Button>
-                <Button
-                  // Advisory Save-gating (D5, AD-6): disabled only while the head-office indicator
-                  // has never been chosen, so no value is written that nobody picked.
-                  disabled={busy || !canSaveContacts(form)}
-                  onClick={save}
-                >
-                  Save
-                </Button>
-              </div>
-            </section>
-          )}
+                  <Button
+                    kind="tertiary"
+                    renderIcon={Edit}
+                    // Disabled while a write is in flight, like every other write-adjacent control:
+                    // adopting another mill mid-write makes millIdRef drop the response, so a
+                    // completed write's outcome would vanish without a message.
+                    disabled={busy}
+                    onClick={() => setSelectOpen(true)}
+                  >
+                    Change Mill
+                  </Button>
+                  <Button
+                    // Advisory Save-gating (D5, AD-6): disabled only while the head-office indicator
+                    // has never been chosen, so no value is written that nobody picked.
+                    disabled={busy || !canSaveContacts(form)}
+                    renderIcon={Save}
+                    onClick={save}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </>
+            )}
+          </SubPanel>
 
           {mill && (
-            <section className="mills__section" aria-labelledby="mills-users-heading">
-              {/* ONE panel, singular, verbatim (mills.xhtml:110). The `Associated Auditors` panel
-                  is RETIRED, not deferred (DL-23; 22.2 deviation (A)) — and with it the
-                  IDIR/GOVERNMENT half of the legacy user search. */}
-              <h2 className="mills__heading" id="mills-users-heading">
-                Associated Licensee User
-              </h2>
+            // ONE panel, singular, verbatim (mills.xhtml:110). The `Associated Auditors` panel is
+            // RETIRED, not deferred (DL-23; 22.2 deviation (A)) — and with it the IDIR/GOVERNMENT
+            // half of the legacy user search.
+            <SubPanel title="Associated Licensee User">
               <div className="mills__add">
                 <Button size="sm" disabled={busy} renderIcon={Add} onClick={() => setAddOpen(true)}>
                   Add
@@ -622,11 +620,9 @@ const Mills: FC = () => {
                 <Table aria-label="Associated Licensee User">
                   <TableHead>
                     <TableRow>
-                      {/* One `User` column carrying the GUID (D2, deviation (B)): legacy's First
-                          Name / last Name / BCeID have no wire source — displayName is
-                          unconditionally null on this surface and there is no BCeID field — until
-                          the directory join ships. */}
-                      <TableHeader>User</TableHeader>
+                      <TableHeader>First Name</TableHeader>
+                      <TableHeader>Last Name</TableHeader>
+                      <TableHeader>BCeID</TableHeader>
                       <TableHeader>User To Mill Status</TableHeader>
                       <TableHeader>Activation Date</TableHeader>
                       <TableHeader>Deactivation Date</TableHeader>
@@ -636,7 +632,7 @@ const Mills: FC = () => {
                   <TableBody>
                     {users.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5}>No associated users.</TableCell>
+                        <TableCell colSpan={7}>No associated users.</TableCell>
                       </TableRow>
                     ) : (
                       users.map((row) => {
@@ -648,70 +644,80 @@ const Mills: FC = () => {
                         const active = row.status === 'ACTIVE'
                         return (
                           <TableRow key={row.userGuid}>
-                            <TableCell>{row.userGuid}</TableCell>
+                            {/* Unresolved rows show the guid under BCeID -- identifier standing in
+                                for identifier. Inventing a name would state something the directory
+                                did not tell us. */}
+                            <TableCell>{dash(row.firstName)}</TableCell>
+                            <TableCell>{dash(row.lastName)}</TableCell>
+                            <TableCell>{row.bceid ?? row.userGuid}</TableCell>
                             {/* mills.xhtml:123-124 renders literally "Active"/"Inactive"; the wire
                                 value stays ENDED. Legacy's two independent `rendered` tests let a
                                 both-dates row print "InactiveActive" and offer BOTH actions — the
                                 wire's status is single-valued, so that defect is unreachable
                                 (deviation (K)). */}
                             <TableCell>{active ? 'Active' : 'Inactive'}</TableCell>
-                            <TableCell>{dash(legacyDate(row.activeDate))}</TableCell>
+                            <TableCell>{dash(row.activeDate)}</TableCell>
                             <TableCell>
                               {/* A never-activated row's INACTIVE_DATE is really its creation date,
                                   so printing it under this header would state that a mill was
                                   deactivated on a day it never was (deviation (L)). */}
-                              {isNeverActivated(row) ? '—' : dash(legacyDate(row.inactiveDate))}
+                              {isNeverActivated(row) ? '—' : dash(row.inactiveDate)}
                             </TableCell>
                             <TableCell>
-                              {/* The SINGLE applicable action (mills.xhtml:136-143), fired
+                              {/* Side by side and equal width: the two controls are peers, and a Carbon button
+                                  sizes to its own label, so "Deactivate" and "View" would otherwise differ in
+                                  width and wrap onto separate lines as the column narrows. */}
+                              <div className="mills__row-actions">
+                                {/* The SINGLE applicable action (mills.xhtml:136-143), fired
                                   immediately — legacy confirmed neither. Both a never-activated
                                   and a deactivated row offer Activate. */}
-                              {active ? (
-                                <Button
-                                  kind="ghost"
-                                  size="sm"
-                                  disabled={busy}
-                                  aria-label={`Deactivate user ${row.userGuid}`}
-                                  renderIcon={Misuse}
-                                  onClick={() => toggleUser(row, 'deactivate')}
-                                >
-                                  Deactivate
-                                </Button>
-                              ) : (
-                                <Button
-                                  kind="ghost"
-                                  size="sm"
-                                  disabled={busy}
-                                  // Live and unqualified even on a Closed mill. BR-02 is ONE
-                                  // screen's guard, not a system-wide invariant: the shipped users
-                                  // surface can still create an active association on a closed
-                                  // mill, and that is ratified parity. A disabled control or a
-                                  // "cannot" tooltip here would state a rule ILCR does not hold.
-                                  aria-label={`Activate user ${row.userGuid}`}
-                                  renderIcon={CheckmarkOutline}
-                                  onClick={() => toggleUser(row, 'activate')}
-                                >
-                                  Activate
-                                </Button>
-                              )}
-                              {/* S10, on EVERY row — legacy has no `rendered` guard on View
+                                {active ? (
+                                  <Button
+                                    kind="danger--tertiary"
+                                    size="sm"
+                                    disabled={busy}
+                                    aria-label={`Deactivate user ${row.userGuid}`}
+                                    renderIcon={Misuse}
+                                    onClick={() => toggleUser(row, 'deactivate')}
+                                  >
+                                    Deactivate
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    kind="tertiary"
+                                    size="sm"
+                                    disabled={busy}
+                                    // Live and unqualified even on a Closed mill. BR-02 is ONE
+                                    // screen's guard, not a system-wide invariant: the shipped users
+                                    // surface can still create an active association on a closed
+                                    // mill, and that is ratified parity. A disabled control or a
+                                    // "cannot" tooltip here would state a rule ILCR does not hold.
+                                    aria-label={`Activate user ${row.userGuid}`}
+                                    renderIcon={CheckmarkOutline}
+                                    onClick={() => toggleUser(row, 'activate')}
+                                  >
+                                    Activate
+                                  </Button>
+                                )}
+                                {/* S10, on EVERY row — legacy has no `rendered` guard on View
                                   (mills.xhtml:144-151). Navigating away loses unsaved contact edits
                                   silently, exactly as legacy's hard redirect did; there is no
                                   unsaved-changes prompt on this screen and none is to be added. */}
-                              <Button
-                                kind="ghost"
-                                size="sm"
-                                aria-label={`View user ${row.userGuid}`}
-                                renderIcon={View}
-                                onClick={() =>
-                                  navigate({
-                                    to: '/mill-associations',
-                                    search: { userGuid: row.userGuid },
-                                  })
-                                }
-                              >
-                                View
-                              </Button>
+                                <Button
+                                  kind="tertiary"
+                                  size="sm"
+                                  aria-label={`View user ${row.userGuid}`}
+                                  renderIcon={View}
+                                  onClick={() =>
+                                    navigate({
+                                      to: '/mill-associations',
+                                      search: { userGuid: row.userGuid },
+                                    })
+                                  }
+                                >
+                                  View
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         )
@@ -720,7 +726,7 @@ const Mills: FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
-            </section>
+            </SubPanel>
           )}
         </Column>
       </Grid>

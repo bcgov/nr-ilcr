@@ -417,7 +417,12 @@ public class MillMaintenanceService {
         e.headOfficeContactInd(),
         e.headOfficeContactId(),
         e.divisionContactId(),
-        e.revisionCount());
+        e.revisionCount(),
+        e.updateUserid(),
+        // Day precision is the display contract (legacy's own dd/MM/yyyy), and this is where the
+        // TIMESTAMP(6) column narrows to it -- explicitly, rather than through whatever conversion
+        // a LocalDate-typed entity field would have left to the driver and the JVM default zone.
+        e.updateTimestamp() == null ? null : e.updateTimestamp().toLocalDate());
   }
 
   /**

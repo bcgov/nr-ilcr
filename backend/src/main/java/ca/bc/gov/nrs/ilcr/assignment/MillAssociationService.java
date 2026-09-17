@@ -5,10 +5,17 @@ import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millmaintenance.AdminMillEntity;
 import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceException;
 import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
+import ca.bc.gov.nrs.ilcr.userlookup.DirectoryUnavailableException;
+import ca.bc.gov.nrs.ilcr.userlookup.UserLookupClient;
+import ca.bc.gov.nrs.ilcr.userlookup.dto.DirectoryUser;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -35,12 +42,14 @@ import org.springframework.transaction.annotation.Transactional;
  * SQL of its own beyond calling it. Entities never leave this class.
  */
 @Service
+@Slf4j
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class MillAssociationService {
 
   private final MillUserXrefRepository assignments;
   private final MillMaintenanceRepository mills;
   private final AssignmentService accounts;
+  private final ObjectProvider<UserLookupClient> lookup;
 
   /**
    * Creates the service over the shared cross-reference repository and the admin mill read.
@@ -48,32 +57,107 @@ public class MillAssociationService {
    * @param assignments the submitter-to-mill cross-reference rows (the table's only writer)
    * @param mills the tracked-mill read the admin surface resolves mills with
    * @param accounts the users-screen service, for the shared provisioning and closed-mill rules
+   * @param lookup the directory client, as an {@link ObjectProvider} because its {@code
+   *     ilcr.user-lookup.enabled} gate is independent of this service's own {@code
+   *     ilcr.datasource.enabled} gate — the client can be absent from a context where this service
+   *     exists, and a plain constructor parameter would fail that context to start
    */
   public MillAssociationService(
       MillUserXrefRepository assignments,
       MillMaintenanceRepository mills,
-      AssignmentService accounts) {
+      AssignmentService accounts,
+      ObjectProvider<UserLookupClient> lookup) {
     this.assignments = assignments;
     this.mills = mills;
     this.accounts = accounts;
+    this.lookup = lookup;
   }
 
   /**
    * One mill's associations as the mill record lists them — both states by default, because the
    * legacy panel showed inactive rows beside active ones (each with its own toggle).
    *
+   * <p>Deliberately NOT {@code @Transactional}. {@link #resolveNames} makes one outbound directory
+   * call per distinct GUID, and under a transaction every one of them would run while this thread
+   * holds an Oracle connection: the client allows 5s to connect and 10s to read, nothing caps the
+   * row count, and the fail-soft handling covers a directory that FAILS, not one that merely
+   * crawls. A dozen licensees against a slow-but-answering directory would hold a pooled connection
+   * for minutes — the precise coupling the timeouts in {@code application.yml} exist to prevent.
+   *
+   * <p>The two reads are independent selects feeding a display list, so nothing here needs snapshot
+   * isolation; Spring Data JDBC runs each in its own transaction. Legacy resolved names per row too
+   * — and worse, {@code ILCRUserService.getILCRUsers:284-301} made TWO WebADE calls per row (user
+   * info, then roles) — so this is legacy's shape with legacy's flaw removed, not a departure.
+   *
    * @param millId the mill
    * @param includeEnded whether ended/inactive associations are included
    * @return the mill's associations
    * @throws MillMaintenanceException 404 when the mill is unknown or not yet imported
    */
-  @Transactional(readOnly = true)
   public List<MillSubmitter> listByMill(long millId, boolean includeEnded) {
     AdminMillEntity mill = requireTrackedMill(millId);
-    return assignments.findByMill(millId).stream()
-        .filter(row -> includeEnded || row.isActive())
-        .map(row -> toSubmitter(row, mill))
-        .toList();
+    List<MillUserXrefEntity> rows =
+        assignments.findByMill(millId).stream()
+            .filter(row -> includeEnded || row.isActive())
+            .toList();
+    Map<String, DirectoryUser> directory = resolveNames(rows);
+    return rows.stream().map(row -> toSubmitter(row, mill, directory.get(row.userGuid()))).toList();
+  }
+
+  /**
+   * Resolve each distinct GUID on the page against the BCeID directory. Fail-soft in three ways,
+   * because a name is a display convenience and the panel's actions key off the GUID, never the
+   * name: an unconfigured client (the {@code ilcr.user-lookup.enabled} gate is independent of this
+   * service's own gate — see the constructor), an unavailable directory, and an unknown user (an
+   * empty answer per {@link UserLookupClient#findBusinessBceid}'s own contract, not a failure) all
+   * leave the affected row(s) with no directory entry, and {@link #toSubmitter} renders them from
+   * database state alone.
+   *
+   * <p>The catch below is deliberately widened past {@link DirectoryUnavailableException}: per
+   * {@link UserLookupClient}'s own javadoc, a malformed relative URI escapes as {@link
+   * IllegalArgumentException} ("not a RestClientException, so it escapes the failure translation
+   * entirely"), an oversized token lifetime as {@link java.time.DateTimeException}, and
+   * misconfiguration at construction as {@link IllegalStateException} — none of them {@link
+   * DirectoryUnavailableException}, and any one of them from a single grandfathered GUID would
+   * otherwise turn a working panel into a 500. {@link DirectoryUnavailableException} still means
+   * the whole directory is down and stops the loop for every REMAINING row; any OTHER {@link
+   * RuntimeException} is narrower — it can only mean this one GUID could not be resolved, so it is
+   * logged and skipped, and the loop continues to the next GUID.
+   *
+   * <p>An outage stops the asking; it does not discard the answers. Whatever was resolved before
+   * the directory stopped answering is still returned and rendered — each of those names cost a
+   * round-trip and is no less true for the directory having gone away afterwards, so blanking them
+   * would lose information for nothing. The page degrades in GUID order, not all at once.
+   */
+  private Map<String, DirectoryUser> resolveNames(List<MillUserXrefEntity> rows) {
+    UserLookupClient client = lookup.getIfAvailable();
+    if (client == null) {
+      return Map.of();
+    }
+    Map<String, DirectoryUser> resolved = new HashMap<>();
+    for (String guid : rows.stream().map(MillUserXrefEntity::userGuid).distinct().toList()) {
+      try {
+        client.findBusinessBceid("userGuid", guid).stream()
+            .findFirst()
+            .ifPresent(user -> resolved.put(guid, user));
+      } catch (DirectoryUnavailableException unavailable) {
+        // The whole directory is down, not just this GUID: stop asking, rather than let one outage
+        // fail the panel or retry-storm an already-struggling directory. The names already in
+        // `resolved` are still served -- only the GUIDs this loop never got to go bare.
+        log.warn(
+            "Directory unavailable; serving mill associations with the names already resolved",
+            unavailable);
+        return resolved;
+      } catch (RuntimeException escapee) {
+        // Anything else the client can throw (a malformed URI, an overflowed token lifetime, a
+        // misconfiguration) is specific to this one GUID, not the directory as a whole: skip it and
+        // keep resolving the rest of the page. No PII in the log line — no GUID, username or mill.
+        log.warn(
+            "Directory lookup failed for one association; leaving that row without a name",
+            escapee);
+      }
+    }
+    return resolved;
   }
 
   /**
@@ -97,7 +181,7 @@ public class MillAssociationService {
     Optional<MillUserXrefEntity> existing = assignments.findAssignment(millId, userGuid);
     if (existing.isPresent()) {
       return new AssignmentService.Outcome(
-          toSubmitter(existing.get(), mill), AssignmentService.MSG_ALREADY_ASSIGNED);
+          toSubmitter(existing.get(), mill, null), AssignmentService.MSG_ALREADY_ASSIGNED);
     }
 
     accounts.provisionAccountIfAbsent(userGuid, actingUser);
@@ -113,7 +197,7 @@ public class MillAssociationService {
           .map(
               row ->
                   new AssignmentService.Outcome(
-                      toSubmitter(row, mill), AssignmentService.MSG_ALREADY_ASSIGNED))
+                      toSubmitter(row, mill, null), AssignmentService.MSG_ALREADY_ASSIGNED))
           .orElseThrow(() -> concurrentInsert);
     }
     // The legacy quirk, kept: the confirmation for this INACTIVE insert is the same "has been
@@ -212,7 +296,7 @@ public class MillAssociationService {
   private MillSubmitter reload(long millId, String userGuid, AdminMillEntity mill) {
     return assignments
         .findAssignment(millId, userGuid)
-        .map(row -> toSubmitter(row, mill))
+        .map(row -> toSubmitter(row, mill, null))
         .orElseThrow(AssignmentNotFoundException::new);
   }
 
@@ -229,8 +313,15 @@ public class MillAssociationService {
    * with a null {@code activeDate} was genuinely deactivated. Note also that {@code findByMill}
    * orders on {@code COALESCE(ACTIVE_DATE, INACTIVE_DATE)}, so never-activated rows sort by their
    * creation date against genuinely-ended rows' end dates.
+   *
+   * <p>{@code directory} is null both when the caller has no directory context to offer (the
+   * write-path call sites below, which pass null explicitly — their response carries a single row
+   * the screen already holds, and it is the list re-read that repaints names) and when {@link
+   * #resolveNames} could not resolve this particular GUID; either way the three name fields come
+   * out null, per {@code non_null} Jackson inclusion, absent from the wire.
    */
-  private static MillSubmitter toSubmitter(MillUserXrefEntity row, AdminMillEntity mill) {
+  private static MillSubmitter toSubmitter(
+      MillUserXrefEntity row, AdminMillEntity mill, DirectoryUser directory) {
     return new MillSubmitter(
         row.userGuid(),
         null,
@@ -240,7 +331,10 @@ public class MillAssociationService {
         row.isActive() ? MillSubmitter.ACTIVE : MillSubmitter.ENDED,
         toDate(row.activeDate()),
         toDate(row.inactiveDate()),
-        row.revisionCount());
+        row.revisionCount(),
+        directory == null ? null : directory.firstName(),
+        directory == null ? null : directory.lastName(),
+        directory == null ? null : directory.idpUsername());
   }
 
   private static LocalDate toDate(LocalDateTime value) {

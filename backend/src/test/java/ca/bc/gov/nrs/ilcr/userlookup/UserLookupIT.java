@@ -42,7 +42,7 @@ class UserLookupIT extends AbstractOracleIT {
   @DisplayName("an admin IDIR search returns the picker candidates")
   void adminIdirSearchReturnsCandidates() throws Exception {
     when(directory.searchIdir("jane", null, null))
-        .thenReturn(List.of(new DirectoryUser(GUID, "Doe, Jane", "JDOE", "IDIR")));
+        .thenReturn(List.of(new DirectoryUser(GUID, "Doe, Jane", "JDOE", "IDIR", "Jane", "Doe")));
 
     mockMvc
         .perform(get(ENDPOINT).param("firstName", "jane").with(admin()))
@@ -70,7 +70,9 @@ class UserLookupIT extends AbstractOracleIT {
   @DisplayName("a BCeID exact lookup by GUID routes to the exact operation")
   void bceidExactLookupRoutes() throws Exception {
     when(directory.findBusinessBceid("userGuid", GUID))
-        .thenReturn(List.of(new DirectoryUser(GUID, "Biz, User", "bizuser", "BCEIDBUSINESS")));
+        .thenReturn(
+            List.of(
+                new DirectoryUser(GUID, "Biz, User", "bizuser", "BCEIDBUSINESS", "User", "Biz")));
 
     mockMvc
         .perform(get(ENDPOINT).param("idp", "BCEIDBUSINESS").param("userGuid", GUID).with(admin()))
@@ -84,7 +86,9 @@ class UserLookupIT extends AbstractOracleIT {
     // The precedence is a one-line comment in the controller; reordering the two branches would
     // silently downgrade the lookup to the weaker username match.
     when(directory.findBusinessBceid("userGuid", GUID))
-        .thenReturn(List.of(new DirectoryUser(GUID, "Biz, User", "bizuser", "BCEIDBUSINESS")));
+        .thenReturn(
+            List.of(
+                new DirectoryUser(GUID, "Biz, User", "bizuser", "BCEIDBUSINESS", "User", "Biz")));
 
     mockMvc
         .perform(
