@@ -95,6 +95,12 @@ export interface TrackCheckResult {
   readonly requirementsMet: boolean
   /** Eleven entries for Schedules 1–10 (7A and 7B separately), one for Schedule 11. Never re-sort. */
   readonly schedules: readonly ScheduleCheckResult[]
+  /**
+   * Whether Submit is OFFERED to the caller for this track — decided by the one server component the
+   * submit endpoint also applies (`TrackCheckResult.java:18-23`), so the page never computes it.
+   * Absent (never `false`) on Schedule 11 until Epic 26 gives that track its own verdict.
+   */
+  readonly canSubmit?: boolean
 }
 
 export default interface CheckStatusSweepResponse {

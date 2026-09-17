@@ -1,20 +1,31 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { getDefaultNormalizer } from '@testing-library/react'
-import { render, screen, userEvent, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test-utils'
 import { server } from '@/test-setup'
 import apiService from '@/service/api-service'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
-import { MOCK_USER_STORAGE_KEY } from '@/context/auth/mockUsers'
+import { ILCR_ROLES, MOCK_USER_STORAGE_KEY } from '@/context/auth/mockUsers'
 import { ERR_MILL_YEAR_NOT_SELECTED } from '@/components/core/ScheduleLoadState'
 import CheckStatus, {
+  CONFIRM_SUBMIT_1_TO_10,
   HINT_NOT_ADMIN,
   HINT_NOT_DRAFT,
   HINT_NOT_DRAFT_11,
   HINT_NOT_SUBMITTED,
   HINT_NOT_SUBMITTED_11,
   HINT_NOT_SUBMITTER,
+  SUBMIT_FAILED,
 } from '../index'
 import { LOAD_FAILED } from '../useCheckStatusSweep'
 import { SCHEDULE_TITLES } from '../verdicts'
@@ -167,7 +178,7 @@ describe('Check Status page (Story 15.2)', () => {
         const params = new URL(request.url).searchParams
         expect(params.get('millId')).toBe('13050')
         expect(params.get('year')).toBe('2017')
-        return HttpResponse.json(sweep({ statusCode11: 'D' }))
+        return HttpResponse.json(sweep({ statusCode11: 'D', canSubmit1To10: true }))
       }),
     )
     render(<CheckStatus />)
@@ -705,7 +716,10 @@ describe('Check Status page (Story 15.2)', () => {
     server.use(
       http.get(SWEEP_URL, () =>
         HttpResponse.json(
-          sweep({ overrides: [{ schedule: '1', requirementsMet: false, verdict: schedule1Fail }] }),
+          sweep({
+            canSubmit1To10: true,
+            overrides: [{ schedule: '1', requirementsMet: false, verdict: schedule1Fail }],
+          }),
         ),
       ),
     )
@@ -931,5 +945,672 @@ describe('Check Status page (Story 15.2)', () => {
     await screen.findAllByText(MET_TEXT)
     await user.click(screen.getByRole('button', { name: 'change' }))
     await waitFor(() => expect(seen).toEqual(['13050/2017', '999/2020']))
+  })
+})
+
+// =================================================================================================
+// Story 15.4 — Submit Schedules 1–10 behind the confirmation.
+// =================================================================================================
+
+const SUBMIT_URL = `${SWEEP_URL}/submit`
+
+// The wire texts, copied from the backend's own constants (CheckStatusSubmitIT.java:48-54,
+// CheckStatusContextGuardIT.java:37-45) — not from the story file. ERR_001 keeps its trailing space.
+const SUBMITTED = 'Schedules 1-10 are successfully submitted.'
+const NOT_SUBMITTED =
+  'The report cannot be submitted. One or more of the Schedules have not passed validation. Please review and correct any errors.'
+const SUBMISSION_ERROR =
+  'An error has been found submitting schedules. The error details have been logged. Please contact ILCR application support.'
+const ERR_001 = 'Please Select Mill and Reporting Year in the Home Page. '
+
+const LOADING = { name: 'Loading Check Status' }
+const LOAD_TITLE = 'Unable to load Check Status'
+const DRAFT_LINE = 'Sch 1-10 - Status: Draft - Date: 2017-01-01'
+const SUBMITTED_LINE = 'Sch 1-10 - Status: Submitted - Date: 2017-01-01'
+const MILL_LINE = 'Mill: 13050 Test Mill - Year: 2017'
+const SCH11_LINE = 'Sch 11 - Status: Draft - Date: 2017-02-02'
+
+/** Neither trims nor collapses, so a trailing space is matched byte for byte. */
+const byteExact = { normalizer: getDefaultNormalizer({ trim: false, collapseWhitespace: false }) }
+
+type Answer = () => Response
+const json =
+  (body: unknown): Answer =>
+  () =>
+    HttpResponse.json(body)
+
+const submitOk: Answer = () =>
+  HttpResponse.json({ message: { key: 'sch1-10SubmittedMsg', text: SUBMITTED } })
+
+/** Boot's container-error body — a 401 is NOT problem+json (SecurityConfiguration.java:68-72). */
+const unauthorized: Answer = () =>
+  new HttpResponse(
+    JSON.stringify({
+      timestamp: '2026-09-17T00:00:00Z',
+      status: 401,
+      error: 'Unauthorized',
+      path: '/api/v1/check-status/submit',
+    }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } },
+  )
+
+const millContextBody = (code1To10: string, code11 = 'D') => {
+  const describe = (code: string) =>
+    code === 'D' ? 'Draft' : code === 'S' ? 'Submitted' : 'Verified'
+  return {
+    millId: 13050,
+    millNumber: '13050',
+    millName: 'Test Mill',
+    reportYear: 2017,
+    schedules1To10Status: { code: code1To10, description: describe(code1To10), date: '2017-01-01' },
+    schedule11Status: { code: code11, description: describe(code11), date: '2017-02-02' },
+    millViewable: true,
+  }
+}
+
+const SUBMITTED_SWEEP = sweep({ statusCode1To10: 'S', canSubmit1To10: false })
+
+/**
+ * A stateful fake of the two reads this page issues. Each GET answers with whatever `state` holds at
+ * that moment, so a submit handler can flip the "server" to Submitted and the refetches see it — the
+ * global `/mill-context` default hardcodes Draft on every call, so a correct refetch would look broken
+ * against it (test-setup.ts:176-191). Call counts are recorded; note the tombstone fetches
+ * `/mill-context` TWICE on mount (once from the loading tree, once after the data tree remounts it),
+ * so context counts are asserted as deltas from the settled mount, never as absolutes.
+ */
+const fakeReads = (
+  sweepBody: unknown = sweep({ canSubmit1To10: true }),
+  context: Answer = json(millContextBody('D')),
+) => {
+  const state = { sweep: json(sweepBody), context }
+  const calls = { sweep: 0, context: 0 }
+  server.use(
+    http.get(SWEEP_URL, () => {
+      calls.sweep += 1
+      return state.sweep()
+    }),
+    http.get(MILL_CONTEXT, () => {
+      calls.context += 1
+      return state.context()
+    }),
+  )
+  return { state, calls }
+}
+
+/** The submit POST, answered by `answer` and recorded (count + URLs) for the request-counter proofs. */
+const submitHandler = (answer: Answer) => {
+  const calls = { count: 0, urls: [] as string[] }
+  server.use(
+    http.post(SUBMIT_URL, ({ request }) => {
+      calls.count += 1
+      calls.urls.push(request.url)
+      return answer()
+    }),
+  )
+  return calls
+}
+
+/** A submit that succeeds AND moves the fake server's reads to Submitted, as the real one would. */
+const submitAndFlip = (reads: ReturnType<typeof fakeReads>): Answer => {
+  return () => {
+    reads.state.sweep = json(SUBMITTED_SWEEP)
+    reads.state.context = json(millContextBody('S'))
+    return submitOk()
+  }
+}
+
+const drainEventLoop = async (turns = 20) => {
+  for (let i = 0; i < turns; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
+const dialog = () => screen.findByRole('dialog', { name: 'Confirmation Required' })
+const openDialog = () => screen.queryByRole('dialog', { name: 'Confirmation Required' })
+
+/** Press one of the two Schedules 1–10 Submits (0 = above the region, 1 = below) and return the dialog. */
+const pressSubmit = async (user: ReturnType<typeof userEvent.setup>, index: 0 | 1 = 0) => {
+  await user.click(submitButtons1To10()[index])
+  return within(await dialog())
+}
+const confirmSubmit = async (user: ReturnType<typeof userEvent.setup>, index: 0 | 1 = 0) => {
+  const prompt = await pressSubmit(user, index)
+  await user.click(prompt.getByRole('button', { name: 'Yes' }))
+}
+
+/** The focusable Column wrapping the banner that carries `text` (D5(b): `tabIndex={-1}` on the Column). */
+const bannerColumn = (text: string) => screen.getByText(text).closest('[tabindex="-1"]')
+
+/** Mount as the submitter and wait for the data tree AND the tombstone's second fetch to settle. */
+const mountSettled = async (line = DRAFT_LINE) => {
+  renderAsSubmitter(<CheckStatus />)
+  expect(declaredRole()).toBe(ILCR_ROLES.submitter)
+  expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+  expect(await screen.findByText(line)).toBeInTheDocument()
+}
+
+const expectVerdictsAndBarsPresent = () => {
+  expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
+  expect(region1To10()).toBeInTheDocument()
+  expect(region11()).toBeInTheDocument()
+  expect(submitButtons()).toHaveLength(3)
+  expect(screen.queryByText(LOAD_TITLE)).not.toBeInTheDocument()
+  expect(screen.queryByText(LOAD_FAILED)).not.toBeInTheDocument()
+  expect(screen.queryByRole('status', LOADING)).not.toBeInTheDocument()
+}
+
+const expectSubmits1To10 = async (state: 'enabled' | 'disabled', hint?: string) => {
+  await waitFor(() => {
+    const buttons = submitButtons1To10()
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) {
+      if (state === 'enabled') {
+        expect(button).toBeEnabled()
+        expect(button).not.toHaveAttribute('aria-describedby')
+      } else {
+        expect(button).toBeDisabled()
+        if (hint) expect(hintFor(button)).toHaveTextContent(hint)
+      }
+    }
+  })
+}
+
+describe('Submit Schedules 1–10 (Story 15.4)', () => {
+  // ---- AC 1 / AC 2 / AC 5: the happy path from either bar -------------------------------------
+
+  test.each([
+    ['top', 0],
+    ['bottom', 1],
+  ] as const)(
+    'AC 1 (%s Submit): the dialog carries the four legacy literals; Yes issues ONE POST; the server text renders; both refetches land and the page reads Submitted',
+    async (_label, index) => {
+      const reads = fakeReads()
+      const submit = submitHandler(submitAndFlip(reads))
+      const user = userEvent.setup()
+      await mountSettled()
+      const contextCallsAtMount = reads.calls.context
+      await expectSubmits1To10('enabled')
+
+      const prompt = await pressSubmit(user, index)
+      // AC 2 — legacy's dialog, verbatim (checkStatus.xhtml:197-200; messages.properties:102).
+      expect(screen.getByRole('dialog', { name: 'Confirmation Required' })).toBeInTheDocument()
+      expect(prompt.getByText(CONFIRM_SUBMIT_1_TO_10)).toBeInTheDocument()
+      expect(prompt.getByRole('button', { name: 'Yes' })).toBeInTheDocument()
+      expect(prompt.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+      expect(prompt.queryByRole('button', { name: 'No' })).not.toBeInTheDocument()
+      expect(document.querySelector('.cds--modal--danger')).toBeNull()
+      expect(document.querySelector('.cds--modal')).not.toBeNull() // positive control for the selector
+      expect(submit.count).toBe(0)
+
+      await user.click(prompt.getByRole('button', { name: 'Yes' }))
+      expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+      expect(screen.getByText('Success')).toBeInTheDocument()
+      expect(submit.count).toBe(1)
+      const params = new URL(submit.urls[0]).searchParams
+      expect(params.get('millId')).toBe('13050')
+      expect(params.get('year')).toBe('2017')
+
+      // AC 5 — both reads re-issued; everything shown afterwards came off the second responses.
+      await waitFor(() => expect(reads.calls.sweep).toBe(2))
+      await waitFor(() => expect(reads.calls.context).toBe(contextCallsAtMount + 1))
+      expect(await screen.findByText(SUBMITTED_LINE)).toBeInTheDocument()
+      expect(screen.queryByText(DRAFT_LINE)).not.toBeInTheDocument()
+      await expectSubmits1To10('disabled', HINT_NOT_DRAFT)
+      // A banner, never the load state: the verdicts and all three bars are still on the page.
+      expectVerdictsAndBarsPresent()
+      expect(screen.getByText(SUBMITTED)).toBeInTheDocument()
+      expect(openDialog()).toBeNull()
+    },
+  )
+
+  test('AC 5: the values rendered after a 200 are the second sweep’s — a changed verdict shows, nothing is flipped client-side', async () => {
+    const reads = fakeReads()
+    submitHandler(() => {
+      reads.state.sweep = json(
+        sweep({
+          statusCode1To10: 'S',
+          canSubmit1To10: false,
+          overrides: [{ schedule: '7B', requirementsMet: false, verdict: schedule7bFail }],
+        }),
+      )
+      reads.state.context = json(millContextBody('S'))
+      return submitOk()
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    const contextCallsAtMount = reads.calls.context
+    expect(screen.queryByText(SCH7B_ERROR_TEXT)).not.toBeInTheDocument()
+
+    await confirmSubmit(user)
+    await screen.findByText(SUBMITTED)
+    expect(await screen.findByText(SCH7B_ERROR_TEXT)).toBeInTheDocument()
+    expect(screen.getAllByText(MET_TEXT)).toHaveLength(11)
+    expect(await screen.findByText(SUBMITTED_LINE)).toBeInTheDocument()
+    await expectSubmits1To10('disabled', HINT_NOT_DRAFT)
+    expect(reads.calls.sweep).toBe(2)
+    expect(reads.calls.context).toBe(contextCallsAtMount + 1)
+  })
+
+  // ---- AC 3: Cancel is purely client-side -----------------------------------------------------
+
+  test('AC 3: Cancel, the close control and Escape each close the dialog with NO request and nothing else changed; Yes is the positive control', async () => {
+    const reads = fakeReads()
+    const submit = submitHandler(submitAndFlip(reads))
+    const user = userEvent.setup()
+    await mountSettled()
+    const contextCallsAtMount = reads.calls.context
+
+    // Cancel — legacy's `type="button"` with no action (UC-CHK-002 S02).
+    let prompt = await pressSubmit(user, 0)
+    await user.click(prompt.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
+    // The close control and Escape both run through onRequestClose.
+    prompt = await pressSubmit(user, 1)
+    await user.click(prompt.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
+    await pressSubmit(user, 0)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(openDialog()).toBeNull())
+
+    // Proven by the counters, not by the prompt text disappearing (Carbon keeps a closed Modal mounted).
+    await drainEventLoop()
+    expect(submit.count).toBe(0)
+    expect(reads.calls.sweep).toBe(1)
+    expect(reads.calls.context).toBe(contextCallsAtMount)
+    expect(screen.queryByText(SUBMITTED)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+    expect(screen.getByText(DRAFT_LINE)).toBeInTheDocument()
+    await expectSubmits1To10('enabled')
+    expectVerdictsAndBarsPresent()
+
+    // Positive control: the same dialog, answered Yes, issues the POST.
+    await confirmSubmit(user, 0)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    expect(submit.count).toBe(1)
+  })
+
+  // ---- AC 4 / AC 5b: the gate 409 re-syncs the panels (D8) ------------------------------------
+
+  test('AC 4 / AC 5b: the gate 409 renders verbatim, the verdicts and bars survive, and the re-sweep puts the newly-failing schedule on screen', async () => {
+    const reads = fakeReads()
+    const submit = submitHandler(() => {
+      // The gate found a schedule that fell out of compliance since the page was opened.
+      reads.state.sweep = json(
+        sweep({
+          canSubmit1To10: true,
+          overrides: [{ schedule: '7B', requirementsMet: false, verdict: schedule7bFail }],
+        }),
+      )
+      return problem(409, NOT_SUBMITTED)
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    expect(screen.queryByText(SCH7B_ERROR_TEXT)).not.toBeInTheDocument() // the "changed" control
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(NOT_SUBMITTED)).toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    expect(submit.count).toBe(1)
+    // D8: the panels CHANGED — the second sweep's failing Schedule 7B is now on the page.
+    expect(await screen.findByText(SCH7B_ERROR_TEXT)).toBeInTheDocument()
+    expect(reads.calls.sweep).toBe(2)
+    expect(screen.getAllByText(MET_TEXT)).toHaveLength(11)
+    expect(within(item(SCHEDULE_TITLES['7B'])).getByText(SCH7B_ERROR_TEXT)).toBeInTheDocument()
+    // Still a banner, not the load state; the bars are back to live once the request settled.
+    expect(screen.queryByText(LOAD_TITLE)).not.toBeInTheDocument()
+    expect(region1To10()).toBeInTheDocument()
+    expect(region11()).toBeInTheDocument()
+    expect(submitButtons()).toHaveLength(3)
+    await expectSubmits1To10('enabled')
+    expect(screen.getByText(NOT_SUBMITTED)).toBeInTheDocument() // the banner survived the re-sweep
+  })
+
+  test('AC 5b: the not-Draft 409 re-syncs — the track reads Submitted, canSubmit is false, both Submits grey out', async () => {
+    const reads = fakeReads()
+    submitHandler(() => {
+      // Someone else (or this user's other tab) already submitted: the server is at S.
+      reads.state.sweep = json(SUBMITTED_SWEEP)
+      reads.state.context = json(millContextBody('S'))
+      return problem(409, SUBMISSION_ERROR)
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    const contextCallsAtMount = reads.calls.context
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMISSION_ERROR)).toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    await waitFor(() => expect(reads.calls.sweep).toBe(2))
+    await waitFor(() => expect(reads.calls.context).toBe(contextCallsAtMount + 1))
+    await expectSubmits1To10('disabled', HINT_NOT_DRAFT)
+    expect(await screen.findByText(SUBMITTED_LINE)).toBeInTheDocument()
+    expectVerdictsAndBarsPresent()
+    expect(screen.queryByText(SUBMITTED)).not.toBeInTheDocument() // no success text on a failure
+  })
+
+  // ---- AC 4 / AC 5b negative half: verbatim detail, NO re-fetch -------------------------------
+
+  test.each([
+    ['400 (trailing space, byte-exact)', () => problem(400, ERR_001), ERR_001],
+    ['403', () => problem(403, FORBIDDEN), FORBIDDEN],
+    ['404', () => problem(404, NOT_FOUND), NOT_FOUND],
+    ['500', () => problem(500, SUBMISSION_ERROR), SUBMISSION_ERROR],
+    ['401 (no problem+json body)', unauthorized, SUBMIT_FAILED],
+    ['network failure', () => HttpResponse.error(), SUBMIT_FAILED],
+  ])(
+    'AC 4 / AC 5b: %s → the detail (or the client fallback) renders verbatim, the verdicts survive, and neither read is re-issued',
+    async (_label, answer, expected) => {
+      const reads = fakeReads()
+      const submit = submitHandler(answer)
+      const user = userEvent.setup()
+      await mountSettled()
+      const contextCallsAtMount = reads.calls.context
+
+      await confirmSubmit(user)
+      expect(await screen.findByText(expected, byteExact)).toBeInTheDocument()
+      expect(screen.getByText('Action failed')).toBeInTheDocument()
+      expect(submit.count).toBe(1)
+      // The lock has released, so the request has fully settled before the counters are read.
+      await expectSubmits1To10('enabled')
+      await drainEventLoop()
+      expect(reads.calls.sweep).toBe(1)
+      expect(reads.calls.context).toBe(contextCallsAtMount)
+      expectVerdictsAndBarsPresent()
+      expect(screen.getByText(DRAFT_LINE)).toBeInTheDocument()
+      // A fallback keyed on "network error" would render the string "undefined" for the 401 (M10).
+      expect(screen.queryByText('undefined')).not.toBeInTheDocument()
+      expect(screen.queryByText(SUBMITTED)).not.toBeInTheDocument()
+    },
+  )
+
+  // ---- AC 4 / AC 6: the closed-mill 409, whose re-sweep itself 409s ----------------------------
+
+  test('AC 4 / AC 6: the closed-mill 409 renders verbatim and triggers a re-sweep that also 409s — the panels, bars, tombstone and banner all survive', async () => {
+    const reads = fakeReads()
+    submitHandler(() => {
+      // The mill was closed under the open page: every read now refuses too (AD-4).
+      reads.state.sweep = () => problem(409, NOT_ACTIVE)
+      reads.state.context = () => problem(409, NOT_ACTIVE)
+      return problem(409, NOT_ACTIVE)
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    const contextCallsAtMount = reads.calls.context
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(NOT_ACTIVE)).toBeInTheDocument()
+    await waitFor(() => expect(reads.calls.sweep).toBe(2))
+    await waitFor(() => expect(reads.calls.context).toBe(contextCallsAtMount + 1))
+    await expectSubmits1To10('enabled')
+    await drainEventLoop()
+    // Once, in the banner — never a second time in the shared renderer's titled 409 state.
+    expect(screen.getAllByText(NOT_ACTIVE)).toHaveLength(1)
+    expect(screen.queryByText('Mill not active for Reporting Year')).not.toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    expectVerdictsAndBarsPresent()
+    expect(screen.getByText(MILL_LINE)).toBeInTheDocument()
+    expect(screen.getByText(DRAFT_LINE)).toBeInTheDocument()
+  })
+
+  // ---- AC 6: a failed re-fetch must not destroy the outcome ------------------------------------
+
+  test.each([
+    ['500', () => problem(500, 'Schedule 5 could not be evaluated.')],
+    ['network failure', () => HttpResponse.error()],
+  ])(
+    'AC 6: a %s on the post-200 re-sweep keeps the success banner, the verdicts and the bars, and never flashes the spinner over the page',
+    async (_label, failure) => {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const reads = fakeReads()
+      submitHandler(() => {
+        reads.state.sweep = async () => {
+          await held
+          return failure()
+        }
+        return submitOk()
+      })
+      const user = userEvent.setup()
+      await mountSettled()
+
+      await confirmSubmit(user)
+      expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+      await waitFor(() => expect(reads.calls.sweep).toBe(2))
+      // The re-fetch is in flight and held: this IS the frame D4 must keep flicker-free.
+      expect(screen.queryByRole('status', LOADING)).not.toBeInTheDocument()
+      expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
+      expect(screen.getByText(SUBMITTED)).toBeInTheDocument()
+
+      release()
+      await drainEventLoop()
+      expectVerdictsAndBarsPresent()
+      expect(screen.getByText(SUBMITTED)).toBeInTheDocument()
+      expect(screen.queryByText('Schedule 5 could not be evaluated.')).not.toBeInTheDocument()
+    },
+  )
+
+  test.each([
+    ['500', () => problem(500, 'boom')],
+    ['network failure', () => HttpResponse.error()],
+  ])(
+    'AC 6 (the second hook): a %s on the post-200 /mill-context re-fetch leaves the Mill/Year line and both status lines standing',
+    async (_label, failure) => {
+      const reads = fakeReads()
+      submitHandler(() => {
+        reads.state.sweep = json(SUBMITTED_SWEEP)
+        reads.state.context = failure
+        return submitOk()
+      })
+      const user = userEvent.setup()
+      await mountSettled()
+      const contextCallsAtMount = reads.calls.context
+
+      await confirmSubmit(user)
+      expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+      await waitFor(() => expect(reads.calls.context).toBe(contextCallsAtMount + 1))
+      await expectSubmits1To10('disabled', HINT_NOT_DRAFT) // the second sweep landed
+      await drainEventLoop()
+      // The last good context stands — stale, but standing — rather than the block unmounting.
+      expect(screen.getByRole('region', { name: 'Working context' })).toBeInTheDocument()
+      expect(screen.getByText(MILL_LINE)).toBeInTheDocument()
+      expect(screen.getByText(DRAFT_LINE)).toBeInTheDocument()
+      expect(screen.getByText(SCH11_LINE)).toBeInTheDocument()
+      expect(screen.getByText(SUBMITTED)).toBeInTheDocument()
+      expectVerdictsAndBarsPresent()
+    },
+  )
+
+  // ---- AC 1 / D1: the gate reads the wire ------------------------------------------------------
+
+  test.each([
+    [
+      'submitter, canSubmit true at Submitted → enabled (the gate reads the wire, not the status)',
+      'submitter',
+      { statusCode1To10: 'S', canSubmit1To10: true },
+      'enabled',
+      undefined,
+    ],
+    [
+      'submitter, canSubmit false at Draft → disabled with the status hint (the hint still selects on role/status)',
+      'submitter',
+      { statusCode1To10: 'D', canSubmit1To10: false },
+      'disabled',
+      HINT_NOT_DRAFT,
+    ],
+    [
+      'submitter, canSubmit absent at Draft → disabled',
+      'submitter',
+      { statusCode1To10: 'D' },
+      'disabled',
+      HINT_NOT_DRAFT,
+    ],
+    [
+      'admin, canSubmit false at Draft → disabled with the role hint',
+      'admin',
+      { statusCode1To10: 'D', canSubmit1To10: false },
+      'disabled',
+      HINT_NOT_SUBMITTER,
+    ],
+  ] as const)('D1: %s', async (_label, role, options, state, hint) => {
+    server.use(http.get(SWEEP_URL, () => HttpResponse.json(sweep(options))))
+    if (role === 'admin') {
+      renderAsAdmin(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    } else {
+      renderAsSubmitter(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.submitter)
+    }
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    await expectSubmits1To10(state, hint)
+  })
+
+  // ---- AC 7: the outcome is put in front of the user (D6) --------------------------------------
+
+  test.each([
+    ['success', submitOk, SUBMITTED],
+    ['failure', () => problem(409, NOT_SUBMITTED), NOT_SUBMITTED],
+  ])('AC 7: after a %s the banner has focus', async (_label, answer, text) => {
+    fakeReads()
+    submitHandler(answer)
+    const user = userEvent.setup()
+    await mountSettled()
+
+    await confirmSubmit(user, 1) // the BOTTOM bar — the one legacy's scroll anchor existed for
+    expect(await screen.findByText(text)).toBeInTheDocument()
+    const column = bannerColumn(text)
+    expect(column).not.toBeNull()
+    await waitFor(() => expect(column).toHaveFocus())
+    // Programmatic target only — never in the tab order.
+    expect(column).toHaveAttribute('tabindex', '-1')
+  })
+
+  // ---- D7: the in-flight lock ------------------------------------------------------------------
+
+  test('D7: while the POST is in flight both 1–10 Submits are disabled and further clicks issue nothing; Schedule 11’s own Submit is untouched', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    fakeReads(sweep({ canSubmit1To10: true, statusCode11: 'D' }))
+    const submit = submitHandler(async () => {
+      await held
+      return submitOk()
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    const submit11 = () =>
+      within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Submit' })
+    expect(submit11()).toBeEnabled()
+
+    await confirmSubmit(user)
+    await waitFor(() => expect(submit.count).toBe(1))
+    const buttons = submitButtons1To10()
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) {
+      expect(button).toBeDisabled()
+    }
+    expect(submit11()).toBeEnabled() // the lock is the track's, not the page's
+    await user.click(buttons[0])
+    await user.click(buttons[1])
+    expect(openDialog()).toBeNull()
+    expect(submit.count).toBe(1)
+
+    release()
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    expect(submit.count).toBe(1)
+    await expectSubmits1To10('enabled') // the lock releases once the request settles
+  })
+
+  // ---- Stale context -------------------------------------------------------------------------
+
+  test('stale context: a submit whose response lands after the mill/year flips renders no banner', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            canSubmit1To10: true,
+          }),
+        )
+      }),
+    )
+    submitHandler(async () => {
+      await held
+      return submitOk()
+    })
+    const getSpy = vi.spyOn(apiService.getAxiosInstance(), 'get')
+    const user = userEvent.setup()
+    renderAsSubmitter(<ContextSwitchHarness />)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmSubmit(user)
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await waitFor(() => expect(sweepCalls(getSpy)).toHaveLength(2))
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    release()
+    await drainEventLoop()
+    expect(screen.queryByText(SUBMITTED)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    // Positive control: the un-flipped flow renders the banner (the AC 1 arms); here the second sweep
+    // was for the NEW context, so the page is live for mill 999 with no message from mill 13050.
+    expect(String(sweepCalls(getSpy)[1][0])).toContain('millId=999')
+  })
+
+  // ---- D10 / regression: nothing else on the three bars gains a click -----------------------
+
+  test('D10: Schedule 11’s Submit keeps the client gate and stays inert — enabled at Draft, but a click opens no dialog and issues no request', async () => {
+    server.use(http.get(SWEEP_URL, () => HttpResponse.json(sweep({ statusCode11: 'D' }))))
+    const postSpy = vi.spyOn(apiService.getAxiosInstance(), 'post')
+    const user = userEvent.setup()
+    renderAsSubmitter(<CheckStatus />)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    const submit11 = within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Submit' })
+    expect(submit11).toBeEnabled()
+    await user.click(submit11)
+    expect(openDialog()).toBeNull()
+    expect(postSpy).not.toHaveBeenCalled()
+    // The 1–10 pair reads the wire: canSubmit absent → greyed, whatever Schedule 11 says.
+    await expectSubmits1To10('disabled', HINT_NOT_DRAFT)
+  })
+
+  test('regression: Verified, Set to Draft and Set to Submit remain inert on all three bars', async () => {
+    server.use(
+      millContextWithBothTracks('S', 'V'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'V' })),
+      ),
+    )
+    const getSpy = vi.spyOn(apiService.getAxiosInstance(), 'get')
+    const postSpy = vi.spyOn(apiService.getAxiosInstance(), 'post')
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    expect(getSpy).toHaveBeenCalled() // the spies see this instance's traffic (positive control)
+
+    const enabled = [
+      ...screen.getAllByRole('button', { name: 'Verified' }),
+      ...screen.getAllByRole('button', { name: 'Set to Draft' }),
+      ...screen.getAllByRole('button', { name: 'Set to Submit' }),
+    ].filter((button) => !(button as HTMLButtonElement).disabled)
+    // 2 Verified + 2 Set to Draft (1–10 Submitted), 1 Set to Submit (Schedule 11 Verified).
+    expect(enabled).toHaveLength(5)
+    for (const button of enabled) {
+      await user.click(button)
+    }
+    expect(openDialog()).toBeNull()
+    expect(postSpy).not.toHaveBeenCalled()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
   })
 })

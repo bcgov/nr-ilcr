@@ -42,10 +42,19 @@ type Settled =
  * Errors are surfaced (this is the page's content, not passive chrome), as the verbatim `detail` when
  * there is one. A 200 whose body names a different mill/year than the request is treated as a load
  * failure rather than rendered.
+ *
+ * `reloadToken` re-issues the sweep for the SAME context when the page knows the server's state has
+ * moved (a submit landed, or a 409 said the page was stale). Because the page renders from the last
+ * settled result, the previous verdicts stay on screen while the re-fetch is in flight — an in-place
+ * swap, with no loading frame. A re-fetch that FAILS must not take that result away: a page that has
+ * just shown "successfully submitted" cannot fall back to a full-page load error over a transient
+ * failure, so a failure for a context that already holds data keeps the data. The initial load has no
+ * data to keep, so its failure behaviour is unchanged.
  */
 export function useCheckStatusSweep(
   millId: number | null,
   year: number | null,
+  reloadToken = 0,
 ): UseCheckStatusSweepResult {
   const [settled, setSettled] = useState<Settled | null>(null)
 
@@ -55,6 +64,12 @@ export function useCheckStatusSweep(
     }
     const controller = new AbortController()
     let active = true
+    const fail = (detail: string) =>
+      setSettled((previous) =>
+        previous?.kind === 'data' && previous.millId === millId && previous.year === year
+          ? previous
+          : { kind: 'error', millId, year, detail },
+      )
     apiService
       .getAxiosInstance()
       .get<CheckStatusSweepResponse>(`/v1/check-status?millId=${millId}&year=${year}`, {
@@ -66,7 +81,7 @@ export function useCheckStatusSweep(
         }
         const body = response.data
         if (body.millId !== millId || body.year !== year) {
-          setSettled({ kind: 'error', millId, year, detail: LOAD_FAILED })
+          fail(LOAD_FAILED)
         } else {
           setSettled({ kind: 'data', millId, year, data: body })
         }
@@ -74,14 +89,14 @@ export function useCheckStatusSweep(
       .catch((error: unknown) => {
         // An abort rejects too; `active` is already false by then, so it never becomes an error.
         if (active) {
-          setSettled({ kind: 'error', millId, year, detail: extractDetail(error) || LOAD_FAILED })
+          fail(extractDetail(error) || LOAD_FAILED)
         }
       })
     return () => {
       active = false
       controller.abort()
     }
-  }, [millId, year])
+  }, [millId, year, reloadToken])
 
   const hasContext = millId != null && year != null
   const current =
