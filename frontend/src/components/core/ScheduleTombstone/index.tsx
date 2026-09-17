@@ -12,6 +12,9 @@ type Props = {
   // The sub-page trail under the title, rendered breadcrumb-style. A single string is one crumb; an
   // array threads the current level (e.g. ["Special Log Transportation Systems", "Harbour Dump", "Towing"]).
   subtitle?: string | string[]
+  // Bump to re-read the working context for the same mill/year, after an action changed the status
+  // lines this header shows. Omitted, the context is read once per mill/year as before.
+  reloadToken?: number
 }
 
 // The schedule "tombstone": a two-column page header shared by every schedule. Left = page identity
@@ -20,9 +23,9 @@ type Props = {
 // side effect PageTitle set) — which means these pages do NOT render the PageTitle-hosted ContextBanner.
 // The right column therefore carries the same "Working context" landmark ContextBanner uses, so screen
 // readers get one labelled region here just as they do on the PageTitle pages (no page has both).
-const ScheduleTombstone: FC<Props> = ({ title, subtitle }) => {
+const ScheduleTombstone: FC<Props> = ({ title, subtitle, reloadToken }) => {
   const { millId, year } = useMillYear()
-  const context = useWorkingContext(millId, year)
+  const context = useWorkingContext(millId, year, reloadToken)
 
   useEffect(() => {
     document.title = `${title} | ILCR`

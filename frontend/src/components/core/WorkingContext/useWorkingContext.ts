@@ -7,9 +7,13 @@ import type WorkingContext from '@/interfaces/WorkingContext'
 // one fetch and one set of stale-response guards. Returns the context ONLY when it matches the current
 // (millId, year): a null context, a failed fetch, or an in-flight PREVIOUS context all resolve to null
 // (the caller renders nothing), so a stale mill's data never lingers while a newer fetch is in flight.
+// `reloadToken` re-reads the context for the same mill/year when the caller changes it — the status
+// lines are stale after a report-status transition, which the transition's own reply does not describe.
+// Optional and defaulted, so the banner and every tombstone that does not pass one are unaffected.
 export default function useWorkingContext(
   millId: number | null,
   year: number | null,
+  reloadToken = 0,
 ): WorkingContext | null {
   const [context, setContext] = useState<WorkingContext | null>(null)
 
@@ -40,7 +44,7 @@ export default function useWorkingContext(
     return () => {
       active = false
     }
-  }, [millId, year])
+  }, [millId, year, reloadToken])
 
   // A context fetched for a PREVIOUS (millId, year) must not linger while the current fetch is in
   // flight. Derived in render — not cleared via set-state in the effect — which also suppresses an

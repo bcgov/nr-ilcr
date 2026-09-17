@@ -42,10 +42,16 @@ type Settled =
  * Errors are surfaced (this is the page's content, not passive chrome), as the verbatim `detail` when
  * there is one. A 200 whose body names a different mill/year than the request is treated as a load
  * failure rather than rendered.
+ *
+ * `reloadToken` re-issues the sweep for the SAME mill/year when the caller changes it: a status
+ * transition has to re-read the track from the server, since the transition reply carries only its own
+ * outcome. The last settled result stays current while that request is open, so the page keeps
+ * rendering instead of flashing its loading state.
  */
 export function useCheckStatusSweep(
   millId: number | null,
   year: number | null,
+  reloadToken = 0,
 ): UseCheckStatusSweepResult {
   const [settled, setSettled] = useState<Settled | null>(null)
 
@@ -81,7 +87,7 @@ export function useCheckStatusSweep(
       active = false
       controller.abort()
     }
-  }, [millId, year])
+  }, [millId, year, reloadToken])
 
   const hasContext = millId != null && year != null
   const current =
