@@ -158,14 +158,31 @@ body {
   // bespoke `.mill-associations__section` rule.
 
   // The directory provider + user-id controls share a row, as do the mill picker and its Add
-  // button. Bottom-aligned so the button sits on the control's baseline, not its label's.
+  // button. Same row, but they align on OPPOSITE edges, so they are two rules rather than one.
   .mill-associations__picker,
   .mill-associations__add {
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
-    align-items: flex-end;
     margin-bottom: 1rem;
+  }
+
+  // TOP-aligned, which is what puts the three labels on one line. The ComboBox carries `helperText`
+  // and Carbon renders it as the LAST CHILD of the ComboBox's own wrapper
+  // (`ComboBox.js:614-619`, after the list-box), so that wrapper is one text line TALLER than the
+  // two Dropdowns beside it. Under the `flex-end` these rules used to share, the three BOTTOMS
+  // lined up and the extra height came off the top -- which is why the User ID / criterion label
+  // sat a line above Identity provider and Search by. Aligning the tops instead lines up the labels
+  // AND the inputs, because every field in the app is pinned to one 3rem height
+  // (`_overrides.scss:158-182`), and leaves the helper text hanging below where it belongs.
+  .mill-associations__picker {
+    align-items: flex-start;
+  }
+
+  // Bottom-aligned, and this is the rule that needs it: a bare Button has no label above it, so on
+  // a top alignment it would ride up level with the mill Dropdown's LABEL instead of its input.
+  .mill-associations__add {
+    align-items: flex-end;
   }
 
   // The not-enabled / no-match notes belong to the picker but read as a full-width line under it.
