@@ -41,12 +41,14 @@ INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID)
 -- this row -- because this is the mill the admin-detail-read test reads to prove legacy's "Last
 -- Edited by / on date" line (mills.xhtml:41-49) is projected at all: a real caller-visible value is
 -- what that assertion needs, not merely non-null. The deactivation test below then proves the write
--- re-stamps this seeded placeholder rather than merely being non-null.
+-- re-stamps this seeded placeholder rather than merely being non-null. The seeded timestamp
+-- deliberately carries a time of day: the column is TIMESTAMP(6) and the wire contract is day
+-- precision, so a midnight DATE literal would leave that narrowing unexercised.
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID)
   VALUES (751, 'Cariboo Maintain Mill', 7510, 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF
     (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID, UPDATE_USERID, UPDATE_TIMESTAMP)
-  VALUES (751, 'ACT', 'SEED', 'ITUSER', DATE '2026-09-01');
+  VALUES (751, 'ACT', 'SEED', 'ITUSER', TIMESTAMP '2026-09-01 14:37:12.123456');
 
 -- 752: ACTIVE with one ACTIVE assignment -- the deactivation BLOCKED path (BR-01/S12).
 -- The assignment is inserted here rather than inherited from R__70 because this file runs after it.

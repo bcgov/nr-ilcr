@@ -120,9 +120,14 @@ public class MillAssociationService {
    * misconfiguration at construction as {@link IllegalStateException} — none of them {@link
    * DirectoryUnavailableException}, and any one of them from a single grandfathered GUID would
    * otherwise turn a working panel into a 500. {@link DirectoryUnavailableException} still means
-   * the whole directory is down and stops the loop for every row; any OTHER {@link
+   * the whole directory is down and stops the loop for every REMAINING row; any OTHER {@link
    * RuntimeException} is narrower — it can only mean this one GUID could not be resolved, so it is
    * logged and skipped, and the loop continues to the next GUID.
+   *
+   * <p>An outage stops the asking; it does not discard the answers. Whatever was resolved before
+   * the directory stopped answering is still returned and rendered — each of those names cost a
+   * round-trip and is no less true for the directory having gone away afterwards, so blanking them
+   * would lose information for nothing. The page degrades in GUID order, not all at once.
    */
   private Map<String, DirectoryUser> resolveNames(List<MillUserXrefEntity> rows) {
     UserLookupClient client = lookup.getIfAvailable();
@@ -136,10 +141,13 @@ public class MillAssociationService {
             .findFirst()
             .ifPresent(user -> resolved.put(guid, user));
       } catch (DirectoryUnavailableException unavailable) {
-        // The whole directory is down, not just this GUID: stop asking and serve every row bare
-        // rather than let one outage fail the panel or retry-storm an already-struggling directory.
-        log.warn("Directory unavailable; serving mill associations without names", unavailable);
-        return Map.of();
+        // The whole directory is down, not just this GUID: stop asking, rather than let one outage
+        // fail the panel or retry-storm an already-struggling directory. The names already in
+        // `resolved` are still served -- only the GUIDs this loop never got to go bare.
+        log.warn(
+            "Directory unavailable; serving mill associations with the names already resolved",
+            unavailable);
+        return resolved;
       } catch (RuntimeException escapee) {
         // Anything else the client can throw (a malformed URI, an overflowed token lifetime, a
         // misconfiguration) is specific to this one GUID, not the directory as a whole: skip it and

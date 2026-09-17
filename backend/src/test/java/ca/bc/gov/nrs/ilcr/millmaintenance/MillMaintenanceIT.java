@@ -107,8 +107,12 @@ class MillMaintenanceIT extends AbstractOracleIT {
     // The deactivate-success test re-stamps these to prove the write happened; restored here so the
     // detail-read test's assertion of the seeded placeholder values does not depend on test order.
     jdbcTemplate.update(
+        // Deliberately NOT midnight: the column is TIMESTAMP(6) and the wire contract is a date, so
+        // a DATE literal here would have left the narrowing untested -- an afternoon time is what
+        // catches a conversion that rolls the date forward or refuses the column outright.
         "UPDATE THE.ILCR_MILL_STATUS_XREF SET UPDATE_USERID = 'ITUSER', "
-            + "UPDATE_TIMESTAMP = DATE '2026-09-01' WHERE ILCR_MILL_STATUS_XREF_ID = ?",
+            + "UPDATE_TIMESTAMP = TIMESTAMP '2026-09-01 14:37:12.123456' "
+            + "WHERE ILCR_MILL_STATUS_XREF_ID = ?",
         ACTIVE_MILL);
     resetMill(ACTIVE_MILL_WITH_USER, "ACT");
     resetMill(CLOSED_MILL, "CLS");
@@ -239,6 +243,8 @@ class MillMaintenanceIT extends AbstractOracleIT {
         // deviation (A) closed): the fixture seeds these to fixed values so this proves the
         // projection carries real data, not merely that the columns are non-null.
         .andExpect(jsonPath("$.updateUserid").value("ITUSER"))
+        // Day precision, and the right day: the fixture's timestamp carries 14:37:12.123456, which
+        // must be dropped rather than rounded or zone-shifted into the 2nd.
         .andExpect(jsonPath("$.updateTimestamp").value("2026-09-01"));
   }
 

@@ -365,7 +365,35 @@ class MillMaintenanceServiceTest {
     assertThat(service.findById(MILL_ID).isActive()).isTrue();
   }
 
+  @Test
+  @DisplayName("The audit timestamp narrows to its date — the time of day is dropped, not rounded")
+  void theAuditTimestampNarrowsToItsDate() {
+    // The column is TIMESTAMP(6) written SYSDATE, so a real row carries a time of day; the fixture
+    // above sits at 14:37:12 for exactly that reason. Legacy rendered dd/MM/yyyy, so the contract
+    // is the date -- and it must be that day's date, not the next one (PR #481 review).
+    assertThat(service.findById(MILL_ID).updateTimestamp())
+        .isEqualTo(java.time.LocalDate.of(2026, 9, 1));
+  }
+
+  @Test
+  @DisplayName("A never-saved row carries no audit timestamp rather than a default date")
+  void aNullAuditTimestampStaysNull() {
+    when(repository.findById(MILL_ID)).thenReturn(Optional.of(entityAt(null)));
+
+    assertThat(service.findById(MILL_ID).updateTimestamp()).isNull();
+  }
+
   private static AdminMillEntity entity(String statusCode, int revisionCount) {
+    return entity(statusCode, revisionCount, java.time.LocalDateTime.of(2026, 9, 1, 14, 37, 12));
+  }
+
+  /** The baseline mill with only its audit timestamp varied. */
+  private static AdminMillEntity entityAt(java.time.LocalDateTime updateTimestamp) {
+    return entity("ACT", 0, updateTimestamp);
+  }
+
+  private static AdminMillEntity entity(
+      String statusCode, int revisionCount, java.time.LocalDateTime updateTimestamp) {
     return new AdminMillEntity(
         MILL_ID,
         "7510",
@@ -377,6 +405,6 @@ class MillMaintenanceServiceTest {
         null,
         revisionCount,
         "ITUSER",
-        java.time.LocalDate.of(2026, 9, 1));
+        updateTimestamp);
   }
 }

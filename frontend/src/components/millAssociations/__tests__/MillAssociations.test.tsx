@@ -145,8 +145,8 @@ describe('Users page — the screen itself', () => {
     const headers = within(await screen.findByRole('table', { name: /associated mills/i }))
       .getAllByRole('columnheader')
       .map((cell) => cell.textContent)
-    // All five are the legacy columns verbatim; Actions carries the STA-002 buttons. Legacy has no
-    // Mill Status column here (users.xhtml:56-70) — that join was a modern addition, now dropped.
+    // The first five are the legacy columns verbatim; Actions carries the STA-002 buttons. Legacy
+    // has no Mill Status column here (users.xhtml:56-70) — a modern addition, now dropped.
     expect(headers).toEqual([
       'Mill #',
       'Mill Name',
@@ -159,7 +159,9 @@ describe('Users page — the screen itself', () => {
     // users.xhtml:64-66 renders literally "Active" / "Inactive"; the wire value stays ENDED.
     expect(within(rowFor('670')).getByText('Active')).toBeInTheDocument()
     expect(within(rowFor('671')).getByText('Inactive')).toBeInTheDocument()
-    // users.xhtml's own `f:convertDateTime pattern="dd/MM/yyyy"` (date.ts), not the wire's ISO.
+    // ISO, the ratified house format for both administration screens, rendered from the wire
+    // untouched -- NOT legacy's own `f:convertDateTime pattern="dd/MM/yyyy"`. That departure has its
+    // own test below ('assignment dates render as yyyy-mm-dd'), which pins the negative too.
     expect(within(rowFor('670')).getByText('2026-03-04')).toBeInTheDocument()
     expect(within(rowFor('671')).getByText('2025-11-30')).toBeInTheDocument()
   })
@@ -381,6 +383,58 @@ describe('Users page — assign and reactivate (AC3)', () => {
     expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
     // Refused means unchanged: the row must not have been optimistically flipped.
     expect(within(rowFor('671')).getByText('Inactive')).toBeInTheDocument()
+  })
+
+  test('the row Activate uses the reviving users-screen endpoint, not the mill-record add', async () => {
+    const user = userEvent.setup()
+    const rows: unknown[] = [endedOn671]
+    assignmentsFrom(rows)
+    // The negative control. There are TWO POSTs over this one cross-reference and they disagree on
+    // purpose: the users-screen `/v1/mills/{id}/submitters` revives an ended pair (AssignmentService
+    // .assign), while the mill-record `/v1/admin/mills/{id}/users` warns and writes nothing against
+    // ANY existing pair, ended included (MillAssociationService.add). Routing Activate at the admin
+    // one would leave the row inactive and show the duplicate warning -- the concern raised on PR
+    // #481. Asserting the right URL was called does not catch that on its own; a handler that FAILS
+    // if the admin path is ever touched does.
+    let adminPathCalled = false
+    const revived = {
+      userGuid: GUID,
+      millId: 671,
+      millNumber: '671',
+      millName: 'Closed Mill',
+      status: 'ACTIVE',
+      activeDate: '2026-08-26',
+      revisionCount: 3,
+    }
+    server.use(
+      http.post(`${API}/v1/admin/mills/:millId/users`, () => {
+        adminPathCalled = true
+        // What the mill-record add really answers for an existing pair: the row unchanged, plus
+        // the duplicate key. Served rather than erroring so a regression fails on the flag and the
+        // unchanged row, not on an artificial network failure.
+        return HttpResponse.json({
+          assignment: endedOn671,
+          messageKey: 'user.not.associated.to.mill',
+          message: 'User AAAA -   is not associated to mill 671 - Closed Mill.',
+        })
+      }),
+      http.post(`${API}/v1/mills/:millId/submitters`, () => {
+        rows[0] = revived
+        return HttpResponse.json({
+          assignment: revived,
+          messageKey: 'user.activate.mill',
+          message: 'Mill 671 - Closed Mill has been activated for user AAAA -  .',
+        })
+      }),
+    )
+    render(<MillAssociations />)
+    await selectAda(user)
+
+    await user.click(within(rowFor('671')).getByRole('button', { name: /activate/i }))
+
+    // The row actually flips, which is the behaviour the endpoint choice exists to produce.
+    expect(await within(rowFor('671')).findByText('Active')).toBeInTheDocument()
+    expect(adminPathCalled).toBe(false)
   })
 
   test('the row Activate posts the row own mill and the selected user GUID', async () => {

@@ -341,7 +341,9 @@ class MillAssociationServiceTest {
       "A directory outage leaves every row bare — the panel still renders from the database")
   void listByMill_leavesNamesAbsentWhenTheDirectoryIsDown() {
     // Two distinct GUIDs so a regression that keeps asking per-row after the first failure is
-    // caught by the times(1) below, not hidden by there being only one GUID to ask about.
+    // caught by the times(1) below, not hidden by there being only one GUID to ask about. The
+    // outage lands on the FIRST ask, which is what makes "every row bare" the right expectation --
+    // an outage partway down the page keeps what it had resolved (the test above).
     when(assignments.findByMill(MILL_ID))
         .thenReturn(List.of(activeRow(0, GUID), inactiveRow(1, GUID_B)));
     when(lookup.findBusinessBceid(any(), any())).thenThrow(new DirectoryUnavailableException());
@@ -353,6 +355,37 @@ class MillAssociationServiceTest {
     assertThat(rows).allSatisfy(row -> assertThat(row.bceid()).isNull());
     // The outage stops the loop outright: a second GUID must never be asked about.
     verify(lookup, times(1)).findBusinessBceid(any(), any());
+  }
+
+  @Test
+  @DisplayName("An outage mid-page keeps the names already resolved — only the rest go bare")
+  void listByMill_keepsTheNamesResolvedBeforeTheOutage() {
+    // The outage lands on the SECOND GUID, so one name is already in hand when it hits. Returning
+    // an empty map here would blank a row the panel could name, discarding a round-trip already
+    // paid for (PR #481 review). GUID is listed first because the loop asks in row order.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(activeRow(0, GUID), inactiveRow(1, GUID_B)));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+    when(lookup.findBusinessBceid("userGuid", GUID_B))
+        .thenThrow(new DirectoryUnavailableException());
+
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
+
+    MillSubmitter resolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID)).findFirst().orElseThrow();
+    MillSubmitter bare =
+        rows.stream().filter(row -> row.userGuid().equals(GUID_B)).findFirst().orElseThrow();
+
+    assertThat(resolved.firstName()).isEqualTo("Bob");
+    assertThat(resolved.lastName()).isEqualTo("Smith");
+    assertThat(resolved.bceid()).isEqualTo("BSMITH");
+
+    assertThat(bare.firstName()).isNull();
+    assertThat(bare.lastName()).isNull();
+    assertThat(bare.bceid()).isNull();
+    // Still one ask per distinct GUID, and no retry of the one that reported the outage.
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID);
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID_B);
   }
 
   @Test
@@ -454,7 +487,7 @@ class MillAssociationServiceTest {
         null,
         0,
         "ITUSER",
-        java.time.LocalDate.of(2026, 9, 1));
+        java.time.LocalDateTime.of(2026, 9, 1, 0, 0));
   }
 
   private static MillUserXrefEntity activeRow(int revisionCount) {
