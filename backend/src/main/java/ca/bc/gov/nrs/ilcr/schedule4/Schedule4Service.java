@@ -693,7 +693,7 @@ public class Schedule4Service {
    * Schedules 1–10 track's current status (else 409).
    */
   private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
     if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
