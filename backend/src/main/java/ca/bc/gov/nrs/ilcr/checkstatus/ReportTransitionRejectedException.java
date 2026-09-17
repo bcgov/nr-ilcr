@@ -17,10 +17,32 @@ import org.springframework.http.HttpStatus;
  * click, or of a colleague's submit in another window, land on this exact response, and that user
  * has done nothing wrong; the message now says what happened. The 500 for a persistence failure
  * ({@link ReportSubmissionException}) keeps the legacy support text.
+ *
+ * <p>Without a transition to name, the refusal falls back to that same legacy text: a 409 with the
+ * generic message is still the right answer, never a 500 from a null dereference.
  */
 public class ReportTransitionRejectedException extends BusinessException {
 
+  /** Legacy's generic guard text, the fallback when no transition names a more specific one. */
+  static final String GENERIC_KEY = "reportSubmissionErrorMsg";
+
+  /**
+   * A refusal named by the transition that was attempted.
+   *
+   * @param transition the transition the track could not make; null falls back to the generic key
+   */
   public ReportTransitionRejectedException(TrackTransition transition) {
-    super(HttpStatus.CONFLICT, transition.rejectedKey());
+    super(HttpStatus.CONFLICT, transition == null ? GENERIC_KEY : transition.rejectedKey());
+  }
+
+  /**
+   * A refusal with legacy's generic text.
+   *
+   * @deprecated name the transition instead, so the message says which status the track has left;
+   *     kept so callers that predate {@link TrackTransition#rejectedKey()} still compile
+   */
+  @Deprecated
+  public ReportTransitionRejectedException() {
+    this(null);
   }
 }

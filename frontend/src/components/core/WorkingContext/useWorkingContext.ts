@@ -15,6 +15,7 @@ import type WorkingContext from '@/interfaces/WorkingContext'
 export default function useWorkingContext(
   millId: number | null,
   year: number | null,
+  /** Effect-trigger key only — bump to re-fetch the same context; the value itself is never read. */
   reloadToken = 0,
 ): WorkingContext | null {
   const [context, setContext] = useState<WorkingContext | null>(null)

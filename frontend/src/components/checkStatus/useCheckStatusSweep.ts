@@ -44,7 +44,9 @@ type Settled =
  * failure rather than rendered.
  *
  * `reloadToken` re-issues the sweep for the SAME context when the page knows the server's state has
- * moved (a submit landed, or a 409 said the page was stale). Because the page renders from the last
+ * moved (a submit landed, or a 409 said the page was stale). Its value carries no meaning and is never
+ * read: it is an effect-trigger key, appended to the dependency array so that bumping it re-runs the
+ * effect even though `millId` and `year` are unchanged. Because the page renders from the last
  * settled result, the previous verdicts stay on screen while the re-fetch is in flight — an in-place
  * swap, with no loading frame. A re-fetch that FAILS must not take that result away: a page that has
  * just shown "successfully submitted" cannot fall back to a full-page load error over a transient
@@ -54,6 +56,7 @@ type Settled =
 export function useCheckStatusSweep(
   millId: number | null,
   year: number | null,
+  /** Effect-trigger key only — bump to re-fetch the same context; the value itself is never read. */
   reloadToken = 0,
 ): UseCheckStatusSweepResult {
   const [settled, setSettled] = useState<Settled | null>(null)
