@@ -1,6 +1,10 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  AREA_TYPE_CORRECTION_ANCHOR,
+  NO_COMPUTED_RATE,
+  S12_RECORD,
+  VALIDATION_AMOUNTS,
   CHECK_MISSING_COST_ANCHOR,
   CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
   CHECK_MISSING_TFL_ANCHOR,
@@ -51,6 +55,7 @@ const ANCHORS: Record<string, Sch6Anchor> = {
   'check-missing-cost': CHECK_MISSING_COST_ANCHOR,
   'check-missing-tfl': CHECK_MISSING_TFL_ANCHOR,
   'check-missing-supply-block': CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
+  'area-type-correction': AREA_TYPE_CORRECTION_ANCHOR,
 };
 
 Given(
@@ -628,6 +633,167 @@ Then('the Schedule 6 page is blocked as a load failure', async ({ schedule6Page 
 
 Then('the Schedule 6 data-entry surface is suppressed', async ({ schedule6Page }) => {
   await schedule6Page.expectDataEntrySuppressed();
+});
+
+// ---- S12-S16 — the Add-panel field validations -----------------------------------------------------
+//
+// All five slices share one shape: put ONE bad value in the Add panel, leave everything else valid,
+// submit, and assert the verbatim message plus the two halves of "the value is not accepted" — no
+// request was sent (the spy) and nothing was stored (the read-back). The spy expects ZERO here, unlike
+// S05's exactly-one, because `handleAdd` returns before building the POST when `validateRoadRecord`
+// reports anything (index.tsx:682-686). See the fixture's S12-S16 header.
+
+When('I enter valid amounts with no area type selected', async ({ schedule6Page, world }) => {
+  // The area-type combo is deliberately NOT touched — that absence IS the slice. Volume and cost are
+  // valid so the only possible ground for refusal is the missing classification.
+  await schedule6Page.enterAmounts(VALIDATION_AMOUNTS.volumeInput, VALIDATION_AMOUNTS.costInput);
+  if (world.sch6RecordComment) {
+    await schedule6Page.enterComments(world.sch6RecordComment);
+  }
+});
+
+Then('no area type is selected in the Add panel', async ({ schedule6Page }) => {
+  // Asserted rather than assumed: if the combo ever defaulted to its first option (the synthetic "TFL"
+  // sentinel sits at the top of the list), the panel would be VALID on open and this slice would be
+  // testing nothing while still passing its error assertion for a different reason.
+  await expect(schedule6Page.addAreaType).toHaveValue('');
+});
+
+When(
+  'I enter the volume {string} with a valid cost',
+  async ({ schedule6Page, world }, volume: string) => {
+    // Classification first and complete, so the ONLY invalid field is the volume.
+    await schedule6Page.selectAreaType(S12_RECORD.correction.areaTypeOption);
+    await schedule6Page.selectSupplyBlock(S12_RECORD.correction.supplyBlockOption);
+    await schedule6Page.enterVolume(volume);
+    await schedule6Page.enterCost(VALIDATION_AMOUNTS.costInput);
+    if (world.sch6RecordComment) {
+      await schedule6Page.enterComments(world.sch6RecordComment);
+    }
+  },
+);
+
+When(
+  'I enter the cost {string} with a valid volume',
+  async ({ schedule6Page, world }, cost: string) => {
+    await schedule6Page.selectAreaType(S12_RECORD.correction.areaTypeOption);
+    await schedule6Page.selectSupplyBlock(S12_RECORD.correction.supplyBlockOption);
+    await schedule6Page.enterVolume(VALIDATION_AMOUNTS.volumeInput);
+    await schedule6Page.enterCost(cost);
+    if (world.sch6RecordComment) {
+      await schedule6Page.enterComments(world.sch6RecordComment);
+    }
+  },
+);
+
+Then(
+  'the Add panel volume field still reads {string}',
+  async ({ schedule6Page }, expected: string) => {
+    // THE TYPO MUST SURVIVE THE BLUR. `groupInput` returns text it cannot parse UNCHANGED, on purpose
+    // — "so a typo stays on screen for the user to correct" (utils/number.ts:59-64). A field that
+    // blanked or zeroed a bad entry would hide the reporter's own mistake from them, and an in-range
+    // value still re-groups (10000000 -> "10,000,000"), so this asserts the mask ran either way.
+    await expect(schedule6Page.addVolume).toHaveValue(expected);
+  },
+);
+
+Then('the Add panel cost field still reads {string}', async ({ schedule6Page }, expected: string) => {
+  // Same contract as the volume above, through `groupFixedInput(_, 0)` instead of `groupInput`.
+  await expect(schedule6Page.addCost).toHaveValue(expected);
+});
+
+Then('the Add panel shows no computed cost per volume', async ({ schedule6Page }) => {
+  // THE DERIVED CELL MUST NOT MOVE. `commitRate` advances the $ / m³ baseline only from an entry that
+  // passes the gate (index.tsx:533-542, ruled 2026-08-21): committing an unparseable or out-of-range
+  // value would display a rate no Save could ever persist. On a freshly opened panel the baseline is
+  // still EMPTY_RATE_INPUTS, so "held at its last valid figure" and "still blank" are the same claim —
+  // and blank is the empty string, because ratioMask(null) returns '' (index.tsx:86-95).
+  await expect(schedule6Page.addCostPerVolume).toHaveText(NO_COMPUTED_RATE);
+});
+
+Then('no Schedule 6 write was attempted', async ({ schedule6MutationSpy }) => {
+  // ZERO, and the contrast with S05 is the point. These five rejections are decided entirely on the
+  // client, so `handleAdd` returns before the POST is built — no round-trip is spent. S05's invalid TFL
+  // number costs exactly ONE because only the server knows the RMG table. Asserting zero here is the
+  // no-write proof the suite's guidance asks for; it does NOT replace the read-back below, since a spy
+  // proves no request was sent and only a read proves nothing was stored.
+  expect(
+    schedule6MutationSpy.mutations,
+    'a client-side validation failure must cost no mutating request at all — `handleAdd` returns '
+      + 'before building the POST when validateRoadRecord reports anything',
+  ).toBe(0);
+});
+
+Then(
+  'the error {string} is still shown until the next submit',
+  async ({ page }, message: string) => {
+    // A REAL, DELIBERATE ASSERTION ABOUT STALENESS — not a weakened version of "the error cleared".
+    // Correcting the field does NOT clear the message: `setAddField` only updates the form
+    // (index.tsx:610-611) and `addErrors` is rewritten just twice, in `handleAdd` and in
+    // `resetTransient` (index.tsx:563, 684-687). So the corrected value and the old error are on
+    // screen together until Add Report is pressed again.
+    //
+    // NOT a divergence, and the distinction is deliberate: the legacy Gherkin never asserts that the
+    // error clears — its correction arms end at "the field accepts the value" / "cal recomputes", both
+    // true here. Legacy DID clear it on blur, but that follows from per-field ajax validation, and
+    // submit-time validation is the design already accepted as not-a-defect in defects.md VER-3: with
+    // no moment at which the app re-judges a field, nothing clears the message. Recorded as VER-5 with
+    // the UX consequence flagged for BA/QA; clearing on edit would be a new requirement, not a fix.
+    //
+    // Asserted rather than ignored so the suite states what the app actually does today: if it is later
+    // changed to clear the error on edit, THIS step fails and puts the decision in front of a human.
+    await expect(page.getByText(message).first()).toBeVisible();
+  },
+);
+
+When('I correct the volume', async ({ schedule6Page }) => {
+  await schedule6Page.enterVolume(VALIDATION_AMOUNTS.volumeInput);
+});
+
+When('I correct the cost', async ({ schedule6Page }) => {
+  await schedule6Page.enterCost(VALIDATION_AMOUNTS.costInput);
+});
+
+When('I select the area type and supply block', async ({ schedule6Page }) => {
+  // ORDER IS CONTRACTUAL, as in S01: the Supply Block list is filtered to codes starting with the
+  // chosen TSA (utils/codes.ts supplyBlocksFor), so the block is not offered until the TSA is set.
+  await schedule6Page.selectAreaType(S12_RECORD.correction.areaTypeOption);
+  await schedule6Page.selectSupplyBlock(S12_RECORD.correction.supplyBlockOption);
+});
+
+Then('the corrected road record is persisted', async ({ request, world }) => {
+  const key = world.scheduleKey!;
+  const comment = world.sch6RecordComment!;
+
+  await expect
+    .poll(
+      async () =>
+        (await readSchedule6(request, key)).roadRecords.filter((r) => r.comments === comment).length,
+      { message: `the corrected record was not stored on ${key.millId}/${key.year}` },
+    )
+    .toBe(1);
+
+  const doc = await readSchedule6(request, key);
+  const record = doc.roadRecords.find((r) => r.comments === comment)!;
+
+  expect(record.areaType, 'the SELECTED area type is what gets stored').toBe(
+    S12_RECORD.correction.areaTypeCode,
+  );
+  expect(record.supplyBlock, 'stored supply block').toBe(S12_RECORD.correction.supplyBlockCode);
+  expect(record.rmg, 'RMG derived server-side from the supply block').toBe(
+    S12_RECORD.correction.rmg,
+  );
+  expect(record.volume, 'stored volume').toBe(Number(VALIDATION_AMOUNTS.volumeInput));
+  expect(record.cost, 'stored cost').toBe(Number(VALIDATION_AMOUNTS.costInput));
+  expect(record.costPerVolume, 'server-derived cost per volume').toBe(
+    Number(VALIDATION_AMOUNTS.costPerVolumeDisplay),
+  );
+  // Exactly one row: the refused attempt must not have left a partial record for the successful retry
+  // to sit beside. Cheap here (the refusal sent no request at all) but it is the assertion that would
+  // catch a regression which started posting on a failed gate.
+  expect(doc.roadRecords.length, 'the refused attempt must not have stored anything').toBe(1);
+
+  world.sch6RecordId = record.recordId;
 });
 
 Then('the corrected TFL record is persisted', async ({ request, world }) => {

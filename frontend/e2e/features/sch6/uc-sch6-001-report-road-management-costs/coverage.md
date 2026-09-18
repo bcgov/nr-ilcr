@@ -11,11 +11,11 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S11 authored and green (twelve scenarios; S05 is two).
-11 of 23 slices covered. Accessibility is in scope from the start (`accessibility.feature`, `@a11y`)
-and is NOT yet written — carried deliberately as the lesson from Story 28.4's GAP-5, where "all slices
-authored" read as complete while half of the board item was unverified because a11y is an NFR that no
-slice asks for.
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S16 authored and green (twenty-five scenarios; several slices
+are more than one — see the count below). **16 of 23 slices covered.** Accessibility is in scope from
+the start (`accessibility.feature`, `@a11y`) and is NOT yet written — carried deliberately as the
+lesson from Story 28.4's GAP-5, where "all slices authored" read as complete while half of the board
+item was unverified because a11y is an NFR that no slice asks for.
 
 **Scope is 23 slices, S01–S23.** The slice catalogue said 21 in three places while the Gherkin folder
 carried 23; corrected under SPEC-1 on the planning branch (`docs/story-28-5-schedule-6-e2e`) before
@@ -28,24 +28,40 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                    7 files
-scenarios (bddgen, @UC-SCH6-001)             12
-preflight/sch6-anchors.setup.ts              14 checks
-pinned (mill, year) anchors                  11  — 9 mutating/validate-only in 2024, plus 2 guards
+features/sch6/**/*.feature                    9 files
+scenarios (bddgen, @UC-SCH6-001)             25
+preflight/sch6-anchors.setup.ts              15 checks
+pinned (mill, year) anchors                  12  — 10 mutating/validate-only in 2024, plus 2 guards
                                                   (1/2017 closed-mill, 23050/2024 deliberately absent)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Twelve scenarios over eleven slices: S05 is two (a reject arm and a correction arm) because the legacy
-file has two and they cannot share an anchor — see its feature header.
+Twenty-five scenarios over sixteen slices, because five slices need more than one:
 
-Verification runs, 2026-09-18:
+| Slice | Scenarios | Why |
+|---|---|---|
+| S05 | 2 | the legacy file has two arms and they cannot share an anchor (the correction arm saves) |
+| S12 | 2 | same split — the correction arm saves, so it has its own minted cell |
+| S13 | 2 | reject arm + correction arm (neither saves) |
+| S14 | 4 | a 3-row `Scenario Outline` (both bounds + the 3-decimal case) plus a correction arm |
+| S16 | 3 | a 2-row `Scenario Outline` (both bounds) plus a correction arm |
 
-- full suite preflight → **194 passed** (180 before sch6 + 14), run at `--workers=2`
-- `--grep @UC-SCH6-001 --workers=1` → **12 passed**
-- `--repeat-each=5 --workers=1` → **60 passed**, 5/5 stable per scenario
-- `--workers=2` single pass → **12 passed**
-- All NINE mutating anchors confirmed empty afterwards — no stranded rows and no stranded comment
+Verification runs, 2026-09-18 (the S12–S16 block):
+
+- full suite preflight → **195 passed** (180 before sch6 + 15), run at `--workers=2`
+- `--grep "@required-field|@amount-validation" --workers=1` → **13 passed** on the first run
+- `--repeat-each=5 --workers=1` → **65 passed**, 5/5 stable per scenario
+- `--workers=2` single pass → **13 passed**
+- All ten sch6 anchors confirmed empty afterwards — no stranded rows and no stranded comment
+
+Earlier, for S01–S11: preflight 194, `--grep @UC-SCH6-001 --workers=1` 12 passed, `--repeat-each=5`
+60 passed, `--workers=2` 12 passed.
+
+**Scope the grep by FEATURE tag, not by slice tag.** `--grep "@S12|@S13"` matches every domain's
+S12/S13 as well — the slice numbers are per-UC, not global, so that selection pulled in 76 tests across
+seven domains (including other domains' known `@discovered-divergence` reds, which then read as new
+failures). `--grep "@required-field|@amount-validation"` selects exactly this block; `@UC-SCH6-001`
+selects the whole UC.
 
 Preflight itself must also be run at `--workers=2` on this box. At the default (6) two unrelated sch4
 anchor checks failed and then passed in isolation — the same overload described below, not drift.
@@ -327,17 +343,104 @@ re-rendered - the vacuous-pass class the sch3 DIV-6 mirror arm shipped with.
 
 ---
 
+---
+
+## S12 - a road record must name an area type
+
+Scenarios: `required-field.feature` -> `@p1 @S12` (reject arm, shared **validate-only** anchor
+22050/2024) and `@p1 @S12` (correction arm, **24050/2024** - its own cell, minted for it, because it
+is the only scenario in the whole S12-S16 block that SAVES).
+
+**This slice closes SPEC-2.** The source Gherkin carries `[UNKNOWN]` for the message; the running app
+declares it as `areaTypeRequired` = `"TSA or TFL: Value is required."`
+(`src/components/schedule6/validation.ts:61`). Taken from the app exactly as SPEC-2 said it would have
+to be. **Still needs BA/QA acceptance** - see `defects.md` SPEC-2.
+
+| # | Source item (S12 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | Open the Add panel with the area type at its blank default | `emptyForm()`; the combo starts unset | `Then the Add panel is shown with its fields blank` / `And no area type is selected in the Add panel` | covered |
+| 2 | Click "Add Report" with the dropdown blank | `handleAdd` -> `validateRoadRecord` | `When I enter valid amounts with no area type selected` / `And I submit the Add panel` | covered |
+| 3 | The system displays the required-field error | `ROAD_MESSAGES.areaTypeRequired`, rendered as the combo's `invalidText` | `Then I should see the error "TSA or TFL: Value is required."` | covered (text re-grounded - SPEC-2) |
+| 4 | The record is not added to the list | nothing stored | `And no road record was stored on that anchor` / `And the Schedule 6 record list shows no records` | covered |
+| 5 | *(beyond the Gherkin)* the refusal costs NO request | `handleAdd` returns before the POST is built (`index.tsx:682-686`) | `And no Schedule 6 write was attempted` | covered |
+| 6 | Select an area type -> "Data saved successfully" | `POST /records` | `When I select the area type and supply block` / `Then I should see the message ...` | covered |
+| 7 | *(beyond the Gherkin)* the corrected record PERSISTS with its derived figures | API read-back of area type, block, RMG, volume, cost, rate | `And the corrected road record is persisted` | covered |
+| 8 | *(beyond the Gherkin)* the refused attempt left nothing behind | exactly one row after the retry | same step | covered |
+
+**Why item 5 is asserted, and why it differs from S05.** Both slices refuse an entry, but for opposite
+reasons: S05's invalid TFL number can only be judged by the server (the RMG table is server-side), so
+it costs exactly **one** POST. A missing area type is decided entirely on the client, so it costs
+**zero**. Pinning each at its own number is what keeps the two mechanisms from being conflated - and a
+regression that started posting on a failed client gate would fail here.
+
+**Why item 4 asserts twice.** `no road record was stored` is a DB read and `the record list shows no
+records` is the screen. An error banner establishes neither; the request was never sent, but only a
+read proves nothing was stored, and only the list proves the reporter was not shown a phantom row.
+
+### Anchor note
+
+24050/2024 was minted for the correction arm (patch + CI seed, same change). The other nine scenarios
+in this block never save, so they all share the validate-only cell. Mill 24050 is ACT and already
+pinned by sch1/sch4/sch5 at 2016-2023, so only the YEAR is new; confirmed free beforehand with the
+suite's own scanner (`preflight/anchor-keys.ts` `collectAnchorKeys`), which shows the only 2024+ keys
+anywhere are sch6's.
+
+---
+
+## S13 / S14 / S15 / S16 - the volume and cost entries are validated
+
+Scenarios: `amount-validation.feature`. **Every one rides the shared validate-only anchor
+(22050/2024)** - nothing in the file writes, which is what lets eleven scenarios share one cell.
+S14 and S16 are `Scenario Outline`s so both bounds of each two-sided rule are proved.
+
+| # | Source item | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | A non-numeric volume -> "Entered volume entry is invalid." | `volumeInvalid`; `parseDecimalInput` returns null | `@S13` reject arm | covered |
+| 2 | A volume outside 0-9,999,999 -> "Entered volume must be between 0 and 9,999,999." | `volumeRange` | `@S14` outline, rows 1-2 | covered |
+| 3 | A non-numeric cost -> "Entered cost is invalid." | `costInvalid` | `@S15` reject arm | covered |
+| 4 | A cost outside -99,999,999-99,999,999 -> "Entered cost must be between ..." | `costRange`, checked on the ROUNDED value | `@S16` outline, rows 1-2 | covered |
+| 5 | "the value is not accepted" | nothing stored | `And no road record was stored on that anchor` (every reject arm) | covered |
+| 6 | Enter a valid value -> the field accepts it | the mask re-groups it (`16,000` / `56,000`) | `Then the Add panel volume/cost field still reads ...` | covered |
+| 7 | `cal` recomputes the cost-per-volume | `commitRate` advances the baseline on a valid entry | `And the Add panel shows the computed cost per volume "3.50"` | covered |
+| 8 | *(beyond the Gherkin)* each refusal costs NO request | client-side gate; `handleAdd` returns early | `And no Schedule 6 write was attempted` | covered |
+| 9 | *(beyond the Gherkin)* the typo STAYS on screen | `groupInput` / `groupFixedInput` return unparseable text unchanged (`utils/number.ts:59-64`) | `Then the Add panel ... still reads "abc"` | covered |
+| 10 | *(beyond the Gherkin)* the `$ / m³` cell does NOT move on a refused entry | `commitRate` advances only from an entry that passes the gate (ruled 2026-08-21) | `And the Add panel shows no computed cost per volume` | covered |
+| 11 | *(beyond the Gherkin)* >2 decimal places resolves to the RANGE message | VOLUME is `NUMBER(10,2)`; the backend's `@Digits` maps to the same key (`validation.ts:130-136`) | `@S14` outline, row 3 | covered |
+| 12 | *(beyond the Gherkin)* the error does NOT clear when the field is corrected | `setAddField` never touches `addErrors` (`index.tsx:610-611`) | `And the error ... is still shown until the next submit` | covered - recorded as `defects.md` **VER-5** |
+
+**All four messages match the source Gherkin byte-for-byte** - unusually, only the TIMING had to be
+re-grounded, not the text. They are declared in `ROAD_MESSAGES`
+(`src/components/schedule6/validation.ts:60-70`), transcribed there verbatim from the backend bundle so
+an advisory message reads identically to a server rejection.
+
+**Items 9 and 10 are the pair that makes a refusal meaningful rather than merely loud.** A field that
+blanked or zeroed a bad entry would hide the reporter's own mistake while still satisfying the error
+assertion; and a derived cell driven from an unpersistable value would show a rate no Save could ever
+store. Item 10 is only a real discriminator because the correction arms assert the same cell reaches
+`3.50` - a blank-cell assertion alone could pass against a cell that never works.
+
+**Why both bounds (items 2 and 4).** The Gherkin states two-sided rules, and a scenario that tried only
+a too-LARGE value would leave the floor unproven - the one-armed asymmetry this guide calls a smell.
+Cost's floor is genuinely negative (a road cost may be negative here, unlike a volume), so
+`-100,000,000` is the only way to show that bound exists at all.
+
+### Deliberately not asserted in S13-S16
+
+| Source item | Why not here | Where it lands |
+|---|---|---|
+| A BLANK volume or cost | Blank is VALID at this gate - both validators return undefined on blank (`validation.ts:121-125, 140-144`), because a missing cost is a Check Status finding (S09), not an entry error. Asserting a rejection would claim behaviour the app deliberately lacks | S09 (Check Status) |
+| The per-record Comments 400-character cap | A different field and a different rule (`recordCommentsMaxLength`) | not in the S01-S23 catalogue; recorded so the omission is visible |
+| A value exactly ON each bound being accepted | The boundary-accepted mirror. sch2 covers this class for its own ranges; here the correction arms prove acceptance with an in-range value, but not at the exact bound | open - a cheap future addition, no new anchor needed |
+| These rules on a saved ROW (rather than the Add panel) | The row editor shares `RoadRecordFields` and the same validator, but the page-level Save is a different submit path (`handleSave`, per-row `rowErrors`) | S19 or a follow-up; recorded because the shared component makes it easy to assume it is covered |
+
+---
+
 ## Remaining slices
 
-S12-S23 not yet authored (12 of 23). Accessibility sweeps not yet authored. Each will be added here
-with its own item table as it lands; `defects.md` carries anything found along the way.
+S17-S23 not yet authored (16 of 23 covered). Accessibility sweeps not yet authored. Each will be added
+here with its own item table as it lands; `defects.md` carries anything found along the way.
 
-Next are the field validations (S12-S16), which all ride the shared **validate-only** anchor
-(22050/2024) because none of them saves - except any correction arm, which needs its own cell, as
-sch5 S12 found. S12 also carries `SPEC-2`: its required-field message is `[UNKNOWN]` in the source, so
-the text must be taken from the running app and confirmed by BA/QA.
-
-After those, S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
+S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
 when the SCHEDULE fails while some individual record passes, which takes two records on one anchor -
 and every anchor today is asserted NOT to hold records at rest, so it will need a dedicated cell.
 

@@ -77,6 +77,11 @@
 --               Block"). Mutating: the scenario creates a record and deletes it
 --               again through the app's own DELETE endpoint
 --               (DELETE /api/v1/schedule6/records/{recordId}).
+--   ...and one cell per further writing scenario; see the anchor table below,
+--   which carries the reason for each. The full list is the single source in
+--   fixtures/sch6/schedule6-test-data.ts (EDITABLE_DRAFT_ANCHORS), and
+--   preflight/sch6-anchors.setup.ts asserts every one of them, so a cell added
+--   here without a fixture entry is checked by nothing.
 -- Mill 9050 ("760 WESTEROS") is deliberate and mirrors sch5's own first choice:
 -- sch4 owns that mill in 2015 and 2018-2021, sch1 in 2017 and sch5 in 2016/2022/
 -- 2023, so the YEAR is new but the mill is one the suite already exercises.
@@ -141,7 +146,20 @@ DECLARE
     -- all three are writers.
     t_anchor(22051, 2024, 'D'),  -- S09 Check Status: missing cost
     t_anchor(23051, 2024, 'D'),  -- S10 Check Status: missing TFL number
-    t_anchor(23052, 2024, 'D')   -- S11 Check Status: missing Supply Block
+    t_anchor(23052, 2024, 'D'),  -- S11 Check Status: missing Supply Block
+    -- S12 arm 2 — the area type is chosen and the record SAVES. Added 2026-09-18 with the S12-S16
+    -- validation block. The other nine scenarios in that block never save: the four numeric slices are
+    -- refused entirely on the client and their correction arms only prove the $ / m³ recomputes, so all
+    -- of them ride the validate-only cell above. This is the single writer among them, and a writer
+    -- cannot share a (mill, year) under `fullyParallel` — the same split S05 made.
+    --
+    -- Mill 24050 ("7777 CGT TEST MILL7") is ACT and already exercised by sch1/sch4/sch5 at 2016-2023,
+    -- so only the YEAR is new. Confirmed free before minting with the suite's OWN scanner
+    -- (preflight/anchor-keys.ts collectAnchorKeys over every domain fixture, not a fresh regex): the
+    -- only 2024-or-later keys anywhere are sch6's, so the "year >= 2024 belongs to sch6" invariant
+    -- still holds. GET /api/v1/schedule6?millId=24050&year=2024 answered 404 beforehand — the mill
+    -- resolves and only the report-status row was missing.
+    t_anchor(24050, 2024, 'D')   -- S12 arm 2: the chosen area type is accepted and saved
   );
 BEGIN
   -- The new reporting year. Additive: 2015-2023 already exist and are untouched.

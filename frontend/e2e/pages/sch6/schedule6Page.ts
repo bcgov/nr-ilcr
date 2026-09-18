@@ -201,6 +201,46 @@ export class Schedule6Page {
     await cos.blur();
   }
 
+  /**
+   * The Add panel's Volume and Cost inputs, for the validation slices (S13-S16).
+   *
+   * Exposed as locators as well as through `enterVolume`/`enterCost` because those slices assert what
+   * the field STILL READS after an invalid entry is blurred: both masks return text they cannot parse
+   * unchanged, deliberately, "so a typo stays on screen for the user to correct"
+   * (utils/number.ts:59-64). That is a claim about the field, not about the form.
+   */
+  get addVolume(): Locator {
+    return byId(this.page, ADD_FIELD.volume);
+  }
+
+  get addCost(): Locator {
+    return byId(this.page, ADD_FIELD.cost);
+  }
+
+  /** The Add panel's area-type combo — S12 submits with this one left untouched. */
+  get addAreaType(): Locator {
+    return byId(this.page, ADD_FIELD.areaType);
+  }
+
+  /**
+   * Fill Volume ALONE and blur.
+   *
+   * Separate from `enterAmounts` (which does both fields) because each of S13-S16 must put an invalid
+   * value in exactly ONE field and a valid one in the other — if both were wrong, the error asserted
+   * could have come from either and the two messages would be interchangeable. The blur is what runs
+   * the app's own commit-and-re-group, which is the behaviour these slices are about.
+   */
+  async enterVolume(value: string): Promise<void> {
+    await this.addVolume.fill(value);
+    await this.addVolume.blur();
+  }
+
+  /** Fill Cost ALONE and blur. Mirror of `enterVolume` above. */
+  async enterCost(value: string): Promise<void> {
+    await this.addCost.fill(value);
+    await this.addCost.blur();
+  }
+
   /** Fill the per-record Comments field in the Add panel. */
   async enterComments(text: string): Promise<void> {
     await byId(this.page, ADD_FIELD.comments).fill(text);

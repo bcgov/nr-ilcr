@@ -14,9 +14,18 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S11 authored and green (twelve scenarios; S05 is two); 11 of
-23 slices covered. Four verified-not-a-defect findings. No divergences and no bugs found in the app so
-far — every red encountered so far has been the test being wrong, not the application.
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S16 authored and green (twenty-five scenarios); **16 of 23
+slices covered.** Five verified-not-a-defect findings. **Still no divergences and no bugs found in the
+app** — every red encountered so far has been the test being wrong, not the application.
+
+**Two things need a human, both on this page.** Neither blocks the story:
+
+1. **SPEC-2** — please accept the wording *"TSA or TFL: Value is required."* for a blank TSA/TFL
+   submission. It cannot be checked against legacy (the old message came from a framework that is
+   gone), so it is a decision rather than a lookup.
+2. **VER-5** — a corrected field keeps showing its old error until Add Report is pressed again. Not a
+   fault, and nothing is mis-stored; the question is whether you want it to clear as you type, which
+   would be an enhancement.
 
 ---
 
@@ -40,9 +49,10 @@ far — every red encountered so far has been the test being wrong, not the appl
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 12 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 7 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** S01–S11 are covered. S12–S23 and the axe sweeps are still to be written.
+**What is missing.** S01–S16 are covered. **S17–S23** and the axe sweeps are still to be written.
+(Was "12 of 23" when S01–S11 were the whole of it; the S12–S16 validation block landed 2026-09-18.)
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
@@ -81,18 +91,39 @@ SPEC-3 is the reason to sweep the Gherkin *and* the sidecars together: three of 
 had already been fixed a month earlier and the error survived only in the Gherkin, so the same defect
 was diagnosed twice.
 
-### SPEC-2 — S12's required-field message text is `[UNKNOWN]` in the source — OPEN
+### SPEC-2 — S12's required-field message text was `[UNKNOWN]` in the source — TEXT RECOVERED 2026-09-18, awaiting BA/QA acceptance
 
-**What is missing.** The S01–S23 Gherkin's own "Open Items Carried Forward" records that the exact
+**What was missing.** The S01–S23 Gherkin's own "Open Items Carried Forward" records that the exact
 JSF required-field validation message for a blank "TSA or TFL" submission could not be recovered — no
 custom literal exists in `messages.properties` or `faces-config.xml`, so it was flagged rather than
 fabricated.
 
-**Why it matters now.** S12 asserts that message. It cannot be asserted byte-for-byte against an
-`[UNKNOWN]`, so when S12 is authored the text will be taken from the **running app** and recorded here
-as its provenance, with BA/QA asked to confirm it matches legacy.
+**What it actually was.** There was nothing to find. Legacy did not *have* a literal for this: the JSF
+framework generated the required-field message at runtime from `UIInput`, so the recovery work was
+looking for a string that only ever existed inside the framework. That is why the search came up empty
+— the `[UNKNOWN]` was correct, not an oversight.
 
-**Disposition.** Blocks nothing today; carried to S12.
+**The text now asserted, and where it comes from.** The rebuilt app does not inherit a framework
+default; it declares the message itself:
+
+```
+areaTypeRequired: 'TSA or TFL: Value is required.'
+    src/components/schedule6/validation.ts:61
+```
+
+That module's header states its literals are transcribed *"verbatim from the backend bundle
+(messages.properties) so an advisory message is byte-identical to the server's rejection for the same
+field"* — so this is the app's own wording, client and server alike, taken from the running app exactly
+as this entry said it would have to be. S12 asserts it byte-for-byte.
+
+**What is being asked of BA/QA — the one open question.** Please accept
+**"TSA or TFL: Value is required."** as the ILCR wording for this case. It **cannot** be confirmed
+against legacy by anyone: the legacy string was produced by a framework that is gone, and no artifact
+records what it rendered. So this is a decision, not a lookup. If you want different wording, it is a
+one-line change in the bundle and a one-line change in the test.
+
+**Disposition.** Text recovered and under test; the entry stays OPEN until BA/QA accept the wording.
+Board item **#101**.
 
 ### SPEC-3 — pagination scope of the running totals is unresolved — OPEN
 
@@ -200,3 +231,49 @@ was weakened: the message is still matched exactly, just the correct one of the 
 
 **For BA/QA.** No action. A reporter sees the same sentence; the difference is one invisible character
 at the end, and only in the case where no request is sent.
+
+### VER-5 — the Add panel's field errors appear on "Add Report", and stay until the next one — 2026-09-18
+
+**What changed for the user.** In the legacy screen, typing a bad volume or cost and leaving the field
+produced the error straight away, and correcting the field made it disappear again — both from
+background round-trips. In the rebuilt screen there is no per-field checking at all: you can type
+anything, and all five of these messages appear when you press **Add Report**:
+
+| Field / case | Message |
+|---|---|
+| No TSA/TFL chosen (S12) | *TSA or TFL: Value is required.* |
+| Volume not a number (S13) | *Entered volume entry is invalid.* |
+| Volume outside 0–9,999,999 (S14) | *Entered volume must be between 0 and 9,999,999.* |
+| Cost not a number (S15) | *Entered cost is invalid.* |
+| Cost outside ±99,999,999 (S16) | *Entered cost must be between -99,999,999 and 99,999,999.* |
+
+**Why it is not a defect.** It is the same deliberate choice already recorded in VER-3, applied to the
+whole panel: the app validates when you submit, using messages taken verbatim from the backend's own
+bundle, so what you read on a client refusal is word-for-word what the server would have said. The
+four wordings above are *identical* to the legacy-derived Gherkin — only the moment they appear moved.
+
+**And the refusal genuinely costs nothing, which is an improvement.** These five are decided in the
+browser, so pressing Add Report with a bad value sends **no request at all** — nothing reaches the
+database, and there is no round-trip to wait for. (Contrast S05's invalid TFL number, which must ask
+the server and so costs exactly one request. The tests pin each at its own number so the two cannot be
+confused.)
+
+**The part worth your attention: a corrected field keeps showing the old error.** Fix the value and the
+message stays on screen until you press Add Report again — so for one moment a reporter sees a valid
+entry with a complaint under it. The figures behave correctly throughout (the `$ / m³` cell updates the
+instant a valid value is entered, and refuses to move for an invalid one), and the record saves
+normally on the next press. Nothing is lost or mis-stored.
+
+This follows from validate-on-submit rather than being a separate mistake: with no per-field checking
+there is no moment at which the app re-judges the field, so there is nothing to clear the message.
+Making it clear as you type would mean adding live re-validation — **a new requirement, not a bug
+fix**, which is the same conclusion VER-3 reached about the TFL number.
+
+**How handled.** Asserted as it is, deliberately, in each correction arm (`the error ... is still shown
+until the next submit`). That is not a weakened assertion: it states what the app does today, so if
+anyone later makes the error clear on edit, that step fails and puts the change in front of a human
+instead of letting it pass unnoticed.
+
+**For BA/QA.** One decision, and it is a preference rather than a fault: is the lingering message
+acceptable, or should correcting a field clear it? If the latter, raise it as an enhancement and these
+assertions flip with it. Nothing is blocked either way.

@@ -474,6 +474,12 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22051, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 23051, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 23052, 'D', 'D', 'E2E_SEED');
+-- 24050/2024 — S12 arm 2 (the chosen area type is accepted and saved). Added 2026-09-18 with the
+-- S12-S16 validation block, and the ONLY writer among those ten scenarios: the four numeric slices are
+-- refused entirely on the client and their correction arms never save, so all of them share the
+-- validate-only cell above. A writer cannot share a (mill, year) under `fullyParallel`. Mill 24050 is
+-- ACT and already seeded above, pinned by sch1/sch4/sch5 at 2016-2023, so only the year is new.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 24050, 'D', 'D', 'E2E_SEED');
 -- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
 -- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
 -- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It

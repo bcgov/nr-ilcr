@@ -75,6 +75,7 @@ const MILL_20171: MillRef = { millNumber: '20171', millName: 'MILES MILLING' }; 
 const MILL_20172: MillRef = { millNumber: '20172', millName: 'COVEY CUSTOM CUT' }; // millId 22051, ACT
 const MILL_20174: MillRef = { millNumber: '20174', millName: 'AO CUSTOM' }; // millId 23051, ACT
 const MILL_20176: MillRef = { millNumber: '20176', millName: 'TANNER LOGS' }; // millId 23052, ACT
+const MILL_7777: MillRef = { millNumber: '7777', millName: 'CGT TEST MILL7' }; // millId 24050, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -155,6 +156,25 @@ export const CHECK_MISSING_TFL_ANCHOR: Sch6Anchor = { key: { millId: 23051, year
  */
 export const CHECK_MISSING_SUPPLY_BLOCK_ANCHOR: Sch6Anchor = { key: { millId: 23052, year: 2024 }, mill: MILL_20176 };
 
+/**
+ * S12 arm 2 — the area type is selected and the record then SAVES.
+ *
+ * Its own cell for the one reason that recurs through this fixture: a writer cannot share a
+ * (mill, year) under `fullyParallel`. S12 is the ONLY slice in the S12-S16 validation block that
+ * saves anything — the four numeric slices reject client-side and their correction arms only prove the
+ * $ / m³ recomputes, so all of those stay on the shared validate-only cell. Exactly the split S05 made
+ * (and sch5 before it, for its own S12).
+ *
+ * MINTED 2026-09-18, the tenth cell in sch6's 2024 range. Mill 24050 ("7777 CGT TEST MILL7") is ACT and
+ * already seeded with its ACT xref for sch1/sch4/sch5, which pin it at 2016-2023 — so the MILL is one
+ * the suite already exercises and only the YEAR is new. Confirmed free before minting with the suite's
+ * own scanner (`preflight/anchor-keys.ts` collectAnchorKeys over every domain fixture): the only
+ * 2024-or-later keys anywhere are sch6's own, so "year >= 2024 belongs to sch6" still holds
+ * structurally. `GET /api/v1/schedule6?millId=24050&year=2024` answered 404 before the patch, i.e. the
+ * mill resolves and only the report-status row was missing.
+ */
+export const AREA_TYPE_CORRECTION_ANCHOR: Sch6Anchor = { key: { millId: 24050, year: 2024 }, mill: MILL_7777 };
+
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
   { name: 'edit (S02)', anchor: EDIT_ANCHOR },
@@ -165,6 +185,7 @@ export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'check-missing-cost (S09)', anchor: CHECK_MISSING_COST_ANCHOR },
   { name: 'check-missing-tfl (S10)', anchor: CHECK_MISSING_TFL_ANCHOR },
   { name: 'check-missing-supply-block (S11)', anchor: CHECK_MISSING_SUPPLY_BLOCK_ANCHOR },
+  { name: 'area-type-correction (S12)', anchor: AREA_TYPE_CORRECTION_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -307,6 +328,111 @@ export const S05_RECORD = {
   costPerVolumeDisplay: '2.50',
   comments: 'E2E S05 corrected TFL record',
 } as const;
+
+// ---------------------------------------------------------------------------------------------------
+// THE ADD-PANEL FIELD VALIDATIONS (S12-S16)
+//
+// ALL FIVE MESSAGES ARE TRANSCRIBED FROM `ROAD_MESSAGES` in
+// src/components/schedule6/validation.ts:60-70, which is itself declared verbatim from the BACKEND
+// bundle ("Verbatim from the backend bundle (messages.properties) so an advisory message is
+// byte-identical to the server's rejection for the same field"). So each literal below is the text a
+// reporter sees whether the client or the server refused the entry.
+//
+// S12 CLOSES SPEC-2. The source Gherkin could not recover the required-field message and carried
+// `[UNKNOWN]` rather than fabricating one — it was looking for a custom JSF literal, and legacy had
+// none (the framework default filled it in at runtime). The rebuilt app does NOT inherit a framework
+// default: it declares the message itself, `areaTypeRequired`. That literal is therefore the answer to
+// SPEC-2, taken from the running app exactly as the spec-gap entry said it would have to be, and it is
+// flagged for BA/QA confirmation against legacy rather than treated as settled.
+//
+// WHEN THE FIVE ERRORS APPEAR — THE ONE MATERIAL RE-GROUNDING, and it applies to every slice here.
+// The legacy Gherkin reads "When I enter a non-numeric value ... Then the system displays the error",
+// i.e. per-field ajax validation as you leave the field. In the React app NOTHING validates on blur:
+// `onBlur` calls `commitRate`, which runs `validateRoadRecord` only to decide whether to advance the
+// $ / m³ baseline and then DISCARDS the errors (index.tsx:533-542). The errors a reporter sees are set
+// in `handleAdd` (index.tsx:682-686) — so all five surface on **Add Report**. Recorded as defects.md
+// VER-5; it is the same class as VER-3 (the TFL number) but a wider one, and for a different reason:
+// the TFL number needs the server, whereas these five are decided entirely on the client.
+//
+// WHICH MAKES THE NEGATIVE STRONGER HERE THAN IN S05, and this is the contrast worth keeping.
+// `handleAdd` early-returns the moment `validateRoadRecord` reports anything, BEFORE the POST is built,
+// so a rejected entry costs **zero** mutating requests — where S05's invalid TFL cost exactly one
+// (only the server knows the RMG table). So these scenarios assert `mutations === 0`, the no-write
+// proof the suite's own guidance asks for, AND still read the anchor back: a spy proves no request was
+// sent, only a read proves nothing was stored.
+// ---------------------------------------------------------------------------------------------------
+
+/** `areaTypeRequired` — the answer to SPEC-2, taken from the running app. Awaiting BA/QA sign-off. */
+export const AREA_TYPE_REQUIRED_MESSAGE = 'TSA or TFL: Value is required.';
+
+/** `volumeInvalid` — S13. Matches the source Gherkin byte-for-byte. */
+export const VOLUME_INVALID_MESSAGE = 'Entered volume entry is invalid.';
+
+/** `volumeRange` — S14. Matches the source Gherkin byte-for-byte. */
+export const VOLUME_RANGE_MESSAGE = 'Entered volume must be between 0 and 9,999,999.';
+
+/** `costInvalid` — S15. Matches the source Gherkin byte-for-byte. */
+export const COST_INVALID_MESSAGE = 'Entered cost is invalid.';
+
+/** `costRange` — S16. Matches the source Gherkin byte-for-byte. Note the NEGATIVE lower bound. */
+export const COST_RANGE_MESSAGE = 'Entered cost must be between -99,999,999 and 99,999,999.';
+
+/**
+ * The VALID partner amounts every S12-S16 scenario carries, and the rate a correction must produce.
+ *
+ * WHY A VALID PARTNER AT ALL: each slice rejects exactly ONE field, so the other numeric field is
+ * deliberately valid — otherwise a scenario asserting "Entered cost is invalid." could be satisfied by
+ * a form that was refused for the volume instead, and the two messages would be interchangeable.
+ *
+ * 56,000 / 16,000 = 3.50 EXACTLY, so no assertion here turns on a rounding decision — and 3.50 is
+ * unused by every other sch6 slice (S01 3.84, S02 3.00/4.50, S03 4.00, S05 2.50), so a scenario that
+ * somehow read another slice's derived cell fails instead of passing on a coincidence.
+ */
+export const VALIDATION_AMOUNTS = {
+  volumeInput: '16000',
+  costInput: '56000',
+  volumeDisplay: '16,000',
+  costDisplay: '56,000',
+  costPerVolumeDisplay: '3.50',
+} as const;
+
+/**
+ * What the Add panel's `$ / m³` cell reads when no VALID entry has ever been committed on it.
+ *
+ * The empty string, not a zero and not a dash: `ratioMask(null)` returns `''` (index.tsx:86-95) and a
+ * fresh panel starts at `EMPTY_RATE_INPUTS`. This is the assertion that proves the ruled 2026-08-21
+ * behaviour — an unparseable or out-of-range entry must NOT drive the derived cell, because that would
+ * show a rate no Save could ever persist. On a fresh Add panel "held at its last valid figure" and
+ * "still blank" are the same claim.
+ */
+export const NO_COMPUTED_RATE = '';
+
+/**
+ * S12 — the blank area type. The reject arm types valid amounts and submits with the combo untouched.
+ *
+ * `correction` saves on AREA_TYPE_CORRECTION_ANCHOR, so it carries the full classification: the same
+ * TSA/Supply Block pair (and therefore the same server-derived RMG "15") as S01, because S12's subject
+ * is the REQUIRED-FIELD rule, not the classification — varying the codes as well would make a failure
+ * ambiguous between the two.
+ */
+export const S12_RECORD = {
+  rejectComments: 'E2E S12 rejected blank area type',
+  correction: {
+    areaTypeCode: S01_RECORD.areaTypeCode,
+    areaTypeOption: S01_RECORD.areaTypeOption,
+    supplyBlockCode: S01_RECORD.supplyBlockCode,
+    supplyBlockOption: S01_RECORD.supplyBlockOption,
+    rmg: S01_RECORD.rmg,
+    comments: 'E2E S12 corrected area type record',
+  },
+} as const;
+
+// THE REJECTED ENTRIES THEMSELVES ARE NOT PINNED HERE — they live in each slice's `Scenario Outline`
+// Examples table in `amount-validation.feature`, with the reason for each row in that file's header.
+// They are the slice's own MATRIX (max + 1, min - 1, too many decimals), which is what a Scenario
+// Outline is for, and duplicating them here would give every value two homes and a way to drift. What
+// stays in this fixture is what is app-GROUNDED and shared: the five verbatim messages above, the valid
+// partner amounts, and the blank-rate literal.
 
 // ---------------------------------------------------------------------------------------------------
 // S04 — the schedule-level GENERAL COMMENT.
