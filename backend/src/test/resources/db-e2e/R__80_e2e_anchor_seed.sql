@@ -496,6 +496,24 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25052, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25053, 'D', 'D', 'E2E_SEED');
+-- 16050 / 25054 in 2024, and 9050 in 2025 — S21, S22 and S23, added 2026-09-18. The last three slices;
+-- all writers, one cell each, all empty at rest.
+--
+-- THE BR-10 PAIR (S22/S23) CANNOT SHARE A CELL, and the reason is the rule itself rather than
+-- parallelism: they need OPPOSITE stored states. S22 stores a COMPLETE record and breaks it on screen
+-- (a database-reading Check Status would wrongly answer MET — the false-GREEN arm); S23 stores an
+-- INCOMPLETE record and fixes it on screen (such an implementation would wrongly keep reporting it —
+-- the false-RED arm). Each fails in the direction the other cannot detect.
+--
+-- 9050/2025 IS THE FIRST CELL IN 2025, and it is a consequence of arithmetic rather than a new policy:
+-- the extract holds 17 ACT mills, sch6 pins 15 of them at 2024 (plus 23050, whose ABSENCE is S08's
+-- fixture), so 16050 and 25054 were the last two and S21/S22 took them. "Year >= 2024 belongs to sch6"
+-- is the structural invariant the whole sch6 fan-out rests on — every other domain pins <= 2023 — so
+-- 2025 collides with nothing by construction. Mill 9050 is ACT and already seeded; only the year is new.
+INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, ENTRY_USERID) VALUES (2025, DATE '2025-01-01', DATE '2025-12-31', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 16050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25054, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2025,  9050, 'D', 'D', 'E2E_SEED');
 -- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
 -- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
 -- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It

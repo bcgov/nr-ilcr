@@ -80,6 +80,8 @@ const MILL_8888: MillRef = { millNumber: '8888', millName: 'CGI TEST MILL8' }; /
 const MILL_9171: MillRef = { millNumber: '9171', millName: 'BCOVEY-TEST' }; // millId 25050, ACT
 const MILL_9173: MillRef = { millNumber: '9173', millName: 'MRICE-TEST' }; // millId 25052, ACT
 const MILL_9174: MillRef = { millNumber: '9174', millName: 'AOLSON-TEST' }; // millId 25053, ACT
+const MILL_514: MillRef = { millNumber: '514', millName: 'AAA MILLING' }; // millId 16050, ACT
+const MILL_9175: MillRef = { millNumber: '9175', millName: 'TCASEY-TEST' }; // millId 25054, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -204,6 +206,32 @@ export const RECLASSIFY_ANCHOR: Sch6Anchor = { key: { millId: 25052, year: 2024 
  */
 export const MIXED_CHECK_ANCHOR: Sch6Anchor = { key: { millId: 25053, year: 2024 }, mill: MILL_9174 };
 
+/** S21 — one record missing BOTH its supply block and its cost. */
+export const MULTI_MISSING_ANCHOR: Sch6Anchor = { key: { millId: 16050, year: 2024 }, mill: MILL_514 };
+
+/**
+ * S22 — the false-GREEN arm of BR-10: a COMPLETE stored record, broken on screen without saving.
+ *
+ * ITS STORED STATE IS THE OPPOSITE OF S23's, AND THAT IS THE WHOLE POINT. A Check Status that read the
+ * DATABASE instead of the screen would answer MET here — the schedule looks ready while a value in
+ * front of the reporter is wrong. S23 catches the mirror failure. Neither arm can detect the other's,
+ * so they cannot be collapsed onto one stored state, which is why they hold separate cells rather than
+ * merely separate scenarios.
+ */
+export const UNSAVED_BREAK_ANCHOR: Sch6Anchor = { key: { millId: 25054, year: 2024 }, mill: MILL_9175 };
+
+/**
+ * S23 — the false-RED arm of BR-10: an INCOMPLETE stored record, corrected on screen without saving.
+ *
+ * THE FIRST ANCHOR IN 2025, and by arithmetic rather than choice: the extract holds 17 ACT mills and
+ * sch6 pins 15 of them at 2024 (plus 23050, whose ABSENCE is S08's fixture), so 16050 and 25054 were
+ * the last two 2024 cells and S21/S22 took them. "Year >= 2024 belongs to sch6" is the structural
+ * invariant the whole fan-out rests on — every other domain pins <= 2023 — so 2025 collides with
+ * nothing by construction. `draft-anchors.sql` now derives its ILCR_REPORTING_PERIOD row from the
+ * anchor table, so the 2025 period exists and Home's year dropdown offers it.
+ */
+export const UNSAVED_FIX_ANCHOR: Sch6Anchor = { key: { millId: 9050, year: 2025 }, mill: MILL_760 };
+
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
   { name: 'edit (S02)', anchor: EDIT_ANCHOR },
@@ -218,6 +246,9 @@ export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'comment-only (S18)', anchor: COMMENT_ONLY_ANCHOR },
   { name: 'reclassify (S19)', anchor: RECLASSIFY_ANCHOR },
   { name: 'mixed-check (S20)', anchor: MIXED_CHECK_ANCHOR },
+  { name: 'multi-missing (S21)', anchor: MULTI_MISSING_ANCHOR },
+  { name: 'unsaved-break (S22)', anchor: UNSAVED_BREAK_ANCHOR },
+  { name: 'unsaved-fix (S23)', anchor: UNSAVED_FIX_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -678,6 +709,97 @@ export const roadRequirementsMet = (ordinal: number): string =>
 
 /** S20's failing line — the second row's absent cost, carrying the legacy mislabel verbatim. */
 export const S20_MISSING_COST_LINE = 'Road : 2 - TSA or TFL (Cost $) : Value Required';
+
+// ---------------------------------------------------------------------------------------------------
+// S21 — ONE RECORD MISSING SEVERAL VALUES AT ONCE
+//
+// EVERY LINE THIS SLICE NEEDS IS ALREADY PINNED in CHECK_LINES above, both for row 1 — so nothing new
+// is transcribed here, only the record that produces them.
+//
+// VERIFIED BY PROBE 2026-09-18 on this anchor: a TSA record with NO supply block and NO cost STORES
+// fine (HTTP 200, `rmg` null because no block means nothing to derive from), and check-status returns
+// BOTH findings for row 1, supply block first then cost:
+//     "Road : 1 - Supply Block : Value Required"
+//     "Road : 1 - TSA or TFL (Cost $) : Value Required"
+// which is what the slice claims and matches the source Gherkin's order. `evaluateRecord` accumulates
+// into a LIST rather than returning on the first failure (Schedule6Service:873-890), which is the
+// behaviour that makes "list every missing value, not just the first" true.
+// ---------------------------------------------------------------------------------------------------
+
+/** S21's record: a TSA record missing both its supply block and its cost. Storable — probed. */
+export const S21_RECORD = {
+  areaTypeCode: '01',
+  volume: 9000,
+  comments: 'E2E S21 doubly-incomplete record',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S22 / S23 — BR-10: CHECK STATUS JUDGES THE SCREEN, NOT THE DATABASE
+//
+// THESE ARE THE TWO SLICES SPEC-1 RECOVERED (the catalogue had counted 21 and named neither), and on
+// Schedule 6 they are expected GREEN — a REGRESSION GUARD, not a defect tracker. Every other schedule
+// still reads the database here (Schedule 5's S24/S25 is the live divergence, issue #476 / app-wide
+// #359). Schedule 6 already ships the fix: `POST /check-status` takes the ON-SCREEN values
+// (`Schedule6CheckRequest`, whose javadoc calls itself "the fix"), `checkStatus` evaluates
+// `payloadCandidates(request)` and nothing else, and an earlier DB-reading implementation was
+// deliberately RETIRED in Task 8. So a red here is a real regression. Do NOT "align" Schedule 6 with
+// the others.
+//
+// THE TWO ARMS FAIL IN OPPOSITE DIRECTIONS, which is why both exist and why they cannot share a
+// stored state:
+//   S22 (false-GREEN): stored COMPLETE, broken on screen. A DB-reading implementation answers MET and
+//                      the reporter is told the schedule is ready while a wrong value is in front of
+//                      them.
+//   S23 (false-RED)  : stored INCOMPLETE, fixed on screen. A DB-reading implementation keeps
+//                      reporting the problem and the reporter is told to fix what they just fixed.
+// An implementation with either fault passes the other arm, so one arm alone proves nothing.
+//
+// "AND NO SCHEDULE RECORDS ARE CHANGED" IS THE THIRD CLAIM IN BOTH, and it is not incidental: the
+// whole point is that Check Status is a READ. If it wrote the on-screen payload through on its way to
+// a verdict, both arms would still pass their message assertions while silently saving edits the
+// reporter never committed. So each arm snapshots the stored record first and re-reads it afterwards.
+//
+// ONE SOURCE SCENARIO IS NOT COVERED, and it is not reachable rather than not attempted — S22's second
+// arm, "an in-range amount that still fails its Check Status requirement". Schedule 6 has no such
+// value: every Check Status rule on this page is a PRESENCE check (`isBlank(areaType)`,
+// `isBlank(tflNumber)` / `isBlank(supplyBlock)`, `cost == null` — Schedule6Service:873-890). There is
+// no range bound and no cross-field relationship, and volume is not checked at all. So any well-formed
+// in-range cost satisfies the requirement, including 0 (the null-only rule, D2 precedent). The only
+// failing cost is an ABSENT one, which is S22's first arm. Recorded as a coverage gap (not-applicable)
+// in defects.md rather than dropped.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * S22's stored record — COMPLETE, so the stored schedule genuinely satisfies every requirement before
+ * the scenario breaks it on screen. 55,000 / 11,000 = 5.00 exactly.
+ */
+export const S22_RECORD = {
+  areaTypeCode: '01',
+  supplyBlockCode: '01B',
+  volume: 11000,
+  cost: 55000,
+  volumeDisplay: '11,000',
+  costDisplay: '55,000',
+  costPerVolumeDisplay: '5.00',
+  comments: 'E2E S22 complete record',
+} as const;
+
+/**
+ * S23's stored record — INCOMPLETE (no cost), plus the cost the scenario supplies on screen.
+ *
+ * 78,000 / 13,000 = 6.00 exactly, and 6.00 is used by no other sch6 slice, so a rate read from the
+ * wrong row or the wrong anchor fails rather than matching by coincidence.
+ */
+export const S23_RECORD = {
+  areaTypeCode: '01',
+  supplyBlockCode: '01B',
+  volume: 13000,
+  comments: 'E2E S23 cost-less record',
+  /** Typed into the row's Cost field, never saved. */
+  suppliedCostInput: '78000',
+  suppliedCostDisplay: '78,000',
+  suppliedCostPerVolumeDisplay: '6.00',
+} as const;
 
 // THE REJECTED ENTRIES THEMSELVES ARE NOT PINNED HERE — they live in each slice's `Scenario Outline`
 // Examples table in `amount-validation.feature`, with the reason for each row in that file's header.

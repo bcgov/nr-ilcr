@@ -14,9 +14,17 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S20 authored and green (twenty-nine scenarios); **20 of 23
-slices covered.** Seven verified-not-a-defect findings. **Still no divergences and no bugs found in the
-app** — every red encountered so far has been the test being wrong, not the application.
+**STATUS 2026-09-18 — ALL 23 SLICES AUTHORED AND GREEN** (thirty-two scenarios); **23 of 23 slices
+covered.** Seven verified-not-a-defect findings. **No divergences and no bugs were found in the
+application anywhere in this use case** — every red encountered across all 23 slices turned out to be
+the test being wrong, and each is recorded where it happened.
+
+**The story is not finished.** Accessibility (`accessibility.feature`, `@a11y`) is in scope and has not
+been started — see GAP-1. The slice count now reads complete; the board item does not.
+
+**Worth stating plainly for triage:** S22/S23, the two slices that are a live defect on Schedule 5
+(issue #476 / app-wide #359), are **green here**. Schedule 6 already judges what is on screen rather
+than what is in the database. They stand as a regression guard — see section 1.
 
 **Three things need a human, all on this page.** None blocks the story:
 
@@ -42,9 +50,16 @@ app** — every red encountered so far has been the test being wrong, not the ap
 > fix**: `POST /api/v1/schedule6/check-status` takes the ON-SCREEN values (`Schedule6CheckRequest`,
 > whose own javadoc calls itself "the fix"), `Schedule6Service.checkStatus` evaluates
 > `payloadCandidates(request)` and nothing else, and an earlier DB-reading implementation was
-> deliberately retired in Task 8 for exactly the reason Schedule 5 is still broken. So when S22/S23 are
-> authored here they are expected **green**, and a red would be a real regression rather than the known
-> cross-schedule gap.
+> deliberately retired in Task 8 for exactly the reason Schedule 5 is still broken.
+>
+> **Now confirmed by test, 2026-09-18.** S22 and S23 are authored and **both pass** — see
+> `check-status-unsaved.feature`. Schedule 6 reports a value cleared on screen but not saved, and stops
+> reporting one corrected on screen but not saved, and writes nothing either way. So this pair is a
+> **regression guard** here, not a defect: a red in future is a real regression rather than the known
+> cross-schedule gap. Do not "align" Schedule 6 with the other schedules.
+>
+> If the app-wide #359 fix is ever rolled out to the other schedules, Schedule 6's implementation is the
+> reference — and these two scenarios are the ones to copy.
 
 ## 2. Bugs / regressions
 
@@ -52,22 +67,54 @@ app** — every red encountered so far has been the test being wrong, not the ap
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 3 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — accessibility coverage not yet authored — OPEN
 
-**What is missing.** S01–S20 are covered. **S21–S23** and the axe sweeps are still to be written.
-(Was "12 of 23" when S01–S11 were the whole of it; the S12–S16 block, S17, and S18/S19/S20 all landed
-2026-09-18. The accessibility half has not started, and by slice count alone it is now easy to read
-this story as nearly done — which is exactly the GAP-5 trap this entry exists to prevent.)
+**What is missing.** All 23 slices are covered. **The accessibility sweeps are not written at all** —
+`accessibility.feature` (`@a11y`) does not exist yet, and it is now the ENTIRE remaining scope of this
+story.
 
-**Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
-reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
-that no slice in the catalogue asks for, so the slice count read as completeness while half of board
-item #97 was unverified. The recorded lesson was *"a slice catalogue is not a completeness test — carry
-this into the remaining 28.x stories."* This entry is that carry: accessibility is in scope for Story
-28.5 from the start and is tracked here until `accessibility.feature` exists, so it cannot be missed by
-counting slices.
+**This is the moment GAP-1 was written for.** The slice ledger reads 23 of 23, and a reader glancing at
+the count would call the story done. Story 28.4 did exactly that: Schedule 5 reached "all 25 slices
+authored" with zero accessibility coverage, because accessibility is an NFR that no slice in the
+catalogue asks for, so the count read as completeness while half of board item #97 was unverified. The
+recorded lesson was *"a slice catalogue is not a completeness test."* It applies now, not earlier.
 
-**Disposition.** Expected to close within Story 28.5. Board item **#101**.
+**What it will take.** Sibling precedent is `features/sch4/.../accessibility.feature` — axe sweeps over
+each distinct render state, using the shared `the {string} view has no WCAG 2.1 AA accessibility
+violations` steps that already exist in `steps/common/assertions.steps.ts`. Schedule 6's distinct states
+are: the empty Draft, the Add panel open, a saved record expanded, the totals/comment strip, the
+read-only (non-Draft) render, the three context guards, and a Check Status verdict on screen. Several
+need no new anchor — the read-only sweep can read S17's seeded cell and the guards write nothing — but a
+sweep that opens the Add panel will want the validate-only cell rather than a mutating one.
+
+**Disposition.** Expected to close within Story 28.5. Board item **#101**; the PR body must say
+"Fixes #101", so this entry closing is a precondition for that claim being true.
+
+### GAP-2 — one scenario in the source cannot happen on this screen — OPEN (informational)
+
+**What is not covered.** Slice S22 has two scenarios. The first — clearing a required amount on screen
+and running Check Status without saving — is covered. The second asks for *"a well-formed, in-range
+amount that still fails its Check Status requirement"*. **There is no such value on Schedule 6.**
+
+**Why not.** Everything Check Status examines on this screen is simply *present or absent*: the
+TSA/TFL area type, the TFL number (on the TFL branch), the Supply Block (otherwise), and the Cost.
+There is no minimum, no maximum, and no rule comparing one field against another — and Volume is not
+checked at all. So any cost a reporter can legitimately type satisfies the requirement, **including
+zero**. The only way the Cost check can fail is for the field to be empty, which is the first
+scenario.
+
+The original scenario was narrowed for a reason that does not apply to the rebuilt screen: it assumed
+the old framework's field-by-field validation would reject a malformed value before Check Status ran,
+so it deliberately asked for a value that was *valid* but still *failing*. The rebuilt screen validates
+when you press a button and sends the values as data, so that distinction has no counterpart here.
+
+**Why this is recorded rather than dropped.** A reader comparing the source scenarios with our tests
+would otherwise count one short and reasonably assume it was missed. It was not: the state it describes
+cannot be reached on this screen, so there is nothing to automate and nothing to skip.
+
+**For BA/QA.** No action, unless the answer to VER-7's question changes. If the Ministry ever adds a
+*range* or *relationship* rule to Schedule 6's Check Status — a minimum cost, say, or a cost that must
+agree with another schedule — this scenario becomes reachable and should be written then.
 
 ## 4. Spec gaps (the source documents are silent, ambiguous, or wrong)
 

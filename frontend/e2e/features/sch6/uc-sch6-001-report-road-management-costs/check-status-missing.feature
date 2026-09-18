@@ -126,3 +126,26 @@ Feature: Report Road Management Costs (Schedule 6) — Check Status names the mi
     # The passing record does NOT earn the schedule a pass — the schedule-level banner must stay away
     # while any record is incomplete.
     And Check Status does not report the schedule as met
+
+  # -------------------------------------------------------------------------------------------------
+  # S21 — ONE record, SEVERAL gaps. Re-grounded from UC-SCH6-001-S21.feature.
+  # The claim is "list every missing value, not just the first one it finds", and the app satisfies it
+  # because `evaluateRecord` accumulates findings into a LIST rather than returning on the first
+  # failure (Schedule6Service:873-890). Asserting only one of the two lines would pass against an
+  # implementation that stopped early, so both are asserted — and both for the SAME row.
+  #
+  # Verified by probe before authoring: a TSA record with no supply block AND no cost stores fine
+  # (HTTP 200, with `rmg` null because there is no block to derive from), and check-status returns both
+  # findings for row 1 in the Gherkin's own order — Supply Block first, then Cost.
+  #
+  # Neither message is new: both are already pinned in CHECK_LINES for row 1 by S09 and S11, which is
+  # why this slice adds a record and an anchor but no fresh literals.
+  @p1 @S21
+  Scenario: Check Status lists every missing value on a single record
+    Given the Schedule 6 anchor "multi-missing" is an editable Draft with no road records
+    And a road maintenance record with neither a supply block nor a cost commented "E2E S21 doubly-incomplete record" already exists on that anchor
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 6
+    And I run Schedule 6 Check Status
+    Then Check Status reports both missing values for that record
+    And Check Status does not report the schedule as met

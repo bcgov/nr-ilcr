@@ -427,6 +427,21 @@ export class Schedule6Page {
   }
 
   /**
+   * Overwrite a saved row's Cost ALONE, including clearing it — the BR-10 arms (S22/S23).
+   *
+   * Separate from `setRowAmounts` (which sets both amounts) because each arm changes exactly ONE field
+   * and leaves the rest of the record intact: S22 CLEARS the cost on a complete record, S23 SUPPLIES it
+   * on a cost-less one. Passing `''` is the clear, and it is a real state rather than a no-op — the
+   * mask returns '' unchanged and the payload then carries `cost: null`, which is what Check Status
+   * reports. The blur is what commits the $ / m³ baseline, as everywhere else on this page.
+   */
+  async setRowCost(recordId: number, value: string): Promise<void> {
+    const cost = this.rowCost(recordId);
+    await cost.fill(value);
+    await cost.blur();
+  }
+
+  /**
    * Change a saved row's area type, by the option's rendered description (S19).
    *
    * Goes through the same filterable-combobox routine as the Add panel, because a row renders the very

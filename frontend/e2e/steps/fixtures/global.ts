@@ -122,6 +122,23 @@ export type World = {
    * lines key on. So the Given matches each record by its per-record COMMENT (stable everywhere) and
    * carries both derived values forward.
    */
+  /**
+   * A snapshot of the STORED Schedule 6 records, taken before an action that must not write.
+   *
+   * The BR-10 arms (S22/S23) each assert "no schedule records are changed": Check Status is a READ, and
+   * an implementation that wrote the on-screen payload through on its way to a verdict would still pass
+   * every message assertion while silently saving edits the reporter never committed. So the Given
+   * captures the served records here and a Then re-reads and compares.
+   */
+  sch6StoredSnapshot?: {
+    recordId: number;
+    areaType: string | null;
+    supplyBlock: string | null;
+    tflNumber: string | null;
+    volume: number | null;
+    cost: number | null;
+    comments: string | null;
+  }[];
   sch6ReadOnlyRecords?: {
     expected: (typeof import('../../fixtures/sch6/schedule6-test-data'))['S17_RECORDS'][number];
     record: { recordId: number; comments: string | null };

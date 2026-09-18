@@ -3,9 +3,15 @@
 -- added and nothing else.
 --
 -- Keyed on the sentinel ENTRY_USERID = 'E2E_TRACK_SCH6' AND on reporting year
--- 2024, so it cannot touch a real extract row even if a future extract reused
--- the sentinel value. 2024 is sch6's own minted range (see that patch's header),
--- which is what makes the year predicate safe as a second key here.
+-- >= 2024, so it cannot touch a real extract row even if a future extract reused
+-- the sentinel value. "Year >= 2024 belongs to sch6" is the structural invariant
+-- the patch rests on — every other domain pins <= 2023 — which is what makes the
+-- year predicate safe as a second key here.
+--
+-- WIDENED FROM `= 2024` TO `>= 2024` on 2026-09-18, when S23 took the first cell
+-- in 2025 because 2024's ACT mills were exhausted. Left at `= 2024` this teardown
+-- would have silently stopped removing everything it created — the equality read
+-- as "sch6's range" when it was really "sch6's range so far".
 --
 -- ORDER MATTERS: the category rows go first. ROAD_MAINTENANCE_REPORT carries the
 -- composite FK RM_RPT_ILCR_RCAT_FK onto ILCR_REPORT_CATEGORY, so any road record
@@ -26,18 +32,18 @@ SET DEFINE OFF
 
 DELETE FROM THE.ILCR_REPORT_CATEGORY
  WHERE ENTRY_USERID = 'E2E_TRACK_SCH6'
-   AND REPORT_YEAR = 2024;
+   AND REPORT_YEAR >= 2024;
 
 DELETE FROM THE.ILCR_MILL_REPORT_STATUS
  WHERE ENTRY_USERID = 'E2E_TRACK_SCH6'
-   AND REPORT_YEAR = 2024;
+   AND REPORT_YEAR >= 2024;
 
 -- The reporting year goes LAST and only if nothing references it any more. Deleting a period whose
 -- mill-years still exist would strand them, so the guard is a NOT EXISTS rather than an unconditional
 -- DELETE — and it keeps this teardown safe to run against a partially cleaned database.
 DELETE FROM THE.ILCR_REPORTING_PERIOD p
  WHERE p.ENTRY_USERID = 'E2E_TRACK_SCH6'
-   AND p.REPORT_YEAR = 2024
+   AND p.REPORT_YEAR >= 2024
    AND NOT EXISTS (SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS s WHERE s.REPORT_YEAR = p.REPORT_YEAR);
 
 COMMIT;

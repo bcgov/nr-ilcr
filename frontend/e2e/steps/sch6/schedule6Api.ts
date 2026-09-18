@@ -2,6 +2,7 @@ import { type APIRequestContext, expect } from '@playwright/test';
 import {
   type ScheduleKey,
   addRecordUrl,
+  checkStatusUrl,
   recordDeleteUrl,
   scheduleUrl,
 } from '../../fixtures/sch6/schedule6-test-data';
@@ -180,6 +181,84 @@ export async function clearGeneralComment(
     doc.roadRecords.map((r) => r.recordId),
     `road records survived general-comment cleanup on ${key.millId}/${key.year}`,
   ).toEqual([]);
+}
+
+/** One record reduced to the fields a no-write assertion compares. */
+export interface RecordSnapshot {
+  recordId: number;
+  areaType: string | null;
+  supplyBlock: string | null;
+  tflNumber: string | null;
+  volume: number | null;
+  cost: number | null;
+  comments: string | null;
+}
+
+/**
+ * The served records reduced to their comparable fields, for the BR-10 "nothing was written" check.
+ *
+ * `revisionCount` and the derived figures are deliberately EXCLUDED: the first would make the
+ * comparison fail on any unrelated concurrent save, and the second two are recomputed from the fields
+ * already compared, so including them would add no discriminating power. What IS compared is every
+ * field a stray write could plausibly change — the classification, both amounts and the comment —
+ * field by field rather than as a count, so a changed cost on an unchanged number of rows cannot slip
+ * through.
+ */
+export function snapshotRecords(doc: Schedule6Doc): RecordSnapshot[] {
+  return doc.roadRecords.map((r) => ({
+    recordId: r.recordId,
+    areaType: r.areaType ?? null,
+    supplyBlock: r.supplyBlock ?? null,
+    tflNumber: r.tflNumber ?? null,
+    volume: r.volume ?? null,
+    cost: r.cost ?? null,
+    comments: r.comments ?? null,
+  }));
+}
+
+/** The check-status verdict, narrowed to what the BR-10 Givens assert. */
+export interface CheckStatusVerdict {
+  outcome: string;
+  messages: { key: string; text: string }[];
+  records: { rowCounter: number; met: boolean; issues: { message: { text: string } }[] }[];
+}
+
+/**
+ * The Check Status verdict for a mill/year's STORED values.
+ *
+ * WHY IT POSTS RATHER THAN CALLING A STORED ENDPOINT: there isn't one. `POST /check-status` is the only
+ * check-status route the API exposes, and by design it evaluates the payload it is given
+ * (`Schedule6CheckRequest`). The service does have a `checkStatusStored`, but that is internal to the
+ * report-level callers (15.0/15.1) which have no screen, and it answers a deliberately DIFFERENT
+ * question — the two can legitimately disagree, which is the whole subject of S22/S23. So this helper
+ * reads the document and sends the STORED values back as the payload, which asks the public endpoint
+ * "what would the verdict be if the screen matched the database?".
+ *
+ * Used only in the BR-10 Givens, to prove each arm's PRECONDITION at the API before the browser is
+ * driven: S22 needs a stored schedule that genuinely passes, S23 one whose only gap is the cost. Get
+ * either wrong and the scenario's message assertion passes for the wrong reason and proves nothing
+ * about unsaved edits.
+ */
+export async function checkStatusStored(
+  request: APIRequestContext,
+  key: ScheduleKey,
+): Promise<CheckStatusVerdict> {
+  const doc = await readSchedule6(request, key);
+  const records = doc.roadRecords.map((r) => ({
+    areaType: r.areaType,
+    tflNumber: r.tflNumber,
+    supplyBlock: r.supplyBlock,
+    volume: r.volume,
+    cost: r.cost,
+    comments: r.comments,
+  }));
+
+  const res = await request.post(checkStatusUrl(key.millId, key.year), { data: { records } });
+  await expect(
+    res,
+    `POST check-status (stored values) on ${key.millId}/${key.year} -> HTTP ${res.status()}`,
+  ).toBeOK();
+  return (await res.json()) as CheckStatusVerdict;
 }
 
 /**

@@ -11,11 +11,13 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S20 authored and green (twenty-nine scenarios; several slices
-are more than one — see the count below). **20 of 23 slices covered.** Accessibility is in scope from
-the start (`accessibility.feature`, `@a11y`) and is NOT yet written — carried deliberately as the
-lesson from Story 28.4's GAP-5, where "all slices authored" read as complete while half of the board
-item was unverified because a11y is an NFR that no slice asks for.
+**STATUS 2026-09-18 — ALL 23 SLICES AUTHORED AND GREEN** (thirty-two scenarios; several slices are
+more than one — see the count below). **23 of 23 slices covered.**
+
+**The story is NOT done.** Accessibility (`accessibility.feature`, `@a11y`) is in scope and is **not
+yet written** — the entire remaining half. This is exactly the shape of Story 28.4's GAP-5, where
+Schedule 5 reached "all 25 slices authored" with zero accessibility coverage and the slice count read
+as completeness. The count now reads 23 of 23; the board item is not. See `defects.md` GAP-1.
 
 **Scope is 23 slices, S01–S23.** The slice catalogue said 21 in three places while the Gherkin folder
 carried 23; corrected under SPEC-1 on the planning branch (`docs/story-28-5-schedule-6-e2e`) before
@@ -28,16 +30,18 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                   10 files
-scenarios (bddgen, @UC-SCH6-001)             29
-preflight/sch6-anchors.setup.ts              19 checks
-pinned (mill, year) anchors                  16  — 13 mutating/validate-only in 2024, 1 read-only
-                                                  (24051/2024, Submitted + seeded), plus 2 guards
-                                                  (1/2017 closed-mill, 23050/2024 deliberately absent)
+features/sch6/**/*.feature                   11 files
+scenarios (bddgen, @UC-SCH6-001)             32
+preflight/sch6-anchors.setup.ts              22 checks
+pinned (mill, year) anchors                  19  — 15 mutating/validate-only in 2024, 1 in 2025
+                                                  (9050/2025, S23 — 2024's ACT mills are exhausted),
+                                                  1 read-only (24051/2024, Submitted + seeded), plus
+                                                  2 guards (1/2017 closed-mill, 23050/2024
+                                                  deliberately absent)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Twenty-nine scenarios over twenty slices, because five slices need more than one:
+Thirty-two scenarios over twenty-three slices, because five slices need more than one:
 
 | Slice | Scenarios | Why |
 |---|---|---|
@@ -47,7 +51,18 @@ Twenty-nine scenarios over twenty slices, because five slices need more than one
 | S14 | 4 | a 3-row `Scenario Outline` (both bounds + the 3-decimal case) plus a correction arm |
 | S16 | 3 | a 2-row `Scenario Outline` (both bounds) plus a correction arm |
 
-Verification runs, 2026-09-18 (S18/S19/S20):
+Verification runs, 2026-09-18 (S21/S22/S23 — the last three):
+
+- full suite preflight → **202 passed** (180 before sch6 + 22), at `--workers=2`
+- the three scenarios: S22/S23 green first run, **S21 red first run on a strict-mode violation** — the
+  test's fault, not the app's (each finding is its own notification with its own severity title, so the
+  unqualified locator matched two); fixed to `toHaveCount(2)`, which is also the stronger assertion
+- `--repeat-each=5 --workers=1` → **15 passed**, 5/5 stable
+- whole UC at `--workers=2` → **32 passed** (S01–S20 unregressed)
+- all sixteen mutating/validate-only anchors confirmed empty afterwards, and the read-only anchor
+  confirmed intact
+
+Earlier, for S18/S19/S20:
 
 - full suite preflight → **199 passed** (180 before sch6 + 19), at `--workers=2`
 - the three scenarios green on the first run; `--repeat-each=5 --workers=1` → **15 passed**, 5/5 stable
@@ -647,15 +662,109 @@ matters because items 2 and 3 assert *which* ordinal passed and which failed - t
 
 ---
 
-## Remaining slices
+## S21 - one record missing several values at once
 
-S21-S23 not yet authored (20 of 23 covered). Accessibility sweeps not yet authored. Each will be added
-here with its own item table as it lands; `defects.md` carries anything found along the way.
+Scenario: `check-status-missing.feature` -> `@p1 @S21`. Anchor **16050/2024**.
 
-S21 (a record missing several values at once) needs no new anchor shape - one record with two gaps on a
-cell of its own. S22/S23 are the Check-Status-includes-unsaved-edits pair, **expected green here**
-(unlike Schedule 5's live divergence) because this endpoint already evaluates the on-screen payload -
-see `defects.md` section 1.
+| # | Source item (S21 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | A TSA record with both Supply Block and Cost left blank, listed as row 1 | storable - probed (HTTP 200, `rmg` null since no block) | `Given a road maintenance record with neither a supply block nor a cost ...` | covered |
+| 2 | "Road : 1 - Supply Block : Value Required" | `evaluateRecord` non-TFL branch | `Then Check Status reports both missing values for that record` | covered |
+| 3 | "Road : 1 - TSA or TFL (Cost $) : Value Required" | the null-only cost check | same step | covered |
+| 4 | *(beyond the Gherkin)* BOTH gaps really are stored | the Given asserts supply block and cost are each null | the Given | covered |
+| 5 | *(beyond the Gherkin)* EACH finding carries a severity WORD | one notification per finding, each titled "Action required" | `toHaveCount(2)` in the same step | covered |
+| 6 | *(beyond the Gherkin)* the schedule is not reported as met | `outcome: ISSUES` | `And Check Status does not report the schedule as met` | covered |
+
+**Why both lines are asserted rather than one.** `evaluateRecord` accumulates findings into a **list**
+rather than returning on the first failure (`Schedule6Service:873-890`), which is what makes the
+slice's claim - "list every missing value, not just the first one it finds" - true. Asserting only one
+of the two would pass against an implementation that stopped early. Neither message is new: both are
+already pinned in `CHECK_LINES` for row 1 by S09 and S11, so this slice adds a record and an anchor but
+no fresh literals.
+
+**Item 5 is a correction worth recording.** The first run failed on a **strict-mode violation**: each
+finding renders as its own notification with its own "Action required" title, so on a two-finding
+record the unqualified locator matched two elements. The single-finding slices (S09/S10/S11) never hit
+it. `toHaveCount(2)` is both the fix and the stronger assertion - it says *every* finding is announced
+with a severity word rather than colour alone, not merely that one is. **That was the test being
+wrong, not the app.**
+
+---
+
+## S22 / S23 - BR-10: Check Status judges the screen, not the database
+
+Scenarios: `check-status-unsaved.feature` -> `@p1 @S22` (anchor **25054/2024**) and `@p1 @S23`
+(anchor **9050/2025**).
+
+**These are the two slices SPEC-1 recovered**, and on Schedule 6 they are **expected green** - a
+regression guard, not a defect tracker. Every sibling schedule still reads the database here (Schedule
+5's pair is a live divergence, issue #476 / app-wide #359). A red here would be a real regression.
+**Do not "align" Schedule 6 with the others.**
+
+| # | Source item | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | **S22** stored schedule satisfies every requirement | asserted at the API before the browser runs | the Given (`outcome: MET` on the stored values) | covered |
+| 2 | **S22** clear the cost on screen, do not save | row field cleared and blurred | `When I clear the record's cost on screen` | covered |
+| 3 | **S22** the error is reported | `checkStatus` evaluates `payloadCandidates` | `Then Check Status reports "Road : 1 - TSA or TFL (Cost $) : Value Required"` | covered |
+| 4 | **S22** the met banner is NOT shown | `outcome: ISSUES` emits no schedule message | `And Check Status does not report the schedule as met` | covered |
+| 5 | **S22/S23** no schedule records are changed | Check Status is a read | `And no Schedule 6 record was changed` | covered |
+| 6 | **S23** stored schedule has no cost, and nothing else outstanding | asserted at the API: `ISSUES` with exactly the one missing-cost line | the Given | covered |
+| 7 | **S23** the error is reported BEFORE the fix | as item 3 | the first `I run Schedule 6 Check Status` | covered |
+| 8 | **S23** supply the cost on screen, do not save | row field filled and blurred | `When I supply the record's cost on screen` | covered |
+| 9 | **S23** the error is GONE on the next Check Status | the payload now satisfies the rule | `Then I should not see the error ...` | covered |
+| 10 | **S23** the schedule reports all requirements met | `outcome: MET` | `And I should see the message "All requirements ..."` | covered |
+| 11 | *(beyond the Gherkin)* the screen really took the supplied value | row cost `78,000`, rate recomputed to `6.00` | `Then the row shows the cost supplied on screen` | covered |
+| 12 | **S22 arm 2** an in-range amount that still fails its requirement | - | - | **not-applicable** (see below; `defects.md` GAP-2) |
+
+**Why both arms exist and cannot share a stored state.** They fail in **opposite** directions:
+
+- **S22, the false-GREEN arm** - stored complete, broken on screen. A database-reading implementation
+  answers MET, so the reporter is told the schedule is ready while a wrong value is in front of them.
+  This is the dangerous direction: it lets an incomplete schedule be submitted.
+- **S23, the false-RED arm** - stored incomplete, fixed on screen. Such an implementation keeps
+  reporting the problem, so the reporter is told to fix what they have just fixed.
+
+An implementation with either fault **passes the other arm**, so one arm alone proves nothing - and
+collapsing them onto a single stored state would silently drop one half of the rule. That is why they
+hold separate anchors rather than merely separate scenarios.
+
+**Item 5 is the claim that would otherwise go unproven.** Check Status is a read; an implementation
+that wrote the on-screen payload through on its way to a verdict would satisfy every message assertion
+above while silently saving edits the reporter never committed - arguably worse than either failure
+mode. So each arm snapshots the stored records before the click and compares them **field by field**
+afterwards, not by row count: a changed cost on an unchanged number of rows is exactly what a count
+would miss.
+
+**Items 1 and 6 prove each precondition at the API, and that is not ceremony.** If S22's seeded record
+were already failing, "the error appears" would pass for the wrong reason; if S23's record had a second
+unrelated gap, the schedule would still fail after the fix and item 10 would fail looking like a BR-10
+defect. So the Givens assert the stored verdict itself.
+
+### Item 12 - not-applicable, and why it is unreachable rather than unattempted
+
+S22's second source scenario asks for "a well-formed, in-range amount that still fails its Check Status
+requirement". **Schedule 6 has no such value.** Every Check Status rule on this page is a **presence**
+check - `isBlank(areaType)`, `isBlank(tflNumber)` / `isBlank(supplyBlock)`, `cost == null`
+(`Schedule6Service:873-890`). There is no range bound, no cross-field relationship, and volume is not
+checked at all. So any well-formed in-range cost satisfies the requirement - including `0`, under the
+null-only rule (D2 precedent) - and the only failing cost is an **absent** one, which is S22's first
+arm.
+
+The legacy scenario's own narrowing note assumed a JSF converter/validator stage ("PROCESS_VALIDATIONS
+before UPDATE_MODEL_VALUES") that this page does not have: the modern client validates on submit and
+the endpoint takes a JSON payload. Recorded as `defects.md` **GAP-2** with this reasoning rather than
+dropped or `@skip`ped - there is no scenario to skip, because the state it describes cannot exist here.
+
+---
+
+## Remaining work
+
+**All 23 slices are authored and green.** What is left is the accessibility half:
+
+- `accessibility.feature` (`@a11y`) is **not yet written** - `defects.md` GAP-1. This is the whole
+  remaining scope of the story, and the slice count now reads complete while it is untouched, which is
+  precisely the trap Story 28.4's GAP-5 recorded.
+- One clean `npm run test:gate` over the whole suite at `--workers=2` is still owed.
 
 S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
 when the SCHEDULE fails while some individual record passes, which takes two records on one anchor -

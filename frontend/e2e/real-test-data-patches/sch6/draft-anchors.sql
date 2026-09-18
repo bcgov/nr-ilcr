@@ -188,21 +188,56 @@ DECLARE
     --       scenarios writing to a shared cell races under `fullyParallel`.
     t_anchor(25050, 2024, 'D'),  -- S18 comment-only schedule (BR-09 placeholder)
     t_anchor(25052, 2024, 'D'),  -- S19 switch an existing record's area type TSA -> TFL
-    t_anchor(25053, 2024, 'D')   -- S20 Check Status mixed results across two records
+    t_anchor(25053, 2024, 'D'),  -- S20 Check Status mixed results across two records
+    -- S21/S22/S23 (added 2026-09-18) — the last three slices. All writers, one cell each.
+    t_anchor(16050, 2024, 'D'),  -- S21 one record missing BOTH supply block and cost
+    -- THE BR-10 PAIR (S22/S23) CANNOT SHARE A CELL, and not merely because both write: they need
+    -- OPPOSITE stored states, and that opposition is the entire point of the pair.
+    --   S22 stores a COMPLETE record and breaks it ON SCREEN  -> a DB-reading Check Status would
+    --       wrongly answer MET (the false-GREEN arm).
+    --   S23 stores an INCOMPLETE record and fixes it ON SCREEN -> a DB-reading Check Status would
+    --       wrongly keep reporting it (the false-RED arm).
+    -- Each arm fails in the direction the other cannot detect, so collapsing them onto one stored
+    -- state would silently drop one half of the rule. Schedule 6 is expected GREEN on both (its
+    -- check-status endpoint already evaluates the on-screen payload), so this pair is a regression
+    -- guard here rather than a defect tracker — see defects.md section 1.
+    t_anchor(25054, 2024, 'D'),  -- S22 stored-complete, broken on screen (false-GREEN arm)
+    -- S23 TAKES THE FIRST CELL IN 2025, because 2024's ACT mills are now exhausted: the extract has
+    -- 17 ACT mills and sch6 pins 15 of them at 2024 (plus 23050, whose absence is S08's fixture), so
+    -- only 16050 and 25054 were left and S21/S22 took both. 2025 is the natural next step rather than
+    -- a new idea — "year >= 2024 belongs to sch6" is the STRUCTURAL invariant this file already rests
+    -- on (every other domain pins <= 2023), so 2025 collides with nothing by construction. The
+    -- reporting-period insert above now derives its year from this table, so the 2025 period row is
+    -- created automatically and Home's year dropdown offers it.
+    t_anchor( 9050, 2025, 'D')   -- S23 stored-incomplete, fixed on screen (false-RED arm)
   );
 BEGIN
-  -- The new reporting year. Additive: 2015-2023 already exist and are untouched.
-  SELECT COUNT(*) INTO l_n FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = 2024;
-  IF l_n = 0 THEN
-    INSERT INTO THE.ILCR_REPORTING_PERIOD
-      (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, COMMENTS,
-       REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
-    VALUES
-      (2024, TO_DATE('2024-01-01', 'YYYY-MM-DD'), TO_DATE('2024-12-31', 'YYYY-MM-DD'),
-       '2024 - reporting period', 0, c_user, SYSDATE, c_user, SYSDATE);
-  END IF;
-
   FOR i IN 1 .. l_anchors.COUNT LOOP
+    -- The reporting period for THIS anchor's year, guarded on its own existence.
+    --
+    -- DERIVED FROM THE ANCHOR TABLE rather than hardcoded, changed 2026-09-18 when S23 took the first
+    -- cell in 2025. The original form inserted 2024 once, above this loop, which meant adding an
+    -- anchor in a NEW year silently produced a status row with no reporting period behind it — the
+    -- year would then be missing from Home's dropdown and the scenario would fail on the
+    -- working-context step, pointing nowhere near the cause. Looping makes any further year automatic,
+    -- which matters because "year >= 2024 belongs to sch6" is the invariant this file relies on.
+    -- Additive in every case: 2015-2023 already exist and are never touched.
+    SELECT COUNT(*) INTO l_n
+      FROM THE.ILCR_REPORTING_PERIOD
+     WHERE REPORT_YEAR = l_anchors(i).yr;
+
+    IF l_n = 0 THEN
+      INSERT INTO THE.ILCR_REPORTING_PERIOD
+        (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, COMMENTS,
+         REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES
+        (l_anchors(i).yr,
+         TO_DATE(TO_CHAR(l_anchors(i).yr) || '-01-01', 'YYYY-MM-DD'),
+         TO_DATE(TO_CHAR(l_anchors(i).yr) || '-12-31', 'YYYY-MM-DD'),
+         TO_CHAR(l_anchors(i).yr) || ' - reporting period',
+         0, c_user, SYSDATE, c_user, SYSDATE);
+    END IF;
+
     SELECT COUNT(*) INTO l_n
       FROM THE.ILCR_MILL_REPORT_STATUS
      WHERE REPORT_YEAR = l_anchors(i).yr AND ILCR_MILL_ID = l_anchors(i).mill;

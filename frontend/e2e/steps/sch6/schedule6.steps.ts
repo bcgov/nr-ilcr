@@ -4,6 +4,13 @@ import {
   AREA_TYPE_CORRECTION_ANCHOR,
   COMMENT_ONLY_ANCHOR,
   MIXED_CHECK_ANCHOR,
+  MULTI_MISSING_ANCHOR,
+  UNSAVED_BREAK_ANCHOR,
+  UNSAVED_FIX_ANCHOR,
+  CHECK_LINES,
+  S21_RECORD,
+  S22_RECORD,
+  S23_RECORD,
   NO_COMPUTED_RATE,
   READ_ONLY_ANCHOR,
   RECLASSIFY_ANCHOR,
@@ -46,7 +53,13 @@ import {
   millOptionText,
   scheduleUrl,
 } from '../../fixtures/sch6/schedule6-test-data';
-import { addRecord, readSchedule6, setGeneralComment } from './schedule6Api';
+import {
+  addRecord,
+  checkStatusStored,
+  readSchedule6,
+  setGeneralComment,
+  snapshotRecords,
+} from './schedule6Api';
 
 /**
  * UC-SCH6-001 (Schedule 6 — Report Road Management Costs) steps.
@@ -72,6 +85,9 @@ const ANCHORS: Record<string, Sch6Anchor> = {
   'comment-only': COMMENT_ONLY_ANCHOR,
   reclassify: RECLASSIFY_ANCHOR,
   'mixed-check': MIXED_CHECK_ANCHOR,
+  'multi-missing': MULTI_MISSING_ANCHOR,
+  'unsaved-break': UNSAVED_BREAK_ANCHOR,
+  'unsaved-fix': UNSAVED_FIX_ANCHOR,
 };
 
 Given(
@@ -1105,6 +1121,156 @@ Then('Check Status reports the second row is missing its cost', async ({ schedul
   await expect(schedule6Page.notification(S20_MISSING_COST_LINE)).toBeVisible();
   // And the severity word, not colour alone (NFR1).
   await expect(schedule6Page.notification('Action required')).toBeVisible();
+});
+
+// ---- S21 — one record missing several values at once -----------------------------------------------
+
+Given(
+  'a road maintenance record with neither a supply block nor a cost commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    // STORABLE, verified by probe (HTTP 200): a missing supply block and a missing cost are both Check
+    // Status findings rather than save failures, and having BOTH is no different — only the supply
+    // block's WIDTH is enforced on write, and the cost is simply nullable.
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S21_RECORD.areaTypeCode,
+      volume: S21_RECORD.volume,
+      comments,
+    });
+    // Both gaps asserted, because the slice's claim is that BOTH are reported — a record that arrived
+    // with either one filled in would reduce this to S09 or S11 while still passing one of the two
+    // line assertions.
+    expect(created.supplyBlock ?? null, 'the seeded record must have NO supply block').toBeNull();
+    expect(created.cost ?? null, 'the seeded record must have NO cost').toBeNull();
+    world.sch6RecordId = created.recordId;
+  },
+);
+
+Then('Check Status reports both missing values for that record', async ({ schedule6Page }) => {
+  // BOTH lines, for the SAME row. `evaluateRecord` accumulates into a list rather than returning on
+  // the first failure (Schedule6Service:873-890), which is the behaviour that makes "list every
+  // missing value, not just the first" true — and asserting only one of the two would pass against an
+  // implementation that stopped early.
+  await expect(schedule6Page.notification(CHECK_LINES.missingSupplyBlock)).toBeVisible();
+  await expect(schedule6Page.notification(CHECK_LINES.missingCost)).toBeVisible();
+
+  // THE SEVERITY WORD, ONCE PER FINDING — and `toHaveCount(2)` rather than `toBeVisible()`, which is a
+  // correction worth recording. Each finding renders as its OWN notification carrying its own "Action
+  // required" title, so on this two-finding record the unqualified locator matches TWO elements and
+  // `toBeVisible()` is a strict-mode violation. The single-finding slices (S09/S10/S11) never hit it
+  // because they produce one notification each.
+  //
+  // Counting is also the stronger assertion: it says every finding is announced with a severity word
+  // rather than colour alone (NFR1), not merely that one of them is. If the app ever grouped both
+  // lines under a single banner this fails — correctly, because that is a real change to how a
+  // reporter is told about multiple gaps.
+  await expect(schedule6Page.notification('Action required')).toHaveCount(2);
+});
+
+// ---- S22 / S23 — BR-10: Check Status judges the screen, not the database ---------------------------
+//
+// Expected GREEN on Schedule 6, as a REGRESSION GUARD: this endpoint already evaluates the on-screen
+// payload (`Schedule6CheckRequest`), unlike every sibling schedule. A red here is a real regression,
+// not the known cross-schedule gap — see defects.md section 1.
+
+Given(
+  'a complete road maintenance record commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S22_RECORD.areaTypeCode,
+      supplyBlock: S22_RECORD.supplyBlockCode,
+      volume: S22_RECORD.volume,
+      cost: S22_RECORD.cost,
+      comments,
+    });
+    world.sch6RecordId = created.recordId;
+
+    // THE STORED SCHEDULE MUST GENUINELY PASS BEFORE THE SCENARIO BREAKS IT ON SCREEN. Asserted at the
+    // API rather than assumed: if the seeded record were already failing, S22's "the error appears"
+    // would pass for the wrong reason and prove nothing about unsaved edits at all.
+    const stored = await checkStatusStored(request, world.scheduleKey!);
+    expect(
+      stored.outcome,
+      'the stored schedule must satisfy every Check Status requirement before the screen is broken',
+    ).toBe('MET');
+
+    world.sch6StoredSnapshot = snapshotRecords(await readSchedule6(request, world.scheduleKey!));
+  },
+);
+
+Given(
+  'a road maintenance record with no cost commented {string} already exists on that anchor, and the schedule is otherwise complete',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S23_RECORD.areaTypeCode,
+      supplyBlock: S23_RECORD.supplyBlockCode,
+      volume: S23_RECORD.volume,
+      comments,
+    });
+    expect(created.cost ?? null, 'the seeded record must genuinely have NO cost stored').toBeNull();
+    world.sch6RecordId = created.recordId;
+
+    // THE MISSING COST MUST BE THE ONLY THING OUTSTANDING, so that supplying it on screen can flip the
+    // whole schedule to MET. Asserted at the API: a second unrelated gap would leave the schedule
+    // failing after the fix and S23's met-banner assertion would fail for a reason that looks like a
+    // BR-10 defect.
+    const stored = await checkStatusStored(request, world.scheduleKey!);
+    expect(stored.outcome, 'the stored schedule should be failing before the fix').toBe('ISSUES');
+    const lines = stored.records.flatMap((r) => r.issues.map((i) => i.message.text));
+    expect(
+      lines,
+      'the ABSENT COST must be the only outstanding requirement on the stored schedule',
+    ).toEqual([CHECK_LINES.missingCost]);
+
+    world.sch6StoredSnapshot = snapshotRecords(await readSchedule6(request, world.scheduleKey!));
+  },
+);
+
+When("I clear the record's cost on screen", async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  await schedule6Page.expandRecord(1, recordId);
+  // NOT SAVED, deliberately — that is the whole mechanism. The record on screen is now in a state the
+  // stored row is not, and Check Status must describe the screen.
+  await schedule6Page.setRowCost(recordId, '');
+});
+
+When("I supply the record's cost on screen", async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  await schedule6Page.expandRecord(1, recordId);
+  await schedule6Page.setRowCost(recordId, S23_RECORD.suppliedCostInput);
+});
+
+Then('the row shows the cost supplied on screen', async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  // The screen state the verdict is about, asserted so the scenario cannot pass on a field that never
+  // took the value. The rate recomputes from the blurred entry: 78,000 / 13,000 = 6.00 exactly.
+  await expect(schedule6Page.rowCost(recordId)).toHaveValue(S23_RECORD.suppliedCostDisplay);
+  await expect(schedule6Page.rowDerived(recordId, '$ / m³')).toHaveText(
+    S23_RECORD.suppliedCostPerVolumeDisplay,
+  );
+});
+
+Then('no Schedule 6 record was changed', async ({ request, world }) => {
+  // THE THIRD CLAIM IN BOTH BR-10 ARMS, and the one that would otherwise go unproven. Check Status is a
+  // READ: an implementation that wrote the on-screen payload through on its way to a verdict would
+  // still satisfy every message assertion above while silently saving edits the reporter never
+  // committed. Comparing the whole served record set against the snapshot taken before the click is
+  // what rules that out — field by field, not just a count, so a changed COST on an unchanged number
+  // of rows cannot slip through.
+  const after = snapshotRecords(await readSchedule6(request, world.scheduleKey!));
+  expect(
+    after,
+    'Check Status must not write: the stored records should be byte-identical to the snapshot taken '
+      + 'before it ran',
+  ).toEqual(world.sch6StoredSnapshot);
 });
 
 Then('the corrected TFL record is persisted', async ({ request, world }) => {
