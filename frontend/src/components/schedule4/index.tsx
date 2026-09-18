@@ -43,8 +43,9 @@ import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import {
   ALL_CATEGORIES,
+  checkStatusFieldLabel,
+  checkStatusLocationName,
   isLocationFormValid,
-  labelFor,
   validateLocationForm,
   type CategoryForm,
 } from './validation'
@@ -66,17 +67,16 @@ const copyWarning = (name: string): string =>
 // Per-location comments cap (backend @Size(3500); the TRANSPORTATION_REPORT.COMMENTS column is 4000).
 const COMMENTS_MAX = 3500
 
-// A Check Status issue arrives as {code, message} — the API names the field by cost-item code and
-// sends the bare "Value Required" (Story 10.4 §Decision 4). Legacy named the field on every issue
-// ("Location : <name> - Lakeside Dry Dump (Cost $): Value Required", Schedule4MB.java:688), and
-// without it two missing Costs on one location render as two identical banners (#326). The label is
-// the client's own display name for that code (validation.ts / subPageDefs.ts), so prefixing it is
-// not inventing text the API never sent (AD-8) — the same route Schedule 8 takes with `field`. The
-// backend enforces Cost only, so the unit is a constant. An unknown code falls back to the bare text.
-const SCH4_CHECK_FIELD = 'Cost $'
+// A Check Status issue arrives as {code, message} — the API names the field by code and sends the
+// bare "Value Required" (Story 10.4 §Decision 4). Legacy named the field on every issue
+// ("Location : <name> - Lakeside Dry Dump (Cost $): Value Required", Schedule4MB.java:688); without
+// it two issues on one location render as two identical banners (#326). The label is the client's
+// own display name for that code (validation.ts), so prefixing it is not inventing text the API
+// never sent (AD-8) — the same route Schedule 8 takes with `field`. An unknown code falls back to
+// the bare text. Since #465 the only field the API reports is the location description.
 const describeIssue = (code: number, text: string): string => {
-  const label = labelFor(code)
-  return label === undefined ? text : `${label} (${SCH4_CHECK_FIELD}): ${text}`
+  const label = checkStatusFieldLabel(code)
+  return label === undefined ? text : `${label}: ${text}`
 }
 
 // Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
@@ -998,7 +998,7 @@ const Schedule4: FC = () => {
                     key={`issue-${location.id ?? location.name}-${issue.code}`}
                     kind="warning"
                     lowContrast
-                    title={`${location.name} — required`}
+                    title={`${checkStatusLocationName(location)} — required`}
                     subtitle={describeIssue(issue.code, issue.message.text)}
                   />
                 ))}

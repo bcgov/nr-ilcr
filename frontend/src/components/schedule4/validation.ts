@@ -45,6 +45,40 @@ export function labelFor(code: number): string | undefined {
   return ALL_CATEGORIES.find((def) => def.code === code)?.label ?? subPageDefByCode(code)?.label
 }
 
+/**
+ * The location description's issue code — `FieldIssue.LOCATION_DESCRIPTION` on the API. Never a
+ * cost-item code (those start at 40).
+ */
+export const LOCATION_DESCRIPTION_CODE = 0
+
+/**
+ * The field a Schedule 4 Check Status issue refers to, as legacy named it. Since issue #465 the API
+ * reports one field only — the location description, which legacy's Check Status tab labelled
+ * "Description" (checkStatusSchedule4.xhtml:16-23) — because legacy never required a Schedule 4
+ * Cost: its per-category checks sat behind `isXxxToCheck` flags that were never set true. A
+ * cost-item code still resolves to "<category> (Cost $)" (the Schedule4MB.java:688 wording, #326) so
+ * a finding would be named should a Cost check ever be enabled; an unknown code is undefined and the
+ * caller shows the bare text rather than inventing a label.
+ */
+export function checkStatusFieldLabel(code: number): string | undefined {
+  if (code === LOCATION_DESCRIPTION_CODE) return 'Description'
+  const category = labelFor(code)
+  return category === undefined ? undefined : `${category} (Cost $)`
+}
+
+/**
+ * How a Check Status banner names a location. The name, when there is one; when the description is
+ * blank — which is the one finding the check can raise — the location has no name to show, so the
+ * report id stands in. Legacy's tab printed "Location Descriprion - " followed by nothing.
+ */
+export function checkStatusLocationName(location: {
+  readonly id: number | null
+  readonly name: string
+}): string {
+  if (location.name.trim() !== '') return location.name
+  return location.id === null ? 'Location' : `Location ${location.id}`
+}
+
 const VOLUME = { min: 0, max: 9_999_999 }
 const COST = { min: -99_999_999, max: 99_999_999 }
 const DISTANCE = { min: 0, max: 999_999.9 }

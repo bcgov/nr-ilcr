@@ -226,17 +226,20 @@ export const schedule2Issues: Schedule2CheckStatusResponse = {
 
 export const SCH4_EMPTY_LANDING_MET_TEXT = 'All requirements for Empty Landing have been met.'
 
-/** schedule4-514-2021.json — one failing location (code 52 = Rail Haul), one met. */
+/**
+ * Hand-composed (no golden: the one finding Schedule 4 can raise since #465 — a blank location
+ * description, code 0 — cannot be stored through the app). One failing, unnamed location; one met.
+ */
 export const schedule4Issues: Schedule4CheckStatusResponse = {
   outcome: 'ISSUES',
   messages: [],
   locations: [
     {
       id: 7001,
-      name: 'Harbour Dump',
+      name: '',
       met: false,
       messages: [],
-      issues: [{ code: 52, message: REQUIRED }],
+      issues: [{ code: 0, message: REQUIRED }],
     },
     {
       id: 7002,

@@ -1,26 +1,32 @@
 # UC-SCH4-001-S28 / S29 / S30 / S31 (EF3 / BR-07) — Check Status
 #
-# RE-GROUNDING NOTE — the RULE was deliberately pinned to legacy during implementation (Story 10.4
-# §Decisions 1-3, delivery-confirmed), and two of the four source slices describe behaviour legacy never
-# actually had:
-#   - S28 (a missing category COST) is the real rule and is covered here. "Missing" means NULL only —
-#     a stored ZERO counts as present (`CheckStatusUtil.checkRequiredCost`), which is asserted below
-#     because it is the kind of rule an implementation silently gets wrong in the other direction.
-#   - S29 (a missing DISTANCE) — legacy's distance check is COMMENTED OUT (§Decision 2), and the slice
-#     catalogue itself flagged the premise as inferred from EF3's example text rather than a cited source
-#     line. So the app does NOT fail a location for a missing Distance. Covered here as the app's actual
-#     behaviour and logged as SPEC-3 (a SPEC gap: the rule never existed anywhere), NOT as a failing test:
-#     asserting the legacy-inferred rule would demand a check nobody has ever implemented.
-#   - S30 (missing COMMENTS) — same story (§Decision 3): the comment check is commented out in legacy and
-#     there is no comments-required key in the bundle at all, so Comments never block MET. Covered as
-#     actual behaviour, logged as SPEC-4 (a SPEC gap, same shape as SPEC-3).
-#   - S31 (mixed results) is the real all-or-nothing rule: per-location messages appear together, and the
-#     whole-schedule banner appears ONLY when every location passes.
+# RE-GROUNDING NOTE (2026-09-18, issue #465) — the RULE is legacy parity, and legacy's Schedule 4 check
+# required the LOCATION DESCRIPTION and nothing else:
+#   - Every per-category Cost check in legacy's `Schedule4CheckStatus` sat behind an `isXxxToCheck` flag
+#     (`:26-164`). Those flags default to false (`TransportationReportType.java:53-68`), the only
+#     assignments in the codebase are the fifteen `setXxxToCheck(false)` calls on load
+#     (`Schedule4DAO.java:243-337`), and nothing ever sets one true — so no Schedule 4 Cost was ever
+#     required, and `Schedule4MB.java:406-449` / `checkStatusSchedule4.xhtml:52-212` were dead code.
+#   - Story 10.4 §Decision 1 had read those dormant flags as an INTENDED "Cost required when the category
+#     is stored" rule and built it (the previous version of this file covered it as S28). #465 reversed
+#     that: a Volume-only category, or a sub-page row with no Cost, is NOT a finding.
+#   - The one reachable legacy failure — a blank description (`Schedule4CheckStatus.java:19-23`) — cannot
+#     be produced through the app: the save rejects a blank name (S13 / `locationEmptyOrNull`), as legacy's
+#     did. The backend's `Schedule4CheckStatusServiceTest` covers it; nothing here can.
+#   - S29 (a missing DISTANCE) — legacy's distance check is COMMENTED OUT (§Decision 2). SPEC-3.
+#   - S30 (missing COMMENTS) — same (§Decision 3); no comments-required key exists in the bundle. SPEC-4.
+#   - S31 (mixed results) — the all-or-nothing rule survives in the code (`scheduleMet &= met`), but with no
+#     producible failing location its failing arm is unreachable from a browser; covered by the backend
+#     unit test `mixed_someLocationsPassOthersFail_scheduleNotMet`. What CAN be shown is that every
+#     location gets its own SUC-005 line and the SUC-006 banner appears with them.
+#
+# So every scenario below is a PASS scenario, and their value is in what they pin: the states the old rule
+# flagged — Volume without Cost on a category, on a distance category, on a sub-page row — must now pass,
+# because a regression back to the §Decision 1 rule would fail exactly these.
 #
 # The rendered shape (confirmed against the running app): a passing location gets a success notification
-# with SUC-005's "All requirements for <name> have been met."; a failing one gets one WARNING notification
-# per missing field, titled "<name> — required" with the subtitle "Value Required"; the schedule banner
-# (SUC-006) is separate. Check Status mutates nothing (AD-5), which every scenario here relies on.
+# with SUC-005's "All requirements for <name> have been met."; the schedule banner (SUC-006) is separate.
+# Check Status mutates nothing (AD-5), which every scenario here relies on.
 
 @UC-SCH4-001 @sch4
 Feature: Schedule 4 — Check Status reports each location's readiness
@@ -29,31 +35,26 @@ Feature: Schedule 4 — Check Status reports each location's readiness
   I want Check Status to tell me which locations still need values
   So that I can complete the schedule before submission
 
+  # The state the OLD rule existed to catch (BR-07 as written from §Decision 1) and the exact finding
+  # issue #465 reported: a Volume with no Cost. Legacy never reported it, and now neither does the app.
   @p0 @S28
-  Scenario: A location missing a category Cost is flagged, then passes once the Cost is supplied
+  Scenario: A location with a Volume but no Cost passes Check Status (#465)
     Given the Schedule 4 anchor "check-missing-cost" is an editable Draft with no locations
-    # A stored category with a Volume but NO Cost — the exact state BR-07 exists to catch.
     And the Schedule 4 location "E2E Willow Bend" is already saved with:
       | category          | distance | volume | cost |
       | Lakeside Dry Dump |          | 1200   |      |
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4
     And I check Schedule 4 status
-    Then the Schedule 4 check-status result for "E2E Willow Bend" is not met
-    And I should not see the message "All requirements for this schedule have been met"
-    # Recovery, per EF3 step 2-3: fill the Cost, save, re-check.
-    When I open the Schedule 4 location "E2E Willow Bend" for edit
-    And I enter "3600" in the Schedule 4 "Lakeside Dry Dump" "cost" cell
-    And I save the Schedule 4 location
-    Then I should see the message "Data saved successfully"
-    When I check Schedule 4 status
     Then the Schedule 4 check-status result for "E2E Willow Bend" is met
     And I should see the message "All requirements for this schedule have been met"
+    And the Schedule 4 check-status shows no required-value issue
 
-  # "Missing" is NULL, not falsy: a stored Cost of 0 is a real reported figure and must PASS. Legacy's
-  # `CheckStatusUtil` keyed on null only, and this is the assertion that keeps the rewrite honest about it.
+  # A stored Cost of 0 is a real reported figure; it passed under the old rule too (legacy's
+  # `CheckStatusUtil` keyed on null only) and it passes now. Kept because it is the value an
+  # implementation most easily gets wrong in the other direction.
   @p1 @S28
-  Scenario: A stored Cost of zero counts as present
+  Scenario: A stored Cost of zero passes Check Status
     Given the Schedule 4 anchor "check-zero-cost" is an editable Draft with no locations
     And the Schedule 4 location "E2E Zero Cost" is already saved with:
       | category          | distance | volume | cost |
@@ -64,9 +65,11 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     Then the Schedule 4 check-status result for "E2E Zero Cost" is met
     And I should see the message "All requirements for this schedule have been met"
 
-  # S31 — the all-or-nothing rule, with both outcomes in ONE response.
+  # S31 — every location reports on its own line, and the schedule banner comes with them. The second
+  # location is the one the old rule would have failed, so this also pins that a complete and a
+  # Volume-only location are treated alike.
   @p1 @S31
-  Scenario: One complete and one incomplete location report independently
+  Scenario: Two locations, one of them Volume-only, each report met and the schedule banner appears
     Given the Schedule 4 anchor "check-mixed" is an editable Draft with no locations
     And the Schedule 4 location "E2E Complete Loc" is already saved with:
       | category          | distance | volume | cost |
@@ -78,14 +81,13 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     When I open Schedule 4
     And I check Schedule 4 status
     Then the Schedule 4 check-status result for "E2E Complete Loc" is met
-    And the Schedule 4 check-status result for "E2E Incomplete Loc" is not met
-    # SUC-006 is withheld while ANY location fails — that is the gate.
-    And I should not see the message "All requirements for this schedule have been met"
+    And the Schedule 4 check-status result for "E2E Incomplete Loc" is met
+    And I should see the message "All requirements for this schedule have been met"
 
-  # A sub-page ROW with no Cost fails its location too (the rule spans categories AND rows) — the half of
-  # BR-07 that the category-only scenarios above cannot reach.
+  # A sub-page ROW with no Cost — the other half of the old rule ("and per sub-page row"). Legacy's row
+  # checks were behind the same dormant flags (`Schedule4CheckStatus.java:96-140`).
   @p1 @S28 @S11
-  Scenario: A sub-page row missing its Cost fails the location
+  Scenario: A sub-page row with no Cost passes Check Status (#465)
     Given the Schedule 4 anchor "check-row-cost" is an editable Draft with no locations
     And the Schedule 4 location "E2E Row Cost Loc" is already saved with:
       | category          | distance | volume | cost |
@@ -96,9 +98,8 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4
     And I check Schedule 4 status
-    # The categories are all complete, so ONLY the row can be the reason.
-    Then the Schedule 4 check-status result for "E2E Row Cost Loc" is not met
-    And I should not see the message "All requirements for this schedule have been met"
+    Then the Schedule 4 check-status result for "E2E Row Cost Loc" is met
+    And I should see the message "All requirements for this schedule have been met"
 
   # S29 re-grounded — a distance-based category with amounts but NO Distance cannot even be saved (BR-04
   # blocks it), and a fully-empty one is not stored at all, so there is no state in which a "missing
@@ -143,42 +144,8 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     And I check Schedule 4 status
     Then I should see the message "All requirements for this schedule have been met"
 
-  # ---------------------------------------------------------------------------------------------------
-  # DIV-2 — FIXED (issue #326). Was deliberately red until the page named the field; see this UC's
-  # defects.md (DIV-2).
-  #
-  # Legacy named the field a value was required for: `addMessageCheckStatus()` built
-  # "Location : <name> - <Field Name> (Cost $) " + "Value Required", and the rewrite's backend still
-  # returns the cost-item `code` on every issue for exactly that purpose (Story 10.4 §Decision 4). The
-  # page used to render only the location name and "Value Required", so a location missing two category
-  # Costs showed two IDENTICAL notifications and the reporter could not tell which lines to fix. It now
-  # composes the label ahead of the verbatim text — "Lakeside Dry Dump (Cost $): Value Required" — under
-  # the unchanged "<location> — required" title.
-  #
-  # Asserted as "the category is named somewhere in the Check Status output" rather than against the legacy
-  # JSF string: the notification shape was deliberately re-grounded (title = location, subtitle = message),
-  # so pinning the old literal would demand a format nobody intends to restore. What was genuinely missing
-  # was the field identity.
-  #
-  # SCHEDULE 4 WAS THE ONLY PAGE THAT DROPPED IT (swept 2026-08-19). Legacy named the field on every
-  # schedule (FacesUtil.addCheckStatusErrorMessage composed "<label>: <message>"), and every other
-  # schedule here does — Schedules 1/2/3/5/11 compose the label into the message text server-side,
-  # and Schedule 8 returns the field separately (Schedule 4's exact shape) then renders it in the
-  # notification title (schedule8/CheckStatusResult.tsx:26). The fix followed that precedent: issue.code
-  # is mapped through `labelFor()` in components/schedule4/validation.ts.
-  # ---------------------------------------------------------------------------------------------------
-  @p1 @S28
-  Scenario: Check Status names which category needs a value (DIV-2 / issue #326)
-    Given the Schedule 4 anchor "check-issue-label" is an editable Draft with no locations
-    And the Schedule 4 location "E2E Two Gaps" is already saved with:
-      | category          | distance | volume | cost |
-      | Lakeside Dry Dump |          | 1200   |      |
-      | Water Dump        |          | 500    |      |
-    And I have selected that mill and reporting year on the Home page
-    When I open Schedule 4
-    And I check Schedule 4 status
-    # Both gaps are reported — two issues on the one location…
-    Then the Schedule 4 check-status reports 2 required-value issues for "E2E Two Gaps"
-    # …and each one says WHICH category is short (these two were red until #326 restored the label).
-    And the Schedule 4 check-status names the "Lakeside Dry Dump" category as the missing one
-    And the Schedule 4 check-status names the "Water Dump" category as the missing one
+  # Ex-DIV-2 / issue #326 ("name the missing field"). Its scenario seeded two Volume-only categories and
+  # asserted that each finding named its category. Under #465 there is no finding to name — the labelling
+  # itself landed with #326 (`describeIssue()` in `schedule4/index.tsx`) and is covered by Vitest for the
+  # one field the API can still report and for a cost-item code should one ever be emitted again. Nothing
+  # here can reach it. The `check-issue-label` anchor has been released.

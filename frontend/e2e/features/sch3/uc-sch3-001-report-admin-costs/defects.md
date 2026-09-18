@@ -398,7 +398,7 @@ count does.
     | sch3 (here) | `@S12` Override · `@S25` cleared amount · `@S26` the mirror | — |
     | sch1 | `@S27` / `@S28` | sch1 DIV-6 |
     | sch2 | `@S17` / `@S18` | sch2 DIV-2 |
-    | sch4 | `@S33 @S34` (one scenario, both directions — anchor limit) | sch4 DIV-8 |
+    | sch4 | ~~`@S33 @S34`~~ RETIRED 2026-09-18 — since #465 nothing saved on Schedule 4 can be flagged, so no instance is producible | sch4 DIV-8 |
     | sch11 | `@S21` / `@S22` (inline row editor, NOT the Add panel) | sch11 DIV-5 |
 
     Ex-**GAP-4** tracked the absence of these and was CLOSED by writing them.
