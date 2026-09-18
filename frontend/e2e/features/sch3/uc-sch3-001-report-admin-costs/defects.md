@@ -193,7 +193,9 @@ count does.
     Unacceptable link shows the Other Costs wording. Split out as **DIV-7** below. The claim was wrong
     because it was written from the *app* side — one modal, one string, gate restored — without going back
     to the legacy page to count the strings.
-  - **Action:** none for this entry. The wording half is DIV-7.
+  - **Action:** none for this entry. The wording half was DIV-7, **fixed and closed 2026-09-18** — so as
+    of that date this entry's original "matches legacy on both halves" claim is finally true, by the fix
+    rather than by the claim.
   - **Priority / env:** p2 · local seeded DB · Chrome.
   - **Status:** CLOSED (accepted re-grounding, then superseded by the #296 fix) 2026-08-26. Found
     2026-08-24; scope corrected 2026-08-25 after the repo owner verified the navigation confirm against
@@ -432,10 +434,13 @@ count does.
     (note the capital U). Actual `The schedule has to be saved before opening other costs`.
   - **Why (technical):** legacy put the string in each link's own `onclick`, and wrote it twice —
     `webapp/schedule3.xhtml:267` on `subtotalOtherCostsEditsEnabledAlert` and `:293` on the Included
-    Unacceptable equivalent, both rendered only when `!schedule3MB.isScheduleOpen()`. The rewrite has ONE
-    generic `openSubPage` handler (`components/schedule3/index.tsx:272`) that sets one flag, and one modal
-    body rendering one constant, `ALT_SAVE_BEFORE_SUB_PAGE` (`:47`, `:685`). Fix: a second constant plus
-    the sub-page identity the handler already receives.
+    Unacceptable equivalent, both rendered only when `!schedule3MB.isScheduleOpen()`. The rewrite had ONE
+    generic `openSubPage` handler in `components/schedule3/index.tsx` that set one *boolean* flag (then
+    named `subPageBlockedOpen`), and one modal body rendering one constant (then named
+    `ALT_SAVE_BEFORE_SUB_PAGE`) — both symbols have since been replaced by the fix and no longer exist.
+    A boolean could not express *which* link was refused, so the second string had nowhere to come from:
+    a shape problem rather than an oversight about text. Fix: a second constant plus the sub-page identity
+    the handler already receives.
   - **How we caught it (verified against legacy source and the running app 2026-08-27):** while re-reading
     DIV-3's re-closure, which asserted "the app now matches legacy on both halves". Swept every legacy
     `.xhtml` for `saved before opening` — exactly **three** hits: `schedule1.xhtml:497` and
@@ -461,21 +466,51 @@ count does.
     Schedule 3" prompt are all untouched. **S19 went green on its own — NOT ONE assertion, step or fixture
     was edited**; only the `@discovered-divergence` tag and the `[DISCOVERED …]` title marker came off,
     which is the whole design of a red that asserts the correct behaviour. The two e2e fixture strings
-    (`fixtures/sch3/schedule3-test-data.ts`, `exact: true`) already held both wordings and needed no change,
-    so they were the fix's third independent corroboration alongside the legacy source and the committed
-    requirement ALT-003.
+    (`fixtures/sch3/schedule3-test-data.ts`, `exact: true`) already held both wordings and needed no change.
+  - **What was actually checked about the strings, stated precisely rather than as "three independent
+    sources".** An earlier draft of this bullet called the fixture and the ALT-003 catalogue row two further
+    corroborations beside the legacy source. They are not independent of it: both descend from earlier
+    *readings of the same two legacy lines*, so agreement between them only shows the reading was copied
+    consistently. What was done on 2026-09-18 is narrower and worth more: `schedule3.xhtml:267` and `:293`
+    were re-read at source, and both app constants were compared to them **programmatically**, as string
+    equality rather than by eye. The fixture and catalogue rows were then confirmed to match the same source
+    — useful as a consistency check on our own documents, not as independent evidence about legacy.
+  - **How S19's green was verified, so the claim is reproducible.** Run **2026-09-18**, from `frontend/e2e`:
+    `npm run bddgen && npx playwright test --grep "@save-first-gate"` → **183 passed / 0 failed** (180
+    preflight anchor assertions plus sch3 `@S18`, sch3 `@S19` and the sch1 `@S08` twin). Against the **local
+    seeded delivery DB** — `THE/…@localhost:1525/DBDOCK_01`, the same database this log's header names — with
+    the app stack served from the local Docker compose (frontend `:3000`, backend `:8080`). Naming the
+    database matters since #327: there are two e2e databases, the seeded one and the extract, and a scenario
+    can pass in one and fail in the other. Anchor: `never-started` (24051/2015), un-patched and read-only —
+    the scenario clicks a link that refuses to navigate, so nothing was written.
+  - **A FALSE RED on the way, and it is the most useful thing this fix turned up.** The first run of the
+    command above reported `@S19` **failing**, on exactly the assertion the fix addresses, with the fix
+    already correct on disk. Cause: the local stack serves the frontend from a Vite dev server in a
+    container with the source bind-mounted from Windows (`docker-compose.yml`, `./frontend:/app`), and
+    Docker Desktop does not forward inotify events across that mount — so Vite never invalidated its
+    in-memory transform and served the **pre-fix** module to the browser. `touch`-ing the file inside the
+    container did not clear it; `docker restart frontend` did, after which both scenarios passed. The cheap
+    tell, worth running before trusting ANY frontend e2e result on this stack in either direction:
+    `curl -s http://localhost:3000/src/components/schedule3/index.tsx` versus the same URL with
+    `?t=<epoch>` — if only the cache-busted one contains the new code, the dev server is stale. **A stale
+    dev server fails by reproducing the very defect just fixed**, naming the right string on the right
+    element, which is the most convincing possible false red; an unexamined one would have been reported as
+    a broken fix.
   - **The inconsistency is PRESERVED on purpose, and that is worth saying out loud:** legacy's two strings
     disagree with each other — `other costs` lowercase, `Unacceptable costs` with a capital U — and the fix
     copies both byte-for-byte rather than harmonising them. A parity fix that tidied the wording would have
     replaced one divergence with another. Copy cleanup, if it is ever wanted, is a BA ticket.
-  - **Priority / env:** p2 · branch `test/schedule-3-e2e` (found) / `fix/373-schedule3-unacceptable-save-first-message` (fixed) · local seeded DB · Chrome.
+  - **Priority / env:** p2 · branch `test/schedule-3-e2e` (found) / `fix/373-schedule3-unacceptable-save-first-message` (fixed) · local seeded delivery DB `THE/…@localhost:1525/DBDOCK_01` · Chrome.
   - **Status:** CLOSED (fixed and verified) 2026-09-18. Found 2026-08-27 while auditing DIV-3's own
     re-closure claim; confirmed and triaged by raising ticket #373 the same day; fixed 2026-09-18 by the
-    branch above and re-verified here by S19 going green with its assertions untouched. Unit coverage was
-    added alongside it (`src/components/schedule3/__tests__/Schedule3.test.tsx`, four cases: each link's own
-    string, the dismiss-one-then-click-the-other case that proves no stale message survives, and the
-    read-only pass-through), and the ALT-003 case is mutation-proved — making the new constant identical to
-    ALT-002's string reddens it.
+    branch above and re-verified here by S19 going green with its assertions untouched — see the run note
+    above for the command, date, database and anchor. Unit coverage was added alongside it
+    (`src/components/schedule3/__tests__/Schedule3.test.tsx`, six cases: each link's own string, the
+    dismiss-one-then-click-the-other case that proves no stale message survives, the click-the-other-link-
+    while-the-gate-is-still-open interleaving, the read-only pass-through and the editable-saved
+    contamination guard), and it is mutation-proved twice over: making the new constant identical to
+    ALT-002's string reddens three of them, and an unmapped or mistyped route is now a compile error rather
+    than a silently inherited Other Costs wording.
   - **Test:** `save-first-gate.feature` `@p2 @S19` ×1 — GREEN, tag retired, assertions untouched (S18, the
     Subtotal Other Costs arm, was green throughout). Read-only: the scenario clicks a link that refuses to
     navigate, so it writes nothing and needs no cleanup.
@@ -735,8 +770,19 @@ deliberately excluded was re-checked against the new app rather than inherited �
     (`!disableReportEdits() and !isScheduleOpen()`) → the passive modal, no navigation; `…EditsEnabled`
     (`… and isScheduleOpen()`) → the "Leave Schedule 3" confirm, then navigate; `…EditsDisabled`
     (`disableReportEdits()`) → navigate with no confirm, covered by `render-states` `@p2 @S15`. The ONLY
-    thing legacy has that the app lacks is ALT-003's separate wording, which is **DIV-7** — that entry
-    stands, and this is not a reason to widen it.
+    thing legacy had that the app lacked was ALT-003's separate wording — **DIV-7**, now CLOSED (fixed
+    2026-09-18), and it was never a reason to widen this entry.
+  - **CORRECTION 2026-09-18 — "the app matches all three" is true except in one corner, and it is worth
+    writing down rather than leaving as a clean claim.** Legacy's three `rendered` conditions are mutually
+    exclusive and only the first two mention `isScheduleOpen()`; `…EditsDisabled` is gated on
+    `disableReportEdits()` **alone**. So in legacy a read-only schedule that had NEVER been saved rendered
+    `…EditsDisabled` and navigated — no alert, no confirm. The app checks saved-ness *before* editability
+    in `openSubPage`, so that same state raises the "Save required" gate instead. Found while adding the
+    #373 unit coverage, from reading these three `rendered` conditions rather than from a failing test.
+    **Pre-existing, unrelated to #373, and NOT changed by it** — the app's behaviour is arguably the safer
+    one (the sub-page still 404s for a never-saved schedule whoever is looking at it), so this is a
+    ratification question rather than an obvious bug. Deferred as its own item; deliberately not raised as
+    a new `@discovered-*` red here, because no scenario in this suite reaches read-only + never-saved.
 
 - **HOW TO TELL A NEVER-SAVED SCHEDULE FROM A SAVED ONE — you cannot do it by looking at the form.**
   Since #296 an unsaved schedule renders a full blank editable form *on purpose*, and a saved schedule can

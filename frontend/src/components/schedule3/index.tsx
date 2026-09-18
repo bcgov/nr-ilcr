@@ -60,6 +60,18 @@ const COMMENTS_MAX = 3500
 const ROUTE_OTHER_ACCEPTABLE = '/schedule-3/other-acceptable-costs'
 const ROUTE_UNACCEPTABLE = '/schedule-3/included-unacceptable-costs'
 
+// The save-first message is keyed by route through an EXHAUSTIVE map rather than selected by a
+// `route === ROUTE_UNACCEPTABLE ? … : …` ternary. The ternary reads identically today but makes
+// ALT-002 the CATCH-ALL, which is the exact shape of defect #373: a third sub-page, or either route
+// constant re-valued, would silently inherit the Other Costs wording and nothing would fail. With a
+// `Record<SubPageRoute, string>` and `openSubPage` narrowed to `SubPageRoute`, an unmapped or
+// mistyped route is a COMPILE error instead of a wrong message on screen.
+type SubPageRoute = typeof ROUTE_OTHER_ACCEPTABLE | typeof ROUTE_UNACCEPTABLE
+const ALT_SAVE_BEFORE: Record<SubPageRoute, string> = {
+  [ROUTE_OTHER_ACCEPTABLE]: ALT_SAVE_BEFORE_OTHER_COSTS,
+  [ROUTE_UNACCEPTABLE]: ALT_SAVE_BEFORE_UNACCEPTABLE,
+}
+
 const CODE_ANNUAL_RENTS = 29
 // Fixed-line labels — verbatim legacy schedule3.xhtml outputLabels (frontend-owned, like Schedule 1).
 const LINE_LABELS: Record<number, string> = {
@@ -149,7 +161,7 @@ const Schedule3: FC = () => {
   // The sub-page whose open the save-first gate REFUSED (null = modal closed). A route rather than a
   // boolean because legacy's wording names the link that was clicked (ALT-002 vs ALT-003, defect
   // #373) — one source of truth, so no stale message can outlive the click that raised it.
-  const [blockedRoute, setBlockedRoute] = useState<string | null>(null)
+  const [blockedRoute, setBlockedRoute] = useState<SubPageRoute | null>(null)
   // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed). Deliberately
   // distinct from `blockedRoute` above — that one means "the gate refused", this one "a discard is
   // pending" — and neither handler ever writes the other.
@@ -282,7 +294,7 @@ const Schedule3: FC = () => {
     })
   }
 
-  const openSubPage = (route: string) => {
+  const openSubPage = (route: SubPageRoute) => {
     // Both sub-pages require a SAVED Schedule 3: their controllers still call
     // validateScheduleViewable (deliberately kept — #296 D1), so opening one from a never-saved
     // schedule would 404. Schedule 3 never had this gate, because before defect #296 the parent
@@ -456,7 +468,7 @@ const Schedule3: FC = () => {
     key: string,
     label: string,
     count: number,
-    route: string,
+    route: SubPageRoute,
     total: ThreeColumnTotal,
     popHidden = false,
   ) => (
@@ -724,7 +736,7 @@ const Schedule3: FC = () => {
           {CONFIRM_NAVIGATION}
         </ConfirmNavigationModal>
       )}
-      {/* The save-first gate. Legacy raised a per-link alert, so the message is selected by the
+      {/* The save-first gate. Legacy raised a per-link alert, so the message is looked up by the
           route that was refused rather than shared between both links (defect #373). */}
       {blockedRoute !== null && (
         <Modal
@@ -733,11 +745,7 @@ const Schedule3: FC = () => {
           modalHeading="Save required"
           onRequestClose={() => setBlockedRoute(null)}
         >
-          <p>
-            {blockedRoute === ROUTE_UNACCEPTABLE
-              ? ALT_SAVE_BEFORE_UNACCEPTABLE
-              : ALT_SAVE_BEFORE_OTHER_COSTS}
-          </p>
+          <p>{ALT_SAVE_BEFORE[blockedRoute]}</p>
         </Modal>
       )}
     </div>

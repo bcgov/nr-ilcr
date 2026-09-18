@@ -438,8 +438,10 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED (covered) 2026-08-27. Raised 2026-08-07 and re-verified then; made reachable by #296
     (2026-08-26); closed by writing the E2E scenario 2026-08-27.
   - **Test:** `save-first-gate.feature` `@p1 @S08` — GREEN. Mirrors `sch3`'s `save-first-gate.feature`,
-    which covers the same behaviour on the other schedule #296 touched (and where the second sub-page's
-    wording is still wrong — sch3 DIV-7).
+    which covers the same behaviour on the other schedule #296 touched. That suite's second sub-page
+    carried the wrong wording (sch3 DIV-7 → [#373](https://github.com/bcgov/nr-ilcr/issues/373)); **fixed
+    2026-09-18**, and Schedule 1 was never affected — legacy gives it one such link and one string
+    (`schedule1.xhtml:497`), which this scenario asserts verbatim and which the fix did not touch.
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
 

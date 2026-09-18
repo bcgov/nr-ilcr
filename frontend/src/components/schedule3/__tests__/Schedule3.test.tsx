@@ -532,7 +532,7 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
   })
 
-  test('a sub-page on a never-saved schedule shows ALT-001 and does not navigate (#296)', async () => {
+  test('a sub-page on a never-saved schedule shows ALT-002 and does not navigate (#296)', async () => {
     // Schedule 3 had NO save-required gate on its sub-pages at all — before defect #296 the parent
     // page itself 404'd when unsaved, so the case could not arise. It can now: the GET serves an
     // empty editable document while both sub-page controllers still require a summary
@@ -548,7 +548,9 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     mockNavigate.mockClear()
     await user.click(screen.getByRole('button', { name: /^Subtotal Other Costs \(\d+\):$/ }))
 
-    // Legacy ALT-001, verbatim (the same string Schedule 1 uses) — and no navigation.
+    // Legacy ALT-002, verbatim (the same string Schedule 1 uses) — and no navigation. This is
+    // ALT-002, not ALT-001: ALT-001 is the S111 Annual Rent alert, and the save-first pair is
+    // ALT-002 (other costs) / ALT-003 (Unacceptable costs) per UC-SCH3-001-technical.md.
     expect(
       await screen.findByText('The schedule has to be saved before opening other costs'),
     ).toBeInTheDocument()
@@ -560,12 +562,22 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
 
     // It is a passive modal, so dismissing it must return the user to the schedule rather than
     // leaving the page blocked behind it.
+    //
+    // ASSERTED BY ROLE, NOT BY TEXT, and the difference is load-bearing since #373. The click above
+    // re-points the gate at the OTHER sub-page while the modal is still open, so the ALT-002 string
+    // leaves the DOM on that click rather than on the dismiss — which made a text-absence assertion
+    // here pass even if onRequestClose had become a no-op. The dialog's own absence is the only thing
+    // that actually witnesses the close.
+    //
+    // THIS DEPENDS ON THE GATE MODAL BEING CONDITIONALLY MOUNTED (`{blockedRoute !== null && <Modal …>}`)
+    // rather than toggled with `open={…}`, because a CLOSED Carbon Modal stays in the DOM — which is why
+    // the delete-confirm and "Leave Schedule 3" dialogs have to be scoped by name elsewhere in this file.
+    // If the gate is ever switched to the `open={…}` form, this query starts matching the closed dialog
+    // and goes vacuous again in a new way. Re-assert on something else at that point.
     const blocked = screen.getByRole('dialog', { name: 'Save required' })
     await user.click(within(blocked).getByRole('button', { name: /close/i }))
     await waitFor(() =>
-      expect(
-        screen.queryByText('The schedule has to be saved before opening other costs'),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole('dialog', { name: 'Save required' })).not.toBeInTheDocument(),
     )
     expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toBeInTheDocument()
   })
@@ -802,7 +814,10 @@ describe('Schedule3 sub-page navigation (AC6)', () => {
   /** The served document with its optimistic-lock token stripped — i.e. never saved. */
   const neverSavedDoc = () => {
     const { revisionCount, ...rest } = schedule3Doc
-    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    // The invariant is only that there WAS a token to strip — asserting an exact value would make a
+    // legitimate bump of the shared fixture's revisionCount redden all four #373 cases with a message
+    // about an optimistic-lock token, aiming the next maintainer at the wrong defect entirely.
+    expect(revisionCount).not.toBeUndefined()
     return rest
   }
 
@@ -881,11 +896,60 @@ describe('Schedule3 sub-page navigation (AC6)', () => {
     expect(mockNavigate).not.toHaveBeenCalled()
   })
 
+  test('clicking the second link while the first gate is still open swaps the message in place (#373)', async () => {
+    // The one interleaving the cases above do not reach: the modal is NEVER dismissed. Legacy could
+    // not produce this state at all — its gate was a blocking window.alert(), so the second link was
+    // unclickable until the first alert was acknowledged — which is why the re-grounding to a Carbon
+    // modal created a state with no legacy answer.
+    //
+    // THIS ASSERTS TODAY'S BEHAVIOUR AND RATIFIES NOTHING. `blockedRoute` is one piece of state, so
+    // the second click re-points it and the body swaps under the open modal; the alternative (ignore
+    // clicks while the gate is open, closer to legacy's blocking alert) is a UX question nobody has
+    // ruled on. It is pinned here so that whichever way it is later decided, the decision is visible
+    // as a test change rather than drifting silently. Do not "fix" this by adding a re-entrancy guard
+    // without a ruling.
+    mockNavigate.mockClear()
+    server.use(http.get(URL, () => HttpResponse.json(neverSavedDoc())))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+    expect(await saveRequiredText()).toBe(ALT_002)
+
+    // No dismiss between the clicks.
+    await user.click(screen.getByRole('button', { name: UNACCEPTABLE_LINK }))
+    await waitFor(async () => expect(await saveRequiredText()).toBe(ALT_003))
+    expect(screen.queryByText(ALT_002)).not.toBeInTheDocument()
+    // Still exactly ONE gate dialog — the second click re-points the existing one rather than
+    // stacking a second modal over it.
+    expect(screen.getAllByRole('dialog', { name: 'Save required' })).toHaveLength(1)
+
+    // And back, still without dismissing.
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+    await waitFor(async () => expect(await saveRequiredText()).toBe(ALT_002))
+    expect(screen.queryByText(ALT_003)).not.toBeInTheDocument()
+
+    expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
   test('a read-only SAVED schedule opens either sub-page directly — no gate and no confirm', async () => {
-    // The gate keys off the saved-ness of the schedule, not off editability, and a read-only schedule
-    // has no unsaved edits to warn about — so neither modal should appear. Pinned here because the
-    // gate and the discard confirm are adjacent nullable-route states and a mix-up would surface as a
-    // spurious dialog on the view-only path.
+    // A read-only schedule has nothing unsaved to warn about and is already saved, so neither modal
+    // should appear and the link should navigate on the first click.
+    //
+    // Deliberately NOT claimed here: that this case guards against cross-contamination between the
+    // two nullable-route states. It cannot — ConfirmNavigationModal renders under `{editable && …}`,
+    // so with `editable: false` the "Leave Schedule 3" dialog is structurally incapable of appearing
+    // and querying for it proves nothing. The real contamination guard is the editable-saved case
+    // below, where both modals CAN render.
+    //
+    // Also deliberately NOT claimed: the general principle "the gate keys off saved-ness, not
+    // editability". That happens to describe this app but is the INVERSE of legacy, which rendered a
+    // third link variant (`…EditsDisabled`, schedule3.xhtml:275-278 / :301-304) that navigated with
+    // no alert and no confirm whenever edits were disabled — saved or not. The divergence is
+    // pre-existing, is not this defect's to change, and is being deferred separately; this case pins
+    // the app's behaviour without endorsing the rule as legacy's.
     mockNavigate.mockClear()
     server.use(
       http.get(URL, () =>
@@ -897,13 +961,49 @@ describe('Schedule3 sub-page navigation (AC6)', () => {
 
     await screen.findByText('Licenses, Fees, Insurance')
     await user.click(screen.getByRole('button', { name: UNACCEPTABLE_LINK }))
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3/included-unacceptable-costs' })
+    // Last-called + an exact count: a bare toHaveBeenCalledWith tolerates a double-navigate.
+    expect(mockNavigate).toHaveBeenCalledTimes(1)
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/schedule-3/included-unacceptable-costs',
+    })
 
     await user.click(screen.getByRole('button', { name: OTHER_LINK }))
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3/other-acceptable-costs' })
+    expect(mockNavigate).toHaveBeenCalledTimes(2)
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/schedule-3/other-acceptable-costs' })
 
     expect(screen.queryByRole('dialog', { name: 'Save required' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: 'Leave Schedule 3' })).not.toBeInTheDocument()
+    expect(screen.queryByText(ALT_002)).not.toBeInTheDocument()
+    expect(screen.queryByText(ALT_003)).not.toBeInTheDocument()
+  })
+
+  test('an editable SAVED schedule raises the discard confirm and NEVER the save-first gate (#373)', async () => {
+    // The real cross-contamination guard, on the one document where both modals can render: editable
+    // AND saved. `pendingRoute` must drive the "Leave Schedule 3" confirm while `blockedRoute` stays
+    // null throughout — a handler that wrote the wrong one of the two adjacent nullable-route states
+    // would surface here as a "Save required" modal on a schedule that is already saved.
+    mockNavigate.mockClear()
+    server.use(http.get(URL, () => HttpResponse.json(schedule3Doc)))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+
+    // Cancel first: the gate must not appear on the refused path either.
+    await user.click(screen.getByRole('button', { name: UNACCEPTABLE_LINK }))
+    const dialog = await screen.findByRole('dialog', { name: 'Leave Schedule 3' })
+    expect(screen.queryByRole('dialog', { name: 'Save required' })).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /cancel/i }))
+    expect(mockNavigate).not.toHaveBeenCalled()
+
+    // Then continue through, on the other link.
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+    const second = await screen.findByRole('dialog', { name: 'Leave Schedule 3' })
+    await user.click(within(second).getByRole('button', { name: /continue/i }))
+    expect(mockNavigate).toHaveBeenCalledTimes(1)
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/schedule-3/other-acceptable-costs' })
+
+    // Neither save-first string was ever rendered on a saved schedule.
+    expect(screen.queryByRole('dialog', { name: 'Save required' })).not.toBeInTheDocument()
     expect(screen.queryByText(ALT_002)).not.toBeInTheDocument()
     expect(screen.queryByText(ALT_003)).not.toBeInTheDocument()
   })
