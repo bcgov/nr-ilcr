@@ -66,7 +66,10 @@ class ReportTrackTransitionServiceTest {
   private Authentication submitter;
 
   /**
-   * The writer is REAL, over the same mocked repository. Submit's audit sweep lives in {@link
+   * One fixture method, not two: JUnit 5 does not order {@code @BeforeEach} methods across a class,
+   * so anything a second one set up would be sequenced only by luck (and Sonar rule S8745 says so).
+   *
+   * <p>The writer is REAL, over the same mocked repository. Submit's audit sweep lives in {@link
    * ReportTransitionWriter#stampAuditColumns} (one copy, shared with verify), so a mocked writer
    * would silently retire every touch assertion below — the statement-order test, the deadlock arm,
    * and the two never()-touched arms. Its {@code @Transactional} is inert here: nothing proxies it
@@ -74,7 +77,7 @@ class ReportTrackTransitionServiceTest {
    * submit's transaction.
    */
   @BeforeEach
-  void wire() {
+  void wireServiceAndPrincipal() {
     service =
         new ReportTrackTransitionService(
             millContextService,
@@ -83,10 +86,6 @@ class ReportTrackTransitionServiceTest {
             millUserXrefRepository,
             repository,
             new ReportTransitionWriter(repository, millUserXrefRepository));
-  }
-
-  @BeforeEach
-  void principal() {
     submitter =
         new UsernamePasswordAuthenticationToken(
             new MockUserPrincipal(USER, GUID),
