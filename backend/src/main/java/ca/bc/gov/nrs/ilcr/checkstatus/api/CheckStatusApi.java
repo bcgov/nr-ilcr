@@ -68,13 +68,14 @@ public interface CheckStatusApi {
    * caller's scope → 403; no {@code ILCR_MILL_REPORT_STATUS} row → 404 {@code
    * checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002. Inside ONE write
    * transaction that locks the status row first: track not at Draft → 409 {@code
-   * reportSubmissionErrorMsg} (legacy's guard text); any of the eleven Schedule 1–10 checks failing
-   * → 409 {@code reportNotSubmittedErrorMsg}, nothing written; a persistence failure after the
-   * guard → 500 {@code reportSubmissionErrorMsg}, rolled back. Success → 200 {@code {"message":
-   * {"key": "sch1-10SubmittedMsg", "text": …}}} issued only after commit, with the status row at
-   * {@code S}, the submitting user's assignment recorded as the report's licensee, every Schedule
-   * 1–10 row's audit columns touched and the ten category rows at {@code A}. Schedule 11's track is
-   * never touched.
+   * submitNotDraftErrorMsg} ("Schedules 1-10 are no longer in Draft and cannot be submitted." — a
+   * business-ruled departure from legacy's generic guard text); any of the eleven Schedule 1–10
+   * checks failing → 409 {@code reportNotSubmittedErrorMsg}, nothing written; a persistence failure
+   * after the guard → 500 {@code reportSubmissionErrorMsg}, rolled back. Success → 200 {@code
+   * {"message": {"key": "sch1-10SubmittedMsg", "text": …}}} issued only after commit, with the
+   * status row at {@code S}, the submitting user's assignment recorded as the report's licensee,
+   * every Schedule 1–10 row's audit columns touched and the ten category rows at {@code A}.
+   * Schedule 11's track is never touched.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)

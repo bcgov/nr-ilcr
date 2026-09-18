@@ -42,9 +42,8 @@ class CheckStatusSubmitAuthorizationIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/check-status/submit";
   private static final long DRAFT_ANCHOR = 515L;
   private static final String PROBLEM_JSON = "application/problem+json";
-  private static final String SUBMISSION_ERROR =
-      "An error has been found submitting schedules. The error details have been logged. Please"
-          + " contact ILCR application support.";
+  private static final String NOT_DRAFT =
+      "Schedules 1-10 are no longer in Draft and cannot be submitted.";
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -136,7 +135,7 @@ class CheckStatusSubmitAuthorizationIT extends AbstractOracleIT {
         .perform(submit("517").with(canonicalSubmitter()))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
+        .andExpect(jsonPath("$.detail", is(NOT_DRAFT)));
   }
 
   @Test
@@ -160,7 +159,7 @@ class CheckStatusSubmitAuthorizationIT extends AbstractOracleIT {
         .perform(submit("517").with(dualRole(CANONICAL_SUBMITTER_GUID)))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
+        .andExpect(jsonPath("$.detail", is(NOT_DRAFT)));
   }
 
   @Test
