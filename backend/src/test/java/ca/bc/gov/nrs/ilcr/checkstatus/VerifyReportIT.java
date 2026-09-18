@@ -39,7 +39,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  *
  * <p>Mills are this class's own ({@code R__55}). Verifying mutates the status row, ten category
  * rows and thirteen tables' audit columns, so no mill here may be shared with another suite, and
- * none of the mills {@code CheckStatusSweepIT} fingerprints is touched. Only 757 and 762 are
+ * none of the mills {@code CheckStatusSweepIT} fingerprints is touched. Only 764 and 769 are
  * mutated, by one test each.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
@@ -50,14 +50,14 @@ class VerifyReportIT extends AbstractOracleIT {
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final String YEAR = "2021";
 
-  private static final String HAPPY_MILL = "757";
-  private static final String GATE_FAILS_MILL = "758";
-  private static final String DRAFT_MILL = "759";
-  private static final String VERIFIED_MILL = "760";
-  private static final String CLOSED_MILL = "761";
-  private static final String NO_XREF_MILL = "762";
+  private static final String HAPPY_MILL = "764";
+  private static final String GATE_FAILS_MILL = "765";
+  private static final String DRAFT_MILL = "766";
+  private static final String VERIFIED_MILL = "767";
+  private static final String CLOSED_MILL = "768";
+  private static final String NO_XREF_MILL = "769";
 
-  /** The admin seeded with an {@code ILCR_MILL_USER_XREF} row for mill 757, and only 757. */
+  /** The admin seeded with an {@code ILCR_MILL_USER_XREF} row for mill 764, and only 757. */
   private static final String ADMIN_GUID = "VERIFYADMIN0000111122223333AAAA1";
 
   /** The principal name, which is what lands in the audit columns (30-char limit). */
@@ -382,7 +382,7 @@ class VerifyReportIT extends AbstractOracleIT {
     // The auditor is a composite key, asserted by value — non-null alone would pass on the wrong
     // row.
     assertThat(auditorGuid(HAPPY_MILL)).isEqualTo(ADMIN_GUID);
-    assertThat(auditorMillId(HAPPY_MILL)).isEqualTo(757L);
+    assertThat(auditorMillId(HAPPY_MILL)).isEqualTo(764L);
 
     // Audit columns: EVERY row stamped, not merely one. Each paired with its row count so an
     // empty table cannot satisfy the assertion vacuously.

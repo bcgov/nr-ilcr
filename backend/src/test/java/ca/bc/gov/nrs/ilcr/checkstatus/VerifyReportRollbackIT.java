@@ -38,7 +38,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * Verified, or stamped by a verify that never happened — a half-transitioned report no screen could
  * explain.
  *
- * <p>Its own mill (763) and its own class: a spy that throws is context-wide, and a half-applied
+ * <p>Its own mill (770) and its own class: a spy that throws is context-wide, and a half-applied
  * transition would poison any fixture shared with another arm.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
@@ -46,7 +46,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class VerifyReportRollbackIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/check-status/verify";
-  private static final String MILL = "763";
+  private static final String MILL = "770";
   private static final String YEAR = "2021";
   private static final String ACTING_USER = "verifyadmin";
   private static final String ADMIN_GUID = "VERIFYADMIN0000111122223333AAAA1";
@@ -59,7 +59,7 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
 
   @MockitoBean private JwtDecoder jwtDecoder;
   @Autowired private JdbcTemplate jdbcTemplate;
-  @MockitoSpyBean private ReportTransitionRepository repository;
+  @MockitoSpyBean private ReportTrackTransitionRepository repository;
 
   private RequestPostProcessor admin() {
     return jwt()
@@ -75,14 +75,14 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
   private String trackStatus() {
     return jdbcTemplate.queryForObject(
         "SELECT ILCR_MILL_REPORT_STATUS_CODE FROM THE.ILCR_MILL_REPORT_STATUS"
-            + " WHERE ILCR_MILL_ID = 763 AND REPORT_YEAR = 2021",
+            + " WHERE ILCR_MILL_ID = 770 AND REPORT_YEAR = 2021",
         String.class);
   }
 
   private List<String> categoryStates() {
     return jdbcTemplate.queryForList(
         "SELECT CATEGORY_STATE_CODE FROM THE.ILCR_REPORT_CATEGORY"
-            + " WHERE ILCR_MILL_ID = 763 AND REPORT_YEAR = 2021"
+            + " WHERE ILCR_MILL_ID = 770 AND REPORT_YEAR = 2021"
             + " AND ILCR_CATEGORY_ID IN ('1','2','3','4','5','6','7','8','9','10')",
         String.class);
   }
@@ -96,7 +96,7 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
     Integer summaries =
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM THE.ILCR_REPORT_SUMMARY"
-                + " WHERE ILCR_MILL_ID = 763 AND REPORT_YEAR = 2021 AND UPDATE_USERID = ?",
+                + " WHERE ILCR_MILL_ID = 770 AND REPORT_YEAR = 2021 AND UPDATE_USERID = ?",
             Integer.class,
             ACTING_USER);
     Integer costDetails =
@@ -104,14 +104,14 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
             "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL d"
                 + " WHERE d.ILCR_REPORT_SUMMARY_ID IN ("
                 + "   SELECT s.ILCR_REPORT_SUMMARY_ID FROM THE.ILCR_REPORT_SUMMARY s"
-                + "    WHERE s.ILCR_MILL_ID = 763 AND s.REPORT_YEAR = 2021)"
+                + "    WHERE s.ILCR_MILL_ID = 770 AND s.REPORT_YEAR = 2021)"
                 + " AND d.UPDATE_USERID = ?",
             Integer.class,
             ACTING_USER);
     Integer statusRow =
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM THE.ILCR_MILL_REPORT_STATUS"
-                + " WHERE ILCR_MILL_ID = 763 AND REPORT_YEAR = 2021 AND UPDATE_USERID = ?",
+                + " WHERE ILCR_MILL_ID = 770 AND REPORT_YEAR = 2021 AND UPDATE_USERID = ?",
             Integer.class,
             ACTING_USER);
     return summaries + costDetails + statusRow;
@@ -125,7 +125,7 @@ class VerifyReportRollbackIT extends AbstractOracleIT {
 
     doThrow(new DataIntegrityViolationException("forced mid-sweep failure"))
         .when(repository)
-        .advanceCategoryStates(anyLong(), anyInt(), anyString(), anyString());
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
 
     mockMvc
         .perform(post(ENDPOINT).param("millId", MILL).param("year", YEAR).with(admin()))

@@ -54,8 +54,6 @@ class CheckStatusControllerTest {
   @Mock private MillContextService millContextService;
   @Mock private CheckStatusSweepService sweepService;
   @Mock private ReportTrackTransitionService transitionService;
-  // Story 17.1's verify service, a second transition collaborator beside 15.3's.
-  @Mock private ReportTransitionService verifyService;
   @Mock private ReportSubmission reportSubmission;
   @Mock private MessageSource messageSource;
   @Mock private Authentication authentication;
@@ -139,14 +137,14 @@ class CheckStatusControllerTest {
   @Test
   @DisplayName("verify: the guard runs BEFORE the transition, on the raw params")
   void verify_guardRunsBeforeTheTransition() {
-    when(millContextService.validateMillYearActive("757", "2021"))
-        .thenReturn(new MillYearContext(757, 2021));
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(verifyService.verifySchedules1To10(757, 2021, "verifyadmin", null)).thenReturn("V");
+    when(transitionService.verify(764, 2021, "verifyadmin", null)).thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
-    var response = controller.verifySchedules1To10("757", "2021", authentication);
+    var response = controller.verifySchedules1To10("764", "2021", authentication);
 
     assertThat(response.getStatusCode().value()).isEqualTo(200);
     assertThat(response.getBody().trackStatus()).isEqualTo("V");
@@ -154,20 +152,20 @@ class CheckStatusControllerTest {
     assertThat(response.getBody().message().text())
         .isEqualTo("Schedules 1-10 status has been updated to verified.");
 
-    InOrder order = inOrder(millContextService, verifyService);
-    order.verify(millContextService).validateMillYearActive("757", "2021");
-    order.verify(verifyService).verifySchedules1To10(757, 2021, "verifyadmin", null);
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("764", "2021");
+    order.verify(transitionService).verify(764, 2021, "verifyadmin", null);
   }
 
   @Test
   @DisplayName("verify: a closed mill stops at the guard — no transition is attempted")
   void verify_closedMillNeverReachesTheTransition() {
-    when(millContextService.validateMillYearActive("761", "2021"))
+    when(millContextService.validateMillYearActive("768", "2021"))
         .thenThrow(new MillClosedException());
 
-    assertThatThrownBy(() -> controller.verifySchedules1To10("761", "2021", authentication))
+    assertThatThrownBy(() -> controller.verifySchedules1To10("768", "2021", authentication))
         .isInstanceOf(MillClosedException.class);
-    verifyNoInteractions(verifyService);
+    verifyNoInteractions(transitionService);
   }
 
   @Test
@@ -178,7 +176,7 @@ class CheckStatusControllerTest {
 
     assertThatThrownBy(() -> controller.verifySchedules1To10(null, "2021", authentication))
         .isInstanceOf(MillYearNotSelectedException.class);
-    verifyNoInteractions(verifyService);
+    verifyNoInteractions(transitionService);
   }
 
   @Test
@@ -251,7 +249,7 @@ class CheckStatusControllerTest {
               assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
               assertThat(ex.getMessageKey()).isEqualTo("checkStatusScheduleNotFoundErrorMsg");
             });
-    verifyNoInteractions(verifyService);
+    verifyNoInteractions(transitionService);
   }
 
   @Test
@@ -279,19 +277,17 @@ class CheckStatusControllerTest {
     var mockAuth =
         new UsernamePasswordAuthenticationToken(
             new MockUserPrincipal("mockadmin", "MOCKGUID0000111122223333AAAA0001"), "n/a");
-    when(millContextService.validateMillYearActive("757", "2021"))
-        .thenReturn(new MillYearContext(757, 2021));
-    when(verifyService.verifySchedules1To10(
-            757, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001"))
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(transitionService.verify(764, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001"))
         .thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
-    var response = controller.verifySchedules1To10("757", "2021", mockAuth);
+    var response = controller.verifySchedules1To10("764", "2021", mockAuth);
 
     assertThat(response.getStatusCode().value()).isEqualTo(200);
-    verify(verifyService)
-        .verifySchedules1To10(757, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001");
+    verify(transitionService).verify(764, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001");
   }
 
   @Test
@@ -302,15 +298,15 @@ class CheckStatusControllerTest {
     // and a pointless cross-reference lookup on an empty GUID ran instead.
     var mockAuth =
         new UsernamePasswordAuthenticationToken(new MockUserPrincipal("mockadmin", "  "), "n/a");
-    when(millContextService.validateMillYearActive("757", "2021"))
-        .thenReturn(new MillYearContext(757, 2021));
-    when(verifyService.verifySchedules1To10(757, 2021, "mockadmin", null)).thenReturn("V");
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(transitionService.verify(764, 2021, "mockadmin", null)).thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
-    controller.verifySchedules1To10("757", "2021", mockAuth);
+    controller.verifySchedules1To10("764", "2021", mockAuth);
 
-    verify(verifyService).verifySchedules1To10(757, 2021, "mockadmin", null);
+    verify(transitionService).verify(764, 2021, "mockadmin", null);
   }
 
   @Test
@@ -318,14 +314,14 @@ class CheckStatusControllerTest {
   void verify_missingMessageKeyFallsBackToTheKey() {
     // The transition has already COMMITTED by the time the message is resolved, so the 3-arg
     // getMessage's NoSuchMessageException would answer a succeeded sign-off with a 500.
-    when(millContextService.validateMillYearActive("757", "2021"))
-        .thenReturn(new MillYearContext(757, 2021));
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(verifyService.verifySchedules1To10(757, 2021, "verifyadmin", null)).thenReturn("V");
+    when(transitionService.verify(764, 2021, "verifyadmin", null)).thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("sch1-10VerifiedMsg");
 
-    var response = controller.verifySchedules1To10("757", "2021", authentication);
+    var response = controller.verifySchedules1To10("764", "2021", authentication);
 
     assertThat(response.getStatusCode().value()).isEqualTo(200);
     assertThat(response.getBody().message().text()).isEqualTo("sch1-10VerifiedMsg");
@@ -334,13 +330,13 @@ class CheckStatusControllerTest {
   @Test
   @DisplayName("verify: a not-found raised by the transition itself is re-keyed the same way")
   void verify_transitionNotFoundIsReKeyed() {
-    when(millContextService.validateMillYearActive("757", "2021"))
-        .thenReturn(new MillYearContext(757, 2021));
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(verifyService.verifySchedules1To10(757, 2021, "verifyadmin", null))
+    when(transitionService.verify(764, 2021, "verifyadmin", null))
         .thenThrow(new ScheduleNotFoundException());
 
-    assertThatThrownBy(() -> controller.verifySchedules1To10("757", "2021", authentication))
+    assertThatThrownBy(() -> controller.verifySchedules1To10("764", "2021", authentication))
         .isInstanceOf(CheckStatusScheduleNotFoundException.class);
   }
 

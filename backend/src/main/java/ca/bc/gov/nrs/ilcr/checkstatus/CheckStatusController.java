@@ -45,25 +45,19 @@ public class CheckStatusController implements CheckStatusApi {
   private final MillContextService millContextService;
   private final CheckStatusSweepService sweepService;
   private final ReportTrackTransitionService transitionService;
-  // Story 17.1's verify transition. A SECOND transition service beside 15.3's is not the end state:
-  // the two stories built parallel implementations of one concern and they are merged here side by
-  // side rather than unified, which is a refactor with its own review, not a merge resolution.
-  private final ReportTransitionService verifyService;
   private final ReportSubmission reportSubmission;
   private final MessageSource messageSource;
 
-  /** Wires the mill/year guard, the sweep, both transitions and the offer rule. */
+  /** Wires the mill/year guard, the sweep, the one transition service and the offer rule. */
   public CheckStatusController(
       MillContextService millContextService,
       CheckStatusSweepService sweepService,
       ReportTrackTransitionService transitionService,
-      ReportTransitionService verifyService,
       ReportSubmission reportSubmission,
       MessageSource messageSource) {
     this.millContextService = millContextService;
     this.sweepService = sweepService;
     this.transitionService = transitionService;
-    this.verifyService = verifyService;
     this.reportSubmission = reportSubmission;
     this.messageSource = messageSource;
   }
@@ -115,7 +109,7 @@ public class CheckStatusController implements CheckStatusApi {
       // Same guard, same order as the sweep: 400 ERR-001 / 404 / 409 before anything is written.
       MillYearContext context = millContextService.validateMillYearActive(millId, year);
       String status =
-          verifyService.verifySchedules1To10(
+          transitionService.verify(
               context.millId(),
               context.year(),
               authentication.getName(),

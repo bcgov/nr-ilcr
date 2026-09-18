@@ -12,7 +12,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.exception.ReportTransitionFailedException;
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefEntity;
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,13 +40,18 @@ import org.springframework.dao.DataIntegrityViolationException;
 @DisplayName("ReportTransitionWriter — the transactional write half (Story 17.1)")
 class ReportTransitionWriterTest {
 
-  private static final long MILL = 757L;
+  private static final long MILL = 764L;
   private static final int YEAR = 2021;
   private static final String USER = "verifyadmin";
   private static final String GUID = "VERIFYADMIN0000111122223333AAAA1";
 
-  @Mock private ReportTransitionRepository repository;
+  @Mock private ReportTrackTransitionRepository repository;
+  @Mock private MillUserXrefRepository millUserXrefRepository;
   @InjectMocks private ReportTransitionWriter writer;
+
+  /** The ten category rows a 1-10 transition advances, in the order the track declares them. */
+  private static final java.util.List<String> CATEGORIES =
+      ScheduleTrack.SCHEDULES_1_TO_10.categoryIds();
 
   private void givenTheStatusRowMoves() {
     when(repository.updateTrackStatusWithAuditor(
@@ -54,7 +60,23 @@ class ReportTransitionWriterTest {
   }
 
   private void givenTenCategoryRowsAdvance() {
-    when(repository.advanceCategoryStates(MILL, YEAR, "V", USER)).thenReturn(10);
+    for (String categoryId : CATEGORIES) {
+      when(repository.advanceCategoryState(MILL, YEAR, categoryId, "V", USER)).thenReturn(1);
+    }
+  }
+
+  /** As above, but one category row missing — the partial-enrolment shape the guard exists for. */
+  private void givenOneCategoryRowIsMissing() {
+    for (String categoryId : CATEGORIES) {
+      when(repository.advanceCategoryState(MILL, YEAR, categoryId, "V", USER))
+          .thenReturn(CATEGORIES.get(0).equals(categoryId) ? 0 : 1);
+    }
+  }
+
+  private void givenTheAuditorIsAssigned() {
+    when(millUserXrefRepository.findAssignment(MILL, GUID))
+        .thenReturn(
+            Optional.of(new MillUserXrefEntity(MILL, GUID, null, null, 0, null, null, null, null)));
   }
 
   @Test
@@ -62,7 +84,7 @@ class ReportTransitionWriterTest {
   void stampsPrecedeTheCategoryAdvance() {
     givenTheStatusRowMoves();
     givenTenCategoryRowsAdvance();
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.of(MILL));
+    givenTheAuditorIsAssigned();
 
     writer.write(MILL, YEAR, "V", "V", USER, GUID);
 
@@ -73,9 +95,9 @@ class ReportTransitionWriterTest {
     // at all. D->S is NOT indifferent, and Story 15.3 / Epic 18 extend this component.
     InOrder order = inOrder(repository);
     order.verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", MILL, GUID, USER);
-    order.verify(repository).stampReportSummaries(MILL, YEAR, USER);
-    order.verify(repository).stampRoadConstructionCostDetails(MILL, YEAR, USER);
-    order.verify(repository).advanceCategoryStates(MILL, YEAR, "V", USER);
+    order.verify(repository).touchReportSummaries(MILL, YEAR, USER);
+    order.verify(repository).touchRoadConstructionCostDetails(MILL, YEAR, USER);
+    order.verify(repository).advanceCategoryState(MILL, YEAR, CATEGORIES.get(0), "V", USER);
   }
 
   @Test
@@ -83,30 +105,30 @@ class ReportTransitionWriterTest {
   void invokesEveryAuditSweep() {
     givenTheStatusRowMoves();
     givenTenCategoryRowsAdvance();
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.of(MILL));
+    givenTheAuditorIsAssigned();
 
     writer.write(MILL, YEAR, "V", "V", USER, GUID);
 
-    verify(repository).stampReportSummaries(MILL, YEAR, USER);
-    verify(repository).stampSummaryCostDetails(MILL, YEAR, USER);
-    verify(repository).stampTransportationReports(MILL, YEAR, USER);
-    verify(repository).stampTransportationCostDetails(MILL, YEAR, USER);
-    verify(repository).stampCampReports(MILL, YEAR, USER);
-    verify(repository).stampCampCostDetails(MILL, YEAR, USER);
-    verify(repository).stampRoadMaintenanceReports(MILL, YEAR, USER);
-    verify(repository).stampRoadMaintenanceCostDetails(MILL, YEAR, USER);
-    verify(repository).stampBridgeReports(MILL, YEAR, USER);
-    verify(repository).stampBridgeCostDetails(MILL, YEAR, USER);
-    verify(repository).stampCulvertReports(MILL, YEAR, USER);
-    verify(repository).stampCulvertCostDetails(MILL, YEAR, USER);
-    verify(repository).stampTreeToTruckReports(MILL, YEAR, USER);
-    verify(repository).stampTreeToTruckDetails(MILL, YEAR, USER);
-    verify(repository).stampTreeToTruckRateDetails(MILL, YEAR, USER);
-    verify(repository).stampContractualWorkReports(MILL, YEAR, USER);
-    verify(repository).stampContractualWorkCostDetails(MILL, YEAR, USER);
-    verify(repository).stampRoadConstructionReports(MILL, YEAR, USER);
-    verify(repository).stampRoadConstructionDetails(MILL, YEAR, USER);
-    verify(repository).stampRoadConstructionCostDetails(MILL, YEAR, USER);
+    verify(repository).touchReportSummaries(MILL, YEAR, USER);
+    verify(repository).touchReportSummaryCostDetails(MILL, YEAR, USER);
+    verify(repository).touchTransportationReports(MILL, YEAR, USER);
+    verify(repository).touchTransportationCostDetails(MILL, YEAR, USER);
+    verify(repository).touchCamps(MILL, YEAR, USER);
+    verify(repository).touchCampCostDetails(MILL, YEAR, USER);
+    verify(repository).touchRoadMaintenanceReports(MILL, YEAR, USER);
+    verify(repository).touchRoadMaintenanceCostDetails(MILL, YEAR, USER);
+    verify(repository).touchBridges(MILL, YEAR, USER);
+    verify(repository).touchBridgeCostDetails(MILL, YEAR, USER);
+    verify(repository).touchCulverts(MILL, YEAR, USER);
+    verify(repository).touchCulvertCostDetails(MILL, YEAR, USER);
+    verify(repository).touchTreeToTruckReports(MILL, YEAR, USER);
+    verify(repository).touchTreeToTruckDetailReports(MILL, YEAR, USER);
+    verify(repository).touchTreeToTruckRateDetails(MILL, YEAR, USER);
+    verify(repository).touchContractualWorkReports(MILL, YEAR, USER);
+    verify(repository).touchContractualWorkCostDetails(MILL, YEAR, USER);
+    verify(repository).touchRoadConstructionReports(MILL, YEAR, USER);
+    verify(repository).touchRoadConstructionDetails(MILL, YEAR, USER);
+    verify(repository).touchRoadConstructionCostDetails(MILL, YEAR, USER);
   }
 
   @Test
@@ -117,22 +139,22 @@ class ReportTransitionWriterTest {
     // rows — ReportingYearService models it as EnrolmentState.PARTIAL and mill activation refuses
     // it. Legacy failed loudly; a set-based UPDATE skips the missing rows silently, so without this
     // the endpoint answered 200 on a half-transitioned report. No fixture reaches the shape.
-    when(repository.advanceCategoryStates(MILL, YEAR, "V", USER)).thenReturn(8);
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.of(MILL));
+    givenOneCategoryRowIsMissing();
+    givenTheAuditorIsAssigned();
 
     assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
-        .isInstanceOf(ReportTransitionFailedException.class);
+        .isInstanceOf(ReportSubmissionException.class);
   }
 
   @Test
   @DisplayName("zero category rows advanced is refused too, not treated as nothing to do")
   void zeroCategoryAdvanceFailsTheTransition() {
     givenTheStatusRowMoves();
-    when(repository.advanceCategoryStates(MILL, YEAR, "V", USER)).thenReturn(0);
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.of(MILL));
+    givenOneCategoryRowIsMissing();
+    givenTheAuditorIsAssigned();
 
     assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
-        .isInstanceOf(ReportTransitionFailedException.class);
+        .isInstanceOf(ReportSubmissionException.class);
   }
 
   @Test
@@ -141,13 +163,13 @@ class ReportTransitionWriterTest {
     when(repository.updateTrackStatusWithAuditor(
             anyLong(), anyInt(), anyString(), any(), any(), anyString()))
         .thenReturn(0);
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.of(MILL));
+    givenTheAuditorIsAssigned();
 
     assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
-        .isInstanceOf(ReportTransitionFailedException.class);
-    verify(repository, never()).stampReportSummaries(anyLong(), anyInt(), anyString());
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
     verify(repository, never())
-        .advanceCategoryStates(anyLong(), anyInt(), anyString(), anyString());
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -160,14 +182,14 @@ class ReportTransitionWriterTest {
 
     assertThat(writer.write(MILL, YEAR, "V", "V", USER, null)).isEqualTo("V");
     // The cross-reference lookup is skipped entirely rather than run with a null key.
-    verify(repository, never()).findUserXrefMillId(anyLong(), any());
+    verify(millUserXrefRepository, never()).findAssignment(anyLong(), any());
     verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER);
   }
 
   @Test
   @DisplayName("an admin with no cross-reference records NULL in both auditor columns")
   void noXrefRecordsNullAuditor() {
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.empty());
+    when(millUserXrefRepository.findAssignment(MILL, GUID)).thenReturn(Optional.empty());
     when(repository.updateTrackStatusWithAuditor(
             eq(MILL), eq(YEAR), eq("V"), eq(null), eq(null), eq(USER)))
         .thenReturn(1);
@@ -181,13 +203,13 @@ class ReportTransitionWriterTest {
   @DisplayName("a persistence failure becomes a 500 and stops the sweep")
   void persistenceFailure() {
     givenTheStatusRowMoves();
-    when(repository.findUserXrefMillId(MILL, GUID)).thenReturn(Optional.of(MILL));
-    when(repository.stampReportSummaries(MILL, YEAR, USER))
+    givenTheAuditorIsAssigned();
+    when(repository.touchReportSummaries(MILL, YEAR, USER))
         .thenThrow(new DataIntegrityViolationException("sweep failed"));
 
     assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
-        .isInstanceOf(ReportTransitionFailedException.class);
+        .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never())
-        .advanceCategoryStates(anyLong(), anyInt(), anyString(), anyString());
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 }
