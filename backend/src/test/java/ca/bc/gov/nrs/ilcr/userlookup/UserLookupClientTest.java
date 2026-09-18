@@ -291,6 +291,34 @@ class UserLookupClientTest {
   }
 
   @Test
+  @DisplayName("a BCeID hit carries the directory's name parts beside the display name")
+  void findBusinessBceid_carriesTheDirectoryNameParts() {
+    expectToken(SCOPE_BCEID, "svc-token-parts");
+    server
+        .expect(
+            requestToUriTemplate(
+                BCEID_URL + "?searchUserBy={by}&searchValue={val}", "userGuid", GUID))
+        .andRespond(
+            withSuccess(
+                """
+                {"guid":"%s","userId":"BSMITH","displayName":"Smith, Bob",
+                 "firstName":"Bob","lastName":"Smith","email":null,"businessGuid":"BIZ1"}
+                """
+                    .formatted(GUID),
+                MediaType.APPLICATION_JSON));
+
+    List<DirectoryUser> found = client.findBusinessBceid("userGuid", GUID);
+
+    assertEquals(1, found.size());
+    DirectoryUser user = found.get(0);
+    assertEquals("Bob", user.firstName());
+    assertEquals("Smith", user.lastName());
+    // displayName is unchanged: the directory's own string still wins over the parts.
+    assertEquals("Smith, Bob", user.displayName());
+    server.verify();
+  }
+
+  @Test
   @DisplayName("a search value padded with whitespace is trimmed before the exact lookup")
   void bceidSearchValueIsTrimmed() {
     // An exact lookup is unforgiving: a GUID pasted from email with a trailing newline would

@@ -82,6 +82,17 @@ class TrackTransitionTest {
   }
 
   @Test
+  @DisplayName("each transition names the message for a track that has already left its start")
+  void rejectedKeys() {
+    assertThat(TrackTransition.SUBMIT.rejectedKey()).isEqualTo("submitNotDraftErrorMsg");
+    assertThat(TrackTransition.VERIFY.rejectedKey()).isEqualTo("verifyNotSubmittedErrorMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.rejectedKey())
+        .isEqualTo("setToDraftNotSubmittedErrorMsg");
+    assertThat(TrackTransition.SET_TO_SUBMIT.rejectedKey())
+        .isEqualTo("setToSubmitNotVerifiedErrorMsg");
+  }
+
+  @Test
   @DisplayName("the 1-10 track advances ten category rows, '7' once; Schedule 11 advances one")
   void trackCategoryIds() {
     assertThat(ScheduleTrack.SCHEDULES_1_TO_10.categoryIds())

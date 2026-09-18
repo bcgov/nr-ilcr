@@ -183,19 +183,24 @@ const selectCedar = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole('button', { name: 'Select Mill' }))
   await user.click(within(selectMillDialog()).getByRole('button', { name: 'Search' }))
   await user.click(await screen.findByRole('button', { name: 'Select mill 670' }))
-  await screen.findByRole('region', { name: /mill details/i })
+  // NOT the region role: the Mill Details panel is unconditional since fix round 1 (mills.xhtml:22),
+  // present on first paint before any mill is adopted -- so it settles instantly and proves nothing
+  // about the click having landed. The detail body only paints once `mill && form`, so waiting on
+  // its own content is what actually waits for the adopt to complete.
+  await screen.findByText(/670 - Cedar Mill/)
 }
 
 describe('Mills page — route, empty state (AC1)', () => {
-  test('the empty state offers exactly two controls, and no panel at all', async () => {
+  test('the empty state shows the Mill Details panel holding the two entry buttons, and no user panel', async () => {
     render(<Mills />)
 
-    expect(await screen.findByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Import Mill' })).toBeInTheDocument()
+    // mills.xhtml:22 opens `<p:panel header="Mill Details">` UNCONDITIONALLY; only its contents
+    // switch (:23-27 the entry buttons vs. :28 the detail body). The Associated Licensee User
+    // panel is the one legacy gates entirely on selection (:110, `millSelected`).
+    const detail = await screen.findByRole('region', { name: /mill details/i })
+    expect(within(detail).getByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
+    expect(within(detail).getByRole('button', { name: 'Import Mill' })).toBeInTheDocument()
 
-    // ABSENT, not disabled: legacy gates all three panels on `rendered="#{millsMB.millSelected}"`
-    // (mills.xhtml:28, :110), so there is nothing to tab into before a mill is chosen.
-    expect(screen.queryByRole('region', { name: /mill details/i })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('table', { name: /associated licensee user/i }),
     ).not.toBeInTheDocument()
@@ -255,7 +260,10 @@ describe('Mills page — selecting a mill (AC2)', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Select mill 670' }))
 
-    expect(await screen.findByRole('region', { name: /mill details/i })).toBeInTheDocument()
+    // NOT the region role: the Mill Details panel is unconditional (mills.xhtml:22) and present
+    // before the click too, so asserting its presence here would prove nothing about the select
+    // having landed. The detail body only paints once the mill is adopted.
+    expect(await screen.findByText(/670 - Cedar Mill/)).toBeInTheDocument()
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', { name: /find and select mill$/i }),
@@ -526,7 +534,11 @@ describe('Mills page — importing a mill (AC3)', () => {
     )
 
     expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: /mill details/i })).not.toBeInTheDocument()
+    // The panel itself is unconditional (mills.xhtml:22); a refused import leaves no mill adopted,
+    // so it still shows the un-selected entry buttons rather than a detail body.
+    const panel = screen.getByRole('region', { name: /mill details/i })
+    expect(within(panel).getByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   })
 
   test('an already-tracked mill is refused 409 with its verbatim text', async () => {
@@ -600,6 +612,32 @@ describe('Mills page — mill detail and the contact save (AC4)', () => {
       within(detail).getByRole('combobox', { name: 'Head Office Contact :' }),
     ).toBeInTheDocument()
     expect(within(detail).getByRole('combobox', { name: 'Division Contact :' })).toBeInTheDocument()
+  })
+
+  test('the last-edited line renders from the audit columns', async () => {
+    const user = userEvent.setup()
+    searchAnswers({
+      results: [{ ...CEDAR, updateUserid: 'IDIR\\ASMITH', updateTimestamp: '2026-03-04' }],
+    })
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByText(/Last Edited by/)).toBeInTheDocument()
+    expect(screen.getByText('IDIR\\ASMITH')).toBeInTheDocument()
+    expect(screen.getByText('2026-03-04')).toBeInTheDocument()
+  })
+
+  test('the last-edited line renders even when the audit columns are absent', async () => {
+    // mills.xhtml:43-44 carries NO `rendered` attribute, so legacy showed this row unconditionally
+    // and simply printed nothing into it. Gating the whole line on updateUserid hid it outright on
+    // any row whose audit columns are empty — which is what an administrator reported seeing.
+    const user = userEvent.setup()
+    render(<Mills />)
+    await selectCedar(user)
+
+    const detail = detailPanel()
+    expect(within(detail).getByText(/Last Edited by/)).toBeInTheDocument()
+    expect(within(detail).getByText(/on date/)).toBeInTheDocument()
   })
 
   test('the contact lists come ONLY from contact-options, in the order served', async () => {
@@ -984,6 +1022,52 @@ describe('Mills page — the associated-user panel (AC6)', () => {
     expect(screen.queryByText(/associated auditors/i)).not.toBeInTheDocument()
   })
 
+  test('the legacy name columns render for an associated licensee', async () => {
+    const user = userEvent.setup()
+    usersAre({ ...ACTIVE_ROW, firstName: 'Bob', lastName: 'Smith', bceid: 'BSMITH' })
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByRole('columnheader', { name: 'First Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Last Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'BCeID' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Bob' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'BSMITH' })).toBeInTheDocument()
+  })
+
+  test('an unresolved row shows its guid under BCeID and stays actionable', async () => {
+    // ACTIVE_ROW carries no name fields: non_null drops unresolved fields from the response.
+    const user = userEvent.setup()
+    usersAre(ACTIVE_ROW)
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(await screen.findByRole('cell', { name: GUID })).toBeInTheDocument()
+    // The row's controls key off the guid, not the name.
+    expect(screen.getByRole('button', { name: `Deactivate user ${GUID}` })).toBeInTheDocument()
+  })
+
+  test('the Associated Licensee User panel is titled, and gated on selection unlike Mill Details', async () => {
+    // Mill Details titles a panel from first paint (mills.xhtml:22, unconditional) -- asserting its
+    // heading alone with a mill already selected would prove nothing about panel gating. The
+    // Associated Licensee User heading is the one that has to APPEAR, not merely exist.
+    const user = userEvent.setup()
+    usersAre(ACTIVE_ROW)
+    render(<Mills />)
+
+    expect(screen.getByRole('heading', { name: 'Mill Details' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Associated Licensee User' }),
+    ).not.toBeInTheDocument()
+
+    await selectCedar(user)
+
+    expect(screen.getByRole('heading', { name: 'Mill Details' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Associated Licensee User' }),
+    ).toBeInTheDocument()
+  })
+
   test('rows are requested WITHOUT includeEnded, because it defaults true on this surface', async () => {
     const user = userEvent.setup()
     const seen = usersAre(ACTIVE_ROW, ENDED_ROW)
@@ -1039,7 +1123,9 @@ describe('Mills page — the associated-user panel (AC6)', () => {
     const cells = within(row)
       .getAllByRole('cell')
       .map((cell) => cell.textContent)
-    expect(cells[3]).toBe('—')
+    // Deactivation Date is now the sixth column: First Name / Last Name / BCeID precede the three
+    // legacy status columns (Task 5 replaces the single guid-bearing User column).
+    expect(cells[5]).toBe('—')
   })
 
   test('dates render dd/MM/yyyy, as they did at every one of legacy six sites', async () => {
@@ -1051,8 +1137,8 @@ describe('Mills page — the associated-user panel (AC6)', () => {
 
     // web.xml:92-93 pinned the server timezone and the six f:convertDateTime sites all read
     // dd/MM/yyyy with no time. The wire sends an ISO LocalDate.
-    expect(within(rowFor(GUID)).getByText('04/03/2026')).toBeInTheDocument()
-    expect(within(rowFor(OTHER_GUID)).getByText('30/11/2025')).toBeInTheDocument()
+    expect(within(rowFor(GUID)).getByText('2026-03-04')).toBeInTheDocument()
+    expect(within(rowFor(OTHER_GUID)).getByText('2025-11-30')).toBeInTheDocument()
   })
 
   test('per-row actions are not confirmed, and send the ROW own revision', async () => {

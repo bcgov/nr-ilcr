@@ -206,7 +206,18 @@ class MillMaintenanceControllerTest {
   // -------------------------------------------------------------- helpers
 
   private static AdminMill mill() {
-    return new AdminMill(670L, "0670", "CEDAR MILL", AdminMill.ACTIVE, "Active", "Y", 11L, 22L, 3);
+    return new AdminMill(
+        670L,
+        "0670",
+        "CEDAR MILL",
+        AdminMill.ACTIVE,
+        "Active",
+        "Y",
+        11L,
+        22L,
+        3,
+        "ITUSER",
+        java.time.LocalDate.of(2026, 9, 1));
   }
 
   private void resolves(String key, String text) {

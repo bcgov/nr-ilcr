@@ -49,6 +49,8 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
   private static final String NOT_SUBMITTED =
       "The report cannot be submitted. One or more of the Schedules have not passed validation."
           + " Please review and correct any errors.";
+  private static final String NOT_DRAFT =
+      "Schedules 1-10 are no longer in Draft and cannot be submitted.";
   private static final String SUBMISSION_ERROR =
       "An error has been found submitting schedules. The error details have been logged. Please"
           + " contact ILCR application support.";
@@ -225,7 +227,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("AC 3: 517/2021 already Submitted -> 409 reportSubmissionErrorMsg, nothing written")
+  @DisplayName("AC 3: 517/2021 already Submitted -> 409 submitNotDraftErrorMsg, nothing written")
   void alreadySubmitted_409_writesNothing() throws Exception {
     String before = footprint(517, 2021);
 
@@ -233,14 +235,14 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
         .perform(submit(517, 2021))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
+        .andExpect(jsonPath("$.detail", is(NOT_DRAFT)));
 
     assertThat(footprint(517, 2021)).isEqualTo(before);
   }
 
   @Test
   @DisplayName(
-      "AC 3: 737/2021 Verified -> 409 reportSubmissionErrorMsg (no D<->V jump), nothing written")
+      "AC 3: 737/2021 Verified -> 409 submitNotDraftErrorMsg (no D<->V jump), nothing written")
   void verified_409_writesNothing() throws Exception {
     String before = footprint(737, 2021);
 
@@ -248,7 +250,7 @@ class CheckStatusSubmitIT extends AbstractOracleIT {
         .perform(submit(737, 2021))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
+        .andExpect(jsonPath("$.detail", is(NOT_DRAFT)));
 
     assertThat(footprint(737, 2021)).isEqualTo(before);
   }

@@ -10,7 +10,9 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.assignment.dto.MillSubmitter;
@@ -18,6 +20,9 @@ import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millmaintenance.AdminMillEntity;
 import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
+import ca.bc.gov.nrs.ilcr.userlookup.DirectoryUnavailableException;
+import ca.bc.gov.nrs.ilcr.userlookup.UserLookupClient;
+import ca.bc.gov.nrs.ilcr.userlookup.dto.DirectoryUser;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +33,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
@@ -43,17 +49,48 @@ class MillAssociationServiceTest {
 
   private static final long MILL_ID = 751L;
   private static final String GUID = "UNITMILL1BBBCCCCDDDDEEEEFFFF0001";
+  private static final String GUID_B = "UNITMILL2BBBCCCCDDDDEEEEFFFF0002";
   private static final String ADMIN = "TESTADMN";
 
   @Mock private MillUserXrefRepository assignments;
   @Mock private MillMaintenanceRepository mills;
   @Mock private AssignmentService accounts;
+  @Mock private UserLookupClient lookup;
 
   private MillAssociationService service;
 
+  /** An {@link ObjectProvider} over one bean, or over nothing when the client is not configured. */
+  private static ObjectProvider<UserLookupClient> providerOf(UserLookupClient client) {
+    return new ObjectProvider<>() {
+      @Override
+      public UserLookupClient getObject() {
+        return client;
+      }
+
+      @Override
+      public UserLookupClient getObject(Object... args) {
+        return client;
+      }
+
+      @Override
+      public UserLookupClient getIfAvailable() {
+        return client;
+      }
+
+      @Override
+      public UserLookupClient getIfUnique() {
+        return client;
+      }
+    };
+  }
+
+  private static DirectoryUser bob() {
+    return new DirectoryUser(GUID, "Smith, Bob", "BSMITH", "BCEIDBUSINESS", "Bob", "Smith");
+  }
+
   @BeforeEach
   void setUp() {
-    service = new MillAssociationService(assignments, mills, accounts);
+    service = new MillAssociationService(assignments, mills, accounts, providerOf(lookup));
     // lenient(): these serve most tests but not the unknown-mill refusals or the paths that never
     // reach the lock, and strict stubbing — which the rest of the class deliberately keeps — would
     // reject those.
@@ -286,6 +323,158 @@ class MillAssociationServiceTest {
         .isEqualTo(MillSubmitter.ACTIVE);
   }
 
+  @Test
+  @DisplayName("The list resolves each row's GUID against the directory")
+  void listByMill_enrichesRowsFromTheDirectory() {
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    MillSubmitter row = service.listByMill(MILL_ID, true).getFirst();
+
+    assertThat(row.firstName()).isEqualTo("Bob");
+    assertThat(row.lastName()).isEqualTo("Smith");
+    assertThat(row.bceid()).isEqualTo("BSMITH");
+  }
+
+  @Test
+  @DisplayName(
+      "A directory outage leaves every row bare — the panel still renders from the database")
+  void listByMill_leavesNamesAbsentWhenTheDirectoryIsDown() {
+    // Two distinct GUIDs so a regression that keeps asking per-row after the first failure is
+    // caught by the times(1) below, not hidden by there being only one GUID to ask about. The
+    // outage lands on the FIRST ask, which is what makes "every row bare" the right expectation --
+    // an outage partway down the page keeps what it had resolved (the test above).
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(activeRow(0, GUID), inactiveRow(1, GUID_B)));
+    when(lookup.findBusinessBceid(any(), any())).thenThrow(new DirectoryUnavailableException());
+
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
+
+    // Fail-soft: the panel still renders from database state alone, for every row.
+    assertThat(rows).allSatisfy(row -> assertThat(row.firstName()).isNull());
+    assertThat(rows).allSatisfy(row -> assertThat(row.bceid()).isNull());
+    // The outage stops the loop outright: a second GUID must never be asked about.
+    verify(lookup, times(1)).findBusinessBceid(any(), any());
+  }
+
+  @Test
+  @DisplayName("An outage mid-page keeps the names already resolved — only the rest go bare")
+  void listByMill_keepsTheNamesResolvedBeforeTheOutage() {
+    // The outage lands on the SECOND GUID, so one name is already in hand when it hits. Returning
+    // an empty map here would blank a row the panel could name, discarding a round-trip already
+    // paid for (PR #481 review). GUID is listed first because the loop asks in row order.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(activeRow(0, GUID), inactiveRow(1, GUID_B)));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+    when(lookup.findBusinessBceid("userGuid", GUID_B))
+        .thenThrow(new DirectoryUnavailableException());
+
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
+
+    MillSubmitter resolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID)).findFirst().orElseThrow();
+    MillSubmitter bare =
+        rows.stream().filter(row -> row.userGuid().equals(GUID_B)).findFirst().orElseThrow();
+
+    assertThat(resolved.firstName()).isEqualTo("Bob");
+    assertThat(resolved.lastName()).isEqualTo("Smith");
+    assertThat(resolved.bceid()).isEqualTo("BSMITH");
+
+    assertThat(bare.firstName()).isNull();
+    assertThat(bare.lastName()).isNull();
+    assertThat(bare.bceid()).isNull();
+    // Still one ask per distinct GUID, and no retry of the one that reported the outage.
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID);
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID_B);
+  }
+
+  @Test
+  @DisplayName("An unresolved GUID leaves only its own row bare — its neighbour still resolves")
+  void listByMill_leavesAnUnresolvedRowBare() {
+    // GUID_B (the empty answer) is listed FIRST: an implementation that stopped the whole
+    // resolution on the first empty answer, rather than just skipping that one GUID, would
+    // leave GUID unresolved too -- this ordering is what makes that regression visible.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(inactiveRow(1, GUID_B), activeRow(0, GUID)));
+    // An unknown user is an EMPTY answer, not a failure (findBusinessBceid's contract).
+    when(lookup.findBusinessBceid("userGuid", GUID_B)).thenReturn(List.of());
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
+
+    MillSubmitter resolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID)).findFirst().orElseThrow();
+    MillSubmitter unresolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID_B)).findFirst().orElseThrow();
+
+    assertThat(resolved.firstName()).isEqualTo("Bob");
+    assertThat(resolved.lastName()).isEqualTo("Smith");
+    assertThat(resolved.bceid()).isEqualTo("BSMITH");
+
+    assertThat(unresolved.firstName()).isNull();
+    assertThat(unresolved.bceid()).isNull();
+  }
+
+  @Test
+  @DisplayName("Two rows sharing a GUID resolve the directory only once")
+  void listByMill_resolvesEachDistinctGuidOnce() {
+    // Two rows for one user: add() cannot produce this, but grandfathered rows can.
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0), inactiveRow(1)));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    service.listByMill(MILL_ID, true);
+
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID);
+  }
+
+  @Test
+  @DisplayName(
+      "A non-DirectoryUnavailableException RuntimeException skips only that GUID's row — its"
+          + " neighbour still resolves")
+  void listByMill_skipsOnlyTheGuidThatThrowsAnUnexpectedRuntimeException() {
+    // GUID_B is the one that misbehaves; GUID is its neighbour and must still resolve — proving
+    // the loop continues instead of aborting the whole page the way DirectoryUnavailableException
+    // does. IllegalArgumentException stands in for the escapee the client's own javadoc names (a
+    // malformed relative URI), but the catch itself must not be specific to any one subtype.
+    when(assignments.findByMill(MILL_ID))
+        .thenReturn(List.of(inactiveRow(1, GUID_B), activeRow(0, GUID)));
+    when(lookup.findBusinessBceid("userGuid", GUID_B))
+        .thenThrow(new IllegalArgumentException("malformed relative URI"));
+    when(lookup.findBusinessBceid("userGuid", GUID)).thenReturn(List.of(bob()));
+
+    List<MillSubmitter> rows = service.listByMill(MILL_ID, true);
+
+    MillSubmitter resolved =
+        rows.stream().filter(row -> row.userGuid().equals(GUID)).findFirst().orElseThrow();
+    MillSubmitter skipped =
+        rows.stream().filter(row -> row.userGuid().equals(GUID_B)).findFirst().orElseThrow();
+
+    assertThat(resolved.firstName()).isEqualTo("Bob");
+    assertThat(resolved.lastName()).isEqualTo("Smith");
+    assertThat(resolved.bceid()).isEqualTo("BSMITH");
+
+    assertThat(skipped.firstName()).isNull();
+    assertThat(skipped.bceid()).isNull();
+    // Both GUIDs are still asked about — unlike the directory-outage case, this is not fatal to
+    // the loop.
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID_B);
+    verify(lookup, times(1)).findBusinessBceid("userGuid", GUID);
+  }
+
+  @Test
+  @DisplayName("An unconfigured lookup client leaves every row bare without attempting a lookup")
+  void listByMill_leavesNamesAbsentWhenTheLookupClientIsNotConfigured() {
+    MillAssociationService withoutLookup =
+        new MillAssociationService(assignments, mills, accounts, providerOf(null));
+    when(assignments.findByMill(MILL_ID)).thenReturn(List.of(activeRow(0)));
+
+    MillSubmitter row = withoutLookup.listByMill(MILL_ID, true).getFirst();
+
+    assertThat(row.firstName()).isNull();
+    assertThat(row.userGuid()).isEqualTo(GUID);
+    verifyNoInteractions(lookup);
+  }
+
   private static AdminMillEntity mill(String statusCode) {
     return new AdminMillEntity(
         MILL_ID,
@@ -296,16 +485,26 @@ class MillAssociationServiceTest {
         null,
         null,
         null,
-        0);
+        0,
+        "ITUSER",
+        java.time.LocalDateTime.of(2026, 9, 1, 0, 0));
   }
 
   private static MillUserXrefEntity activeRow(int revisionCount) {
+    return activeRow(revisionCount, GUID);
+  }
+
+  private static MillUserXrefEntity activeRow(int revisionCount, String userGuid) {
     return new MillUserXrefEntity(
-        MILL_ID, GUID, LocalDateTime.now(), null, revisionCount, ADMIN, null, ADMIN, null);
+        MILL_ID, userGuid, LocalDateTime.now(), null, revisionCount, ADMIN, null, ADMIN, null);
   }
 
   private static MillUserXrefEntity inactiveRow(int revisionCount) {
+    return inactiveRow(revisionCount, GUID);
+  }
+
+  private static MillUserXrefEntity inactiveRow(int revisionCount, String userGuid) {
     return new MillUserXrefEntity(
-        MILL_ID, GUID, null, LocalDateTime.now(), revisionCount, ADMIN, null, ADMIN, null);
+        MILL_ID, userGuid, null, LocalDateTime.now(), revisionCount, ADMIN, null, ADMIN, null);
   }
 }
