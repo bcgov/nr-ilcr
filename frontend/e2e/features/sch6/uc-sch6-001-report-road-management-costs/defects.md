@@ -14,8 +14,8 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-17 — IN PROGRESS.** S01–S08 authored and green (nine scenarios; S05 is two); 8 of 23
-slices covered. Four verified-not-a-defect findings. No divergences and no bugs found in the app so
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S11 authored and green (twelve scenarios; S05 is two); 11 of
+23 slices covered. Four verified-not-a-defect findings. No divergences and no bugs found in the app so
 far — every red encountered so far has been the test being wrong, not the application.
 
 ---
@@ -40,9 +40,9 @@ far — every red encountered so far has been the test being wrong, not the appl
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 15 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 12 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** S01–S08 are covered. S09–S23 and the axe sweeps are still to be written.
+**What is missing.** S01–S11 are covered. S12–S23 and the axe sweeps are still to be written.
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR

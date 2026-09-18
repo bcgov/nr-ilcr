@@ -56,12 +56,24 @@ export async function readSchedule6(
   return (await res.json()) as Schedule6Doc;
 }
 
-/** The fields a road record is created with. `tflNumber` stays absent for a TSA record (BR-02). */
+/**
+ * The fields a road record is created with.
+ *
+ * Everything but `areaType`, `volume` and `comments` is OPTIONAL, because the write path genuinely
+ * permits the gaps — and the Check Status slices are built on exactly those gaps:
+ *  - `supplyBlock` omitted: a missing Supply Block is a Check Status finding, never a save failure
+ *    (only its width is enforced on write), so S11's state is storable.
+ *  - `cost` omitted: likewise storable, which is S09's state.
+ *  - `tflNumber`: supplied only on the TFL branch, where BR-02 clears the TSA side instead.
+ * The one gap that is NOT storable is a TFL record with no TFL number — the endpoint answers 400
+ * FLD-002 — which is why S10 has to blank that field on screen rather than save it.
+ */
 export interface NewRoadRecord {
   areaType: string;
-  supplyBlock: string;
+  supplyBlock?: string;
+  tflNumber?: string;
   volume: number;
-  cost: number;
+  cost?: number;
   comments: string;
 }
 

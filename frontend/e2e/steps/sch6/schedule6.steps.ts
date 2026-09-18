@@ -1,6 +1,9 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  CHECK_MISSING_COST_ANCHOR,
+  CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
+  CHECK_MISSING_TFL_ANCHOR,
   EDIT_ANCHOR,
   GENERAL_COMMENT_ANCHOR,
   GUARDS,
@@ -11,9 +14,13 @@ import {
   S01_TOTALS,
   S02_EDITED,
   S02_SEEDED,
+  REQUIREMENTS_MET,
   S03_RECORD,
   S04_GENERAL_COMMENT,
   S05_RECORD,
+  S09_RECORD,
+  S10_RECORD,
+  S11_RECORD,
   TFL_ANCHOR,
   TFL_CORRECTION_ANCHOR,
   TFL_OPTION,
@@ -41,6 +48,9 @@ const ANCHORS: Record<string, Sch6Anchor> = {
   'general-comment': GENERAL_COMMENT_ANCHOR,
   'tfl-correction': TFL_CORRECTION_ANCHOR,
   'validate-only': VALIDATE_ONLY_ANCHOR,
+  'check-missing-cost': CHECK_MISSING_COST_ANCHOR,
+  'check-missing-tfl': CHECK_MISSING_TFL_ANCHOR,
+  'check-missing-supply-block': CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
 };
 
 Given(
@@ -313,7 +323,9 @@ Then('the schedule totals are recomputed from the edited record', async ({ reque
 // "I run Check Status on Schedule 3"). Promoting one shared step to steps/common/ would need a common
 // schedule-page abstraction these page objects do not have today.
 When('I run Schedule 6 Check Status', async ({ schedule6Page }) => {
-  await schedule6Page.checkStatusButton.click();
+  // Goes through runCheckStatus (which WAITS for the verdict) rather than a bare click, so the same
+  // step is sound for the slices that assert an ABSENCE as well as the ones that assert a banner.
+  await schedule6Page.runCheckStatus();
 });
 
 // ---- S03 — Record a TFL instead of a TSA -----------------------------------------------------------
@@ -471,6 +483,91 @@ Then('no road record was stored on that anchor', async ({ request, world }) => {
 
 When('I correct the TFL number', async ({ schedule6Page }) => {
   await schedule6Page.enterTflNumber(VALID_TFL.number);
+});
+
+// ---- S09 / S10 / S11 — the Check Status "Value Required" outcomes ----------------------------------
+
+Given(
+  'a road maintenance record with no cost commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    // STORABLE, verified by probe: a missing cost is a Check Status finding, never a save failure.
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S09_RECORD.areaTypeCode,
+      supplyBlock: S09_RECORD.supplyBlockCode,
+      volume: S09_RECORD.volume,
+      comments,
+    });
+    expect(created.cost ?? null, 'the seeded record must genuinely have NO cost stored').toBeNull();
+    world.sch6RecordId = created.recordId;
+  },
+);
+
+Given(
+  'a road maintenance record with no supply block commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    // Also STORABLE: only the Supply Block's WIDTH is enforced on write.
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S11_RECORD.areaTypeCode,
+      volume: S11_RECORD.volume,
+      cost: S11_RECORD.cost,
+      comments,
+    });
+    expect(
+      created.supplyBlock ?? null,
+      'the seeded record must genuinely have NO supply block stored',
+    ).toBeNull();
+    world.sch6RecordId = created.recordId;
+  },
+);
+
+Given(
+  'a valid TFL road maintenance record commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    // A VALID one, because the invalid state is NOT storable — the add endpoint answers 400 FLD-002 on
+    // a TFL record with no number. S10 blanks the field on screen instead; see the feature header.
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: TFL_OPTION,
+      tflNumber: S10_RECORD.tflNumber,
+      volume: S10_RECORD.volume,
+      cost: S10_RECORD.cost,
+      comments,
+    });
+    expect(created.tflNumber, 'the seeded TFL record must carry its number').toBe(
+      S10_RECORD.tflNumber,
+    );
+    world.sch6RecordId = created.recordId;
+  },
+);
+
+When("I clear the record's TFL number on screen", async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  await schedule6Page.expandRecord(1, recordId);
+  // NOT SAVED, deliberately. This is the whole mechanism of S10: the record on screen is now in a
+  // state the write path would refuse, and Check Status still describes it because it evaluates the
+  // payload the screen sends.
+  await schedule6Page.setRowTflNumber(recordId, '');
+});
+
+Then('Check Status reports {string}', async ({ schedule6Page }, line: string) => {
+  await expect(schedule6Page.notification(line)).toBeVisible();
+  // The severity word, not colour alone (NFR1) — an ISSUES verdict renders under "Action required".
+  await expect(schedule6Page.notification('Action required')).toBeVisible();
+});
+
+Then('Check Status does not report the schedule as met', async ({ schedule6Page }) => {
+  // SOUND ONLY BECAUSE runCheckStatus WAITED for the verdict. An absence asserted straight after the
+  // click could pass against a DOM that had not re-rendered — the vacuous-pass class that sch3's
+  // DIV-6 mirror arm shipped with. See pages/common/checkStatus.ts.
+  await expect(schedule6Page.notification(REQUIREMENTS_MET)).toHaveCount(0);
 });
 
 // ---- S06 / S07 / S08 — the three context guards ----------------------------------------------------

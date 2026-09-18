@@ -11,10 +11,11 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-17 — IN PROGRESS.** S01 and S02 authored and green. 2 of 23 slices covered.
-Accessibility is in scope from the start (`accessibility.feature`, `@a11y`) and is NOT yet written —
-carried deliberately as the lesson from Story 28.4's GAP-5, where "all slices authored" read as
-complete while half of the board item was unverified because a11y is an NFR that no slice asks for.
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S11 authored and green (twelve scenarios; S05 is two).
+11 of 23 slices covered. Accessibility is in scope from the start (`accessibility.feature`, `@a11y`)
+and is NOT yet written — carried deliberately as the lesson from Story 28.4's GAP-5, where "all slices
+authored" read as complete while half of the board item was unverified because a11y is an NFR that no
+slice asks for.
 
 **Scope is 23 slices, S01–S23.** The slice catalogue said 21 in three places while the Gherkin folder
 carried 23; corrected under SPEC-1 on the planning branch (`docs/story-28-5-schedule-6-e2e`) before
@@ -27,24 +28,24 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                    6 files
-scenarios (bddgen, @UC-SCH6-001)              9
-preflight/sch6-anchors.setup.ts              11 checks
-pinned (mill, year) anchors                   8  — 6 mutating/validate-only in 2024, plus 2 guards
+features/sch6/**/*.feature                    7 files
+scenarios (bddgen, @UC-SCH6-001)             12
+preflight/sch6-anchors.setup.ts              14 checks
+pinned (mill, year) anchors                  11  — 9 mutating/validate-only in 2024, plus 2 guards
                                                   (1/2017 closed-mill, 23050/2024 deliberately absent)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Nine scenarios over eight slices: S05 is two (a reject arm and a correction arm) because the legacy
+Twelve scenarios over eleven slices: S05 is two (a reject arm and a correction arm) because the legacy
 file has two and they cannot share an anchor — see its feature header.
 
-Verification runs, 2026-09-17:
+Verification runs, 2026-09-18:
 
-- full suite preflight → **191 passed** (180 before sch6 + 11), run at `--workers=2`
-- `--grep @UC-SCH6-001 --workers=1` → **9 passed**
-- `--repeat-each=5 --workers=1` → **45 passed**, 5/5 stable per scenario
-- `--workers=2` single pass → **9 passed**, every anchor empty afterwards
-- All six mutating anchors confirmed empty, with no stranded `ROAD_MAINTENANCE_REPORT` rows in 2024
+- full suite preflight → **194 passed** (180 before sch6 + 14), run at `--workers=2`
+- `--grep @UC-SCH6-001 --workers=1` → **12 passed**
+- `--repeat-each=5 --workers=1` → **60 passed**, 5/5 stable per scenario
+- `--workers=2` single pass → **12 passed**
+- All NINE mutating anchors confirmed empty afterwards — no stranded rows and no stranded comment
 
 Preflight itself must also be run at `--workers=2` on this box. At the default (6) two unrelated sch4
 anchor checks failed and then passed in isolation — the same overload described below, not drift.
@@ -68,16 +69,18 @@ That second trap is also the anchor precondition earning its keep: each scenario
 anchor is empty at scenario time, not just in preflight, so residue is named at the cause instead of
 surfacing four steps later as a confusing UI assertion.
 
-Those scenario runs used `--no-deps`, and that needs stating plainly rather than buried: a whole-suite
-run was interrupted partway through, which left **sch1's** `13050/2017` anchor holding the values its
-S01 scenario writes, because that scenario's blank-restore teardown never ran. `preflight/anchors.setup.ts`
-then hard-fails on it, and since the `chromium` project depends on `setup`, that one dirty anchor blocks
-every data-backed scenario in every domain. It is neither a sch6 problem nor an app problem.
+**A third trap, worth recording because the recovery is not obvious.** Interrupting a whole-suite run
+leaves whichever mutating scenario was mid-flight un-torn-down, and a single dirty anchor in ANY domain
+hard-fails `setup` — which the `chromium` project depends on, so it blocks every data-backed scenario in
+every domain. It happened here to sch1's `13050/2017`. The fix is NOT a manual DB edit: re-running that
+domain's own scenario (`--grep @S01 --no-deps`) exercises its real teardown and restores the anchor,
+because fixtures tear down even when the scenario fails. Verified — preflight returned to green with no
+hand-written SQL.
 
-So the sch6 preflight was run separately and in full (12 passed, above) and only the two scenarios
-skipped dependencies — nothing sch6 relies on went unchecked. **Still owed:** restoring that sch1
-anchor (its own `schedule1Restore` teardown does it — GET for the `revisionCount`, then PUT
-`emptyScheduleRequest`) and one clean `npm run test:gate` over the whole suite.
+Scenario runs in this domain use `--no-deps` so a sibling domain's residue cannot block them; the sch6
+preflight is always run separately and in full, so nothing sch6 depends on goes unchecked.
+
+**Still owed:** one clean `npm run test:gate` over the whole suite at `--workers=2`.
 
 ---
 
@@ -278,16 +281,65 @@ rather than as drifted data.
 
 ---
 
+## S09 / S10 / S11 - Check Status names the missing value
+
+Scenarios: `check-status-missing.feature` -> `@p1 @S09`, `@p1 @S10`, `@p1 @S11`. Anchors **22051/2024**,
+**23051/2024**, **23052/2024** - one each, since all three save a record to reach their state.
+
+| # | Source item | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | A record with no cost is flagged | `evaluateRecord` cost check is null-only | `Then Check Status reports "Road : 1 - TSA or TFL (Cost $) : Value Required"` | covered |
+| 2 | A TFL record with no TFL number is flagged | the TFL branch requires a number | `Then Check Status reports "Road : 1 - TFL Number : Value Required"` | covered |
+| 3 | A TSA record with no Supply Block is flagged | the non-TFL branch requires a block | `Then Check Status reports "Road : 1 - Supply Block : Value Required"` | covered |
+| 4 | The met banner is NOT shown in any of the three | `outcome: ISSUES` emits no schedule banner | `And Check Status does not report the schedule as met` | covered |
+| 5 | *(beyond the Gherkin)* the finding carries a severity WORD | "Action required" title, not colour alone | `Then Check Status reports ...` | covered |
+| 6 | *(beyond the Gherkin)* S09 record has NO cost, not a cost of 0 | the check is null-only, so 0 would PASS | the Given asserts `cost` is null | covered |
+
+**The lines are asserted byte-for-byte, mislabel included.** `"TSA or TFL (Cost $)"` on the missing-COST
+line is a labelling quirk in the legacy source (`Schedule6MB.checkStatus :172`), listed among
+`Schedule6Service` pinned quirks and flagged by the source Gherkin as "reproduced exactly as found".
+The text IS the requirement - if it is ever corrected, this assertion should fail loudly rather than
+tolerate both spellings.
+
+**Why S10 is built differently from the other two, and what it proves.** Probed against the running
+app: a record with no cost stores fine (200), a TSA record with no Supply Block stores fine (200), but
+a TFL record with **no TFL number is refused** (400 FLD-002). So S09 and S11 seed their state through
+the app's own POST, while S10 saves a *valid* TFL record and then blanks the field **on screen without
+saving**. Check Status still reports it, because the endpoint evaluates the on-screen payload.
+
+That is the slice which demonstrates the capability in practice. The backend notes this branch was
+"ported verbatim though it is unreachable from persisted rows (legacy view-state-only)" - with the
+payload-based endpoint it is reachable from the screen again, which is what the legacy `ajax="false"`
+postback did.
+
+**Item 4 is only sound because the click waits.** `runCheckStatus` goes through the shared awaiting
+helper; an absence asserted straight after a bare click can pass against a DOM that has not
+re-rendered - the vacuous-pass class the sch3 DIV-6 mirror arm shipped with.
+
+### Recorded so nobody adds it later
+
+| Not asserted | Why |
+|---|---|
+| Volume as a Check Status requirement | Legacy never checks it - commented out at `Schedule6CheckStatus:19`, ported verbatim. Asserting it would claim behaviour the app deliberately lacks |
+| A cost of `0` as a finding | The check is null-only (D2 precedent), so `0` is MET. S09 uses an absent cost precisely to avoid asserting the wrong thing |
+| A record missing several values at once | S21 |
+| A mix of passing and failing records (the only way the per-record "met" line appears) | S20 |
+
+---
+
 ## Remaining slices
 
-S09–S23 not yet authored (15 of 23). Accessibility sweeps not yet authored. Each will be added here
+S12-S23 not yet authored (12 of 23). Accessibility sweeps not yet authored. Each will be added here
 with its own item table as it lands; `defects.md` carries anything found along the way.
 
-Next up are the Check Status outcomes (S09–S11, then the S20/S21 compositions). Two things to plan for:
-the endpoint takes the **on-screen** payload, so a scenario must control what is on screen rather than
-what is stored; and `GAP-4`-style per-record "met" lines only appear when the SCHEDULE fails and some
-individual record passes, which needs two records on one anchor — a state every current anchor is
-asserted NOT to hold, so it will need its own cell.
+Next are the field validations (S12-S16), which all ride the shared **validate-only** anchor
+(22050/2024) because none of them saves - except any correction arm, which needs its own cell, as
+sch5 S12 found. S12 also carries `SPEC-2`: its required-field message is `[UNKNOWN]` in the source, so
+the text must be taken from the running app and confirmed by BA/QA.
+
+After those, S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
+when the SCHEDULE fails while some individual record passes, which takes two records on one anchor -
+and every anchor today is asserted NOT to hold records at rest, so it will need a dedicated cell.
 
 **Anchor budget note for whoever continues this.** Every further mutating scenario needs its OWN
 `(mill, year)` — the suite runs `fullyParallel` and an add creates a real `ROAD_MAINTENANCE_REPORT`

@@ -72,6 +72,9 @@ const MILL_987: MillRef = { millNumber: '987', millName: 'TURTLE DOVE' }; // mil
 const MILL_999: MillRef = { millNumber: '999', millName: 'ISP TEST' }; // millId 13050, ACT
 const MILL_727: MillRef = { millNumber: '727', millName: 'Updated Mill E2E' }; // millId 17052, ACT
 const MILL_20171: MillRef = { millNumber: '20171', millName: 'MILES MILLING' }; // millId 22050, ACT
+const MILL_20172: MillRef = { millNumber: '20172', millName: 'COVEY CUSTOM CUT' }; // millId 22051, ACT
+const MILL_20174: MillRef = { millNumber: '20174', millName: 'AO CUSTOM' }; // millId 23051, ACT
+const MILL_20176: MillRef = { millNumber: '20176', millName: 'TANNER LOGS' }; // millId 23052, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -130,6 +133,28 @@ export const TFL_CORRECTION_ANCHOR: Sch6Anchor = { key: { millId: 17052, year: 2
  */
 export const VALIDATE_ONLY_ANCHOR: Sch6Anchor = { key: { millId: 22050, year: 2024 }, mill: MILL_20171 };
 
+/** S09 — Check Status reports a missing cost. Mutating: the Given saves a cost-less record. */
+export const CHECK_MISSING_COST_ANCHOR: Sch6Anchor = { key: { millId: 22051, year: 2024 }, mill: MILL_20172 };
+
+/**
+ * S10 — Check Status reports a missing TFL number.
+ *
+ * Mutating, and it reaches its state in TWO steps for a reason worth knowing: a TFL record with no TFL
+ * number CANNOT be saved (the add endpoint answers 400 FLD-002 — verified by probe). So the Given saves
+ * a VALID TFL record and the scenario then blanks the field on screen without saving. Check Status
+ * evaluates the on-screen payload, so the verdict describes that.
+ */
+export const CHECK_MISSING_TFL_ANCHOR: Sch6Anchor = { key: { millId: 23051, year: 2024 }, mill: MILL_20174 };
+
+/**
+ * S11 — Check Status reports a missing Supply Block.
+ *
+ * A TSA record with no Supply Block IS savable (verified by probe): a missing Supply Block is a Check
+ * Status finding, never a save failure — only its width is enforced on write. So this one is a stored
+ * state, unlike S10.
+ */
+export const CHECK_MISSING_SUPPLY_BLOCK_ANCHOR: Sch6Anchor = { key: { millId: 23052, year: 2024 }, mill: MILL_20176 };
+
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
   { name: 'edit (S02)', anchor: EDIT_ANCHOR },
@@ -137,6 +162,9 @@ export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'general-comment (S04)', anchor: GENERAL_COMMENT_ANCHOR },
   { name: 'tfl-correction (S05)', anchor: TFL_CORRECTION_ANCHOR },
   { name: 'validate-only (S05, S12-S16)', anchor: VALIDATE_ONLY_ANCHOR },
+  { name: 'check-missing-cost (S09)', anchor: CHECK_MISSING_COST_ANCHOR },
+  { name: 'check-missing-tfl (S10)', anchor: CHECK_MISSING_TFL_ANCHOR },
+  { name: 'check-missing-supply-block (S11)', anchor: CHECK_MISSING_SUPPLY_BLOCK_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -294,6 +322,56 @@ export const S04_GENERAL_COMMENT =
 
 /** The General Comments textarea's id (components/schedule6/index.tsx:1061). */
 export const GENERAL_COMMENTS_FIELD = '#general-comments';
+
+// ---------------------------------------------------------------------------------------------------
+// CHECK STATUS "Value Required" LINES (S09, S10, S11)
+//
+// Composed server-side, byte-for-byte as legacy did: `"Road : " + rowCounter + segment + ": " + text`
+// (Schedule6CheckStatusResolver:112-125). The ROW COUNTER is the 1-based DISPLAY ordinal, not the
+// recordId — the same number the accordion titles carry.
+//
+// "TSA or TFL (Cost $)" IS THE LEGACY MISLABEL, PRESERVED ON PURPOSE. The missing-COST line names the
+// TSA/TFL field (Schedule6MB.checkStatus :172), which is a labelling quirk in the original source.
+// Schedule6Service's own header calls it out as a pinned quirk, and the source Gherkin's note says it
+// is "reproduced exactly as found (not corrected here)". Do not tidy it: the text is the requirement.
+//
+// WHAT CHECK STATUS DOES **NOT** REQUIRE, so nobody adds an assertion for it later:
+//   * VOLUME is never checked — commented out in legacy (Schedule6CheckStatus:19), ported verbatim.
+//   * A cost of ZERO PASSES. The check is null-only (D2 precedent), so 0 is MET, not a finding.
+// ---------------------------------------------------------------------------------------------------
+
+export const CHECK_LINES = {
+  /** S09. Note the legacy mislabel — this is the COST line. */
+  missingCost: 'Road : 1 - TSA or TFL (Cost $) : Value Required',
+  /** S10. */
+  missingTflNumber: 'Road : 1 - TFL Number : Value Required',
+  /** S11. */
+  missingSupplyBlock: 'Road : 1 - Supply Block : Value Required',
+} as const;
+
+/** S09's record: a complete TSA record except that the cost is absent. */
+export const S09_RECORD = {
+  areaTypeCode: '01',
+  supplyBlockCode: '01B',
+  volume: 9000,
+  comments: 'E2E S09 cost-less record',
+} as const;
+
+/** S10's record: a VALID TFL record, whose number the scenario then blanks on screen. */
+export const S10_RECORD = {
+  tflNumber: VALID_TFL.number,
+  volume: 9000,
+  cost: 5000,
+  comments: 'E2E S10 TFL record',
+} as const;
+
+/** S11's record: a TSA record saved with no Supply Block, which the write path permits. */
+export const S11_RECORD = {
+  areaTypeCode: '01',
+  volume: 9000,
+  cost: 5000,
+  comments: 'E2E S11 supply-block-less record',
+} as const;
 
 // ---------------------------------------------------------------------------------------------------
 // THE THREE CONTEXT GUARDS (S06, S07, S08)

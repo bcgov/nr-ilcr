@@ -1,6 +1,7 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { SchedulePage } from '../common/schedulePage';
 import { navigateViaSideNav } from '../common/authNav';
+import { clickAwaitingCheckStatus } from '../common/checkStatus';
 import { byId, fieldError } from '../common/carbonHelpers';
 import {
   ADD_FIELD,
@@ -363,11 +364,40 @@ export class Schedule6Page {
   /**
    * Check Status. Legacy carried the button twice (above the schedule and below the General Comment);
    * the React page mirrors that (`actionBar`, index.tsx:880-900), so this takes the FIRST — the
-   * `checkStatusButton0` the S01 Gherkin names. `.first()` is deliberate and not a strict-mode dodge:
-   * the two instances are genuinely the same control, and which one is clicked is not S01's subject.
+   * `checkStatusButton0` the Gherkin names. `.first()` is deliberate and not a strict-mode dodge: the
+   * two instances are genuinely the same control, and which one is clicked is not these slices' subject.
    */
   get checkStatusButton(): Locator {
     return this.page.getByRole('button', { name: 'Check Status', exact: true }).first();
+  }
+
+  /**
+   * Click Check Status and WAIT for the verdict to land.
+   *
+   * Required by any scenario that asserts an ABSENCE — "the met banner is NOT shown". A bare click is
+   * fine for a positive assertion because `toBeVisible` auto-waits, but an absence assertion made
+   * immediately after the click can pass against a DOM that has not re-rendered, proving nothing. The
+   * shared helper is best-effort by design: a blocked Check Status legitimately sends no request, so it
+   * must not turn that correct no-op into a timeout. See `pages/common/checkStatus.ts`.
+   */
+  async runCheckStatus(): Promise<void> {
+    await clickAwaitingCheckStatus(this.page, '/schedule6/check-status', async () => {
+      await this.checkStatusButton.click();
+    });
+  }
+
+  /**
+   * Overwrite a saved row's TFL number — including clearing it.
+   *
+   * This is how S10 reaches its state AT ALL. A TFL record with no TFL number cannot be SAVED (the add
+   * endpoint answers 400 FLD-002, verified by probe), so the only way to put one in front of Check
+   * Status is to save a valid TFL record and then blank the field on screen without saving. That works
+   * because Check Status evaluates the ON-SCREEN payload — see the feature header.
+   */
+  async setRowTflNumber(recordId: number, value: string): Promise<void> {
+    const field = byId(this.page, rowField(recordId).tflNumber);
+    await field.fill(value);
+    await field.blur();
   }
 
   /** The page-level Save (fans every row plus the general comment out in one PUT). */

@@ -468,6 +468,12 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- 22050/2024 — the VALIDATE-ONLY anchor: S05's reject arm now, S12-S16 later. Nothing ever saves
 -- here, which is what lets non-writing scenarios share it.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22050, 'D', 'D', 'E2E_SEED');
+-- 22051 / 23051 / 23052 in 2024 — S09, S10 and S11, the three Check Status "Value Required"
+-- outcomes. Each needs its own cell because all three reach their state by saving a record (or saving
+-- one and then editing it on screen), so all three are writers. Empty at rest.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 23051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 23052, 'D', 'D', 'E2E_SEED');
 -- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
 -- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
 -- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It

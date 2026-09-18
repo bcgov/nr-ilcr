@@ -135,7 +135,13 @@ DECLARE
     -- VALIDATE-ONLY: nothing is ever saved here, so non-writing scenarios may SHARE it. S05's reject
     -- arm is the first tenant; the numeric/required-field rejections (S12-S16) belong here too.
     -- Keep it writer-free — the moment a scenario saves on it, it needs its own cell instead.
-    t_anchor(22050, 2024, 'D')   -- S05 arm 1 + future S12-S16 (validate-only)
+    t_anchor(22050, 2024, 'D'),  -- S05 arm 1 + future S12-S16 (validate-only)
+    -- S09-S11, the three Check Status "Value Required" outcomes. Each needs its OWN cell: every one
+    -- reaches its state by saving a record first (or by saving one and then editing it on screen), so
+    -- all three are writers.
+    t_anchor(22051, 2024, 'D'),  -- S09 Check Status: missing cost
+    t_anchor(23051, 2024, 'D'),  -- S10 Check Status: missing TFL number
+    t_anchor(23052, 2024, 'D')   -- S11 Check Status: missing Supply Block
   );
 BEGIN
   -- The new reporting year. Additive: 2015-2023 already exist and are untouched.
