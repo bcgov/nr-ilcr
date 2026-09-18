@@ -228,7 +228,8 @@ export const SCH4_EMPTY_LANDING_MET_TEXT = 'All requirements for Empty Landing h
 
 /**
  * Hand-composed (no golden: the one finding Schedule 4 can raise since #465 — a blank location
- * description, code 0 — cannot be stored through the app). One failing, unnamed location; one met.
+ * description, code 0 — cannot be stored through the app). One failing, unnamed location — `name`
+ * is NULL, as the backend passes the stored value through (`nullDescription_issues`) — and one met.
  */
 export const schedule4Issues: Schedule4CheckStatusResponse = {
   outcome: 'ISSUES',
@@ -236,7 +237,7 @@ export const schedule4Issues: Schedule4CheckStatusResponse = {
   locations: [
     {
       id: 7001,
-      name: '',
+      name: null,
       met: false,
       messages: [],
       issues: [{ code: 0, message: REQUIRED }],

@@ -983,10 +983,10 @@ const Schedule4: FC = () => {
               />
             ))}
             {checkResult.locations.map((location) => (
-              <div key={`loc-${location.id ?? location.name}`}>
+              <div key={`loc-${location.id ?? checkStatusLocationName(location)}`}>
                 {location.messages.map((msg) => (
                   <InlineNotification
-                    key={`met-${location.id ?? location.name}-${msg.key}-${msg.text}`}
+                    key={`met-${location.id ?? checkStatusLocationName(location)}-${msg.key}-${msg.text}`}
                     kind="success"
                     lowContrast
                     title="Check Status"
@@ -995,7 +995,7 @@ const Schedule4: FC = () => {
                 ))}
                 {location.issues.map((issue) => (
                   <InlineNotification
-                    key={`issue-${location.id ?? location.name}-${issue.code}`}
+                    key={`issue-${location.id ?? checkStatusLocationName(location)}-${issue.code}`}
                     kind="warning"
                     lowContrast
                     title={`${checkStatusLocationName(location)} — required`}

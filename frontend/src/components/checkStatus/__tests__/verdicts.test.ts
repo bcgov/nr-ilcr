@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { checkStatusFieldLabel, labelFor } from '@/components/schedule4/validation'
+import {
+  checkStatusFieldLabel,
+  checkStatusLocationName,
+  labelFor,
+} from '@/components/schedule4/validation'
 import { flattenVerdict, SCHEDULE_TITLES } from '../verdicts'
 import {
   MET_TEXT,
@@ -151,7 +155,7 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
     expect(issues.requirementsMetMessage).toBeNull()
   })
 
-  test('Schedule 4 ISSUES: the unnamed location is identified by id, the field from the client label table (D5); met locations render nothing (D8)', () => {
+  test('Schedule 4 ISSUES: a NULL-named location is identified by id, the field from the client label table (D5); met locations render nothing (D8)', () => {
     const flat = flattenVerdict({ schedule: '4', requirementsMet: false, verdict: schedule4Issues })
     expect(texts(flat.errors)).toEqual(['Location 7001 - Description: Value Required'])
     expect(flat.errors[0].key).toBe('missingRequiredFieldMsg')
@@ -191,6 +195,26 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
       // An unknown code names the location only — never a fabricated field.
       'Harbour Dump: Value Required',
     ])
+  })
+
+  test('checkStatusLocationName: null, blank and whitespace names fall back to the id; a null id to "Location"', () => {
+    expect(checkStatusLocationName({ id: 7001, name: null })).toBe('Location 7001')
+    expect(checkStatusLocationName({ id: 7001, name: '' })).toBe('Location 7001')
+    expect(checkStatusLocationName({ id: 7001, name: '   ' })).toBe('Location 7001')
+    expect(checkStatusLocationName({ id: null, name: null })).toBe('Location')
+    expect(checkStatusLocationName({ id: 7001, name: 'Harbour Dump' })).toBe('Harbour Dump')
+  })
+
+  test('Schedule 4 ISSUES: a blank-string name flattens the same way as a null one', () => {
+    const flat = flattenVerdict({
+      schedule: '4',
+      requirementsMet: false,
+      verdict: {
+        ...schedule4Issues,
+        locations: [{ ...schedule4Issues.locations[0], name: '' }],
+      },
+    })
+    expect(texts(flat.errors)).toEqual(['Location 7001 - Description: Value Required'])
   })
 
   test('checkStatusFieldLabel: Description for code 0, "<category> (Cost $)" for a cost-item code, undefined otherwise', () => {

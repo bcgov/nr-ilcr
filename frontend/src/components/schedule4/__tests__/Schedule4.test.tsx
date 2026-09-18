@@ -439,10 +439,11 @@ describe('Schedule4 page', () => {
     expect(rate('Lakeside Dry Dump')).toBe('999.99')
   })
 
-  // The one finding the check can raise (#465, legacy parity): a blank location description. The
-  // location has no name to head the banner with, so the report id stands in; the field is named
-  // ahead of the API's verbatim text (#326).
-  test('Check Status renders the per-location results', async () => {
+  // The one finding the check can raise (#465, legacy parity): a null or blank location description.
+  // The backend passes the stored value through, so `name` arrives as NULL on the wire; the location
+  // has no name to head the banner with, so the report id stands in; the field is named ahead of the
+  // API's verbatim text (#326).
+  test('Check Status renders the per-location results (null-named location does not crash)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, () =>
@@ -452,7 +453,7 @@ describe('Schedule4 page', () => {
           locations: [
             {
               id: 7001,
-              name: '',
+              name: null,
               met: false,
               messages: [],
               issues: [

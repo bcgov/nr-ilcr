@@ -82,7 +82,9 @@ export interface FieldIssue {
 
 export interface LocationCheckResult {
   readonly id: number | null
-  readonly name: string
+  // Null when the stored description is null — the very state the check reports (code 0), passed
+  // through by Schedule4Service unchanged. Render through `checkStatusLocationName`.
+  readonly name: string | null
   readonly met: boolean
   readonly messages: MessageInfo[]
   readonly issues: FieldIssue[]

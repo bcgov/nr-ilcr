@@ -68,14 +68,17 @@ export function checkStatusFieldLabel(code: number): string | undefined {
 
 /**
  * How a Check Status banner names a location. The name, when there is one; when the description is
- * blank — which is the one finding the check can raise — the location has no name to show, so the
- * report id stands in. Legacy's tab printed "Location Descriprion - " followed by nothing.
+ * null or blank — which is the one finding the check can raise, and the backend passes the stored
+ * value through as-is — the location has no name to show, so the report id stands in. Legacy's tab
+ * printed "Location Descriprion - " followed by nothing.
  */
 export function checkStatusLocationName(location: {
   readonly id: number | null
-  readonly name: string
+  readonly name: string | null | undefined
 }): string {
-  if (location.name.trim() !== '') return location.name
+  if (location.name !== null && location.name !== undefined && location.name.trim() !== '') {
+    return location.name
+  }
   return location.id === null ? 'Location' : `Location ${location.id}`
 }
 
