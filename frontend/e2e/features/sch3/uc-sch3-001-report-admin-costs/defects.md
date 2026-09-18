@@ -518,6 +518,90 @@ count does.
     `Schedule 3 tells me to save first`, which asserted ALT-002's text. S19 therefore *passed* against the
     wrong message — a shared step hid a per-link difference. They now use separate steps.
 
+- **DIV-8 — the save-first gate fires for VIEW-ONLY readers too, and legacy showed them nothing of the
+  kind (SPANS SCHEDULES 1 AND 3).**
+  - **What's wrong, in plain terms:** open a never-saved Schedule 3 as an **ILCR_ADMIN** — who can only
+    *look* at a Draft report — click either cost sub-page link, and you are told "The schedule has to be
+    saved before opening other costs". You cannot act on that: on a view-only report the Save button is
+    rendered but **greyed out**. Legacy took that reader to the sub-page and rendered an empty form.
+    Schedule 1 does the same thing on its one link. The message is correct for an **ILCR_SUBMITTER**, who
+    can edit a Draft, and must stay for them.
+  - **Expected vs actual:** Expected — a view-only reader opens the sub-page read-only (empty, since
+    nothing is stored), per legacy's `...EditsDisabled` link variant. Actual — the passive "Save required"
+    modal, navigation refused, and no way to reach the sub-page read-only at all.
+  - **Why (technical):** both gates test saved-ness and never consult editability.
+    `components/schedule1/index.tsx:293` is `if (!data || !isScheduleSaved(data))` → blocked modal,
+    return; Schedule 3's `openSubPage` has the same ordering. The `data?.editable` branch (the "Leave
+    Schedule N" discard confirm) sits *after* the gate, so a view-only caller never reaches it, and the
+    modal itself carries no `editable` guard. Both gates arrived with the #296 fix.
+  - **Legacy, at source (re-read 2026-09-18):** legacy gated the alert on EDITABILITY, not on saved-ness.
+    Each link has THREE rendered variants, not two: `...EditsEnabledAlert`
+    (`#{!disableReportEdits() and !isScheduleOpen()}` → alert, no navigation), `...EditsEnabled`
+    (`#{!disableReportEdits() and isScheduleOpen()}` → navigate behind `confirmNavigationMsg`), and
+    `...EditsDisabled` (`#{disableReportEdits()}` **alone** → navigate, no alert and no confirm).
+    `schedule3.xhtml:265-278` and `:291-304`; `schedule1.xhtml:495-509`, third variant
+    `otherCostsEditsDisable` at `:506-509`. `UserSessionMB.java:458` defines editable as (D + Licensee),
+    (S + non-Licensee) or (V + Admin) — so admin-on-Draft is view-only. `Schedule3MB.java:142` shows
+    `isScheduleOpen()` is merely "the summary id is non-empty", i.e. saved. Saved-ness therefore only ever
+    decided anything for a reader who could edit.
+  - **Why legacy shows an EMPTY FORM and not "Schedule not found." — an earlier analysis got this wrong
+    and the correction matters.** `ExceptionCode.SCHEDULE_NOT_FOUND` is thrown in only four DAOs:
+    `Schedule1DAO.java:53`/`:88`, `Schedule2DAO.java:73`, `Schedule7aDAO.java:68`/`:122`,
+    `Schedule8DAO.java:485`/`:735`/`:777`. **There is no Schedule 3 DAO throw anywhere**, so the `catch`
+    setting `scheduleNotFound = true` in `Schedule3SubtotalOtherCostsMB.java:50` and
+    `Schedule3IncludedUnacceptableCostsMB.java:49` is dead code for this case — `getSchedule3` returns an
+    empty document and the sub-page renders empty fields. Schedule 1's throw is real but conditioned on
+    `getReportSummaryID(year, mill) == null` (`Schedule1DAO.java:49-54`), i.e. no report-summary row at
+    all, which is NOT "never saved"; on 727/2022 such a row exists. The first version of this claim was
+    derived by reading the `catch` block instead of the throw sites, and asserted legacy showed
+    "Schedule not found." — the repo owner disproved it in the running legacy app. Same lesson as DIV-3's
+    corrected claim: an inference from the consuming side is not evidence about the producing side.
+  - **A second surface is implicated, which is why this is not a one-line reorder.** The sub-page endpoints
+    deliberately answer 404 for an unsaved schedule, and `Schedule3Service.java:1136` records the reason
+    verbatim: *"both sub-pages are reachable only from a SAVED Schedule 3 (legacy ALT-001 ...), so 'no
+    summary' there really is not-found"*. This finding shows that premise holds **only for editable
+    users**. So reordering the client gate alone would land a view-only reader on a not-found state rather
+    than legacy's empty form — one wrong screen traded for another. The ticket leaves the choice between
+    the client-only reorder and the reorder-plus-empty-document open, on purpose.
+  - **How we caught it (2026-09-18):** surfaced by the three review layers on #373's fix as a
+    read-only x never-saved cell nothing exercised, then **confirmed in the running legacy application by
+    the repo owner** — mill **727 / 2022** (Schedules 1-10 Status: Draft, Date: Not Initiated) as an
+    **admin**: Schedule 1 → "Subtotal Other Costs(0):" opens the sub-page with empty fields, and both
+    Schedule 3 links behave identically. The rebuild's own ordering and role matrix were then read at
+    source (`ScheduleEditability.java:63-64` — SUBMITTER edits D, ADMIN edits S and V, so admin-on-Draft
+    is view-only there too; `MockPrincipalFilter.java` records the same fact as "admin lost Draft
+    editing"). The rebuild screen itself was NOT navigated — the app-side claim is code-derived, and the
+    ticket says so.
+  - **Evidence the filed ticket deliberately omits — this is its home, do not "restore" it there.** The
+    owner emptied the Screenshots block; the observation it held is:
+    `legacy, admin on 727/2022, Schedule 1 → "Subtotal Other Costs(0):" → sub-page opens, fields empty`
+    versus `rebuild, admin, Schedule 3 → "Included Unacceptable Costs (0):" → dialog "Save required":
+    "The schedule has to be saved before opening other costs", still on Schedule 3`.
+  - **The boundary — three of the four cases are CORRECT and must not move:** editable + never saved →
+    "Save required", no navigation (legacy's `...EditsEnabledAlert`, right); editable + saved → "Leave
+    Schedule N" confirm then open (right); view-only + saved → opens directly (right); **view-only +
+    never saved → "Save required" (wrong)**. #373's per-link wording is correct and unaffected — this
+    entry is about *who* sees the message, not its text.
+  - **Ticket:** [bcgov/nr-ilcr#488](https://github.com/bcgov/nr-ilcr/issues/488) — *"[BUGFIX]: A view-only
+    user is told to save a never-saved Schedule 1 or 3 before opening a cost sub-page, where legacy let
+    them view it"*, labelled `bug`, filed by the repo owner 2026-09-18. Its Steps to Reproduce run on
+    **727 Updated Mill / 2017** (the owner swapped the draft's 8888/2015 anchor for the one #319, #324 and
+    #362 already use); the legacy comparison step stays on 727/2022.
+  - **Coverage: UNCOVERED, and deliberately not made a tracked red.** Neither this suite nor sch1 has a
+    view-only x never-saved anchor, so no scenario reaches the state and none had to change. Covering it
+    needs such an anchor — an admin on a Draft report, or a submitter on a Submitted one. No
+    `@discovered-*` scenario was added, at the repo owner's direction, so this entry is the only record
+    until the fix lands.
+  - **Priority / env:** p2 — found while code-reviewing `fix/373-schedule3-unacceptable-save-first-message`
+    - legacy confirmed in the running legacy application — rebuild claim code-derived — Chrome.
+  - **Status:** OPEN - confirmed and triaged by raising ticket #488. Dev to decide between the client-only
+    gate reorder and the reorder plus a view-only empty document from the sub-page endpoints, re-examining
+    the #296 D1 rationale at `Schedule3Service.java:1136` rather than flipping it silently; QA then needs a
+    view-only x never-saved anchor before this can be covered, and closes this entry and sch1's DIV-7
+    together when the fix lands.
+  - **Test:** none — see Coverage above. The gate's *editable* arms stay green throughout
+    (`save-first-gate.feature` `@p1 @S18` and `@p2 @S19`).
+
 - **VER-2 — the suite had FOUR places that read "HTTP 404" as "this schedule does not exist". The #296
   fix removed that meaning, and every one of them inverted at once. Re-grounded 2026-08-26; the app is
   right and was right.**
