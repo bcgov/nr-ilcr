@@ -227,7 +227,7 @@ class ReportTrackTransitionServiceTest {
   }
 
   @Test
-  @DisplayName("AC 3: a track not at Draft -> 409 reportSubmissionErrorMsg BEFORE the gate runs")
+  @DisplayName("AC 3: a track not at Draft -> 409 submitNotDraftErrorMsg BEFORE the gate runs")
   void notDraft_409_neverRunsTheGate() {
     trackAt("S");
 
@@ -236,7 +236,7 @@ class ReportTrackTransitionServiceTest {
             ReportTransitionRejectedException.class,
             ex -> {
               assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-              assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg");
+              assertThat(ex.getMessageKey()).isEqualTo("submitNotDraftErrorMsg");
             });
     verifyNoInteractions(sweepService, repository, millUserXrefRepository);
   }

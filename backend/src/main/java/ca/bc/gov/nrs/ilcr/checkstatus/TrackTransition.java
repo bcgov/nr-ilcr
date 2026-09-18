@@ -25,13 +25,15 @@ import java.util.Optional;
  */
 public enum TrackTransition {
   /** Draft &rarr; Submitted: the Licensee hands the report to the ministry (this story). */
-  SUBMIT("D", "S", "A", Recorded.LICENSEE, "sch1-10SubmittedMsg"),
+  SUBMIT("D", "S", "A", Recorded.LICENSEE, "sch1-10SubmittedMsg", "submitNotDraftErrorMsg"),
   /** Submitted &rarr; Verified: the ministry signs the report off (Story 17.1). */
-  VERIFY("S", "V", "V", Recorded.AUDITOR, "sch1-10VerifiedMsg"),
+  VERIFY("S", "V", "V", Recorded.AUDITOR, "sch1-10VerifiedMsg", "verifyNotSubmittedErrorMsg"),
   /** Submitted &rarr; Draft: the ministry hands the report back (Story 18.1). */
-  SET_TO_DRAFT("S", "D", "D", Recorded.AUDITOR, "sch1-10DraftMsg"),
+  SET_TO_DRAFT(
+      "S", "D", "D", Recorded.AUDITOR, "sch1-10DraftMsg", "setToDraftNotSubmittedErrorMsg"),
   /** Verified &rarr; Submitted: the ministry withdraws a verification (Story 18.1). */
-  SET_TO_SUBMIT("V", "S", "A", Recorded.NONE, "sch1-10SubmittedMsg");
+  SET_TO_SUBMIT(
+      "V", "S", "A", Recorded.NONE, "sch1-10SubmittedMsg", "setToSubmitNotVerifiedErrorMsg");
 
   /**
    * Which status-row identity pair a transition records &mdash; legacy {@code
@@ -53,14 +55,21 @@ public enum TrackTransition {
   private final String categoryState;
   private final Recorded recorded;
   private final String successKey;
+  private final String rejectedKey;
 
   TrackTransition(
-      String from, String to, String categoryState, Recorded recorded, String successKey) {
+      String from,
+      String to,
+      String categoryState,
+      Recorded recorded,
+      String successKey,
+      String rejectedKey) {
     this.from = from;
     this.to = to;
     this.categoryState = categoryState;
     this.recorded = recorded;
     this.successKey = successKey;
+    this.rejectedKey = rejectedKey;
   }
 
   /**
@@ -104,5 +113,18 @@ public enum TrackTransition {
   /** The legacy bundle key of the success message. */
   public String successKey() {
     return successKey;
+  }
+
+  /**
+   * The bundle key of the message shown when the track is no longer at {@link #from()} &mdash;
+   * "Schedules 1-10 are no longer in Draft and cannot be submitted." for {@link #SUBMIT}. Legacy
+   * had no such text: its guard fell through to the generic {@code reportSubmissionErrorMsg}
+   * ("contact ILCR application support"), which told a user who had merely double-clicked, or whose
+   * colleague had just submitted, nothing about what happened. Named per transition so each says
+   * which status the track has left and which action that rules out (Story 15.4, ruled by the
+   * business 2026-09-17).
+   */
+  public String rejectedKey() {
+    return rejectedKey;
   }
 }
