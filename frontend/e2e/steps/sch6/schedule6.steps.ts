@@ -1,12 +1,15 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  EDIT_ANCHOR,
   type Sch6Anchor,
   S01_RECORD,
   S01_TOTALS,
+  S02_EDITED,
+  S02_SEEDED,
   millOptionText,
 } from '../../fixtures/sch6/schedule6-test-data';
-import { readSchedule6 } from './schedule6Api';
+import { addRecord, readSchedule6 } from './schedule6Api';
 
 /**
  * UC-SCH6-001 (Schedule 6 — Report Road Management Costs) steps.
@@ -20,6 +23,7 @@ import { readSchedule6 } from './schedule6Api';
 /** The sch6 anchors a Given can name, so the `.feature` reads in app vocabulary rather than ids. */
 const ANCHORS: Record<string, Sch6Anchor> = {
   add: ADD_ANCHOR,
+  edit: EDIT_ANCHOR,
 };
 
 Given(
@@ -140,6 +144,15 @@ Then('the new record row shows its derived figures', async ({ schedule6Page, wor
   const recordId = world.sch6RecordId!;
   expect(recordId, 'a previous step must capture the new recordId').toBeTruthy();
 
+  // EXPANDED FIRST, and this is not ceremony. Every record renders inside a COLLAPSED Carbon
+  // AccordionItem (no `open` prop, index.tsx:1007-1013) and Carbon puts every item's children in the
+  // DOM whichever panel is open (index.tsx:479). So a bare toHaveValue here would pass on a row the
+  // reporter cannot see — asserting DOM state instead of the screen. `expandRecord` waits on
+  // VISIBILITY, which is what makes the four assertions below claims about the UI.
+  //
+  // Ordinal 1, not the recordId: this anchor held no records at rest, so the new one is the first row.
+  await schedule6Page.expandRecord(1, recordId);
+
   await expect(schedule6Page.rowVolume(recordId)).toHaveValue(S01_RECORD.volumeDisplay);
   await expect(schedule6Page.rowCost(recordId)).toHaveValue(S01_RECORD.costDisplay);
   // RMG is asserted HERE, on the row, rather than in the Add panel — the panel is passed rmg=""
@@ -154,14 +167,125 @@ Then('the schedule totals are recomputed from the new record', async ({ request,
   // One record on a previously empty anchor, so each total equals that record's own figure — which is
   // what makes this assertion meaningful rather than tautological: the anchor's at-rest totals were
   // asserted to be 0 by preflight, so a non-zero total can only have come from this record.
-  await expect(schedule6Page.total('Volume')).toHaveText(S01_TOTALS.volume);
-  await expect(schedule6Page.total('Cost')).toHaveText(S01_TOTALS.cost);
+  //
+  // The labels are the FIELD names, not "Total …" — "Volume m³" / "Cost $" / "$ / m³"
+  // (index.tsx:1051-1053) — and the page object matches them anchored end-to-end, so "Volume m³"
+  // cannot also be satisfied by "$ / m³".
+  await expect(schedule6Page.total('Volume m³')).toHaveText(S01_TOTALS.volume);
+  await expect(schedule6Page.total('Cost $')).toHaveText(S01_TOTALS.cost);
+  await expect(schedule6Page.total('$ / m³')).toHaveText(S01_TOTALS.costPerVolume);
 
   const doc = await readSchedule6(request, world.scheduleKey!);
   expect(doc.totalVolume, 'server total volume').toBe(Number(S01_RECORD.volumeInput));
   expect(doc.totalCost, 'server total cost').toBe(Number(S01_RECORD.costInput));
   expect(doc.totalCostPerVolume, 'server total cost per volume').toBe(
     Number(S01_TOTALS.costPerVolume),
+  );
+});
+
+// ---- S02 — Edit an Existing Road Maintenance Record ------------------------------------------------
+
+Given(
+  'a road maintenance record commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    // Registered BEFORE the create, so a failure inside the POST still tears down.
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    // Reached through the app's own POST rather than seeded in SQL: the row S02 then edits is a
+    // genuinely app-created record, and nothing has to be mirrored into the CI seed.
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S02_SEEDED.areaTypeCode,
+      supplyBlock: S02_SEEDED.supplyBlockCode,
+      volume: S02_SEEDED.volume,
+      cost: S02_SEEDED.cost,
+      comments,
+    });
+    world.sch6RecordId = created.recordId;
+  },
+);
+
+Then('the record row shows the amounts it was created with', async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  await schedule6Page.expandRecord(1, recordId);
+  await expect(schedule6Page.rowVolume(recordId)).toHaveValue(S02_SEEDED.volumeDisplay);
+  await expect(schedule6Page.rowCost(recordId)).toHaveValue(S02_SEEDED.costDisplay);
+  await expect(schedule6Page.rowDerived(recordId, '$ / m³')).toHaveText(
+    S02_SEEDED.costPerVolumeDisplay,
+  );
+});
+
+When("I change the record's volume and cost", async ({ schedule6Page, world }) => {
+  await schedule6Page.setRowAmounts(
+    world.sch6RecordId!,
+    S02_EDITED.volumeInput,
+    S02_EDITED.costInput,
+  );
+});
+
+Then(
+  'the record row shows the recomputed cost per volume {string}',
+  async ({ schedule6Page, world }, expected: string) => {
+    // BEFORE any save: the row's $ / m³ tracks the blurred inputs, exactly as the Add panel's does, so
+    // this proves the client-side derivation independently of the round-trip that follows.
+    await expect(schedule6Page.rowDerived(world.sch6RecordId!, '$ / m³')).toHaveText(expected);
+  },
+);
+
+When('I save the schedule', async ({ schedule6Page }) => {
+  await schedule6Page.saveButton.click();
+});
+
+Then('the edited amounts are persisted', async ({ request, world }) => {
+  const key = world.scheduleKey!;
+  const recordId = world.sch6RecordId!;
+
+  // Polled, because the PUT is fired from a click and the read can race the commit.
+  await expect
+    .poll(
+      async () => {
+        const doc = await readSchedule6(request, key);
+        return doc.roadRecords.find((r) => r.recordId === recordId)?.volume ?? null;
+      },
+      { message: `record ${recordId} never reached volume ${S02_EDITED.volumeInput}` },
+    )
+    .toBe(Number(S02_EDITED.volumeInput));
+
+  const doc = await readSchedule6(request, key);
+  const record = doc.roadRecords.find((r) => r.recordId === recordId)!;
+
+  expect(record.cost, 'stored cost after the edit').toBe(Number(S02_EDITED.costInput));
+  expect(record.costPerVolume, 'server-recomputed cost per volume').toBe(
+    Number(S02_EDITED.costPerVolumeDisplay),
+  );
+  // The EDIT MUST NOT HAVE CREATED A SECOND ROW. Schedule 6's page-level Save posts every served
+  // record in one PUT, so a bug that treated an edited row as new would leave the old one behind and
+  // still show the new figures — the totals would then be double and this is what catches it.
+  expect(
+    doc.roadRecords.length,
+    'editing a record must update it in place, not add another row',
+  ).toBe(1);
+  // Untouched by S02, so still what the record was created with — proves the PUT did not blank the
+  // fields it was not asked to change.
+  expect(record.areaType, 'area type must be unchanged by an amounts-only edit').toBe(
+    S02_SEEDED.areaTypeCode,
+  );
+  expect(record.supplyBlock, 'supply block must be unchanged by an amounts-only edit').toBe(
+    S02_SEEDED.supplyBlockCode,
+  );
+  expect(record.rmg, 'RMG is derived from the unchanged supply block').toBe(S02_SEEDED.rmg);
+});
+
+Then('the schedule totals are recomputed from the edited record', async ({ request, schedule6Page, world }) => {
+  await expect(schedule6Page.total('Volume m³')).toHaveText(S02_EDITED.volumeDisplay);
+  await expect(schedule6Page.total('Cost $')).toHaveText(S02_EDITED.costDisplay);
+  await expect(schedule6Page.total('$ / m³')).toHaveText(S02_EDITED.costPerVolumeDisplay);
+
+  const doc = await readSchedule6(request, world.scheduleKey!);
+  expect(doc.totalVolume, 'server total volume').toBe(Number(S02_EDITED.volumeInput));
+  expect(doc.totalCost, 'server total cost').toBe(Number(S02_EDITED.costInput));
+  expect(doc.totalCostPerVolume, 'server total cost per volume').toBe(
+    Number(S02_EDITED.costPerVolumeDisplay),
   );
 });
 

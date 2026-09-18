@@ -1,6 +1,7 @@
 import { type APIRequestContext, expect } from '@playwright/test';
 import {
   type ScheduleKey,
+  addRecordUrl,
   recordDeleteUrl,
   scheduleUrl,
 } from '../../fixtures/sch6/schedule6-test-data';
@@ -53,6 +54,47 @@ export async function readSchedule6(
     `GET Schedule 6 ${key.millId}/${key.year} -> HTTP ${res.status()}`,
   ).toBeOK();
   return (await res.json()) as Schedule6Doc;
+}
+
+/** The fields a road record is created with. `tflNumber` stays absent for a TSA record (BR-02). */
+export interface NewRoadRecord {
+  areaType: string;
+  supplyBlock: string;
+  volume: number;
+  cost: number;
+  comments: string;
+}
+
+/**
+ * Create a road record through the app's own POST, and return it as the document now carries it.
+ *
+ * This is how a scenario whose SUBJECT is editing or deleting reaches its starting state: through the
+ * same endpoint a reporter would use, so the row it then works on is a genuinely app-created record
+ * rather than a hand-built one whose shape might not match. Preferred over seeding the row in the SQL
+ * patch, which would also have to be mirrored into the CI seed as an explicit-id
+ * ROAD_MAINTENANCE_REPORT row PLUS its ILCR_COST_REPORT_DETAIL children — and
+ * `ROAD_MAINTENANCE_REPORT_ID` is not yet a parent column in `preflight/ci-seed-parity.setup.ts`, so
+ * those detail rows would currently be reported as parentless.
+ */
+export async function addRecord(
+  request: APIRequestContext,
+  key: ScheduleKey,
+  record: NewRoadRecord,
+): Promise<RoadRecord> {
+  const res = await request.post(addRecordUrl(key.millId, key.year), { data: record });
+  await expect(
+    res,
+    `POST Schedule 6 record on ${key.millId}/${key.year} -> HTTP ${res.status()}`,
+  ).toBeOK();
+
+  const doc = (await res.json()) as Schedule6Doc;
+  const created = doc.roadRecords.find((r) => (r.comments ?? '') === record.comments);
+  expect(
+    created,
+    `the created record commented "${record.comments}" is not in the echoed document — the add did not `
+      + 'store what was sent',
+  ).toBeTruthy();
+  return created!;
 }
 
 /**

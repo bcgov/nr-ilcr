@@ -11,10 +11,10 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-17 — IN PROGRESS.** S01 authored and green. 1 of 23 slices covered. Accessibility is
-in scope from the start (`accessibility.feature`, `@a11y`) and is NOT yet written — carried deliberately
-as the lesson from Story 28.4's GAP-5, where "all slices authored" read as complete while half of the
-board item was unverified because a11y is an NFR that no slice asks for.
+**STATUS 2026-09-17 — IN PROGRESS.** S01 and S02 authored and green. 2 of 23 slices covered.
+Accessibility is in scope from the start (`accessibility.feature`, `@a11y`) and is NOT yet written —
+carried deliberately as the lesson from Story 28.4's GAP-5, where "all slices authored" read as
+complete while half of the board item was unverified because a11y is an NFR that no slice asks for.
 
 **Scope is 23 slices, S01–S23.** The slice catalogue said 21 in three places while the Gherkin folder
 carried 23; corrected under SPEC-1 on the planning branch (`docs/story-28-5-schedule-6-e2e`) before
@@ -27,17 +27,33 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                    1 file
-scenarios (bddgen, @UC-SCH6-001)              1
-preflight/sch6-anchors.setup.ts               4 checks
-pinned (mill, year) anchors                   1  (9050/2024)
+features/sch6/**/*.feature                    2 files
+scenarios (bddgen, @UC-SCH6-001)              2
+preflight/sch6-anchors.setup.ts               5 checks
+pinned (mill, year) anchors                   2  (9050/2024, 10050/2024)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Verification runs, 2026-09-17: `--grep @UC-SCH6-001` → **185 passed** (whole `setup` project plus the
-scenario); `--repeat-each=5 --workers=1` → **189 passed**, 5/5 stable. Anchor confirmed empty and
-`ROAD_MAINTENANCE_REPORT` holding zero 2024 rows afterwards, so the cleanup registry returns the
-seeded DB to its at-rest state.
+Verification runs, 2026-09-17:
+
+- sch6 preflight + the CI-seed parity gate → **12 passed**
+- `--grep @UC-SCH6-001` → **2 passed**
+- `--repeat-each=5 --workers=1` → **10 passed**, 5/5 stable
+- `--repeat-each=3 --workers=2` → **6 passed** — run in PARALLEL on purpose, since the two anchors
+  being distinct is what makes that safe, and a shared key is the failure sch5's S24 companion hit
+- Both anchors confirmed empty afterwards, and `ROAD_MAINTENANCE_REPORT` holds **zero** 2024 rows, so
+  the cleanup registry returns the seeded DB to its at-rest state
+
+Those scenario runs used `--no-deps`, and that needs stating plainly rather than buried: a whole-suite
+run was interrupted partway through, which left **sch1's** `13050/2017` anchor holding the values its
+S01 scenario writes, because that scenario's blank-restore teardown never ran. `preflight/anchors.setup.ts`
+then hard-fails on it, and since the `chromium` project depends on `setup`, that one dirty anchor blocks
+every data-backed scenario in every domain. It is neither a sch6 problem nor an app problem.
+
+So the sch6 preflight was run separately and in full (12 passed, above) and only the two scenarios
+skipped dependencies — nothing sch6 relies on went unchecked. **Still owed:** restoring that sch1
+anchor (its own `schedule1Restore` teardown does it — GET for the `revisionCount`, then PUT
+`emptyScheduleRequest`) and one clean `npm run test:gate` over the whole suite.
 
 ---
 
@@ -78,9 +94,46 @@ Scenario: `happy-path.feature` → `@p0 @S01`. Anchor **9050/2024** (minted; see
 
 ---
 
+---
+
+## S02 — Edit an existing road maintenance record
+
+Scenario: `edit.feature` → `@p1 @S02`. Anchor **10050/2024** (minted; empty at rest — the Given creates
+the record it then edits through `POST /records`, so nothing is seeded in SQL and the CI seed needs no
+`ROAD_MAINTENANCE_REPORT` row).
+
+| # | Source item (S02 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | A record already exists and is listed | created by the Given through the app's own POST | `Given a road maintenance record commented … already exists on that anchor` | covered |
+| 2 | Expand the record's `roadAccord` tab | Carbon `AccordionItem`, title `Road Maintenance report Id: <ordinal>` | `Then the record row shows the amounts it was created with` (expands first) | covered |
+| 3 | Change the row's `volume` field | `#row-<recordId>-volume`, filled and blurred | `When I change the record's volume and cost` | covered |
+| 4 | Change the row's `cost` field | `#row-<recordId>-cost`, filled and blurred | same | covered |
+| 5 | *(beyond the Gherkin)* the row's `$ / m³` recomputes BEFORE any save | row mirrors `recordCostPerVolume` from the blurred inputs | `Then the record row shows the recomputed cost per volume "4.50"` | covered |
+| 6 | Click `saveButton0` ("Save") | page-level `PUT`, fans every served row plus the general comment | `When I save the schedule` | covered |
+| 7 | "Data saved successfully" | `dataSavedSuccesfullyInfoMsg` from `message.text` | `Then I should see the message …` | covered |
+| 8 | *(beyond the Gherkin)* the edit PERSISTS | API read-back of volume, cost, `costPerVolume` | `Then the edited amounts are persisted` | covered |
+| 9 | *(beyond the Gherkin)* the edit UPDATES IN PLACE | exactly one row survives | same step | covered |
+| 10 | *(beyond the Gherkin)* untouched fields survive | area type, supply block and the RMG derived from it are unchanged | same step | covered |
+| 11 | `totalVol` / `totalCos` / `totalCal` recomputed | server-recomputed on the echoed document | `Then the schedule totals are recomputed from the edited record` | covered |
+
+**Why items 9 and 10 are asserted though the legacy text does not ask for them.** The page-level Save
+posts *every* served record in one PUT, so a bug that treated an edited row as new would leave the old
+row behind **and** still display the new figures — the only visible symptom would be doubled totals,
+which is easy to misread as a totals bug. Asserting one surviving row names the cause. Item 10 is the
+mirror risk: a PUT that blanked the fields it was not asked to change would also pass items 1–8.
+
+### Deliberately not asserted in S02
+
+| Source item | Why not here | Where it lands |
+|---|---|---|
+| Changing an existing record's AREA TYPE | S02's subject is the amounts; the TSA→TFL switch on a saved record has its own slice, and mixing them would make a failure ambiguous | S19 |
+| Optimistic locking on a stale `revisionCount` | A concurrency concern, not an edit concern — the PUT 409s on a stale token, which is its own behaviour | not in the S01–S23 catalogue; recorded here so the omission is visible |
+
+---
+
 ## Remaining slices
 
-S02–S23 not yet authored (22 of 23). Accessibility sweeps not yet authored. Each will be added here
+S03–S23 not yet authored (21 of 23). Accessibility sweeps not yet authored. Each will be added here
 with its own item table as it lands; `defects.md` carries anything found along the way.
 
 **Anchor budget note for whoever continues this.** Every further mutating scenario needs its OWN

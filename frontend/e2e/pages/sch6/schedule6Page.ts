@@ -163,34 +163,94 @@ export class Schedule6Page {
     return this.page.getByText(EMPTY_LIST, { exact: true });
   }
 
-  /** A saved record's Volume input, by record id — proves the row rendered with the stored value. */
+  /**
+   * A record's accordion header, addressed by its 1-based ORDINAL.
+   *
+   * The title is `Road Maintenance report Id: <ordinal>` (index.tsx:1012), and that number is the
+   * position in `roadRecords[]` — NOT the `recordId`. The distinction is load-bearing: the ordinal is
+   * what legacy's `rowCounter` means and what the check-status lines key on, while `recordId` belongs
+   * only in the URL. Getting them confused reads as an off-by-one in the app.
+   */
+  recordAccordion(ordinal: number): Locator {
+    return this.page.getByRole('button', { name: `Road Maintenance report Id: ${ordinal}` });
+  }
+
+  /**
+   * Expand a record's accordion panel and wait for its fields to be genuinely VISIBLE.
+   *
+   * WHY THIS IS NOT OPTIONAL. `AccordionItem` carries no `open` prop, so every row starts COLLAPSED,
+   * and Carbon renders every item's children into the DOM regardless of which panel is expanded —
+   * index.tsx:479 says so at the point where it works around the consequence. So `toHaveValue` on a
+   * row field passes on a collapsed row: it asserts DOM state, not what the reporter can see. Every
+   * row assertion therefore goes through here first, and waits on VISIBILITY rather than presence.
+   */
+  async expandRecord(ordinal: number, recordId: number): Promise<void> {
+    const header = this.recordAccordion(ordinal);
+    await expect(
+      header,
+      `no accordion titled "Road Maintenance report Id: ${ordinal}" — the ordinal is the 1-based `
+        + 'position in roadRecords[], not the recordId',
+    ).toBeVisible();
+    await header.click();
+    await expect(byId(this.page, rowField(recordId).volume)).toBeVisible();
+  }
+
+  /** A saved record's Volume input, by record id — assert only after `expandRecord`. */
   rowVolume(recordId: number): Locator {
     return byId(this.page, rowField(recordId).volume);
   }
 
-  /** A saved record's Cost input, by record id. */
+  /** A saved record's Cost input, by record id — assert only after `expandRecord`. */
   rowCost(recordId: number): Locator {
     return byId(this.page, rowField(recordId).cost);
   }
 
   /**
-   * A derived figure on a saved record's row, read from the row's own definition list.
+   * Overwrite a saved row's Volume and Cost, blurring each so the app's commit-and-re-group runs.
    *
-   * RMG and $ / m³ are the two values with no input of their own: they are rendered by `FieldValue`
-   * inside `<dl className="schedule-6__derived">` (index.tsx:285-287, 344-346). Scoped to the row's
-   * fieldset via the row's Volume input so a second record cannot satisfy the assertion.
+   * `fill` replaces rather than appends, which is what an edit means here. The blur matters for the
+   * same reason it does in the Add panel: it is what commits the $ / m³ baseline.
+   */
+  async setRowAmounts(recordId: number, volume: string, cost: string): Promise<void> {
+    const vol = this.rowVolume(recordId);
+    await vol.fill(volume);
+    await vol.blur();
+    const cos = this.rowCost(recordId);
+    await cos.fill(cost);
+    await cos.blur();
+  }
+
+  /**
+   * A `FieldValue` cell's value, located by its label EXACTLY.
+   *
+   * `FieldValue` renders `<div class="schedule-6__field"><dt>label</dt><dd>value</dd></div>`
+   * (index.tsx:180-185), so the label lives in a `dt` and the figure in the sibling `dd`. Matching the
+   * `dt` anchored end-to-end is what keeps "Volume m³" from also being satisfied by "$ / m³" and keeps
+   * a bare `hasText: 'Cost'` from matching two cells — a substring filter here is how a totals
+   * assertion can silently read the wrong number.
+   */
+  private fieldValue(scope: Locator, label: string): Locator {
+    const exact = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+    return scope
+      .locator('.schedule-6__field')
+      .filter({ has: this.page.locator('dt').filter({ hasText: exact }) })
+      .locator('dd');
+  }
+
+  /**
+   * A derived figure on a saved record's row. Scoped to THAT row's field grid via its own Volume
+   * input, so a second record's identical labels cannot satisfy the assertion.
    */
   rowDerived(recordId: number, label: 'RMG' | '$ / m³'): Locator {
-    return this.page
-      .locator(`xpath=//*[@id="${rowField(recordId).volume.slice(1)}"]/ancestor::div[contains(@class,"schedule-6__fields")][1]`)
-      .locator('.schedule-6__derived')
-      .filter({ hasText: label })
-      .locator('dd');
+    const rowScope = this.page.locator(
+      `xpath=//*[@id="${rowField(recordId).volume.slice(1)}"]/ancestor::div[contains(@class,"schedule-6__fields")][1]`,
+    );
+    return this.fieldValue(rowScope, label);
   }
 
   /** The Add panel's own $ / m³ cell, which DOES track the blurred volume/cost (unlike its RMG). */
   get addCostPerVolume(): Locator {
-    return this.addPanel.locator('.schedule-6__derived').filter({ hasText: '$ / m³' }).locator('dd');
+    return this.fieldValue(this.addPanel, '$ / m³');
   }
 
   // ---- Totals and actions -------------------------------------------------------------------------
@@ -200,9 +260,12 @@ export class Schedule6Page {
     return this.page.getByRole('region', { name: 'Totals' });
   }
 
-  /** A totals figure by its label, so the three are never positionally addressed. */
-  total(label: string): Locator {
-    return this.totals.locator('.schedule-6__derived, div').filter({ hasText: label }).locator('dd').first();
+  /**
+   * A totals figure by its label. The three labels are the FIELD names, not "Total …":
+   * "Volume m³", "Cost $", "$ / m³" (index.tsx:1051-1053).
+   */
+  total(label: 'Volume m³' | 'Cost $' | '$ / m³'): Locator {
+    return this.fieldValue(this.totals, label);
   }
 
   /**

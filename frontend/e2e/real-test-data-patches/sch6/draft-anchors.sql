@@ -114,7 +114,13 @@ DECLARE
   -- in fixtures/sch6/schedule6-test-data.ts; the two files are transcribed from each other and the
   -- CI-seed parity gate fails the run if they disagree with db-e2e/R__80_e2e_anchor_seed.sql.
   l_anchors t_anchors := t_anchors(
-    t_anchor(9050, 2024, 'D')   -- S01 add (TSA + Supply Block happy path)
+    t_anchor( 9050, 2024, 'D'),  -- S01 add (TSA + Supply Block happy path)
+    -- S02 edits the AMOUNTS on an existing record. Empty at rest all the same: the scenario's own
+    -- Given creates the record it then edits, through the app's own POST /records. Seeding the row
+    -- here instead would need an explicit-id ROAD_MAINTENANCE_REPORT row plus its
+    -- ILCR_COST_REPORT_DETAIL children mirrored into the CI seed, and ROAD_MAINTENANCE_REPORT_ID is
+    -- not yet a parent column in preflight/ci-seed-parity.setup.ts.
+    t_anchor(10050, 2024, 'D')   -- S02 edit
   );
 BEGIN
   -- The new reporting year. Additive: 2015-2023 already exist and are untouched.

@@ -14,8 +14,8 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-17 — IN PROGRESS.** S01 authored and green; 1 of 23 slices covered. One
-verified-not-a-defect finding. No divergences, no bugs, no spec gaps so far.
+**STATUS 2026-09-17 — IN PROGRESS.** S01 and S02 authored and green; 2 of 23 slices covered. Two
+verified-not-a-defect findings. No divergences and no bugs found in the app so far.
 
 ---
 
@@ -39,9 +39,9 @@ verified-not-a-defect finding. No divergences, no bugs, no spec gaps so far.
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 22 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 21 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** Only S01 is covered. S02–S23 and the axe sweeps are still to be written.
+**What is missing.** S01 and S02 are covered. S03–S23 and the axe sweeps are still to be written.
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
@@ -126,3 +126,30 @@ figures`) and the change is documented in the feature file's own re-grounding he
 
 **Nothing is asked of BA/QA here** beyond awareness that the derived figure moved surfaces. Recorded
 because a future reader comparing the Gherkin to the test will otherwise see a dropped assertion.
+
+### VER-2 — record rows are in the page even when their accordion is collapsed — 2026-09-17
+
+**What looked wrong.** Every saved record renders inside a Carbon accordion panel that starts
+**closed**, yet the row's Volume and Cost fields can be read by an automated check without opening it.
+That looks like a rendering leak.
+
+**Why it is not a defect.** It is how Carbon's `Accordion` works: it places every panel's contents in
+the page and hides the closed ones, rather than building them on expand. The app already relies on
+this and says so at the point where it works around a consequence — each row's Delete button has the
+record's ordinal added to its accessible name "because Carbon renders every AccordionItem's children
+into the DOM regardless of which panel is expanded" (`components/schedule6/index.tsx:479`). A reporter
+sees nothing until they expand the row, which is correct.
+
+**Why it is recorded anyway — it changed how this suite asserts.** A check that reads a field's value
+without expanding the row **passes while the value is invisible to the user**: it is testing the page's
+internals rather than the screen. S01 was originally written that way and passed for that reason. Both
+S01 and S02 now expand the record first and wait for the field to be genuinely **visible**, so the
+assertion is a claim about what a reporter can see. Any future slice that reads a row must do the same
+— `schedule6Page.expandRecord(ordinal, recordId)` exists for it, and its own comment explains why.
+
+**One trap inside the fix, worth stating once.** The accordion title is
+`Road Maintenance report Id: <ordinal>` where the ordinal is the **1-based position in the list**, not
+the database `recordId`. Legacy's `rowCounter` means the same thing and the Check Status lines key on
+it. Confusing the two produces an off-by-one that reads as an application bug.
+
+**Nothing is asked of BA/QA here.**

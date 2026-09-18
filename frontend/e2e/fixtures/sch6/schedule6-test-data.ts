@@ -67,6 +67,7 @@ export interface Sch6Anchor {
 }
 
 const MILL_760: MillRef = { millNumber: '760', millName: 'WESTEROS' }; // millId 9050, ACT
+const MILL_2121: MillRef = { millNumber: '2121', millName: 'SESAME STREET' }; // millId 10050, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -80,6 +81,19 @@ const MILL_760: MillRef = { millNumber: '760', millName: 'WESTEROS' }; // millId
 export const ADD_ANCHOR: Sch6Anchor = { key: { millId: 9050, year: 2024 }, mill: MILL_760 };
 
 /**
+ * S02 — Edit an Existing Road Maintenance Record.
+ *
+ * EMPTY AT REST, like every other mutating anchor: the scenario's own Given creates the record it then
+ * edits, through the app's own POST. Seeding a road record into the patch instead would have to be
+ * mirrored into the CI seed as an explicit-id ROAD_MAINTENANCE_REPORT row PLUS its
+ * ILCR_COST_REPORT_DETAIL children — and `ROAD_MAINTENANCE_REPORT_ID` is not yet a parent column in
+ * `preflight/ci-seed-parity.setup.ts`, so those detail rows would be reported as parentless. Creating
+ * through the API avoids all of that and is the pattern sch4's and sch5's own "empty at rest; the
+ * scenarios' Givens save the state they then edit" anchors already use.
+ */
+export const EDIT_ANCHOR: Sch6Anchor = { key: { millId: 10050, year: 2024 }, mill: MILL_2121 };
+
+/**
  * Every anchor the preflight asserts is an editable, record-free Draft.
  *
  * Grows with each slice. Kept as a NAMED list rather than derived from the exports so the preflight's
@@ -87,6 +101,7 @@ export const ADD_ANCHOR: Sch6Anchor = { key: { millId: 9050, year: 2024 }, mill:
  */
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
+  { name: 'edit (S02)', anchor: EDIT_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -133,6 +148,39 @@ export const S01_TOTALS = {
   volume: '12,500',
   cost: '48,000',
   costPerVolume: '3.84',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S02's record — created by the scenario's own Given through POST /records, then EDITED on screen and
+// persisted with the page-level Save (PUT). Two sets of figures, both exact divisions so neither the
+// before nor the after assertion can turn on a rounding decision:
+//   seeded : 30,000 / 10,000 = 3.00
+//   edited : 90,000 / 20,000 = 4.50
+// Same TSA/Supply Block pair as S01 (and therefore the same server-derived RMG "15") because S02's
+// subject is the AMOUNTS, not the classification — changing the area type on an existing record is
+// S19's subject and deliberately not mixed in here.
+// ---------------------------------------------------------------------------------------------------
+
+/** The S02 record as its Given creates it, and as the row renders before the edit. */
+export const S02_SEEDED = {
+  areaTypeCode: '01',
+  supplyBlockCode: '01B',
+  volume: 10000,
+  cost: 30000,
+  volumeDisplay: '10,000',
+  costDisplay: '30,000',
+  costPerVolumeDisplay: '3.00',
+  rmg: '15',
+  comments: 'E2E S02 road record',
+} as const;
+
+/** The values S02 types over the seeded ones, and the figures they must produce. */
+export const S02_EDITED = {
+  volumeInput: '20000',
+  costInput: '90000',
+  volumeDisplay: '20,000',
+  costDisplay: '90,000',
+  costPerVolumeDisplay: '4.50',
 } as const;
 
 // ---------------------------------------------------------------------------------------------------
