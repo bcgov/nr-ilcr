@@ -785,6 +785,129 @@ describe('Schedule3 sub-page navigation (AC6)', () => {
     expect(mockNavigate).not.toHaveBeenCalled()
   })
 
+  // ---- Defect #373: the save-first gate's wording is PER LINK, not shared. ------------------------
+  //
+  // Legacy put the alert in each link's own `onclick` and wrote it twice, with different words:
+  // `schedule3.xhtml:267` names "other costs" and `:293` names "Unacceptable costs" (capital U). The
+  // rewrite routed both links through one constant, so a reporter who clicked Included Unacceptable
+  // Costs was told about the page they had NOT clicked. The gate itself was always right — these
+  // cases pin the wording, and that neither link navigates.
+  //
+  // The strings are asserted as literals, not imported from the component, so a "harmonising" edit to
+  // either constant fails here rather than being silently agreed with. They are byte-identical to the
+  // e2e fixtures (`e2e/fixtures/sch3/schedule3-test-data.ts`), which assert `exact: true`.
+  const ALT_002 = 'The schedule has to be saved before opening other costs'
+  const ALT_003 = 'The schedule has to be saved before opening Unacceptable costs'
+
+  /** The served document with its optimistic-lock token stripped — i.e. never saved. */
+  const neverSavedDoc = () => {
+    const { revisionCount, ...rest } = schedule3Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    return rest
+  }
+
+  const OTHER_LINK = /^Subtotal Other Costs \(\d+\):$/
+  const UNACCEPTABLE_LINK = /^Included Unacceptable Costs \(\d+\):$/
+
+  /** The body text of the open "Save required" modal. */
+  const saveRequiredText = async () =>
+    within(await screen.findByRole('dialog', { name: 'Save required' })).getByText(
+      /^The schedule has to be saved/,
+    ).textContent
+
+  test('the Other Costs link on a never-saved schedule shows ALT-002, verbatim (#373)', async () => {
+    mockNavigate.mockClear()
+    server.use(http.get(URL, () => HttpResponse.json(neverSavedDoc())))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+
+    expect(await saveRequiredText()).toBe(ALT_002)
+    expect(screen.queryByText(ALT_003)).not.toBeInTheDocument()
+    // Still on Schedule 3: the gate exists because the sub-page would 404 (#296 D1).
+    expect(mockNavigate).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toBeInTheDocument()
+  })
+
+  test('the Included Unacceptable Costs link on a never-saved schedule shows ALT-003, verbatim (#373)', async () => {
+    mockNavigate.mockClear()
+    server.use(http.get(URL, () => HttpResponse.json(neverSavedDoc())))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    await user.click(screen.getByRole('button', { name: UNACCEPTABLE_LINK }))
+
+    // The whole defect: this used to read ALT-002. Capital U on "Unacceptable", lowercase "costs".
+    expect(await saveRequiredText()).toBe(ALT_003)
+    expect(screen.queryByText(ALT_002)).not.toBeInTheDocument()
+    expect(mockNavigate).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toBeInTheDocument()
+  })
+
+  test('dismissing one gate then clicking the other link switches the message — no stale wording (#373)', async () => {
+    // The reason the flag carries a ROUTE rather than a second boolean: with two independent pieces of
+    // state, closing one modal and opening the other could leave the first message rendered. This case
+    // exists to prove that cannot happen, in BOTH directions.
+    mockNavigate.mockClear()
+    server.use(http.get(URL, () => HttpResponse.json(neverSavedDoc())))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+
+    const dismiss = async () => {
+      const dialog = await screen.findByRole('dialog', { name: 'Save required' })
+      await user.click(within(dialog).getByRole('button', { name: /close/i }))
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Save required' })).not.toBeInTheDocument(),
+      )
+    }
+
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+    expect(await saveRequiredText()).toBe(ALT_002)
+    await dismiss()
+
+    await user.click(screen.getByRole('button', { name: UNACCEPTABLE_LINK }))
+    expect(await saveRequiredText()).toBe(ALT_003)
+    await dismiss()
+
+    // And back again — a route that is only ever set, never cleared per-link, would stick here.
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+    expect(await saveRequiredText()).toBe(ALT_002)
+
+    expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
+  test('a read-only SAVED schedule opens either sub-page directly — no gate and no confirm', async () => {
+    // The gate keys off the saved-ness of the schedule, not off editability, and a read-only schedule
+    // has no unsaved edits to warn about — so neither modal should appear. Pinned here because the
+    // gate and the discard confirm are adjacent nullable-route states and a mix-up would surface as a
+    // spurious dialog on the view-only path.
+    mockNavigate.mockClear()
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({ ...schedule3Doc, trackStatus: 'S', editable: false }),
+      ),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('Licenses, Fees, Insurance')
+    await user.click(screen.getByRole('button', { name: UNACCEPTABLE_LINK }))
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3/included-unacceptable-costs' })
+
+    await user.click(screen.getByRole('button', { name: OTHER_LINK }))
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3/other-acceptable-costs' })
+
+    expect(screen.queryByRole('dialog', { name: 'Save required' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Leave Schedule 3' })).not.toBeInTheDocument()
+    expect(screen.queryByText(ALT_002)).not.toBeInTheDocument()
+    expect(screen.queryByText(ALT_003)).not.toBeInTheDocument()
+  })
+
   test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
     let releasePut = () => {}
     const releasePromise = new Promise<void>((resolve) => {

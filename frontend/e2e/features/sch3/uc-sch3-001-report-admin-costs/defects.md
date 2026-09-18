@@ -452,17 +452,33 @@ count does.
     issue deliberately omits two things this entry keeps, as the register is their home: the captured DOM
     evidence (its Screenshots block ships empty, as #324's and #359's do) and the explanation of why the
     suite missed it — see the last bullet below. Neither was lost; do not "restore" either into the ticket.
-  - **Priority / env:** p2 · branch `test/schedule-3-e2e` · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add a second message constant
-    beside `ALT_SAVE_BEFORE_SUB_PAGE` (`components/schedule3/index.tsx:47`) holding legacy's
-    `:293` wording verbatim, and to carry the blocked route alongside the existing `subPageBlockedOpen`
-    flag (`:138`) so the modal body at `:685` selects on it — the handler already receives the route;
-    QA re-verifies and closes this entry when the fix lands. The `@discovered-divergence` scenario asserts
-    the CORRECT behaviour, so it is RED today and goes green on its own, at which point only its tag comes
-    off. No test change is needed. Found 2026-08-27 while auditing DIV-3's own re-closure claim.
-  - **Test:** `save-first-gate.feature` `@discovered-divergence @p2 @S19` ×1 (S18, the Subtotal Other Costs
-    arm, is green). Read-only: the scenario clicks a link that refuses to navigate, so it writes nothing and
-    needs no cleanup.
+  - **FIXED 2026-09-18 — and it behaved exactly as a tracked red should.** The fix landed on branch
+    `fix/373-schedule3-unacceptable-save-first-message` (off `main` @ `b5b00d7f`) and is exactly the shape
+    this entry prescribed: a second constant holding legacy's `:293` wording verbatim, and the single
+    boolean gate flag widened into a nullable blocked-route so the modal body selects on the link that was
+    clicked. One file of production source changed (`components/schedule3/index.tsx`) — the gate condition
+    `!data || !isScheduleSaved(data)`, the `passiveModal` shape, the delete confirm and the "Leave
+    Schedule 3" prompt are all untouched. **S19 went green on its own — NOT ONE assertion, step or fixture
+    was edited**; only the `@discovered-divergence` tag and the `[DISCOVERED …]` title marker came off,
+    which is the whole design of a red that asserts the correct behaviour. The two e2e fixture strings
+    (`fixtures/sch3/schedule3-test-data.ts`, `exact: true`) already held both wordings and needed no change,
+    so they were the fix's third independent corroboration alongside the legacy source and the committed
+    requirement ALT-003.
+  - **The inconsistency is PRESERVED on purpose, and that is worth saying out loud:** legacy's two strings
+    disagree with each other — `other costs` lowercase, `Unacceptable costs` with a capital U — and the fix
+    copies both byte-for-byte rather than harmonising them. A parity fix that tidied the wording would have
+    replaced one divergence with another. Copy cleanup, if it is ever wanted, is a BA ticket.
+  - **Priority / env:** p2 · branch `test/schedule-3-e2e` (found) / `fix/373-schedule3-unacceptable-save-first-message` (fixed) · local seeded DB · Chrome.
+  - **Status:** CLOSED (fixed and verified) 2026-09-18. Found 2026-08-27 while auditing DIV-3's own
+    re-closure claim; confirmed and triaged by raising ticket #373 the same day; fixed 2026-09-18 by the
+    branch above and re-verified here by S19 going green with its assertions untouched. Unit coverage was
+    added alongside it (`src/components/schedule3/__tests__/Schedule3.test.tsx`, four cases: each link's own
+    string, the dismiss-one-then-click-the-other case that proves no stale message survives, and the
+    read-only pass-through), and the ALT-003 case is mutation-proved — making the new constant identical to
+    ALT-002's string reddens it.
+  - **Test:** `save-first-gate.feature` `@p2 @S19` ×1 — GREEN, tag retired, assertions untouched (S18, the
+    Subtotal Other Costs arm, was green throughout). Read-only: the scenario clicks a link that refuses to
+    navigate, so it writes nothing and needs no cleanup.
   - **Why the suite missed it for a day:** S18 and S19 were written together and shared one step,
     `Schedule 3 tells me to save first`, which asserted ALT-002's text. S19 therefore *passed* against the
     wrong message — a shared step hid a per-link difference. They now use separate steps.

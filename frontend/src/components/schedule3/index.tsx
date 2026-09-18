@@ -43,8 +43,15 @@ import './index.scss'
 // verbatim text lives here. SUC/WRN/FLD strings come from the API `message`/`warnings`/`detail`
 // (AD-8) — never hardcoded. Shared strings reuse Schedule 1's exact wording.
 const ALT_S111 = 'Annual Rent (Forest Act, S111) is recorded as an Unacceptable Cost.'
-// ALT-001, legacy-verbatim and identical to Schedule 1's: both sub-pages require a saved parent.
-const ALT_SAVE_BEFORE_SUB_PAGE = 'The schedule has to be saved before opening other costs'
+// ALT-002 / ALT-003: both sub-pages require a saved parent, and legacy wrote a SEPARATE alert per
+// link rather than one shared message — `schedule3.xhtml:267` on the Subtotal Other Costs link and
+// `:293` on the Included Unacceptable Costs one. Both legacy-verbatim, and the inconsistency between
+// them is the contract, not a typo to tidy: ALT-003 capitalises "Unacceptable" and names a different
+// page. Only ALT-002 is shared with Schedule 1 (`schedule1.xhtml:497`, its single such link). Routing
+// both links through ALT-002 was defect #373. (ALT-001 is the S111 alert above — not this pair.)
+const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
+const ALT_SAVE_BEFORE_UNACCEPTABLE =
+  'The schedule has to be saved before opening Unacceptable costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const COMMENTS_MAX = 3500
@@ -139,8 +146,13 @@ const Schedule3: FC = () => {
 
   const [saveWarnings, setSaveWarnings] = useState<string[]>([])
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
-  const [subPageBlockedOpen, setSubPageBlockedOpen] = useState(false)
-  // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
+  // The sub-page whose open the save-first gate REFUSED (null = modal closed). A route rather than a
+  // boolean because legacy's wording names the link that was clicked (ALT-002 vs ALT-003, defect
+  // #373) — one source of truth, so no stale message can outlive the click that raised it.
+  const [blockedRoute, setBlockedRoute] = useState<string | null>(null)
+  // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed). Deliberately
+  // distinct from `blockedRoute` above — that one means "the gate refused", this one "a discard is
+  // pending" — and neither handler ever writes the other.
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
   const { data, setData, form, setForm, setField, loadState } =
@@ -276,7 +288,8 @@ const Schedule3: FC = () => {
     // schedule would 404. Schedule 3 never had this gate, because before defect #296 the parent
     // page itself 404'd when unsaved and the case could not arise. It can now.
     if (!data || !isScheduleSaved(data)) {
-      setSubPageBlockedOpen(true)
+      // Store WHICH link was refused, so the modal can carry that link's own legacy wording.
+      setBlockedRoute(route)
       return
     }
     // Navigating away from an editable schedule discards unsaved edits — confirm via a Carbon Modal
@@ -711,14 +724,20 @@ const Schedule3: FC = () => {
           {CONFIRM_NAVIGATION}
         </ConfirmNavigationModal>
       )}
-      {subPageBlockedOpen && (
+      {/* The save-first gate. Legacy raised a per-link alert, so the message is selected by the
+          route that was refused rather than shared between both links (defect #373). */}
+      {blockedRoute !== null && (
         <Modal
           open
           passiveModal
           modalHeading="Save required"
-          onRequestClose={() => setSubPageBlockedOpen(false)}
+          onRequestClose={() => setBlockedRoute(null)}
         >
-          <p>{ALT_SAVE_BEFORE_SUB_PAGE}</p>
+          <p>
+            {blockedRoute === ROUTE_UNACCEPTABLE
+              ? ALT_SAVE_BEFORE_UNACCEPTABLE
+              : ALT_SAVE_BEFORE_OTHER_COSTS}
+          </p>
         </Modal>
       )}
     </div>
