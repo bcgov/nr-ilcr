@@ -5,12 +5,14 @@ import java.util.List;
 
 /**
  * One location's Check Status result (Story 4.4, S31 per-location breakdown). {@code met} is true
- * when every in-scope category / sub-page row on the location has a non-null Cost (0 counts as
- * present; distance is NOT enforced — §Decision 2, legacy parity).
+ * when the location description is present — legacy parity (issue #465): legacy's Schedule 4 check
+ * enforced the description and nothing else; its per-category Cost checks sat behind {@code
+ * isXxxToCheck} flags that were never set true, and its Distance and Comments checks were commented
+ * out (§Decisions 2 and 3).
  *
  * <p>A passing location carries one {@code locationRequirementsMetMsg} ("All requirements for {0}
  * have been met.", {0} = {@code name}) in {@code messages} and no {@code issues}; a failing
- * location carries one {@link FieldIssue} per missing-Cost field and an empty {@code messages}. The
+ * location carries one {@link FieldIssue} per missing field and an empty {@code messages}. The
  * service emits bundle keys; the check-status resolver resolves the text, substituting {@code name}
  * for the per-location met message (AD-8).
  *
@@ -18,7 +20,7 @@ import java.util.List;
  * @param name the location description
  * @param met whether the location meets its requirements
  * @param messages the per-location message(s) — the met banner when passing, empty when failing
- * @param issues the missing-Cost fields — empty when passing
+ * @param issues the missing fields — empty when passing
  */
 public record LocationCheckResult(
     Integer id, String name, boolean met, List<MessageInfo> messages, List<FieldIssue> issues) {}

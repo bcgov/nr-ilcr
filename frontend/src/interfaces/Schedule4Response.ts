@@ -72,6 +72,9 @@ export default interface Schedule4Response {
 }
 
 // Check Status (POST check-status, no body): per-location breakdown, read-only, mutates nothing.
+// `code` names the field: 0 is the location description (`FieldIssue.LOCATION_DESCRIPTION`, the one
+// field legacy required — #465); 40–55 are the legacy cost-item codes, which the API no longer
+// emits but the client still labels (`checkStatusFieldLabel`).
 export interface FieldIssue {
   readonly code: number
   readonly message: MessageInfo
@@ -79,7 +82,9 @@ export interface FieldIssue {
 
 export interface LocationCheckResult {
   readonly id: number | null
-  readonly name: string
+  // Null when the stored description is null — the very state the check reports (code 0), passed
+  // through by Schedule4Service unchanged. Render through `checkStatusLocationName`.
+  readonly name: string | null
   readonly met: boolean
   readonly messages: MessageInfo[]
   readonly issues: FieldIssue[]

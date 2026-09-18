@@ -233,6 +233,16 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     tag retired**; it is now an ordinary regression guard for the Schedule 4 half.
 
 - **DIV-2 — Check Status says a value is required but not WHICH figure is missing.**
+  - ✅ **RESOLVED on 2026-09-18** (issue #326), then **SUPERSEDED the same day by DIV-9 / #465**. The fix
+    landed as described: `schedule4/index.tsx` maps each issue's `code` to a field label
+    (`checkStatusFieldLabel()` in `validation.ts`) and renders `"<label>: Value Required"` under the
+    `"<location> — required"` title — the same client-side composition the Check Status page applies to
+    Schedule 4 (`checkStatus/verdicts.ts`); an unknown code falls back to the API text verbatim (AD-8).
+    But #465 then removed the cost check the finding came from, so the only field the API can still name
+    is the location description (rendered "Description"), and the two-Volume-only-gaps scenario this entry
+    was raised from has no finding left to label. The scenario is gone; the labelling is covered by Vitest
+    (`Schedule4.test.tsx`, `verdicts.test.ts`) for the description and, as a fallback, for a cost-item code.
+    The `check-issue-label` anchor is released. The original analysis is preserved below.
   - **What's wrong:** when a location is missing a required Cost, Check Status reports the location name and
     the words "Value Required" — but not the transportation category the Cost belongs to. A location missing
     two Costs produces two identical messages, so the reporter cannot tell which lines to go and fix.
@@ -271,12 +281,9 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     because the notification shape itself is not coming back.
   - **Ticket:** [bcgov/nr-ilcr#326](https://github.com/bcgov/nr-ilcr/issues/326).
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to surface the category label when capacity allows; QA re-verifies
-    and closes this entry then. The `@discovered-divergence` test asserts the CORRECT behaviour, so it is RED
-    today and goes green on its own when the fix lands, at which point its tag comes off. No test change is
-    needed.
-  - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status.feature` (S28,
-    `@discovered-divergence`).
+  - **Status:** RESOLVED 2026-09-18 and SUPERSEDED by DIV-9 (see the ✅ note at the top of this entry).
+    Found 2026-08-17. QA to close alongside DIV-9.
+  - **Test:** none at E2E any more — the state cannot be produced (see DIV-9). Vitest only.
 
 - **DIV-3 — Unsaved changes to a location are thrown away with no warning.**
   - **What's wrong:** type a change into an open location, then press **Back**, or click **Edit** on another
@@ -505,12 +512,59 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
       page-level action, so "unsaved" here means an open panel holding typed amounts — the same state DIV-3
       is about.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged against the shared ticket. Dev to send the on-screen values with
-    the check-status request and evaluate those, following Schedule 6's `Schedule6CheckRequest`; QA
-    re-verifies and closes this entry when the fix lands. The scenario asserts the CORRECT behaviour, so it
-    goes green on its own, at which point its tag and `[DISCOVERED …]` title marker come off together. No
-    test change is needed. Added 2026-08-27.
-  - **Test:** `check-status-unsaved.feature` ×1 — RED by design.
+  - **Status:** **RETIRED for Schedule 4 on 2026-09-18 (#465)** — not fixed, made moot. The scenario's
+    premise was a saved Volume-only category that Check Status flags; under legacy parity (DIV-9) nothing
+    saved on Schedule 4 can be flagged, and the one field the check does enforce — the description — cannot
+    be saved blank, so neither the false-RED nor the false-GREEN arm has a producible Schedule 4 state.
+    `check-status-unsaved.feature` has been deleted and the `check-unsaved` anchor released (its seed patch
+    stays in `real-test-data-patches/sch4/` for teardown). **#359 itself stays open** — the other ten
+    scenarios across sch1/sch2/sch3/sch11 still reproduce it, and Schedule 4's page still has the same
+    architecture (Check Status judges the saved document), so if a Schedule 4 check-status rule ever
+    returns, this instance returns with it. Added 2026-08-27; retired 2026-09-18.
+  - **Test:** none (retired). The sch3 register's table of instances records this.
+
+- **DIV-9 — Check Status reports a missing Cost for every Volume-only row; legacy never reported it at all.**
+  - ✅ **RESOLVED on 2026-09-18** (issue [#465](https://github.com/bcgov/nr-ilcr/issues/465)), in the same PR
+    as DIV-2's fix, which it supersedes. Found by the developer in manual use on the dlvr database
+    (mill 727 / 2017: "location 2" code 40 volume 34 and "Pascucci Location" code 43 volume 89654, both
+    flagged); the register entry was promised once the ticket had a number — this is it.
+  - **What's wrong:** every stored category and sub-page row with a Volume but no Cost produced a
+    `"<name> — required" / "Value Required"` finding, so reporters were told Costs were required that the old
+    system never required.
+  - **Why (technical, verified against `docs/nr-ilcr-2.0.4` on 2026-09-18):** legacy gated every Schedule 4
+    Cost check behind `if (transportation.isXxxToCheck())` (`Schedule4CheckStatus.java:26-164`). Those
+    flags default to `false` (`TransportationReportType.java:53-68`); the only assignments anywhere are the
+    fifteen `setXxxToCheck(false)` calls made when a cost row is loaded (`Schedule4DAO.java:243-337`); there
+    is no `ToCheck(true)`. So `isMissingCostCheck` never flipped, and its two consumers
+    (`Schedule4MB.java:406-449`, `checkStatusSchedule4.xhtml:52-212`) were dead code. The only reachable
+    legacy failure is a blank location description (`Schedule4CheckStatus.java:19-23`). Story 10.4
+    §Decision 1 had read the dormant flags as an *intended* "Cost required when the category is stored"
+    rule and enforced it (`Schedule4Service.checkStatus`, cost-null branches). The issue cites §Decision 2;
+    that is the Distance rule — the decision reversed is §Decision 1.
+  - **Scope:** Schedule 4 only. The `ToCheck` gate construct exists only on `TransportationReportType`;
+    Schedules 1, 2, 5 and 11 have live cost checks and are untouched.
+  - **Fix (backend + both Check Status renderers):** `Schedule4Service.checkStatus` now raises exactly one
+    finding — a blank description (`FieldIssue.LOCATION_DESCRIPTION`, code 0) — and never a cost-item code.
+    The location page and the Check Status page label it "Description" (legacy's own row label,
+    `checkStatusSchedule4.xhtml:16-23`) and, with no name to show, head the banner with the report id. The
+    Story 15.3 submit sweep consumes the same verdict, so Schedule 4 no longer blocks Submit on a missing
+    Cost — which is also legacy parity (`CheckStatusMB.submitReport` AND-ed `isSchedule4Valid()`, which was
+    effectively always true).
+  - **Consequence for this suite:** every Check Status scenario is now a PASS scenario, and their value is
+    as regression pins — the states the old rule flagged (Volume-only category, distance category, sub-page
+    row) must pass. The `check-status.feature` header records the re-grounding. The ISSUES branch is
+    unreachable from a browser (the save refuses a blank name, S13) and is covered by the backend's
+    `Schedule4CheckStatusServiceTest` (`blankDescription_issuesWithValueRequired`, `nullDescription_issues`,
+    `mixed_…`). DIV-2's scenario and DIV-8's Schedule 4 scenario were retired as a result (see those entries).
+  - **Upstream record to correct:** Story 10.4 §Decision 1 in `ilcr-bmad`
+    (`_bmad-output/implementation-artifacts/10-4-check-schedule-4-status-backend.md`) — outside this repo;
+    flagged in the PR.
+  - **Priority / env:** p1 · dlvr + local seeded DB · Chrome.
+  - **Status:** RESOLVED 2026-09-18; pending QA re-verification on dlvr (mill 727 / 2017 should now report
+    both locations met) to CLOSE.
+  - **Test:** `check-status.feature` `@S28 @p0` ("A location with a Volume but no Cost passes Check Status
+    (#465)") and `@S28 @S11 @p1` (sub-page row) — green; backend `Schedule4CheckStatusServiceTest`,
+    `Schedule4CheckStatusIT.volumeOnlyCategory_notReported_met`, `CheckStatusSweepIT`.
 
 **Coverage gaps (not tested yet  — no app problem):**
 

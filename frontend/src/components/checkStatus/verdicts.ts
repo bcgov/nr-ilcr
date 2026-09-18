@@ -5,7 +5,7 @@ import type { Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Respons
 import type { Schedule5CheckStatusResponse } from '@/interfaces/Schedule5Response'
 import type { Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
 import type { CheckFieldIssue, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
-import { labelFor } from '@/components/schedule4/validation'
+import { checkStatusFieldLabel, checkStatusLocationName } from '@/components/schedule4/validation'
 import { summariseCheckStatus } from '@/components/schedule10/checkStatus'
 
 /**
@@ -71,15 +71,14 @@ const flattenSchedule2 = (verdict: Schedule2CheckStatusResponse): FlatVerdict =>
     : flat(false, verdict.messages, null)
 
 /**
- * Schedule 4 ships the bare bundle text and the cost-item code; the location, the category and the
- * field are composed here, as legacy's Check Status tab did (`Lake Side Dry Dump - Cost`,
- * checkStatusSchedule4.xhtml:52-58) with the unit legacy's Schedule 1 rows carry (`Cost $`). The
- * backend reports a missing COST and nothing else (Schedule4Service.checkStatus), so the field is a
- * constant. An unknown code names the location and the field only — never a fabricated category.
- * Met locations render nothing (legacy listed failing rows only).
+ * Schedule 4 ships the bare bundle text and a field code; the location and the field are composed
+ * here, as legacy's Check Status tab did (a "Location Descriprion - <name>" heading over one
+ * "<field> / Value Required" row per finding, checkStatusSchedule4.xhtml:9-23). The field label
+ * comes from the same table the Schedule 4 page uses (`checkStatusFieldLabel`), so the two screens
+ * name a finding identically. Since #465 the only field the backend reports is the location
+ * description (legacy never required a Schedule 4 Cost); an unknown code names the location only —
+ * never a fabricated field. Met locations render nothing (legacy listed failing rows only).
  */
-const SCHEDULE_4_FIELD = 'Cost $'
-
 const flattenSchedule4 = (verdict: Schedule4CheckStatusResponse): FlatVerdict => {
   if (verdict.outcome === 'MET') {
     return flat(true, NONE, metLine(verdict))
@@ -88,9 +87,10 @@ const flattenSchedule4 = (verdict: Schedule4CheckStatusResponse): FlatVerdict =>
     .filter((location) => !location.met)
     .flatMap((location) =>
       location.issues.map((issue) => {
-        const label = labelFor(issue.code)
-        const where = label === undefined ? location.name : `${location.name} - ${label}`
-        return { ...issue.message, text: `${where} - ${SCHEDULE_4_FIELD}: ${issue.message.text}` }
+        const label = checkStatusFieldLabel(issue.code)
+        const where = checkStatusLocationName(location)
+        const field = label === undefined ? where : `${where} - ${label}`
+        return { ...issue.message, text: `${field}: ${issue.message.text}` }
       }),
     )
   return flat(false, errors, null)

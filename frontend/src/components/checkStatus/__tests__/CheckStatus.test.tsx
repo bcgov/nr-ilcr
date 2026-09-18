@@ -546,7 +546,7 @@ describe('Check Status page (Story 15.2)', () => {
       ),
     )
     render(<CheckStatus />)
-    await screen.findByText('Harbour Dump - Rail Haul - Cost $: Value Required')
+    await screen.findByText('Location 7001 - Description: Value Required')
 
     const schedule4 = item(SCHEDULE_TITLES['4'])
     expect(linesIn(schedule4)).toHaveLength(1)
