@@ -444,4 +444,118 @@ export class Schedule6Page {
   get saveButton(): Locator {
     return this.page.getByRole('button', { name: 'Save', exact: true }).first();
   }
+
+  // ---- The read-only (non-Draft) render, S17 ------------------------------------------------------
+
+  /**
+   * ALL instances of Save and Check Status, not just the first.
+   *
+   * The page renders each twice — above the schedule and again below the General Comment
+   * (`actionBar`, index.tsx:880-915), mirroring legacy's `saveButton0`/`saveButton1` and
+   * `checkStatusButton0`/`checkStatusButton1`, which S17's Gherkin names individually. The
+   * single-instance getters above take `.first()` because which one is clicked is not those slices'
+   * subject; here it IS the subject, because a page that disabled only the top pair would leave a live
+   * Save on a locked schedule. So these assert over every instance.
+   */
+  get allSaveButtons(): Locator {
+    return this.page.getByRole('button', { name: 'Save', exact: true });
+  }
+
+  get allCheckStatusButtons(): Locator {
+    return this.page.getByRole('button', { name: 'Check Status', exact: true });
+  }
+
+  /**
+   * Assert every entry control on the page is locked.
+   *
+   * WHAT "LOCKED" MEANS FOR THE ADD SURFACE, and why this is not the Gherkin's literal claim. S17's
+   * source lists six Add-FORM fields as disabled (`tsaNumberOneMenu`, `tflNumber`, `tsbNumberOneMenu`,
+   * `vol`, `cos`, `comAdd`) because legacy rendered that panel inline, always present. The React page
+   * renders it only while the toggle is open (`{showAdd && <AddPanel/>}`, index.tsx:971) and disables
+   * the toggle itself (`disabled={entryLocked}`, :907) — so on a locked page the panel is not in the
+   * DOM at all and cannot be opened. Asserting those six fields are "disabled" would fail against
+   * elements that do not exist, and asserting them absent alone would pass vacuously on any page. So
+   * the faithful pair is: the toggle EXISTS and is DISABLED, and the panel is ABSENT. That is strictly
+   * stronger than legacy's six disabled fields — the entry surface is unreachable rather than inert.
+   *
+   * The per-record row fields ARE present and disabled (`disabled={entryLocked}`, :1020), so the
+   * Gherkin's disabled-field claim is asserted there, on the rows, by `expectRowFieldsDisabled`.
+   */
+  async expectEntryControlsLocked(): Promise<void> {
+    await expect(this.addToggle, 'the Add toggle must be present but disabled').toBeDisabled();
+    await expect(
+      this.addPanel,
+      'the Add panel must not be in the page at all on a locked schedule — its toggle cannot open it',
+    ).toHaveCount(0);
+
+    // Both instances of each mirrored action, and the count is asserted first so a page that rendered
+    // only one could not satisfy "every instance is disabled" trivially.
+    await expect(this.allSaveButtons, 'both Save buttons should be rendered').toHaveCount(2);
+    await expect(this.allCheckStatusButtons, 'both Check Status buttons should be rendered').toHaveCount(
+      2,
+    );
+    for (const button of await this.allSaveButtons.all()) {
+      await expect(button, 'every Save button must be disabled').toBeDisabled();
+    }
+    for (const button of await this.allCheckStatusButtons.all()) {
+      await expect(button, 'every Check Status button must be disabled').toBeDisabled();
+    }
+
+    await expect(this.generalComments, 'the General Comments field must be disabled').toBeDisabled();
+  }
+
+  /**
+   * Assert one saved record's own fields are disabled.
+   *
+   * Goes through `expandRecord` first for the reason VER-2 records: Carbon puts every accordion panel's
+   * children in the DOM whichever one is open, so a `toBeDisabled` on a collapsed row asserts DOM state
+   * rather than what the reporter can see.
+   */
+  async expectRowFieldsDisabled(ordinal: number, recordId: number): Promise<void> {
+    await this.expandRecord(ordinal, recordId);
+    const fields = rowField(recordId);
+    for (const [name, selector] of Object.entries(fields)) {
+      await expect(
+        byId(this.page, selector),
+        `row ${recordId}'s ${name} field must be disabled on a non-Draft schedule`,
+      ).toBeDisabled();
+    }
+  }
+
+  /** A saved record's per-record Comments input, by record id. */
+  rowComments(recordId: number): Locator {
+    return byId(this.page, rowField(recordId).comments);
+  }
+
+  /** A saved record's Supply Block combo, by record id. */
+  rowSupplyBlock(recordId: number): Locator {
+    return byId(this.page, rowField(recordId).supplyBlock);
+  }
+
+  /** A saved record's area-type combo, by record id. */
+  rowAreaType(recordId: number): Locator {
+    return byId(this.page, rowField(recordId).areaType);
+  }
+
+  /** A saved record's TFL number input, by record id. */
+  rowTflNumber(recordId: number): Locator {
+    return byId(this.page, rowField(recordId).tflNumber);
+  }
+
+  /**
+   * The row Delete button for a record, by its 1-based ordinal.
+   *
+   * The name is the `aria-label`, `Delete Road Maintenance Report <ordinal>` (index.tsx:481) — NOT the
+   * visible text, which is the bare legacy "Delete". The ordinal is appended deliberately, "so an
+   * N-row schedule doesn't collapse into N identically-named buttons (Carbon renders every
+   * AccordionItem's children into the DOM regardless of which panel is expanded)" — the same VER-2
+   * behaviour that makes `expandRecord` necessary. A bare `name: 'Delete'` would be a strict-mode
+   * violation the moment a second record exists, which is exactly S17's fixture.
+   */
+  rowDeleteButton(ordinal: number): Locator {
+    return this.page.getByRole('button', {
+      name: `Delete Road Maintenance Report ${String(ordinal)}`,
+      exact: true,
+    });
+  }
 }

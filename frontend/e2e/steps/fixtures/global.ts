@@ -111,6 +111,22 @@ export type World = {
    * so a Then cannot address the new row until a previous step has captured this.
    */
   sch6RecordId?: number;
+  /**
+   * S17's seeded read-only records, resolved from the served document: each expected fixture entry
+   * paired with the record as served and its 1-based DISPLAY ORDINAL.
+   *
+   * Resolved at scenario time rather than pinned, because neither half is stable in the fixture. The
+   * `recordId` differs by environment — the local seed patch draws it from `ILCR_REPORT_COMMON_SEQ`
+   * while the CI seed pins explicit ids — and every row locator is built from `row-<recordId>-*`. The
+   * ordinal is the position in the served list, which is what the accordion titles and the Check Status
+   * lines key on. So the Given matches each record by its per-record COMMENT (stable everywhere) and
+   * carries both derived values forward.
+   */
+  sch6ReadOnlyRecords?: {
+    expected: (typeof import('../../fixtures/sch6/schedule6-test-data'))['S17_RECORDS'][number];
+    record: { recordId: number; comments: string | null };
+    ordinal: number;
+  }[];
 
   // --- sch11 ---
   // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above —

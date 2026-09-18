@@ -159,7 +159,22 @@ DECLARE
     -- only 2024-or-later keys anywhere are sch6's, so the "year >= 2024 belongs to sch6" invariant
     -- still holds. GET /api/v1/schedule6?millId=24050&year=2024 answered 404 beforehand — the mill
     -- resolves and only the report-status row was missing.
-    t_anchor(24050, 2024, 'D')   -- S12 arm 2: the chosen area type is accepted and saved
+    t_anchor(24050, 2024, 'D'),  -- S12 arm 2: the chosen area type is accepted and saved
+    -- S17 — the READ-ONLY anchor, and the ONE cell here that is deliberately NOT Draft.
+    --
+    -- Track code 'S' (Submitted), so the suite's identity cannot edit it: ILCR_SUBMITTER edits at
+    -- Draft only, while ADMIN edits at Submitted/Verified (ScheduleEditability:63-64). The suite runs
+    -- as ILCR_SUBMITTER (pages/common/mockUser.ts — "As a Licensee", matching every feature file), so
+    -- 'S' makes the served document `editable: false` and the page renders its read-only view. Mirrors
+    -- sch5's own READ_ONLY_ANCHOR, which is 16050/2023 at 'S' for exactly this reason.
+    --
+    -- IT IS THE ONE ANCHOR EXEMPT FROM THIS FILE'S "empty at rest" PROMISE: S17 has to render existing
+    -- records, totals and a general comment, and they CANNOT be created through the app (every write to
+    -- a non-Draft document is refused, which is the condition the slice is about). So its content is
+    -- seeded by the sibling patch `view-mode-road-records.sql`, and it is deliberately kept OUT of
+    -- EDITABLE_DRAFT_ANCHORS in the fixture — the list preflight asserts is Draft, editable and
+    -- record-free. It gets its own preflight check instead.
+    t_anchor(24051, 2024, 'S')   -- S17 read-only: Submitted, and holds the seeded records
   );
 BEGIN
   -- The new reporting year. Additive: 2015-2023 already exist and are untouched.

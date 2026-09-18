@@ -3,7 +3,11 @@ import {
   ADD_ANCHOR,
   AREA_TYPE_CORRECTION_ANCHOR,
   NO_COMPUTED_RATE,
+  READ_ONLY_ANCHOR,
   S12_RECORD,
+  S17_GENERAL_COMMENT,
+  S17_RECORDS,
+  S17_TOTALS,
   VALIDATION_AMOUNTS,
   CHECK_MISSING_COST_ANCHOR,
   CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
@@ -794,6 +798,114 @@ Then('the corrected road record is persisted', async ({ request, world }) => {
   expect(doc.roadRecords.length, 'the refused attempt must not have stored anything').toBe(1);
 
   world.sch6RecordId = record.recordId;
+});
+
+// ---- S17 — the schedule renders read-only when the report is not in Draft --------------------------
+
+Given(
+  'the Schedule 6 report for that mill and year is not in Draft',
+  async ({ request, world }) => {
+    const anchor = READ_ONLY_ANCHOR;
+    const doc = await readSchedule6(request, anchor.key);
+
+    // NOT DRAFT, and `editable` FALSE — two separate claims, both asserted. The status code alone is
+    // not enough: editability is role x status (ScheduleEditability), so a Submitted document is
+    // read-only for the suite's ILCR_SUBMITTER but EDITABLE for an ADMIN. If the suite's identity were
+    // ever changed, this Given fails here and names the reason, instead of the scenario going on to
+    // assert that controls are disabled on a page that is legitimately editable.
+    expect(
+      doc.trackStatus,
+      `the read-only anchor (${anchor.key.millId}/${anchor.key.year}) must not be a Draft 1-10 track`,
+    ).not.toBe('D');
+    expect(
+      doc.editable,
+      'the read-only anchor must be served non-editable for this suite\'s identity (ILCR_SUBMITTER '
+        + 'edits at Draft only) — a true here means the seeded status drifted or the role changed',
+    ).toBe(false);
+
+    // The seeded records, resolved by COMMENT rather than by id or position: the local patch draws
+    // recordIds from a sequence while the CI seed pins 3100/3101, so the ids differ by environment —
+    // and every row locator is built from `row-<recordId>-*`. Matching on the comment is what makes
+    // this scenario portable. The ORDINAL comes from the served order, not from the fixture, so the
+    // accordion titles cannot be assumed either.
+    const resolved = S17_RECORDS.map((expected) => {
+      const index = doc.roadRecords.findIndex((r) => (r.comments ?? '') === expected.comments);
+      expect(
+        index,
+        `no seeded record commented "${expected.comments}" on the read-only anchor — apply `
+          + 'real-test-data-patches/sch6/view-mode-road-records.sql',
+      ).toBeGreaterThanOrEqual(0);
+      return { expected, record: doc.roadRecords[index], ordinal: index + 1 };
+    });
+
+    expect(
+      doc.roadRecords.length,
+      'the read-only anchor must hold exactly the seeded records — an extra one would make the totals '
+        + 'assertions wrong while the page is right',
+    ).toBe(S17_RECORDS.length);
+
+    world.sch6ReadOnlyRecords = resolved;
+    world.scheduleKey = anchor.key;
+    world.millOption = millOptionText(anchor.mill);
+  },
+);
+
+Then('every Schedule 6 entry control is disabled', async ({ schedule6Page }) => {
+  // Covers the action bar (BOTH Save and BOTH Check Status instances — legacy's saveButton0/1 and
+  // checkStatusButton0/1, which the Gherkin names individually), the General Comments field, and the
+  // Add surface. The Add surface is re-grounded: legacy's six inline Add-form fields cannot be
+  // asserted "disabled" here because the React panel is only rendered while its toggle is open, and
+  // the toggle is disabled — so the panel is absent and unreachable. See the page object's own note.
+  await schedule6Page.expectEntryControlsLocked();
+});
+
+Then("every saved record's own fields are disabled", async ({ schedule6Page, world }) => {
+  const records = world.sch6ReadOnlyRecords!;
+  for (const { record, ordinal } of records) {
+    // This is where the Gherkin's disabled-field claim genuinely lands: the row editor shares the same
+    // `RoadRecordFields` component as the Add panel, and its fields ARE present and disabled.
+    await schedule6Page.expectRowFieldsDisabled(ordinal, record.recordId);
+    await expect(
+      schedule6Page.rowDeleteButton(ordinal),
+      `row ${ordinal}'s Delete must be disabled on a non-Draft schedule`,
+    ).toBeDisabled();
+  }
+});
+
+Then('the existing road records remain visible with their stored figures', async ({ schedule6Page, world }) => {
+  const records = world.sch6ReadOnlyRecords!;
+  for (const { expected, record, ordinal } of records) {
+    // Expanded first (VER-2): Carbon renders every accordion panel's children into the DOM whichever
+    // one is open, so reading a collapsed row asserts DOM state rather than what a reporter can see.
+    await schedule6Page.expandRecord(ordinal, record.recordId);
+
+    await expect(schedule6Page.rowVolume(record.recordId)).toHaveValue(expected.volumeDisplay);
+    await expect(schedule6Page.rowCost(record.recordId)).toHaveValue(expected.costDisplay);
+    await expect(schedule6Page.rowDerived(record.recordId, 'RMG')).toHaveText(expected.rmg);
+    await expect(schedule6Page.rowDerived(record.recordId, '$ / m³')).toHaveText(
+      expected.costPerVolumeDisplay,
+    );
+    // The per-record comment, which is a DIFFERENT field from the schedule-level one asserted below
+    // (different column, different cap — deviation E). Asserting both is what keeps the two apart.
+    await expect(schedule6Page.rowComments(record.recordId)).toHaveValue(expected.comments);
+  }
+});
+
+Then('the running totals remain visible', async ({ schedule6Page }) => {
+  // 4.00 IS THE POINT. It is the total cost over the total volume, and it equals NEITHER record's own
+  // rate (3.00 and 4.50) — so a page that echoed a single row's figures into the totals strip fails
+  // here. A one-record fixture could not have caught that, which is why S17 seeds two.
+  await expect(schedule6Page.total('Volume m³')).toHaveText(S17_TOTALS.volume);
+  await expect(schedule6Page.total('Cost $')).toHaveText(S17_TOTALS.cost);
+  await expect(schedule6Page.total('$ / m³')).toHaveText(S17_TOTALS.costPerVolume);
+});
+
+Then('the general comment remains visible', async ({ schedule6Page }) => {
+  // Visible AND populated, not merely present: a disabled-but-blanked textarea would satisfy
+  // "disabled" while losing the reporter's text, which is the failure mode that matters on a locked
+  // page. The disabled assertion itself lives in `expectEntryControlsLocked`.
+  await expect(schedule6Page.generalComments).toBeVisible();
+  await expect(schedule6Page.generalComments).toHaveValue(S17_GENERAL_COMMENT);
 });
 
 Then('the corrected TFL record is persisted', async ({ request, world }) => {

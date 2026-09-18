@@ -3,6 +3,10 @@ import {
   ADD_ANCHOR,
   EDITABLE_DRAFT_ANCHORS,
   GUARDS,
+  READ_ONLY_ANCHOR,
+  S17_GENERAL_COMMENT,
+  S17_RECORDS,
+  S17_TOTALS,
   scheduleUrl,
 } from '../fixtures/sch6/schedule6-test-data';
 
@@ -33,9 +37,18 @@ const PATCH_HINT =
 interface Schedule6Doc {
   trackStatus: string | null;
   editable: boolean;
-  roadRecords: { recordId: number; areaType: string | null }[];
+  roadRecords: {
+    recordId: number;
+    areaType: string | null;
+    rmg: string | null;
+    volume: number | null;
+    cost: number | null;
+    comments: string | null;
+  }[];
   totalVolume: number | null;
   totalCost: number | null;
+  totalCostPerVolume: number | null;
+  generalComments?: string | null;
 }
 
 for (const { name, anchor } of EDITABLE_DRAFT_ANCHORS) {
@@ -131,6 +144,76 @@ test('preflight: Schedule 6 anchors are all distinct', async () => {
     'these Schedule 6 anchors are shared between scenarios, which races under `fullyParallel`: '
       + `${shared.join('; ')}. Mint another cell in reporting year 2024+ instead (see the patch header).`,
   ).toEqual([]);
+});
+
+/**
+ * S17's READ-ONLY anchor is still non-Draft AND still holds exactly its two seeded records.
+ *
+ * WHY EVERY PART OF THIS IS ASSERTED HERE. This anchor's fixture is a STATE, not an absence, and every
+ * element of it can rot in a way that reads as a UI defect rather than as drifted data:
+ *
+ *  - If the track status were ever moved back to Draft, the document would answer `editable: true` and
+ *    S17 would quietly test the EDITABLE page — asserting that controls are disabled would fail with no
+ *    hint that the data, not the app, had changed. (The same would happen if the suite's identity were
+ *    switched to ADMIN, which edits at Submitted: hence `editable` is asserted, not just the code.)
+ *  - If the seeded records went missing (a teardown run without a re-apply), the "records remain
+ *    visible" half of the slice would fail on absent rows.
+ *  - If an EXTRA record appeared, the TOTALS assertions would be wrong — and wrong in the most
+ *    confusing direction, because the page would be correct and the expectation stale.
+ *
+ * The totals are checked too, because they are the assertion the two-record fixture exists to make:
+ * 4.00 is neither record's own rate, so a stale fixture could not produce it by accident.
+ */
+test('preflight: Schedule 6 read-only anchor is non-Draft and holds exactly its seeded records', async ({
+  request,
+}) => {
+  const { millId, year } = READ_ONLY_ANCHOR.key;
+  const res = await request.get(scheduleUrl(millId, year));
+  await expect(
+    res,
+    `Schedule 6 read-only anchor (${millId}/${year}) GET -> HTTP ${res.status()}. ${PATCH_HINT} ${HINT}`,
+  ).toBeOK();
+
+  const doc = (await res.json()) as Schedule6Doc;
+
+  expect(
+    doc.trackStatus,
+    `the read-only anchor must NOT be Draft — S17 is about the non-Draft render. ${HINT}`,
+  ).not.toBe('D');
+  expect(
+    doc.editable,
+    'the read-only anchor must answer editable:false for the suite\'s identity (ILCR_SUBMITTER edits '
+      + `at Draft only). A true here means the status drifted or the suite's role changed. ${HINT}`,
+  ).toBe(false);
+
+  // Matched by COMMENT, not by id or position: the local patch draws recordIds from a sequence while
+  // the CI seed pins 3100/3101, so the ids legitimately differ between environments.
+  const byComment = new Map(doc.roadRecords.map((r) => [r.comments ?? '', r]));
+  expect(
+    doc.roadRecords.length,
+    `the read-only anchor must hold EXACTLY ${S17_RECORDS.length} records — an extra one makes S17's `
+      + `totals assertions wrong while the page is right. Found ${doc.roadRecords.length}. ${HINT}`,
+  ).toBe(S17_RECORDS.length);
+
+  for (const expected of S17_RECORDS) {
+    const record = byComment.get(expected.comments);
+    expect(record, `no seeded record commented "${expected.comments}" on ${millId}/${year}. ${PATCH_HINT}`)
+      .toBeTruthy();
+    expect(record!.rmg, `server-derived RMG for "${expected.comments}". ${HINT}`).toBe(expected.rmg);
+  }
+
+  expect(doc.generalComments ?? null, `the seeded general comment. ${PATCH_HINT}`).toBe(
+    S17_GENERAL_COMMENT,
+  );
+  expect(doc.totalVolume, `read-only anchor total volume. ${HINT}`).toBe(
+    Number(S17_TOTALS.volume.replaceAll(',', '')),
+  );
+  expect(doc.totalCost, `read-only anchor total cost. ${HINT}`).toBe(
+    Number(S17_TOTALS.cost.replaceAll(',', '')),
+  );
+  expect(doc.totalCostPerVolume, `read-only anchor total cost per volume. ${HINT}`).toBe(
+    Number(S17_TOTALS.costPerVolume),
+  );
 });
 
 /**

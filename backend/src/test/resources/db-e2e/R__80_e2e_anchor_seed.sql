@@ -480,6 +480,13 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- validate-only cell above. A writer cannot share a (mill, year) under `fullyParallel`. Mill 24050 is
 -- ACT and already seeded above, pinned by sch1/sch4/sch5 at 2016-2023, so only the year is new.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 24050, 'D', 'D', 'E2E_SEED');
+-- 24051/2024 — S17's READ-ONLY anchor, and the one sch6 cell that is deliberately NOT Draft. Track
+-- code 'S' (Submitted): the suite runs as ILCR_SUBMITTER, which edits at Draft ONLY, while ADMIN edits
+-- at Submitted/Verified (ScheduleEditability:63-64) — so 'S' makes the document editable:false and the
+-- page renders read-only. Mirrors sch5's own READ_ONLY_ANCHOR (16050/2023 at 'S'). It is kept OUT of
+-- EDITABLE_DRAFT_ANCHORS in the fixture and has its own preflight check, because the list that file
+-- asserts is Draft + editable + record-free and this anchor is none of the three.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 24051, 'S', 'D', 'E2E_SEED');
 -- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
 -- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
 -- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It
@@ -493,6 +500,56 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- a closed mill is fine, but no mill's ILCR_MILL_STATUS_XREF may be flipped to create a guard, since
 -- that would silently redden the closed-mill guards sch2/sch3/sch4/sch5 already pin.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2017, 1,     'D', 'D', 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- SCHEDULE 6 read-only CONTENT on 24051/2024 (S17).
+-- Folded in from real-test-data-patches/sch6/view-mode-road-records.sql.
+--
+-- THE FIRST ROAD_MAINTENANCE_REPORT ROWS THIS SEED HAS EVER CARRIED. Every other
+-- sch6 anchor is empty at rest and its scenarios create their own records through
+-- the app's POST; S17 cannot, because every write to a non-Draft document is
+-- refused — which is the condition the slice is about. So these rows are seeded.
+--
+-- Two records, one per BR-02 branch (a TSA/Supply-Block row and a TFL row), so
+-- the read-only render is proved for both. The figures divide exactly and the
+-- TOTAL rate equals neither record's:
+--     3100  TSA 01 / block 01B : 10,000 / 30,000  -> 3.00, RMG 15
+--     3101  TFL 48             : 20,000 / 90,000  -> 4.50, RMG 10
+--     totals                   : 30,000 / 120,000 -> 4.00
+-- so a page that echoed one row into the totals strip fails instead of passing.
+-- Two rows also sits under the 5-row page size on purpose: the totals' pagination
+-- scope is unresolved in legacy source (e2e defects.md SPEC-3), and six rows would
+-- force this slice to assert an answer to an open question.
+--
+-- COLUMN SHAPE mirrors the app's own writes (Schedule6Repository.insertRoadReport
+-- :241-258 / insertCostDetail :370-376) so the read model assembles these rows
+-- identically to app-created ones: ILCR_CATEGORY_ID '6'; cost item 69 (the single
+-- Schedule 6 item the read side filters on); ILCR_REPORT_SUMMARY_ID NULL, because
+-- a road detail hangs off its report and the ICRD_CHK_B_I_U delivery trigger wants
+-- EXACTLY one parent FK; ITEM_DESCRIPTION NULL, which legacy never sets.
+--
+-- THE GENERAL COMMENT IS ON BOTH ROWS, which is not redundancy: BR-09 is a
+-- replication invariant — every cat-6 row of a mill/year stores the same
+-- schedule-level comment (Schedule6DAO.java:229) and the read side takes the
+-- highest-id row's copy. The per-record comments live on the DETAIL rows; the two
+-- COMMENTS columns are different fields with different widths (deviation E).
+--
+-- IDS ARE EXPLICIT AND BELOW THE SEQUENCE STARTS, per this file's standing rule:
+-- ROAD_MAINTENANCE_REPORT_ID draws from ILCR_REPORT_COMMON_SEQ (start 9500) and
+-- ILCR_COST_REPORT_DETAIL_ID from ILCR_COST_REPORT_DETAIL_SEQ (restarted at 10000
+-- by R__60), so 3100/3101 and 4320/4321 cannot collide with an id the app draws at
+-- runtime. The local patch uses NEXTVAL instead, so the recordIds differ between
+-- environments — which is why the scenario DISCOVERS them from the API rather than
+-- pinning them (the row field ids are `row-<recordId>-*`).
+--
+-- ROAD_MAINTENANCE_REPORT_ID is registered in `parentsByColumn` in
+-- preflight/ci-seed-parity.setup.ts in this same change, or these detail rows would
+-- be reported as parentless — the gate's own header named this as the next FK.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, ENTRY_USERID) VALUES (3100, 2024, 24051, '6', '01', '01B', NULL, 'E2E S17 read-only schedule general comment.', 'E2E_SEED');
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, ENTRY_USERID) VALUES (3101, 2024, 24051, '6', NULL, NULL, '48', 'E2E S17 read-only schedule general comment.', 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4320, NULL, 3100, 69, 10000, 30000, 'E2E S17 read-only TSA record', NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4321, NULL, 3101, 69, 20000, 90000, 'E2E S17 read-only TFL record', NULL, 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
 -- Banner status dates (sec S01 asserts "Sch 1-10 - Status: Draft - Date:

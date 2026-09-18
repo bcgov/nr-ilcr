@@ -14,8 +14,8 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S16 authored and green (twenty-five scenarios); **16 of 23
-slices covered.** Five verified-not-a-defect findings. **Still no divergences and no bugs found in the
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S17 authored and green (twenty-six scenarios); **17 of 23
+slices covered.** Six verified-not-a-defect findings. **Still no divergences and no bugs found in the
 app** — every red encountered so far has been the test being wrong, not the application.
 
 **Two things need a human, both on this page.** Neither blocks the story:
@@ -49,10 +49,11 @@ app** — every red encountered so far has been the test being wrong, not the ap
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 7 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 6 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** S01–S16 are covered. **S17–S23** and the axe sweeps are still to be written.
-(Was "12 of 23" when S01–S11 were the whole of it; the S12–S16 validation block landed 2026-09-18.)
+**What is missing.** S01–S17 are covered. **S18–S23** and the axe sweeps are still to be written.
+(Was "12 of 23" when S01–S11 were the whole of it; the S12–S16 validation block and S17 both landed
+2026-09-18.)
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
@@ -277,3 +278,32 @@ instead of letting it pass unnoticed.
 **For BA/QA.** One decision, and it is a preference rather than a fault: is the lingering message
 acceptable, or should correcting a field clear it? If the latter, raise it as an enhancement and these
 assertions flip with it. Nothing is blocked either way.
+
+### VER-6 — on a locked schedule the "Add" form is gone, not greyed out — 2026-09-18
+
+**What looked wrong.** S17's scenario lists six fields of the *Add* form by name
+(`tsaNumberOneMenu`, `tflNumber`, `tsbNumberOneMenu`, `vol`, `cos`, `comAdd`) and says each must be
+**disabled** once the report leaves Draft. In the rebuilt screen none of those six exists to be
+disabled, so read literally the scenario fails — and a reader comparing the Gherkin with our test will
+see six named fields on one side and none on the other.
+
+**Why it is not a defect.** The two screens put the add form in different places. Legacy showed it
+permanently on the page, so greying it out was the only way to lock it. The rebuilt page keeps it
+behind the **Add** button and only builds it when you press that button — and on a locked schedule the
+**Add button itself is disabled**, so the form cannot be opened at all. The reporter cannot reach the
+fields, which is a stronger lock than reaching them and finding them inert.
+
+**How handled.** The test asserts the pair that actually describes this page: the Add button is present
+and disabled, **and** the add form is absent. Asserting "disabled" on the six fields would fail against
+things that do not exist; asserting only that they are absent would pass on *any* page and prove
+nothing — the same empty-assertion trap recorded for the S06–S08 guards, in reverse.
+
+**The six field names are still covered.** The rebuilt page builds each saved record's row from the
+*same* component as the add form, so those six fields do appear on every stored record — and there the
+test does assert each one is disabled, along with the row's **Delete** button. So the slice's real
+claim, "a reporter cannot change anything", is checked on the surface where the fields exist.
+
+**For BA/QA.** No action. Worth one glance only to confirm the expectation: on a submitted report there
+is no greyed-out add form on screen — the Add button is simply unavailable. Recorded because, like
+VER-1 (where the derived RMG figure moved from the add panel onto the saved row), this is a case where
+comparing the old script to the new test otherwise looks like a dropped assertion.

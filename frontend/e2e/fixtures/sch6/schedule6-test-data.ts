@@ -76,6 +76,7 @@ const MILL_20172: MillRef = { millNumber: '20172', millName: 'COVEY CUSTOM CUT' 
 const MILL_20174: MillRef = { millNumber: '20174', millName: 'AO CUSTOM' }; // millId 23051, ACT
 const MILL_20176: MillRef = { millNumber: '20176', millName: 'TANNER LOGS' }; // millId 23052, ACT
 const MILL_7777: MillRef = { millNumber: '7777', millName: 'CGT TEST MILL7' }; // millId 24050, ACT
+const MILL_8888: MillRef = { millNumber: '8888', millName: 'CGI TEST MILL8' }; // millId 24051, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -426,6 +427,91 @@ export const S12_RECORD = {
     comments: 'E2E S12 corrected area type record',
   },
 } as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S17 — THE READ-ONLY ANCHOR (the report is not in Draft)
+//
+// THE ONLY sch6 ANCHOR THAT IS NEITHER DRAFT NOR EMPTY, so it is deliberately absent from
+// EDITABLE_DRAFT_ANCHORS above — that list is what preflight asserts is Draft, editable and
+// record-free, and this cell is none of the three. It gets its own preflight check instead.
+//
+// WHY 'S' MAKES IT READ-ONLY, which depends on WHO the suite is: ILCR_SUBMITTER edits at Draft only,
+// while ADMIN edits at Submitted/Verified (ScheduleEditability:63-64 — administrator is deliberately
+// NOT a superset, because the statuses form a hand-off chain). The suite runs as ILCR_SUBMITTER
+// (pages/common/mockUser.ts), matching every feature file's "As a Licensee", so a Submitted document
+// answers `editable: false`. Were the suite ever switched to ADMIN, this anchor would silently become
+// EDITABLE and S17 would test the opposite of its subject — which is why the scenario re-asserts
+// `editable: false` at scenario time rather than trusting the status code alone.
+//
+// ITS CONTENT IS SEEDED IN SQL, and has to be: S17 must render EXISTING records, totals and a general
+// comment, and none of them can be created through the app because every write to a non-Draft document
+// is refused — the very condition the slice is about. See
+// `real-test-data-patches/sch6/view-mode-road-records.sql` (mirrored into the CI seed in the same
+// change, with `ROAD_MAINTENANCE_REPORT_ID` registered in the parity gate's `parentsByColumn`).
+//
+// VERIFIED 2026-09-18 through the app's own API after applying the patch:
+//   GET /api/v1/schedule6?millId=24051&year=2024
+//     -> 200, trackStatus "S", editable false,
+//        generalComments "E2E S17 read-only schedule general comment.",
+//        totals 30000 / 120000 / 4.0,
+//        records: 01/01B rmg 15 -> 10000/30000 rate 3.0, and TFL 48 rmg 10 -> 20000/90000 rate 4.5.
+// Every value below is transcribed from that response, not computed on paper.
+// ---------------------------------------------------------------------------------------------------
+
+export const READ_ONLY_ANCHOR: Sch6Anchor = { key: { millId: 24051, year: 2024 }, mill: MILL_8888 };
+
+/**
+ * The two seeded records S17 renders, in the order the document serves them.
+ *
+ * ORDER IS THE READ QUERY'S, not the fixture's whim: `findRoadRecords` sorts by
+ * `ROAD_MAINTENANCE_REPORT_ID` (Schedule6Repository:97), and the patch inserts the TSA row first, so
+ * the TSA row is display ordinal 1. The scenario nonetheless MATCHES BY COMMENT rather than assuming
+ * the order — see below.
+ *
+ * NO recordId IS PINNED, deliberately. The local patch draws ids from `ILCR_REPORT_COMMON_SEQ` while
+ * the CI seed uses explicit 3100/3101, so the ids genuinely differ between environments — and the row
+ * field ids are `row-<recordId>-*`. The scenario therefore reads the document and resolves each
+ * record's id and ordinal from its COMMENT, which is stable everywhere. Pinning an id here would pass
+ * locally and fail in CI for a reason that looks nothing like the cause.
+ */
+export const S17_RECORDS = [
+  {
+    /** The TSA / Supply Block branch. */
+    comments: 'E2E S17 read-only TSA record',
+    areaTypeCode: '01',
+    supplyBlockCode: '01B',
+    rmg: '15',
+    volumeDisplay: '10,000',
+    costDisplay: '30,000',
+    costPerVolumeDisplay: '3.00',
+  },
+  {
+    /** The TFL branch — a stored TFL row is served with the sentinel as its area type (as S03 pins). */
+    comments: 'E2E S17 read-only TFL record',
+    areaTypeCode: TFL_OPTION,
+    tflNumber: '48',
+    rmg: '10',
+    volumeDisplay: '20,000',
+    costDisplay: '90,000',
+    costPerVolumeDisplay: '4.50',
+  },
+] as const;
+
+/**
+ * The totals the two records produce.
+ *
+ * 4.00 IS THE LOAD-BEARING NUMBER: it is 120,000 / 30,000, and it equals NEITHER record's own rate
+ * (3.00 and 4.50). So a page that echoed a single row's figures into the totals strip fails here
+ * instead of passing — which one record could never have caught.
+ */
+export const S17_TOTALS = {
+  volume: '30,000',
+  cost: '120,000',
+  costPerVolume: '4.00',
+} as const;
+
+/** The schedule-level general comment seeded on the read-only anchor (BR-09: on every cat-6 row). */
+export const S17_GENERAL_COMMENT = 'E2E S17 read-only schedule general comment.';
 
 // THE REJECTED ENTRIES THEMSELVES ARE NOT PINNED HERE — they live in each slice's `Scenario Outline`
 // Examples table in `amount-validation.feature`, with the reason for each row in that file's header.

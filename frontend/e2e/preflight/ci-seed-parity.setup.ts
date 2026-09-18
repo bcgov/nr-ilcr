@@ -616,11 +616,11 @@ test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented
   // that "should be there" with nothing pointing at the cause.
   //
   // ILCR_COST_REPORT_DETAIL carries ONE FK per report family and they are mutually exclusive: a row
-  // belongs to a summary (schedules 1/2/3), a transportation report (schedule 4), or a camp
-  // (schedule 5). Every family this seed uses must be listed — a MISSING family reads exactly like an
-  // orphan, which is how the sch5 read-only camp first tripped this gate (2026-09-10). If a future
-  // schedule adds another FK column (V31's ROAD_MAINTENANCE_REPORT_ID is the obvious next one), add
-  // it here in the same change or its rows will be reported as parentless.
+  // belongs to a summary (schedules 1/2/3), a transportation report (schedule 4), a camp
+  // (schedule 5), or a road maintenance report (schedule 6). Every family this seed uses must be
+  // listed — a MISSING family reads exactly like an orphan, which is how the sch5 read-only camp first
+  // tripped this gate (2026-09-10). If a future schedule adds another FK column, add it here in the
+  // same change or its rows will be reported as parentless.
   const parentsByColumn: ReadonlyArray<{ column: string; ids: Set<string | null> }> = [
     {
       column: 'ILCR_REPORT_SUMMARY_ID',
@@ -635,6 +635,16 @@ test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented
     {
       column: 'CAMP_REPORT_ID',
       ids: new Set(parseInserts(e2eOnly, 'CAMP_REPORT').map((r) => r.CAMP_REPORT_ID)),
+    },
+    {
+      // Schedule 6, added 2026-09-18 with S17's read-only fixture — the family this comment had been
+      // predicting. It is the first ROAD_MAINTENANCE_REPORT content the seed carries: every other sch6
+      // anchor is empty at rest and its scenarios create records through the app, but S17's page is
+      // non-Draft and refuses every write, so its two records have to be seeded.
+      column: 'ROAD_MAINTENANCE_REPORT_ID',
+      ids: new Set(
+        parseInserts(e2eOnly, 'ROAD_MAINTENANCE_REPORT').map((r) => r.ROAD_MAINTENANCE_REPORT_ID),
+      ),
     },
   ];
   const orphans = parseInserts(e2eOnly, 'ILCR_COST_REPORT_DETAIL')

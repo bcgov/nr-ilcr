@@ -11,8 +11,8 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S16 authored and green (twenty-five scenarios; several slices
-are more than one — see the count below). **16 of 23 slices covered.** Accessibility is in scope from
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S17 authored and green (twenty-six scenarios; several slices
+are more than one — see the count below). **17 of 23 slices covered.** Accessibility is in scope from
 the start (`accessibility.feature`, `@a11y`) and is NOT yet written — carried deliberately as the
 lesson from Story 28.4's GAP-5, where "all slices authored" read as complete while half of the board
 item was unverified because a11y is an NFR that no slice asks for.
@@ -28,15 +28,16 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                    9 files
-scenarios (bddgen, @UC-SCH6-001)             25
-preflight/sch6-anchors.setup.ts              15 checks
-pinned (mill, year) anchors                  12  — 10 mutating/validate-only in 2024, plus 2 guards
+features/sch6/**/*.feature                   10 files
+scenarios (bddgen, @UC-SCH6-001)             26
+preflight/sch6-anchors.setup.ts              16 checks
+pinned (mill, year) anchors                  13  — 10 mutating/validate-only in 2024, 1 read-only
+                                                  (24051/2024, Submitted + seeded), plus 2 guards
                                                   (1/2017 closed-mill, 23050/2024 deliberately absent)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Twenty-five scenarios over sixteen slices, because five slices need more than one:
+Twenty-six scenarios over seventeen slices, because five slices need more than one:
 
 | Slice | Scenarios | Why |
 |---|---|---|
@@ -46,13 +47,22 @@ Twenty-five scenarios over sixteen slices, because five slices need more than on
 | S14 | 4 | a 3-row `Scenario Outline` (both bounds + the 3-decimal case) plus a correction arm |
 | S16 | 3 | a 2-row `Scenario Outline` (both bounds) plus a correction arm |
 
-Verification runs, 2026-09-18 (the S12–S16 block):
+Verification runs, 2026-09-18 (S17):
 
-- full suite preflight → **195 passed** (180 before sch6 + 15), run at `--workers=2`
+- full suite preflight → **196 passed** (180 before sch6 + 16), run at `--workers=2`
+- `--grep @read-only --workers=1` → **1 passed** on the first run
+- `--repeat-each=5 --workers=1` → **5 passed**, 5/5 stable
+- whole UC at `--workers=2` → **26 passed** (so S01–S16 are unregressed by the shared changes)
+- the ten mutating anchors confirmed empty afterwards, **and** the read-only anchor confirmed still
+  non-Draft and still holding exactly its two seeded records — a read-only fixture has to be checked
+  for SURVIVAL, not for emptiness, which is the opposite of every other anchor here
+
+Earlier, for the S12–S16 block:
+
+- full suite preflight → **195 passed**, at `--workers=2`
 - `--grep "@required-field|@amount-validation" --workers=1` → **13 passed** on the first run
 - `--repeat-each=5 --workers=1` → **65 passed**, 5/5 stable per scenario
-- `--workers=2` single pass → **13 passed**
-- All ten sch6 anchors confirmed empty afterwards — no stranded rows and no stranded comment
+- `--workers=2` single pass → **13 passed**; all ten anchors empty afterwards
 
 Earlier, for S01–S11: preflight 194, `--grep @UC-SCH6-001 --workers=1` 12 passed, `--repeat-each=5`
 60 passed, `--workers=2` 12 passed.
@@ -435,9 +445,98 @@ Cost's floor is genuinely negative (a road cost may be negative here, unlike a v
 
 ---
 
+## S17 - the schedule is read-only once the report leaves Draft
+
+Scenario: `read-only.feature` -> `@p1 @S17`. Anchor **24051/2024** - the ONLY sch6 anchor that is
+neither Draft nor empty, so it is deliberately **not** in `EDITABLE_DRAFT_ANCHORS` and has its own
+preflight check. Track code `S` (Submitted); nothing is written, so the scenario is a pure read.
+
+| # | Source item (S17 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | The 1-10 report is not in Draft | `editable = caller.allows(trackStatus)` (`Schedule6Service:126`) | `Given the Schedule 6 report for that mill and year is not in Draft` | covered |
+| 2 | The six Add-form fields are disabled | the panel renders only while its toggle is open (`index.tsx:971`) and the toggle is disabled (`:907`) | `Then every Schedule 6 entry control is disabled` | covered (**re-grounded** - the panel is absent and unreachable; see below) |
+| 3 | The same six field names, as a reporter meets them on a saved record | the row editor shares the very same `RoadRecordFields` component; `disabled={entryLocked}` (`:1020`) | `And every saved record's own fields are disabled` | covered |
+| 4 | `saveButton0` **and** `saveButton1` disabled | both instances gated on `!editable \|\| saving` (`:887`) | `Then every Schedule 6 entry control is disabled` | covered (both instances, count asserted first) |
+| 5 | `checkStatusButton0` **and** `checkStatusButton1` disabled | both gated the same way (`:897`) | same step | covered (both instances) |
+| 6 | The Add/Close toggle is disabled | `disabled={entryLocked}` (`:907`) | same step | covered |
+| 7 | `schedule6Form:comments` (general comment) disabled | `disabled={!editable \|\| saving}` (`:1067`) | same step | covered |
+| 8 | Existing road records remain visible | rows render regardless of editability | `And the existing road records remain visible with their stored figures` | covered |
+| 9 | Running totals remain visible | server-recomputed on the served document | `And the running totals remain visible` | covered |
+| 10 | The general comment remains visible | re-seeded from the response | `And the general comment remains visible` | covered |
+| 11 | *(beyond the Gherkin)* `editable` is **false**, not merely non-Draft | editability is role x status | the Given asserts both | covered |
+| 12 | *(beyond the Gherkin)* each row's **Delete** is disabled | `deleteDisabled = entryLocked` (`:878`) | `And every saved record's own fields are disabled` | covered |
+| 13 | *(beyond the Gherkin)* the stored figures are the **stored** ones, per row | row values + both derived cells (RMG and `$ / m³`) | `And the existing road records remain visible ...` | covered |
+| 14 | *(beyond the Gherkin)* the totals are a genuine **SUM**, not one row echoed | `4.00` = 120,000 / 30,000, which is neither record's rate | `And the running totals remain visible` | covered |
+| 15 | *(beyond the Gherkin)* the general comment field is **populated**, not just disabled | a disabled-but-blanked textarea would lose the reporter's text | `And the general comment remains visible` | covered |
+
+### The one material re-grounding: the Add surface (item 2)
+
+Legacy rendered the Add panel inline and always present, so "disabled" was the only lock available and
+its Gherkin names six fields (`tsaNumberOneMenu`, `tflNumber`, `tsbNumberOneMenu`, `vol`, `cos`,
+`comAdd`). The React page renders the panel **only while its toggle is open** and disables the toggle,
+so on a locked schedule the panel is not in the DOM at all.
+
+Asserting those six are "disabled" would therefore **fail** against elements that do not exist, and
+asserting them merely absent would **pass vacuously** against any page - the same vacuous-pass trap
+S06-S08 records from the other direction. The faithful pair is: the toggle **exists and is disabled**,
+and the panel is **absent**. That is strictly stronger than six inert fields, because the entry surface
+is unreachable rather than merely inactive. The six field *names* are still asserted disabled where
+they genuinely exist on this page - on the rows (item 3), through the same shared component.
+
+### Why role x status is called out (item 11)
+
+`editable` is not a function of the status code alone: SUBMITTER edits at Draft only while ADMIN edits
+at Submitted/Verified (`ScheduleEditability:63-64`; administrator is deliberately *not* a superset,
+because the statuses are a hand-off chain). The suite runs as `ILCR_SUBMITTER`, matching every feature
+file's "As a Licensee", which is what makes a Submitted anchor read-only. **If the suite's identity
+were ever switched to ADMIN this same anchor would become editable and the slice would invert** - so
+the Given and preflight both assert `editable: false` rather than trusting `trackStatus`.
+
+### The fixture, and why it is two records
+
+S17's "records, totals and general comment remain visible" half needs DATA, and the records **cannot be
+created through the app** - every write to a non-Draft document is refused, which is the slice's own
+subject. So they are seeded by `real-test-data-patches/sch6/view-mode-road-records.sql`, mirrored into
+the CI seed in the same change, with `ROAD_MAINTENANCE_REPORT_ID` added to `parentsByColumn` in
+`preflight/ci-seed-parity.setup.ts` (the gate's own header had named it as the next FK to expect). This
+is the first `ROAD_MAINTENANCE_REPORT` content the CI seed has ever carried.
+
+| Record | Classification | Volume / Cost | `$ / m³` | RMG | Derived from |
+|---|---|---|---|---|---|
+| 1 | TSA `01` / block `01B` | 10,000 / 30,000 | 3.00 | 15 | the supply block |
+| 2 | TFL `48` | 20,000 / 90,000 | 4.50 | 10 | the fixed `RoadGroupLookup` table |
+| **totals** | | **30,000 / 120,000** | **4.00** | | server-recomputed |
+
+**Two records, not one, and the totals are the reason.** With a single record the totals equal that
+record's own figures, so a page that echoed one row into the totals strip would pass. `4.00` is neither
+record's rate, and the two rates differ from each other, so the per-row cells cannot be transposed
+unnoticed either. One TSA row and one TFL row also prove the read-only render for both BR-02 branches,
+which derive RMG by different routes. Both RMGs are values the suite already proves the server derives
+(S01 pins `15`, S03 pins `10`), now read back on a locked page.
+
+**Two rows is deliberately under the 5-row page size.** The totals' pagination scope is unresolved in
+legacy source (`defects.md` SPEC-3), so a six-row fixture would force this slice to assert an answer to
+an open question instead of testing the read-only render.
+
+**No `recordId` is pinned anywhere.** The local patch draws ids from `ILCR_REPORT_COMMON_SEQ` while the
+CI seed uses explicit `3100`/`3101`, so the ids genuinely differ between environments - and every row
+locator is built from `row-<recordId>-*`. The Given resolves each record's id **and** its display
+ordinal from the served document by matching the per-record **comment**, which is stable everywhere.
+
+### Deliberately not asserted in S17
+
+| Source item | Why not here | Where it lands |
+|---|---|---|
+| That a write to a non-Draft document is REFUSED at the API | S17's subject is the rendered page. The refusal is the backend gate (HTTP 409) and is a different claim from "the controls are locked" | not in the S01-S23 catalogue; recorded so the gap is visible - it is also what makes this fixture need SQL |
+| The read-only render of the ADD panel's own fields | Unreachable by construction here (the toggle is disabled), so there is no state in which they exist and are disabled | n/a - see the re-grounding note above |
+| Pagination controls on a locked page | Two records is under one page | SPEC-3 / the multi-record slices |
+| The ADMIN-at-Submitted mirror (editable when the suite is ADMIN) | The suite has one identity and every feature file declares Licensee; asserting the ADMIN arm would need a second role fixture | not in the catalogue; the role x status rule is covered by backend tests |
+
+---
+
 ## Remaining slices
 
-S17-S23 not yet authored (16 of 23 covered). Accessibility sweeps not yet authored. Each will be added
+S18-S23 not yet authored (17 of 23 covered). Accessibility sweeps not yet authored. Each will be added
 here with its own item table as it lands; `defects.md` carries anything found along the way.
 
 S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
@@ -452,7 +551,10 @@ Draft cells, zero usable), so each one is minted in reporting year **2024** by e
 `backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql` **in the same change**, column for
 column. A patch that is not folded in does not exist in CI; that omission is what reddened Story 28.4.
 
-Once a slice seeds a road record with volume/cost (S02 edit, S17 read-only), its
-`ILCR_COST_REPORT_DETAIL` rows are parented by `ROAD_MAINTENANCE_REPORT_ID`, which is **not yet** in
-`parentsByColumn` in `preflight/ci-seed-parity.setup.ts`. Add it in that same change or those rows are
-reported as parentless — the gate's own header calls this out as the obvious next FK.
+**DONE 2026-09-18, with S17.** `ROAD_MAINTENANCE_REPORT_ID` is now registered in `parentsByColumn` in
+`preflight/ci-seed-parity.setup.ts`, so seeded `ILCR_COST_REPORT_DETAIL` rows are matched to their road
+report instead of being reported as parentless. S17 is the slice that needed it: it is the only one
+whose data must be seeded in SQL (its page is non-Draft, so the app refuses to create the records), and
+it carries the first `ROAD_MAINTENANCE_REPORT` rows the CI seed has ever held. S02 does **not** need it
+— its Given creates the record through the app's own POST, which is still the preferred route for any
+future slice that can use it.
