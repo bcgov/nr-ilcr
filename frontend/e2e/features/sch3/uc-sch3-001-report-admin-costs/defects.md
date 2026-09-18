@@ -561,8 +561,21 @@ count does.
     verbatim: *"both sub-pages are reachable only from a SAVED Schedule 3 (legacy ALT-001 ...), so 'no
     summary' there really is not-found"*. This finding shows that premise holds **only for editable
     users**. So reordering the client gate alone would land a view-only reader on a not-found state rather
-    than legacy's empty form — one wrong screen traded for another. The ticket leaves the choice between
-    the client-only reorder and the reorder-plus-empty-document open, on purpose.
+    than legacy's empty form — one wrong screen traded for another, and therefore only half a fix.
+  - **THE FIX IS THE LEGACY-FAITHFUL ONE, and this was corrected 2026-09-18.** An earlier version of this
+    entry offered the client-only reorder and the reorder-plus-empty-document as two unranked options.
+    That was wrong framing: parity is not negotiable on this project, so the answer is the reorder **plus**
+    an empty document served to a view-only caller from the sub-page reads
+    (`Schedule3Service.getOtherAcceptableDocument:561-564` and `getUnacceptableDocument:911-914`, both
+    currently `orElseThrow(ScheduleNotFoundException::new)`), which is what legacy did. The client-only
+    reorder is a *partial*, not an alternative. Sub-page WRITES keep their 404
+    (`requireEditableSummary:1318-1321`) — that guard is correct and separate.
+  - **Revising the #296 rationale is fine, and in fact it AGREES with us.** The comment at
+    `Schedule3Service.java:1136` reasons that sub-pages are "reachable only from a SAVED Schedule 3", which
+    this finding disproves. More to the point, #296 is titled *"Schedule 1 and 3: Show empty data set if
+    data does not exist for current mill year"* — so serving the sub-pages an empty document **completes**
+    #296 rather than overturning it. The sub-pages were simply left out of its sweep. Check whether the
+    decision you think you are overriding already agrees with you before hedging.
   - **How we caught it (2026-09-18):** surfaced by the three review layers on #373's fix as a
     read-only x never-saved cell nothing exercised, then **confirmed in the running legacy application by
     the repo owner** — mill **727 / 2022** (Schedules 1-10 Status: Draft, Date: Not Initiated) as an
@@ -594,11 +607,13 @@ count does.
     until the fix lands.
   - **Priority / env:** p2 — found while code-reviewing `fix/373-schedule3-unacceptable-save-first-message`
     - legacy confirmed in the running legacy application — rebuild claim code-derived — Chrome.
-  - **Status:** OPEN - confirmed and triaged by raising ticket #488. Dev to decide between the client-only
-    gate reorder and the reorder plus a view-only empty document from the sub-page endpoints, re-examining
-    the #296 D1 rationale at `Schedule3Service.java:1136` rather than flipping it silently; QA then needs a
-    view-only x never-saved anchor before this can be covered, and closes this entry and sch1's DIV-7
-    together when the fix lands.
+  - **Status:** OPEN — confirmed and triaged by raising ticket #488. Dev to reorder both gates so
+    editability is tested before saved-ness **and** serve a view-only caller an empty document from the two
+    sub-page reads, completing #296 across both schedules; sub-page writes keep their 404. QA then needs a
+    view-only × never-saved anchor before this can be covered, and closes this entry and sch1's DIV-7
+    together when the fix lands. Scho requested this fix on PR #489 (2026-09-18, changes requested) rather
+    than leaving it deferred — consistent with her pattern of closing a gap in the change that exposed it —
+    and the reply on that PR offers to fold it in there instead of waiting for #488.
   - **Test:** none — see Coverage above. The gate's *editable* arms stay green throughout
     (`save-first-gate.feature` `@p1 @S18` and `@p2 @S19`).
 
