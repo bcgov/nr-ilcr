@@ -133,6 +133,44 @@ export async function removeRecord(
 }
 
 /**
+ * Clear the schedule-level general comment, which is how an S04-style scenario cleans up.
+ *
+ * NOT A RECORD DELETE, and that is the whole point. Saving a general comment on an otherwise empty
+ * schedule makes the backend insert a bare BR-09 PLACEHOLDER row to carry it — there is no record to
+ * hang it on (`Schedule6Service:425`). Clearing the comment when it is the only stored thing REMOVES
+ * that placeholder (`Schedule6Service:428-437`, legacy `generalCommentRemovedLastRecord`), so the
+ * app's own write path is what returns the anchor to genuinely empty.
+ *
+ * `records: []` is correct rather than lazy: the PUT requires every SERVED row, and a placeholder is
+ * never served (`Schedule6Service:460, 470`).
+ */
+export async function clearGeneralComment(
+  request: APIRequestContext,
+  key: ScheduleKey,
+): Promise<void> {
+  const res = await request.put(scheduleUrl(key.millId, key.year), {
+    data: { generalComments: null, records: [] },
+  });
+  await expect(
+    res,
+    `PUT (clear general comment) on ${key.millId}/${key.year} -> HTTP ${res.status()}`,
+  ).toBeOK();
+
+  // Read back BOTH halves: the comment is gone AND the placeholder it lived on is gone with it. A PUT
+  // that cleared the text but left a placeholder row behind would pass a comment-only check while
+  // leaving the anchor non-empty, which the next run's preflight would then blame on someone else.
+  const doc = await readSchedule6(request, key);
+  expect(
+    doc.generalComments ?? null,
+    `the general comment survived cleanup on ${key.millId}/${key.year}`,
+  ).toBeNull();
+  expect(
+    doc.roadRecords.map((r) => r.recordId),
+    `road records survived general-comment cleanup on ${key.millId}/${key.year}`,
+  ).toEqual([]);
+}
+
+/**
  * Remove every record carrying `comments` from (mill, year), and PROVE the anchor is back at rest.
  *
  * Deleting all matches rather than the first is deliberate: a killed run can leave more than one, and a

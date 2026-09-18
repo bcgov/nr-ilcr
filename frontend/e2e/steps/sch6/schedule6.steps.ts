@@ -2,11 +2,21 @@ import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
   EDIT_ANCHOR,
+  GENERAL_COMMENT_ANCHOR,
+  INVALID_TFL,
   type Sch6Anchor,
   S01_RECORD,
   S01_TOTALS,
   S02_EDITED,
   S02_SEEDED,
+  S03_RECORD,
+  S04_GENERAL_COMMENT,
+  S05_RECORD,
+  TFL_ANCHOR,
+  TFL_CORRECTION_ANCHOR,
+  TFL_OPTION,
+  VALIDATE_ONLY_ANCHOR,
+  VALID_TFL,
   millOptionText,
 } from '../../fixtures/sch6/schedule6-test-data';
 import { addRecord, readSchedule6 } from './schedule6Api';
@@ -24,6 +34,10 @@ import { addRecord, readSchedule6 } from './schedule6Api';
 const ANCHORS: Record<string, Sch6Anchor> = {
   add: ADD_ANCHOR,
   edit: EDIT_ANCHOR,
+  tfl: TFL_ANCHOR,
+  'general-comment': GENERAL_COMMENT_ANCHOR,
+  'tfl-correction': TFL_CORRECTION_ANCHOR,
+  'validate-only': VALIDATE_ONLY_ANCHOR,
 };
 
 Given(
@@ -297,4 +311,188 @@ Then('the schedule totals are recomputed from the edited record', async ({ reque
 // schedule-page abstraction these page objects do not have today.
 When('I run Schedule 6 Check Status', async ({ schedule6Page }) => {
   await schedule6Page.checkStatusButton.click();
+});
+
+// ---- S03 — Record a TFL instead of a TSA -----------------------------------------------------------
+
+When('I select the TFL area type', async ({ schedule6Page }) => {
+  // "TFL" is a SYNTHETIC SENTINEL the control adds to the list, not a served code — the backend does
+  // not serve it (areaTypeOptions / LookUpCacheDAO.java:229-230). Its option text is the sentinel
+  // itself, unlike a real TSA whose option text is the code description.
+  await schedule6Page.selectAreaType(TFL_OPTION);
+});
+
+Then('the TFL number field is enabled and Supply Block is disabled', async ({ schedule6Page }) => {
+  // BR-02 keeps exactly ONE side of the classification populated, and the form enforces it by
+  // disabling the other side rather than by validating after the fact. Both halves are asserted
+  // because either one alone would pass on a form that disabled nothing.
+  await expect(schedule6Page.addTflNumber).toBeEnabled();
+  await expect(schedule6Page.addSupplyBlock).toBeDisabled();
+});
+
+When('I enter the S03 TFL road record', async ({ schedule6Page }) => {
+  await schedule6Page.enterTflNumber(S03_RECORD.tflNumber);
+  await schedule6Page.enterAmounts(S03_RECORD.volumeInput, S03_RECORD.costInput);
+  await schedule6Page.enterComments(S03_RECORD.comments);
+});
+
+Then('the TFL road record is persisted with its derived RMG', async ({ request, world }) => {
+  const key = world.scheduleKey!;
+  const comment = world.sch6RecordComment!;
+
+  await expect
+    .poll(
+      async () =>
+        (await readSchedule6(request, key)).roadRecords.filter((r) => r.comments === comment).length,
+      { message: `no stored TFL record commented "${comment}" on ${key.millId}/${key.year}` },
+    )
+    .toBe(1);
+
+  const doc = await readSchedule6(request, key);
+  const record = doc.roadRecords.find((r) => r.comments === comment)!;
+
+  expect(record.areaType, 'a TFL record is served with the TFL sentinel as its area type').toBe(
+    TFL_OPTION,
+  );
+  expect(record.tflNumber, 'stored TFL number').toBe(S03_RECORD.tflNumber);
+  // BR-02 counterpart-clear, asserted rather than assumed: choosing TFL must NULL both TSA columns
+  // (Schedule6Service:597, Schedule6DAO.java:221-224). A form that merely disabled Supply Block while
+  // still posting a stale value would pass every other assertion here.
+  expect(record.supplyBlock, 'a TFL record must carry no supply block (BR-02)').toBeFalsy();
+  // RMG comes from the TFL code via the fixed RoadGroupLookup table, NOT from a supply block — "48"
+  // resolves to "10", deliberately different from the TSA path's "15" so a confused branch fails.
+  expect(record.rmg, 'RMG derived from the TFL code').toBe(S03_RECORD.rmg);
+  expect(record.costPerVolume, 'server-derived cost per volume').toBe(
+    Number(S03_RECORD.costPerVolumeDisplay),
+  );
+
+  world.sch6RecordId = record.recordId;
+});
+
+// ---- S04 — the schedule-level general comment ------------------------------------------------------
+
+Given('I will set the schedule general comment', async ({ world, schedule6CommentCleanup }) => {
+  // Registered BEFORE the save. The undo is a comment-clearing PUT, not a record DELETE: on an empty
+  // schedule the comment lives on a bare BR-09 placeholder row, and clearing the comment is what
+  // removes it (Schedule6Service:428-437).
+  schedule6CommentCleanup.push(world.scheduleKey!);
+});
+
+When('I enter the schedule general comment', async ({ schedule6Page }) => {
+  await schedule6Page.enterGeneralComment(S04_GENERAL_COMMENT);
+});
+
+Then('the general comment field retains the text', async ({ schedule6Page }) => {
+  await expect(schedule6Page.generalComments).toHaveValue(S04_GENERAL_COMMENT);
+});
+
+Then('the general comment is persisted without adding a road record', async ({ request, world }) => {
+  const key = world.scheduleKey!;
+
+  await expect
+    .poll(async () => (await readSchedule6(request, key)).generalComments ?? null, {
+      message: `the general comment never reached the server on ${key.millId}/${key.year}`,
+    })
+    .toBe(S04_GENERAL_COMMENT);
+
+  const doc = await readSchedule6(request, key);
+  // THE PLACEHOLDER MUST NOT BE SERVED AS A RECORD. Saving a comment on an empty schedule inserts a
+  // bare placeholder row to carry it (Schedule6Service:425), and the read side excludes any row whose
+  // classification is entirely blank (:470). If that exclusion ever broke, the screen would grow a
+  // phantom row with no area type, no supply block and no cost — which Check Status would then report
+  // as a failing record. This is the assertion that would catch it, and it is what S18 builds on.
+  expect(
+    doc.roadRecords.map((r) => r.recordId),
+    'a general comment must not surface as a road record',
+  ).toEqual([]);
+  // Totals stay at zero for the same reason: a phantom row would drag them off zero.
+  expect(doc.totalVolume, 'totals are unaffected by a comment-only schedule').toBe(0);
+  expect(doc.totalCost, 'totals are unaffected by a comment-only schedule').toBe(0);
+});
+
+// ---- S05 — an invalid TFL number is rejected -------------------------------------------------------
+
+Given('I am watching for Schedule 6 writes', async ({ schedule6MutationSpy }) => {
+  // Touching the fixture is what INSTALLS its page.route, so this must run before the action under
+  // test — the same reason sch1 spy has an explicit step. Asserting a clean start also proves the spy
+  // is actually wired rather than silently counting nothing.
+  expect(schedule6MutationSpy.mutations, 'the spy should start with no writes seen').toBe(0);
+});
+
+When('I enter an out-of-range TFL number with valid amounts', async ({ schedule6Page, world }) => {
+  await schedule6Page.enterTflNumber(INVALID_TFL.number);
+  // Volume and cost are VALID on purpose: the only reason the submit can fail is the TFL number, so a
+  // rejection cannot be credited to some other field.
+  await schedule6Page.enterAmounts(S05_RECORD.volumeInput, S05_RECORD.costInput);
+  // The comment is entered whenever the scenario registered one, which makes the REJECT arm
+  // self-cleaning too. It should store nothing — that is the whole assertion — but if the app ever
+  // regressed and stored it anyway, a comment-less row would be invisible to the comment-keyed
+  // cleanup and would strand the SHARED validate-only anchor, turning one real failure into every
+  // later validation slice failing for the wrong reason.
+  if (world.sch6RecordComment) {
+    await schedule6Page.enterComments(world.sch6RecordComment);
+  }
+});
+
+Then('the rejection came from the server, on exactly one attempt', async ({ schedule6MutationSpy }) => {
+  // ONE request, not ZERO — and this expectation was corrected after the first run asserted zero and
+  // failed. The client CANNOT pre-empt this particular rejection: "valid" means "resolves to an RMG"
+  // and the RMG table (RoadGroupLookup) is server-side, so the client gate only catches BLANK and
+  // OVER-WIDE TFL entries (validation.ts:170-176) and a two-character invalid code passes it
+  // untouched. So the correct behaviour is exactly one POST that the server answers 400. The app was
+  // right and the assertion was wrong.
+  //
+  // WHAT THIS STILL BUYS, now that it is not a no-write check: it pins the rejection to the SERVER
+  // round-trip rather than the client, which is the behavioural difference from legacy this slice
+  // exists to record (defects.md VER-3); and `toBe(1)` rather than `toBeGreaterThan(0)` catches a
+  // silent retry or a double-submit, which would store the record twice on a later valid attempt.
+  // /check-status is excluded by contract, so a Check Status in the same scenario cannot inflate it.
+  expect(
+    schedule6MutationSpy.mutations,
+    'a rejected TFL entry should cost exactly one server round-trip — 0 would mean the client '
+      + 'pre-empted it (it cannot), more than 1 a retry or double-submit',
+  ).toBe(1);
+});
+
+Then('no road record was stored on that anchor', async ({ request, world }) => {
+  // THE NEGATIVE THAT ACTUALLY MATTERS, proved server-side. "The value is not accepted" is a claim
+  // about the DATABASE, and an error banner does not establish it — the request was in fact sent, so
+  // the only way to know it changed nothing is to look. This is the load-bearing half of the pair;
+  // the spy above says HOW the rejection happened, this says that it held.
+  const doc = await readSchedule6(request, world.scheduleKey!);
+  expect(
+    doc.roadRecords.map((r) => r.recordId),
+    'the rejected entry must not have been stored',
+  ).toEqual([]);
+});
+
+When('I correct the TFL number', async ({ schedule6Page }) => {
+  await schedule6Page.enterTflNumber(VALID_TFL.number);
+});
+
+Then('the corrected TFL record is persisted', async ({ request, world }) => {
+  const key = world.scheduleKey!;
+  const comment = world.sch6RecordComment!;
+
+  await expect
+    .poll(
+      async () =>
+        (await readSchedule6(request, key)).roadRecords.filter((r) => r.comments === comment).length,
+      { message: `the corrected TFL record was not stored on ${key.millId}/${key.year}` },
+    )
+    .toBe(1);
+
+  const doc = await readSchedule6(request, key);
+  const record = doc.roadRecords.find((r) => r.comments === comment)!;
+
+  expect(record.tflNumber, 'the CORRECTED TFL number is what gets stored').toBe(VALID_TFL.number);
+  expect(record.rmg, 'the corrected TFL resolves to an RMG').toBe(VALID_TFL.rmg);
+  expect(record.costPerVolume, 'server-derived cost per volume').toBe(
+    Number(S05_RECORD.costPerVolumeDisplay),
+  );
+  // Exactly one row: the rejected attempt must not have left a partial record behind that the
+  // successful retry then sat beside.
+  expect(doc.roadRecords.length, 'the rejected attempt must not have stored anything').toBe(1);
+
+  world.sch6RecordId = record.recordId;
 });

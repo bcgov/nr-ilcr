@@ -68,6 +68,10 @@ export interface Sch6Anchor {
 
 const MILL_760: MillRef = { millNumber: '760', millName: 'WESTEROS' }; // millId 9050, ACT
 const MILL_2121: MillRef = { millNumber: '2121', millName: 'SESAME STREET' }; // millId 10050, ACT
+const MILL_987: MillRef = { millNumber: '987', millName: 'TURTLE DOVE' }; // millId 12050, ACT
+const MILL_999: MillRef = { millNumber: '999', millName: 'ISP TEST' }; // millId 13050, ACT
+const MILL_727: MillRef = { millNumber: '727', millName: 'Updated Mill E2E' }; // millId 17052, ACT
+const MILL_20171: MillRef = { millNumber: '20171', millName: 'MILES MILLING' }; // millId 22050, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -99,9 +103,40 @@ export const EDIT_ANCHOR: Sch6Anchor = { key: { millId: 10050, year: 2024 }, mil
  * Grows with each slice. Kept as a NAMED list rather than derived from the exports so the preflight's
  * failure messages can say which slice an anchor belongs to.
  */
+/** S03 — Record a TFL Instead of a TSA. Mutating; the scenario adds a record and deletes it again. */
+export const TFL_ANCHOR: Sch6Anchor = { key: { millId: 12050, year: 2024 }, mill: MILL_987 };
+
+/**
+ * S04 — Enter or Update the Schedule's General Comment.
+ *
+ * Saving a comment on an otherwise EMPTY schedule makes the backend insert a bare BR-09 PLACEHOLDER
+ * row to carry it (`Schedule6Service:425`) — there is no record to hang it on. The anchor is still
+ * empty at rest, because clearing the comment when it is the only stored thing REMOVES the placeholder
+ * (`Schedule6Service:428-437`, legacy `generalCommentRemovedLastRecord`), which is exactly what this
+ * scenario's cleanup PUT does. So cleanup here is not a record DELETE at all.
+ */
+export const GENERAL_COMMENT_ANCHOR: Sch6Anchor = { key: { millId: 13050, year: 2024 }, mill: MILL_999 };
+
+/** S05 arm 2 — the corrected TFL number is accepted and saved. Its own cell because it WRITES. */
+export const TFL_CORRECTION_ANCHOR: Sch6Anchor = { key: { millId: 17052, year: 2024 }, mill: MILL_727 };
+
+/**
+ * The VALIDATE-ONLY anchor: nothing is ever saved here, which is what lets non-writing scenarios
+ * SHARE it under `fullyParallel`. S05's reject arm is the first tenant; the numeric and required-field
+ * rejections (S12–S16) belong here too.
+ *
+ * KEEP IT WRITER-FREE. The moment a scenario saves on this key it needs its own cell instead — sch5
+ * learned that when its S12 correction arm started saving and had to be given one.
+ */
+export const VALIDATE_ONLY_ANCHOR: Sch6Anchor = { key: { millId: 22050, year: 2024 }, mill: MILL_20171 };
+
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
   { name: 'edit (S02)', anchor: EDIT_ANCHOR },
+  { name: 'tfl (S03)', anchor: TFL_ANCHOR },
+  { name: 'general-comment (S04)', anchor: GENERAL_COMMENT_ANCHOR },
+  { name: 'tfl-correction (S05)', anchor: TFL_CORRECTION_ANCHOR },
+  { name: 'validate-only (S05, S12-S16)', anchor: VALIDATE_ONLY_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -182,6 +217,83 @@ export const S02_EDITED = {
   costDisplay: '90,000',
   costPerVolumeDisplay: '4.50',
 } as const;
+
+// ---------------------------------------------------------------------------------------------------
+// THE TFL BRANCH (S03, S05)
+//
+// "TFL" is a SYNTHETIC SENTINEL the control adds to the area-type list, not a served code — the
+// backend does not serve it (LookUpCacheDAO.java:229-230, mirrored by `areaTypeOptions`). Choosing it
+// switches the form: the TFL number field activates and Supply Block disables, because BR-02 keeps
+// exactly one side of the classification populated.
+//
+// WHICH TFL NUMBERS ARE VALID IS A FIXED TABLE IN CODE, not a DB lookup: RoadGroupLookup
+// .rmgByTflNumberCode is a verbatim port of legacy RoadGroupUtil.setRmgByTflNumberCode, and a TFL is
+// valid IFF it resolves there (Schedule6Service:625 — "iff the RMG lookup resolves it"). The accepted
+// set is: 01 41 18 35 08 15 59 48 05 30 52 53 03 23 14 49 33 55 56 62.
+//
+// WHY 48 AND NOT 01: "48" derives RMG "10", which differs from the TSA path's "15" (block 01B), so a
+// scenario that confused the two branches fails instead of passing on a coincidentally equal value.
+//
+// WHY 99 IS THE INVALID ONE, and NOT "42": 42 appears in the ported table as a DELIBERATELY
+// commented-out case ("not used as described in TFL list v2, ILCR-161"), so a future reader could
+// reasonably think it ought to resolve. 99 is in no list anywhere and cannot be mistaken for a
+// regression. Both are two characters, which matters — see the note on S05 below.
+// ---------------------------------------------------------------------------------------------------
+
+/** The area-type option text for the TFL branch. The sentinel's description IS the sentinel. */
+export const TFL_OPTION = 'TFL';
+
+/** A TFL number that resolves to an RMG, with the RMG it resolves to. */
+export const VALID_TFL = { number: '48', rmg: '10' } as const;
+
+/**
+ * A two-character TFL number that resolves to NOTHING, so the server rejects it.
+ *
+ * TWO CHARACTERS IS THE POINT. The client-side gate only catches BLANK and OVER-WIDE entries
+ * (`validation.ts:170-176`) and the input is `maxLength={2}`, so a 2-char invalid code passes the
+ * client untouched and is rejected by the SERVER — which is the only thing that can decide validity,
+ * since "valid" means "resolves to an RMG". That is why S05's error appears on SUBMIT rather than as
+ * you type, unlike legacy's ajax-validated field. See tfl-validation.feature's header.
+ */
+export const INVALID_TFL = { number: '99' } as const;
+
+/** `tflNumberInvalidErrorMsg` — verbatim, and identical whether the client or the server rejects. */
+export const TFL_INVALID_MESSAGE = 'Entered TFL number is not valid for Interior Regions.';
+
+/** S03's record: the TFL branch of the happy path. 60,000 / 15,000 = 4.00 exactly. */
+export const S03_RECORD = {
+  tflNumber: VALID_TFL.number,
+  rmg: VALID_TFL.rmg,
+  volumeInput: '15000',
+  costInput: '60000',
+  volumeDisplay: '15,000',
+  costDisplay: '60,000',
+  costPerVolumeDisplay: '4.00',
+  comments: 'E2E S03 TFL road record',
+} as const;
+
+/** S05 arm 2's record — the corrected TFL, saved. 25,000 / 10,000 = 2.50 exactly. */
+export const S05_RECORD = {
+  volumeInput: '10000',
+  costInput: '25000',
+  costPerVolumeDisplay: '2.50',
+  comments: 'E2E S05 corrected TFL record',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S04 — the schedule-level GENERAL COMMENT.
+//
+// A DIFFERENT COLUMN from the per-record comment, and the two caps differ: the general comment lands
+// in ROAD_MAINTENANCE_REPORT.COMMENTS (4000 wide, capped at 3500 in the UI) while a record's comment
+// lands in ILCR_COST_REPORT_DETAIL.COMMENTS (400). Conflating them is easy and wrong (deviation E).
+// ---------------------------------------------------------------------------------------------------
+
+/** The text S04 enters. Deliberately unlike any record comment so a cleanup cannot confuse the two. */
+export const S04_GENERAL_COMMENT =
+  'E2E S04 schedule-level general comment for the reporting year.';
+
+/** The General Comments textarea's id (components/schedule6/index.tsx:1061). */
+export const GENERAL_COMMENTS_FIELD = '#general-comments';
 
 // ---------------------------------------------------------------------------------------------------
 // Verbatim app messages. Rendered from the API's `message.text` / ProblemDetail.detail (AD-8), so these

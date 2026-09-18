@@ -27,22 +27,42 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                    2 files
-scenarios (bddgen, @UC-SCH6-001)              2
-preflight/sch6-anchors.setup.ts               5 checks
-pinned (mill, year) anchors                   2  (9050/2024, 10050/2024)
+features/sch6/**/*.feature                    5 files
+scenarios (bddgen, @UC-SCH6-001)              6
+preflight/sch6-anchors.setup.ts               9 checks
+pinned (mill, year) anchors                   6  (9050, 10050, 12050, 13050, 17052, 22050 — all /2024)
 @discovered-divergence / @discovered-bug      0
 ```
 
+Six scenarios over five slices: S05 is two scenarios (a reject arm and a correction arm) because the
+legacy file has two and they cannot share an anchor — see its feature header.
+
 Verification runs, 2026-09-17:
 
-- sch6 preflight + the CI-seed parity gate → **12 passed**
-- `--grep @UC-SCH6-001` → **2 passed**
-- `--repeat-each=5 --workers=1` → **10 passed**, 5/5 stable
-- `--repeat-each=3 --workers=2` → **6 passed** — run in PARALLEL on purpose, since the two anchors
-  being distinct is what makes that safe, and a shared key is the failure sch5's S24 companion hit
-- Both anchors confirmed empty afterwards, and `ROAD_MAINTENANCE_REPORT` holds **zero** 2024 rows, so
-  the cleanup registry returns the seeded DB to its at-rest state
+- full suite preflight → **189 passed** (180 before sch6 + 9)
+- `--grep @UC-SCH6-001 --workers=1` → **6 passed**
+- `--repeat-each=5 --workers=1` → **30 passed**, 5/5 stable per scenario
+- `--workers=2` single pass → **6 passed**, every anchor empty afterwards
+- All six anchors confirmed empty, with no stranded `ROAD_MAINTENANCE_REPORT` rows in 2024
+
+### How to stress these, and two traps that cost real time
+
+**Run `--repeat-each` SERIALLY (`--workers=1`).** `--repeat-each` with several workers runs duplicate
+copies of the SAME scenario at once, and a mutating scenario's anchor is dedicated per SCENARIO, not
+per EXECUTION — so two copies of S02 both create a record on `10050/2024` and each then fails the
+other's "exactly one row" assertion. That is the stress method colliding with itself, not a suite
+defect. For parallel stress, run the DISTINCT scenarios concurrently in a single pass, which is also
+what the real suite does.
+
+**This box cannot sustain 6 workers, and Playwright's default here IS 6** (12 CPUs → `cpus/2`). A
+default-worker sch6 run failed most of its scenarios on browser/navigation timeouts and left records
+stranded on three anchors; the next run then failed its PRECONDITIONS, which reads as a suite bug
+until you notice the anchors are dirty. sch5 recorded the same limit ("this box cannot sustain 6
+workers"). Use `--workers=2` locally for a parallel check. CI pins `workers: 1`, so CI is unaffected.
+
+That second trap is also the anchor precondition earning its keep: each scenario RE-ASSERTS that its
+anchor is empty at scenario time, not just in preflight, so residue is named at the cause instead of
+surfacing four steps later as a confusing UI assertion.
 
 Those scenario runs used `--no-deps`, and that needs stating plainly rather than buried: a whole-suite
 run was interrupted partway through, which left **sch1's** `13050/2017` anchor holding the values its
@@ -131,10 +151,90 @@ mirror risk: a PUT that blanked the fields it was not asked to change would also
 
 ---
 
+## S03 — record a TFL instead of a TSA
+
+Scenario: `tfl.feature` → `@p1 @S03`. Anchor **12050/2024**.
+
+| # | Source item (S03 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | Select "TFL" from the area-type dropdown | synthetic sentinel prepended by `areaTypeOptions`; option text is the literal "TFL" | `When I select the TFL area type` | covered |
+| 2 | The TFL number field is ENABLED | `#add-tfl-number`, enabled only on the TFL branch | `Then the TFL number field is enabled and Supply Block is disabled` | covered |
+| 3 | The Supply Block field is DISABLED | `#add-supply-block`, disabled when `areaType === 'TFL'` (BR-02) | same step | covered |
+| 4 | Enter a valid TFL number | validity = "resolves to an RMG" in `RoadGroupLookup`; `48` → RMG `10` | `When I enter the S03 TFL road record` | covered |
+| 5 | Enter volume and cost | as S01, blurred so the rate commits | same | covered |
+| 6 | "Add Report" → "Data saved successfully" | `POST /records` | `When I submit the Add panel` / `Then I should see the message …` | covered |
+| 7 | `RMG` shows the derived grouping | server-derived from the TFL code, not a supply block | `Then the TFL road record is persisted with its derived RMG` | covered (re-grounded; VER-1) |
+| 8 | *(beyond the Gherkin)* BR-02 counterpart-clear | a TFL record stores no TSA/Supply Block | same step | covered |
+
+**Why item 8 is asserted.** A form that merely *disabled* the Supply Block control while still posting
+a stale value would satisfy items 1–7 exactly. The counterpart-clear happens server-side
+(`Schedule6Service:597`), so only a read-back can show it held.
+
+---
+
+## S04 — enter or update the schedule general comment
+
+Scenario: `general-comment.feature` → `@p1 @S04`. Anchor **13050/2024**.
+
+| # | Source item (S04 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | Enter text in the General Comments field | `#general-comments`, a 3500-capped TextArea over a 4000-wide column | `When I enter the schedule general comment` | covered |
+| 2 | Click Save | page-level `PUT`, comment and records together | `When I save the schedule` | covered |
+| 3 | "Data saved successfully" | `dataSavedSuccesfullyInfoMsg` | `Then I should see the message …` | covered |
+| 4 | The field RETAINS the entered comment | re-seeded from the response | `Then the general comment field retains the text` | covered |
+| 5 | *(beyond the Gherkin)* the comment PERSISTS | API read-back of `generalComments` | `Then the general comment is persisted without adding a road record` | covered |
+| 6 | *(beyond the Gherkin)* the BR-09 placeholder is not served as a record | read side excludes rows whose classification is entirely blank | same step | covered |
+| 7 | *(beyond the Gherkin)* totals stay at zero | a phantom row would drag them off zero | same step | covered |
+
+**Why items 6 and 7 exist.** Saving a comment on an empty schedule makes the backend insert a bare
+BR-09 **placeholder** row to carry it — there is no record to hang it on. If the read side's
+blank-classification exclusion ever broke, the screen would grow a phantom row with no area type, no
+supply block and no cost, and Check Status would report it as a *failing* record. S18 builds directly
+on this behaviour. It is also why this slice's cleanup is a comment-clearing PUT rather than a record
+DELETE: clearing the comment is what removes the placeholder.
+
+---
+
+## S05 — an invalid TFL number is rejected
+
+Two scenarios: `tfl-validation.feature` → `@p1 @S05` (reject arm, anchor **22050/2024**, the shared
+validate-only cell) and `@p1 @S05` (correction arm, anchor **17052/2024**, its own because it writes).
+
+| # | Source item (S05 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | Enter an out-of-range TFL number | 2-char code passes the client gate; the server decides | `When I enter an out-of-range TFL number with valid amounts` | covered |
+| 2 | The error "Entered TFL number is not valid for Interior Regions." | `tflNumberInvalidErrorMsg`, byte-identical client and server | `Then I should see the error …` | covered (timing re-grounded — see `defects.md` VER-3) |
+| 3 | "the value is not accepted" | nothing stored | `Then no road record was stored on that anchor` | covered |
+| 4 | *(beyond the Gherkin)* the rejection is a SERVER round-trip, once | one mutating request, counted by a `page.route` spy | `Then the rejection came from the server, on exactly one attempt` | covered |
+| 5 | Correct the number → the value is accepted | the corrected code resolves | `When I correct the TFL number` | covered |
+| 6 | `RMG` shows the derived grouping after correction | `48` → `10` | `Then the corrected TFL record is persisted` | covered (re-grounded; VER-1) |
+| 7 | *(beyond the Gherkin)* the rejected attempt left nothing behind | exactly one row after the successful retry | same step | covered |
+
+**Item 3 is the load-bearing assertion, and it is a DB read.** An error banner does not establish that
+nothing was written — the request *was* sent. Item 4 says how the rejection happened rather than
+whether it held, and it expects **one** request rather than zero: the client cannot pre-empt this
+rejection because only the server knows the RMG table. That assertion was written as zero first and
+failed; the app was right.
+
+### Deliberately not asserted in S05
+
+| Source item | Why not here | Where it lands |
+|---|---|---|
+| A BLANK TFL number on the TFL branch | Caught client-side by the same verbatim message; it is a required-field case, not an out-of-range one | S12 |
+| Volume / cost format and range rejections | Different fields, same validate-only anchor | S13–S16 |
+
+---
+
 ## Remaining slices
 
-S03–S23 not yet authored (21 of 23). Accessibility sweeps not yet authored. Each will be added here
+S06–S23 not yet authored (18 of 23). Accessibility sweeps not yet authored. Each will be added here
 with its own item table as it lands; `defects.md` carries anything found along the way.
+
+The next slices (S06–S08) are the three context guards, which need no mutating anchor at all — they
+assert HTTP 400/409/404 outcomes. S07 and S08 will need a closed-mill and a no-schedule anchor; note
+that the no-schedule one is an **absence**, so it must be registered in `DELIBERATELY_ABSENT` in
+`preflight/ci-seed-parity.setup.ts` or the parity gate will report it as missing, and seeding it would
+delete the fixture rather than fix it.
 
 **Anchor budget note for whoever continues this.** Every further mutating scenario needs its OWN
 `(mill, year)` — the suite runs `fullyParallel` and an add creates a real `ROAD_MAINTENANCE_REPORT`

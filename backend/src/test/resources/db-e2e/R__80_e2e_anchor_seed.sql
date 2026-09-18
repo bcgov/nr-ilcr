@@ -456,6 +456,18 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- 10050/2024 — S02 edit. Empty at rest like the rest: the scenario's own Given creates the record it
 -- then edits, through POST /records, so no ROAD_MAINTENANCE_REPORT row is seeded for it here.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 10050, 'D', 'D', 'E2E_SEED');
+-- 12050/2024 — S03 record a TFL instead of a TSA.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 12050, 'D', 'D', 'E2E_SEED');
+-- 13050/2024 — S04 general comment. Saving a comment on an empty schedule inserts a bare BR-09
+-- PLACEHOLDER row to carry it; clearing the comment removes it again, which is what the scenario's
+-- cleanup PUT does. So this is empty at rest too, and no placeholder is seeded here.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 13050, 'D', 'D', 'E2E_SEED');
+-- 17052/2024 — S05 arm 2 (the corrected TFL number is accepted and saved). Its own cell because a
+-- writer cannot share a (mill, year) with anything under `fullyParallel`.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 17052, 'D', 'D', 'E2E_SEED');
+-- 22050/2024 — the VALIDATE-ONLY anchor: S05's reject arm now, S12-S16 later. Nothing ever saves
+-- here, which is what lets non-writing scenarios share it.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22050, 'D', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
 -- Banner status dates (sec S01 asserts "Sch 1-10 - Status: Draft - Date:

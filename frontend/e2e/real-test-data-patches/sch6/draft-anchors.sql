@@ -120,7 +120,22 @@ DECLARE
     -- here instead would need an explicit-id ROAD_MAINTENANCE_REPORT row plus its
     -- ILCR_COST_REPORT_DETAIL children mirrored into the CI seed, and ROAD_MAINTENANCE_REPORT_ID is
     -- not yet a parent column in preflight/ci-seed-parity.setup.ts.
-    t_anchor(10050, 2024, 'D')   -- S02 edit
+    t_anchor(10050, 2024, 'D'),  -- S02 edit
+    t_anchor(12050, 2024, 'D'),  -- S03 record a TFL instead of a TSA
+    -- S04 saves the schedule-level general comment on an otherwise EMPTY schedule, which makes the
+    -- backend insert a bare BR-09 PLACEHOLDER row to carry it (Schedule6Service:425). The anchor is
+    -- still empty at rest: clearing the comment when it is the only stored thing removes the
+    -- placeholder again (Schedule6Service:428-437, legacy generalCommentRemovedLastRecord), which is
+    -- exactly what the scenario's cleanup PUT does.
+    t_anchor(13050, 2024, 'D'),  -- S04 general comment
+    -- S05 has two arms and they CANNOT share a key. The reject arm writes nothing, so it rides the
+    -- validate-only anchor below; the correction arm saves, and a writer cannot share a (mill, year)
+    -- under `fullyParallel`. Same split sch5 had to make for its own S12 (see that patch's note).
+    t_anchor(17052, 2024, 'D'),  -- S05 arm 2: corrected TFL number is accepted and saved
+    -- VALIDATE-ONLY: nothing is ever saved here, so non-writing scenarios may SHARE it. S05's reject
+    -- arm is the first tenant; the numeric/required-field rejections (S12-S16) belong here too.
+    -- Keep it writer-free — the moment a scenario saves on it, it needs its own cell instead.
+    t_anchor(22050, 2024, 'D')   -- S05 arm 1 + future S12-S16 (validate-only)
   );
 BEGIN
   -- The new reporting year. Additive: 2015-2023 already exist and are untouched.

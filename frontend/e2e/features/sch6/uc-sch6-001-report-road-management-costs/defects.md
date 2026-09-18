@@ -14,8 +14,9 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-17 — IN PROGRESS.** S01 and S02 authored and green; 2 of 23 slices covered. Two
-verified-not-a-defect findings. No divergences and no bugs found in the app so far.
+**STATUS 2026-09-17 — IN PROGRESS.** S01–S05 authored and green (six scenarios; S05 is two); 5 of 23
+slices covered. Three verified-not-a-defect findings. No divergences and no bugs found in the app so
+far — every red encountered so far has been the test being wrong, not the application.
 
 ---
 
@@ -39,9 +40,9 @@ verified-not-a-defect findings. No divergences and no bugs found in the app so f
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 21 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 18 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** S01 and S02 are covered. S03–S23 and the axe sweeps are still to be written.
+**What is missing.** S01–S05 are covered. S06–S23 and the axe sweeps are still to be written.
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
@@ -153,3 +154,29 @@ the database `recordId`. Legacy's `rowCounter` means the same thing and the Chec
 it. Confusing the two produces an off-by-one that reads as an application bug.
 
 **Nothing is asked of BA/QA here.**
+
+### VER-3 — an invalid TFL number is refused on Save, not while you type — 2026-09-17
+
+**What changed for the user.** In the legacy screen, typing a TFL number that is not valid for interior
+regions and leaving the field produced the error immediately, from a background round-trip. In the
+rebuilt screen the same entry is accepted into the field and the error appears when you press
+**Add Report**. The message is identical: *"Entered TFL number is not valid for Interior Regions."*
+
+**Why it is not a defect.** "Valid" here means "this TFL number maps to a resource management
+grouping", and that mapping lives on the server (`RoadGroupLookup`, a verbatim port of the legacy
+lookup table). The browser genuinely cannot answer the question. The client does check what it *can* —
+a blank or too-long entry is refused without a round-trip — but a plausible two-character code has to
+be asked of the server, and the field only accepts two characters. So the entry is refused on submit,
+nothing is stored, and the user sees the same words they saw before, one action later.
+
+**The related correction to our own test, recorded because it is the kind of mistake that repeats.**
+The scenario originally asserted that a rejected entry sends **no** request at all. That failed, and
+correctly: one request is the right behaviour, for the reason above. The app was right and the
+assertion was wrong. It now expects exactly one server round-trip — "exactly" rather than "at least"
+so that a silent retry or double-submit would still be caught — and the claim that nothing was stored
+is proved by reading the schedule back, which is the assertion that actually matters.
+
+**For BA/QA.** Worth a glance only to confirm the later message is acceptable to reporters; it is a
+timing change, not a behaviour change, and nothing is stored either way. If the immediate feedback is
+considered important, that would be a new requirement rather than a defect, because it would mean
+sending the TFL number to the server as the user leaves the field.

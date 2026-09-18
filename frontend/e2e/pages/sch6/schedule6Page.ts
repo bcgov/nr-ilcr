@@ -5,6 +5,7 @@ import {
   ADD_FIELD,
   ADD_PANEL_HEADING,
   EMPTY_LIST,
+  GENERAL_COMMENTS_FIELD,
   rowField,
 } from '../../fixtures/sch6/schedule6-test-data';
 
@@ -149,6 +150,44 @@ export class Schedule6Page {
   /** Fill the per-record Comments field in the Add panel. */
   async enterComments(text: string): Promise<void> {
     await byId(this.page, ADD_FIELD.comments).fill(text);
+  }
+
+  /** The Add panel's TFL number input — only active on the TFL branch. */
+  get addTflNumber(): Locator {
+    return byId(this.page, ADD_FIELD.tflNumber);
+  }
+
+  /** The Add panel's Supply Block combo — disabled on the TFL branch (BR-02). */
+  get addSupplyBlock(): Locator {
+    return byId(this.page, ADD_FIELD.supplyBlock);
+  }
+
+  /**
+   * Type a TFL number and blur.
+   *
+   * `fill` replaces, so this is also how a correction is entered. The blur is what lets the client's
+   * own advisory validation run before submit — it catches blank and over-wide entries only, because
+   * "valid" means "resolves to an RMG" and only the server can decide that.
+   */
+  async enterTflNumber(value: string): Promise<void> {
+    await this.addTflNumber.fill(value);
+    await this.addTflNumber.blur();
+  }
+
+  // ---- The schedule-level general comment ---------------------------------------------------------
+
+  /**
+   * The General Comments textarea. A DIFFERENT field from a record's Comments — a different column
+   * with a different cap (3500 over a 4000-wide column, vs 400 for a record's), so it is located by
+   * its own id rather than by the repeated "Comments" label.
+   */
+  get generalComments(): Locator {
+    return byId(this.page, GENERAL_COMMENTS_FIELD);
+  }
+
+  /** Replace the general comment's text. */
+  async enterGeneralComment(text: string): Promise<void> {
+    await this.generalComments.fill(text);
   }
 
   /** The Carbon error text under an Add-panel field, for the validation slices. */
