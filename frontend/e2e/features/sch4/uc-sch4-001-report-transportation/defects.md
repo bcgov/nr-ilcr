@@ -233,6 +233,15 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     tag retired**; it is now an ordinary regression guard for the Schedule 4 half.
 
 - **DIV-2 — Check Status says a value is required but not WHICH figure is missing.**
+  - ✅ **RESOLVED on 2026-09-18** (issue #326). `schedule4/index.tsx` now maps each issue's cost-item `code`
+    through `labelFor()` (`validation.ts`, covering the twelve grid categories and the three list sub-pages)
+    and renders `"<label> (Cost $): Value Required"` under the unchanged `"<location> — required"` title —
+    the same client-side label-for-code composition the Check Status page already applies to Schedule 4
+    (`checkStatus/verdicts.ts`). An unknown code falls back to the API text verbatim (AD-8). The S28
+    scenario in `check-status.feature` therefore passes and its `@discovered-divergence` tag has been
+    dropped. Unit coverage: *"Check Status names the category behind each missing Cost, so two gaps are
+    distinguishable (#326)"* in `Schedule4.test.tsx`. QA to re-verify on real data and close. The original
+    analysis is preserved below.
   - **What's wrong:** when a location is missing a required Cost, Check Status reports the location name and
     the words "Value Required" — but not the transportation category the Cost belongs to. A location missing
     two Costs produces two identical messages, so the reporter cannot tell which lines to go and fix.
@@ -271,12 +280,10 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     because the notification shape itself is not coming back.
   - **Ticket:** [bcgov/nr-ilcr#326](https://github.com/bcgov/nr-ilcr/issues/326).
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to surface the category label when capacity allows; QA re-verifies
-    and closes this entry then. The `@discovered-divergence` test asserts the CORRECT behaviour, so it is RED
-    today and goes green on its own when the fix lands, at which point its tag comes off. No test change is
-    needed.
-  - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status.feature` (S28,
-    `@discovered-divergence`).
+  - **Status:** RESOLVED 2026-09-18 (see the ✅ note at the top of this entry); pending QA re-verification on
+    real data to CLOSE. Found 2026-08-17. The test asserted the CORRECT behaviour throughout, so it went
+    green with the fix and only its tag came off.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status.feature` (S28, green).
 
 - **DIV-3 — Unsaved changes to a location are thrown away with no warning.**
   - **What's wrong:** type a change into an open location, then press **Back**, or click **Edit** on another

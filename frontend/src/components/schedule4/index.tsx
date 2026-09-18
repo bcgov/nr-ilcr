@@ -44,6 +44,7 @@ import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import {
   ALL_CATEGORIES,
   isLocationFormValid,
+  labelFor,
   validateLocationForm,
   type CategoryForm,
 } from './validation'
@@ -64,6 +65,19 @@ const copyWarning = (name: string): string =>
 // unsaved NEW location — must save first). Client-only confirm chrome, verbatim from the bundle.
 // Per-location comments cap (backend @Size(3500); the TRANSPORTATION_REPORT.COMMENTS column is 4000).
 const COMMENTS_MAX = 3500
+
+// A Check Status issue arrives as {code, message} — the API names the field by cost-item code and
+// sends the bare "Value Required" (Story 10.4 §Decision 4). Legacy named the field on every issue
+// ("Location : <name> - Lakeside Dry Dump (Cost $): Value Required", Schedule4MB.java:688), and
+// without it two missing Costs on one location render as two identical banners (#326). The label is
+// the client's own display name for that code (validation.ts / subPageDefs.ts), so prefixing it is
+// not inventing text the API never sent (AD-8) — the same route Schedule 8 takes with `field`. The
+// backend enforces Cost only, so the unit is a constant. An unknown code falls back to the bare text.
+const SCH4_CHECK_FIELD = 'Cost $'
+const describeIssue = (code: number, text: string): string => {
+  const label = labelFor(code)
+  return label === undefined ? text : `${label} (${SCH4_CHECK_FIELD}): ${text}`
+}
 
 // Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
 // browser Back button returns from a sub-page to the location list.
@@ -985,7 +999,7 @@ const Schedule4: FC = () => {
                     kind="warning"
                     lowContrast
                     title={`${location.name} — required`}
-                    subtitle={issue.message.text}
+                    subtitle={describeIssue(issue.code, issue.message.text)}
                   />
                 ))}
               </div>

@@ -477,10 +477,87 @@ describe('Schedule4 page', () => {
 
     await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
-    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    // The issue names its field (code 52 = Rail Haul) ahead of the API's verbatim text (#326).
+    expect(await screen.findByText('Rail Haul (Cost $): Value Required')).toBeInTheDocument()
+    expect(screen.getByText('Harbour Dump — required')).toBeInTheDocument()
     expect(
       screen.getByText('All requirements for Empty Landing have been met.'),
     ).toBeInTheDocument()
+  })
+
+  // Defect #326 (DIV-2): the API identifies each missing Cost by cost-item code, and legacy named that
+  // field on every issue ("Location : <name> - Lakeside Dry Dump (Cost $): Value Required",
+  // Schedule4MB.java:688). The page used to render only "Value Required", so two gaps on one location
+  // were two identical banners. Codes span the category grid AND the list sub-pages (43/46/55).
+  test('Check Status names the category behind each missing Cost, so two gaps are distinguishable (#326)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              issues: [
+                { code: 40, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+                { code: 41, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+                { code: 46, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(
+      await screen.findByText('Lakeside Dry Dump (Cost $): Value Required'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Water Dump (Cost $): Value Required')).toBeInTheDocument()
+    expect(
+      screen.getByText('Truck Rehaul-Dewater/Transfer (Cost $): Value Required'),
+    ).toBeInTheDocument()
+    // One banner per issue, each still headed by the location.
+    expect(screen.getAllByText('Harbour Dump — required')).toHaveLength(3)
+    // The bare, unlabelled text no longer appears on its own.
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('an issue whose code has no label falls back to the API text verbatim (AD-8)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              issues: [
+                { code: 999, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    expect(screen.queryByText(/\(Cost \$\)/)).not.toBeInTheDocument()
   })
 
   test('editable:false renders View actions and disables Add/Copy/Delete (STA-001)', async () => {
@@ -1629,7 +1706,8 @@ describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
     expect(bottomCheckStatus()).toBeEnabled()
     await userEvent.click(top)
 
-    expect(await screen.findByText(VALUE_REQUIRED)).toBeInTheDocument()
+    // Code 52 = Rail Haul; the field label is composed ahead of the verbatim text (#326).
+    expect(await screen.findByText(`Rail Haul (Cost $): ${VALUE_REQUIRED}`)).toBeInTheDocument()
     expect(screen.getByText(LOCATION_MET)).toBeInTheDocument()
     expect(checks).toBe(1)
     expect(checkRole).toBe(ILCR_ROLES.admin)

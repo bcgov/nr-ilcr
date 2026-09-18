@@ -115,7 +115,7 @@ See GAP-1.
 | Mixed per-location results in one response | S31 | per-location `LocationCheckResult` | check-status `@S31 @p1` | covered | — |
 | A mill/year with no locations is vacuously MET | legacy AND-over-locations | `checkStatus` empty loop | check-status `@S28 @p2` | covered | — |
 | Check Status mutates nothing | AD-5 | `@Transactional(readOnly)`; no state change | implicit in every check-status scenario (read-backs unchanged) | covered | — |
-| …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | the page renders only the location name + "Value Required" | check-status `@S28 @discovered-divergence` | divergence | DIV-2 |
+| …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | `describeIssue()` in `schedule4/index.tsx` maps `issue.code` through `labelFor()` — `"<label> (Cost $): Value Required"` | check-status `@S28 @p1` | covered | DIV-2 (resolved 2026-09-18, #326) |
 | Check Status does NOT require a Distance | **S29 as corrected 2026-08-20** (its original missing-Distance premise never existed anywhere) | not enforced — legacy's check is commented out (`Schedule4CheckStatus.java:88-94`) | check-status `@S29 @p1` | covered | SPEC-3 (closed) |
 | Comments never affect Check Status | **S30 as corrected 2026-08-20** (Schedule 4 never had that rule; legacy's was on 7B, conditional) | not enforced — commented out inline (`Schedule4CheckStatus.java:22`) | check-status `@S30 @p1` | covered | SPEC-4 (closed) |
 
@@ -185,8 +185,9 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 | Parallel stress ×3 | `--repeat-each=5` (twice at default workers, once at `--workers=4`) | **512 / 514 each run — 1,542 executions, 6 failures, ALL at the entry point (app-shell paint, Home's first fetch, one Chrome launch >60 s), never the same test twice, and ZERO data-contention failures.** Two genuine readiness waits were stabilised as a result (see `defects.md`); the rest is this box's dev-mode Vite server saturating under ~24 concurrent browsers for 20+ min. Reported as measured rather than retried away or timeout-inflated — see the note below. |
 
 > ### Suite state — the ONE place this is recorded
-> **74 scenarios / 92 tests after Scenario-Outline expansion: 82 green + 10 deliberately-red.** Measured
-> from the generated specs and a full run on **2026-08-27**. The run rows above are the dated
+> **74 scenarios / 92 tests after Scenario-Outline expansion: 83 green + 9 deliberately-red.** Measured
+> from the generated specs and a full run on **2026-08-27**, then adjusted by one on 2026-09-18 when DIV-2's
+> S28 scenario went green with #326 (tag retired in the feature file; not re-run as a whole suite). The run rows above are the dated
 > authoring-time records and are left as written. No whole-suite total is written down anywhere by design —
 > the e2e [`README.md`](../../../README.md) gives the command to measure one.
 >
@@ -195,27 +196,27 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 > tags had already been retired in the feature files, so the tables disagreed with the suite they described.
 > Re-measure with `npx playwright test --list --project=chromium` and edit **this block only**.
 
-The 10 deliberate reds (7 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
-`defects.md` entry each is named in. Six rows, because some entries are red in more than one scenario —
-the inline `×n` is a scenario count (absent means ×1), and those counts sum to 10. All 10 are plain
+The 9 deliberate reds (6 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
+`defects.md` entry each is named in. Five rows, because some entries are red in more than one scenario —
+the inline `×n` is a scenario count (absent means ×1), and those counts sum to 9. All 9 are plain
 `Scenario`s; none expands through `Examples`:
 
 | Red | Entry | What it tracks |
 |---|---|---|
 | check-status-unsaved `@S33 @S34` | DIV-8 | Check Status judges the SAVED locations, ignoring the open panel (#359, app-wide — one scenario carries both arms) |
-| check-status `@S28` | DIV-2 | the Check Status issue does not name the category |
 | nav-and-recompute `@S12` ×3 | DIV-3 | NAV-001 confirm is not implemented — panel Back, Add New Location, and sub-page Back |
 | update `@S02` ×2 | BUG-4 | a category cleared to fully-empty is silently discarded (data loss) |
 | accessibility ×2 | DIV-7 | the editing-row highlight should not exist (legacy had none); it also fails contrast at 3.81:1, Draft and View |
 | accessibility ×1 | BUG-1 | app-wide: a hovered table row fails contrast (3.79:1) |
 
 **Retired, GREEN, no longer reds** — kept here so a reader comparing against an older copy of this file can
-see where the two went:
+see where the three went:
 
 | Ex-red | Entry | Fixed |
 |---|---|---|
 | render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) — Schedule 4 half only; **#322 stays open for Schedule 8**, still `disabled={saving}` at `schedule8/index.tsx:792` |
 | nav-and-recompute `@S01 @S02` | DIV-4 | issue #291's fix (`6e86d7a`) — the panel shows the recomputed $/m³ without a reopen |
+| check-status `@S28` | DIV-2 | issue #326's fix (2026-09-18) — each Check Status issue names its category, `"<label> (Cost $): Value Required"` |
 
 > ⚠️ **Every mutating scenario owns its own (mill, year)** — 50 of them, listed in
 > `fixtures/sch4/schedule4-test-data.ts`'s anchor table, and `preflight/sch4-anchors.setup.ts` fails the run

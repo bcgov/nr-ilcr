@@ -144,28 +144,31 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     Then I should see the message "All requirements for this schedule have been met"
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-2 — DELIBERATELY RED. See this UC's defects.md (DIV-2) and issue #326.
+  # DIV-2 — FIXED (issue #326). Was deliberately red until the page named the field; see this UC's
+  # defects.md (DIV-2).
   #
   # Legacy named the field a value was required for: `addMessageCheckStatus()` built
   # "Location : <name> - <Field Name> (Cost $) " + "Value Required", and the rewrite's backend still
   # returns the cost-item `code` on every issue for exactly that purpose (Story 10.4 §Decision 4). The
-  # page renders only the location name and "Value Required", so a location missing two category Costs
-  # shows two IDENTICAL notifications and the reporter cannot tell which lines to fix.
+  # page used to render only the location name and "Value Required", so a location missing two category
+  # Costs showed two IDENTICAL notifications and the reporter could not tell which lines to fix. It now
+  # composes the label ahead of the verbatim text — "Lakeside Dry Dump (Cost $): Value Required" — under
+  # the unchanged "<location> — required" title.
   #
   # Asserted as "the category is named somewhere in the Check Status output" rather than against the legacy
   # JSF string: the notification shape was deliberately re-grounded (title = location, subtitle = message),
-  # so pinning the old literal would demand a format nobody intends to restore. What is genuinely missing
-  # is the field identity.
+  # so pinning the old literal would demand a format nobody intends to restore. What was genuinely missing
+  # was the field identity.
   #
-  # SCHEDULE 4 IS THE ONLY PAGE THAT DROPS IT (swept 2026-08-19). Legacy named the field on every
+  # SCHEDULE 4 WAS THE ONLY PAGE THAT DROPPED IT (swept 2026-08-19). Legacy named the field on every
   # schedule (FacesUtil.addCheckStatusErrorMessage composed "<label>: <message>"), and every other
-  # schedule here still does — Schedules 1/2/3/5/11 compose the label into the message text server-side,
+  # schedule here does — Schedules 1/2/3/5/11 compose the label into the message text server-side,
   # and Schedule 8 returns the field separately (Schedule 4's exact shape) then renders it in the
-  # notification title (schedule8/CheckStatusResult.tsx:26). So the fix has an in-repo precedent: map
-  # issue.code through ALL_CATEGORIES in components/schedule4/validation.ts.
+  # notification title (schedule8/CheckStatusResult.tsx:26). The fix followed that precedent: issue.code
+  # is mapped through `labelFor()` in components/schedule4/validation.ts.
   # ---------------------------------------------------------------------------------------------------
-  @p1 @S28 @discovered-divergence
-  Scenario: Check Status names which category needs a value [DISCOVERED DIVERGENCE — the field label is dropped; defects.md DIV-2 / issue #326]
+  @p1 @S28
+  Scenario: Check Status names which category needs a value (DIV-2 / issue #326)
     Given the Schedule 4 anchor "check-issue-label" is an editable Draft with no locations
     And the Schedule 4 location "E2E Two Gaps" is already saved with:
       | category          | distance | volume | cost |
@@ -174,8 +177,8 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4
     And I check Schedule 4 status
-    # Both gaps ARE reported — two issues on the one location…
+    # Both gaps are reported — two issues on the one location…
     Then the Schedule 4 check-status reports 2 required-value issues for "E2E Two Gaps"
-    # …but neither says WHICH category, so these two assertions fail until the label is restored.
+    # …and each one says WHICH category is short (these two were red until #326 restored the label).
     And the Schedule 4 check-status names the "Lakeside Dry Dump" category as the missing one
     And the Schedule 4 check-status names the "Water Dump" category as the missing one
