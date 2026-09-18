@@ -1,0 +1,217 @@
+/**
+ * UC-SCH6-001 (Schedule 6 — Report Road Management Costs) pinned test data.
+ * DB-grounded through the app's own API, never fabricated.
+ *
+ * ANCHOR SCARCITY — THE GRID IS FULL. Read this before adding the remaining slices.
+ * Surveyed 2026-09-17 against the seeded local delivery DB (THE/…@localhost:1525/DBDOCK_01) using the
+ * suite's OWN scanner (`preflight/anchor-keys.ts` collectAnchorKeys — NOT a fresh regex; re-deriving
+ * those patterns is the dead-guard class VER-8 records), then confirmed through
+ * `GET /api/v1/schedule6?millId=<m>&year=<y>`:
+ *   - THE.ILCR_MILL_REPORT_STATUS holds 153 rows; opened reporting years were 2015–2023.
+ *   - The other seven domains pin 151 (mill, year) keys
+ *     (sch4 60, sch5 32, sch11 20, sch2 22, sch3 22, sch1 19, sec 5) against 136 Draft cells.
+ *   - Draft + pinned by NOBODY: exactly TWO — 1/2017 and 14050/2018 — and BOTH answer HTTP 409
+ *     (closed mills). Verified; 13050/2017 answers 200 editable with `roadRecords: []`, so the probe
+ *     itself is sound.
+ *   - Usable free cells: ZERO.
+ *   - All TEN Draft cells that hold road records are pinned by another domain (eight by sch1), so none
+ *     can be borrowed for a read-only scenario either.
+ * So Schedule 6 MINTS its capacity: `real-test-data-patches/sch6/draft-anchors.sql` opens reporting
+ * year 2024. Because every key any other fixture pins is <= 2023 (sch5 took 2022–2023), **"year >= 2024
+ * belongs to sch6" is a STRUCTURAL invariant** rather than a convention — a cross-domain collision is
+ * not even expressible. Each cell is folded into the CI seed `db-e2e/R__80_e2e_anchor_seed.sql` in the
+ * SAME change (a patch not folded in does not exist in CI).
+ *
+ * WHY SCHEDULE 6 NEEDS NO SUMMARY ROW: a valid ACTIVE mill-year holding no road records is the
+ * legitimate empty state and answers 200 `roadRecords: []`, never a 404 (Schedule6Api.java:37 — "zero
+ * road records is a valid 200"). There is no category-'6' ILCR_REPORT_SUMMARY row at all, so
+ * `trackStatus` comes straight from ILCR_MILL_REPORT_STATUS (Schedule6Repository.java:24-25). The
+ * scarcity here is anchor EXCLUSIVITY, not missing schedule data.
+ *
+ * THE PATCH MUST SEED CATEGORY ROWS, and for this table that is verified rather than inherited:
+ * ROAD_MAINTENANCE_REPORT carries the composite FK RM_RPT_ILCR_RCAT_FK -> ILCR_RCAT_PK, confirmed
+ * ENABLED in all_constraints on 2026-09-17. With the report-status row alone the page opens but the
+ * first record save fails DataIntegrityViolationException — how sch4 found it on 9050/2015 and sch5 on
+ * 9050/2016.
+ *
+ * PARALLEL SAFETY: the suite runs `fullyParallel`, and adding a record creates a real
+ * ROAD_MAINTENANCE_REPORT row, so every MUTATING scenario owns a DEDICATED (mill, year) that no other
+ * scenario writes to.
+ *
+ * CLEANUP CONTRACT (confirmed by probe 2026-09-17 on this exact anchor):
+ *   POST   /api/v1/schedule6/records?millId=9050&year=2024        -> 200 "Data saved successfully"
+ *   DELETE /api/v1/schedule6/records/{recordId}?millId=&year=     -> 200
+ * and the re-GET returns `roadRecords: []` with totals back at 0 — the anchor's at-rest state. That
+ * DELETE is what the cleanup registry calls, so the anchor is left as found. NOTE it carries NO
+ * `revisionCount`, unlike Schedule 5's camp DELETE: legacy's row Delete had no revision token either
+ * (Schedule6MB.remove :208-218, deviation (c2)), so do not add one.
+ *
+ * A re-extract can renumber this data — re-grounding these values is part of any re-extract, and
+ * `preflight/sch6-anchors.setup.ts` fails the whole run fast with one clear message if it drifts.
+ * Change values HERE only (single source of truth for the sch6 specs).
+ */
+
+export interface ScheduleKey {
+  millId: number;
+  year: number;
+}
+
+export interface MillRef {
+  millNumber: string;
+  millName: string;
+}
+
+export interface Sch6Anchor {
+  key: ScheduleKey;
+  mill: MillRef;
+}
+
+const MILL_760: MillRef = { millNumber: '760', millName: 'WESTEROS' }; // millId 9050, ACT
+
+// ---------------------------------------------------------------------------------------------------
+// MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
+// editable:true and holds NO road records at rest; `preflight/sch6-anchors.setup.ts` asserts all of
+// that, because the scenarios open by asserting a blank Add panel or an empty record list.
+//
+// ALL SEEDED (see the header — the extract had no usable free Draft mill-year left for ANY domain).
+// ---------------------------------------------------------------------------------------------------
+
+/** S01 — Add a Road Maintenance Record by TSA and Supply Block (Happy Path). */
+export const ADD_ANCHOR: Sch6Anchor = { key: { millId: 9050, year: 2024 }, mill: MILL_760 };
+
+/**
+ * Every anchor the preflight asserts is an editable, record-free Draft.
+ *
+ * Grows with each slice. Kept as a NAMED list rather than derived from the exports so the preflight's
+ * failure messages can say which slice an anchor belongs to.
+ */
+export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
+  { name: 'add (S01)', anchor: ADD_ANCHOR },
+];
+
+// ---------------------------------------------------------------------------------------------------
+// S01's record — every value read back from the real write path, not chosen on paper.
+//
+// PROVENANCE (probe 2026-09-17, POST /api/v1/schedule6/records on 9050/2024, then DELETEd):
+//   { areaType: "01", supplyBlock: "01B", volume: 12500, cost: 48000 }
+//     -> rmg "15", costPerVolume 3.84, totalVolume 12500, totalCost 48000, totalCostPerVolume 3.84
+//   message.key dataSavedSuccesfullyInfoMsg, message.text "Data saved successfully"
+//
+// WHY THESE FIGURES: 48000 / 12500 is EXACTLY 3.84, so the assertion cannot be made to pass or fail by
+// a rounding decision. Cost is whole-dollar on the wire anyway (roundCost), and the screen re-groups
+// cost to 0 decimals on blur, so a fractional cost would render as something the field never stores.
+//
+// WHY TSA "01" + BLOCK "01B": the Supply Block list is FILTERED to blocks whose code starts with the
+// chosen TSA (utils/codes.ts supplyBlocksFor), so the pair must be consistent or the block is not
+// offered at all. RMG is SERVER-derived from the block (Schedule6Service) and is not mirrored into the
+// Add panel — see the note in happy-path.feature.
+// ---------------------------------------------------------------------------------------------------
+
+/** The S01 record as the user types it, and as the API echoes it back. */
+export const S01_RECORD = {
+  /** Area-type code. The combo renders the code's DESCRIPTION, so the option text is `areaTypeOption`. */
+  areaTypeCode: '01',
+  areaTypeOption: 'Arrow TSA',
+  /** Supply-block code, consistent with the TSA above (see supplyBlocksFor). */
+  supplyBlockCode: '01B',
+  supplyBlockOption: 'Arrow TSA Block B',
+  /** Typed into the Volume m³ field; re-grouped to "12,500" on blur (volumeMask, 0 decimals). */
+  volumeInput: '12500',
+  volumeDisplay: '12,500',
+  /** Typed into the Cost $ field; re-grouped to "48,000" on blur (moneyMask, 0 decimals). */
+  costInput: '48000',
+  costDisplay: '48,000',
+  /** Server-derived Resource Management Grouping for block 01B. */
+  rmg: '15',
+  /** 48000 / 12500 = 3.84 exactly; rendered by ratioMask as ###,##0.00. */
+  costPerVolumeDisplay: '3.84',
+  comments: 'E2E S01 road record',
+} as const;
+
+/** The totals a single S01 record produces — one record, so they equal its own figures. */
+export const S01_TOTALS = {
+  volume: '12,500',
+  cost: '48,000',
+  costPerVolume: '3.84',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// Verbatim app messages. Rendered from the API's `message.text` / ProblemDetail.detail (AD-8), so these
+// are transcriptions of what the server sends, confirmed by the probes above — never invented copy.
+// ---------------------------------------------------------------------------------------------------
+
+/** `dataSavedSuccesfullyInfoMsg` — the add/save success banner. */
+export const DATA_SAVED = 'Data saved successfully';
+
+/** `scheduleRequirementsMetMsg`. NO trailing period — confirmed byte-for-byte from the endpoint. */
+export const REQUIREMENTS_MET = 'All requirements for this schedule have been met';
+
+/** PrimeFaces' default empty-list text, which legacy inherited (schedule6.xhtml:459-464). */
+export const EMPTY_LIST = 'No records found.';
+
+/** The Add panel's heading and aria-label (ADD_PANEL_HEADING in components/schedule6/index.tsx). */
+export const ADD_PANEL_HEADING = 'Add Road Maintenance report';
+
+// ---------------------------------------------------------------------------------------------------
+// URLs and small helpers — the one place each request shape is spelled out.
+// ---------------------------------------------------------------------------------------------------
+
+/** The Schedule 6 read endpoint for a (mill, year). */
+export const scheduleUrl = (millId: number, year: number): string =>
+  `/api/v1/schedule6?millId=${millId}&year=${year}`;
+
+/** The add endpoint — `Add Report` posts immediately (add-is-save). */
+export const addRecordUrl = (millId: number, year: number): string =>
+  `/api/v1/schedule6/records?millId=${millId}&year=${year}`;
+
+/**
+ * The record DELETE the cleanup registry calls.
+ *
+ * Deliberately NO `revisionCount` parameter: this endpoint carries no revision token (legacy's row
+ * Delete had none — Schedule6MB.remove :208-218, deviation (c2)). Adding one would be inventing a
+ * contract.
+ */
+export const recordDeleteUrl = (recordId: number, millId: number, year: number): string =>
+  `/api/v1/schedule6/records/${recordId}?millId=${millId}&year=${year}`;
+
+/** The Check Status endpoint. Takes the ON-SCREEN values, not the stored ones (Schedule6CheckRequest). */
+export const checkStatusUrl = (millId: number, year: number): string =>
+  `/api/v1/schedule6/check-status?millId=${millId}&year=${year}`;
+
+/** Carbon Dropdown option text for a mill — mirrors Home's `millItemToString` ("760 - WESTEROS"). */
+export const millOptionText = (m: MillRef): string => `${m.millNumber} - ${m.millName}`;
+
+/** The in-memory MillYearContext localStorage key (context/millYear/MillYearProvider.tsx). */
+export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
+
+// ---------------------------------------------------------------------------------------------------
+// Stable control ids. The legacy Gherkin names JSF ids (`schedule6AddForm:vol`); the React page builds
+// every field id from an `idPrefix` (components/schedule6/index.tsx:247-349), which is `add` for the
+// Add panel and `row-<recordId>` for a record's row.
+//
+// THESE IDS ARE WHY THE PAGE OBJECT DOES NOT USE getByLabel. The Add panel and EVERY row render the
+// same six labels ("TSA or TFL", "TFL", "Supply Block", "Volume m³", "Cost $", "Comments"), so a
+// label-based locator is a strict-mode violation the moment one record exists — the class that cost
+// sch5 a latent violation found in review.
+// ---------------------------------------------------------------------------------------------------
+
+/** Field ids inside the Add panel. */
+export const ADD_FIELD = {
+  areaType: '#add-area-type',
+  tflNumber: '#add-tfl-number',
+  supplyBlock: '#add-supply-block',
+  volume: '#add-volume',
+  cost: '#add-cost',
+  comments: '#add-comments',
+} as const;
+
+/** Field ids inside a saved record's row, by `ROAD_MAINTENANCE_REPORT_ID`. */
+export const rowField = (recordId: number) =>
+  ({
+    areaType: `#row-${recordId}-area-type`,
+    tflNumber: `#row-${recordId}-tfl-number`,
+    supplyBlock: `#row-${recordId}-supply-block`,
+    volume: `#row-${recordId}-volume`,
+    cost: `#row-${recordId}-cost`,
+    comments: `#row-${recordId}-comments`,
+  }) as const;

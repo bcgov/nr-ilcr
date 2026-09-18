@@ -91,9 +91,10 @@
 --                                        16050, 17052, 22050, 22051, 23050,
 --                                        23051, 23052, 24050, 24051,
 --                                        25050-25054
---   ILCR_REPORTING_PERIOD              : 2015-2019, 2022-2023 (2020/2021 exist
+--   ILCR_REPORTING_PERIOD              : 2015-2019, 2022-2024 (2020/2021 exist
 --                                        in V2/V8; 2022-2023 opened 2026-09-09
---                                        for the sch5 fan-out)
+--                                        for the sch5 fan-out, 2024 opened
+--                                        2026-09-17 for the sch6 fan-out)
 --   ILCR_REPORT_SUMMARY_ID             : 3001-3044   (db/ uses 1001-1228)
 --   ILCR_COST_REPORT_DETAIL_ID         : 4001-4317   (db/ uses 5001-9506;
 --                                        4306-4317 added 2026-09-10 for the
@@ -416,6 +417,42 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 24050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 24051, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- SCHEDULE 6 fan-out: reporting year 2024 (fixtures/sch6/schedule6-test-data.ts).
+-- Folded in from real-test-data-patches/sch6/draft-anchors.sql.
+--
+-- WHY ANOTHER NEW YEAR. By the time Schedule 6 was authored the grid was FULL:
+-- surveyed 2026-09-17, the other seven domains pin 151 (mill, year) keys against
+-- 136 Draft cells, and the only two unpinned cells (1/2017, 14050/2018) are CLS
+-- mills that answer HTTP 409 — verified through GET /api/v1/schedule6. Every one
+-- of the ten Draft cells that HOLDS road records is pinned by another domain
+-- (eight by sch1), so none could be borrowed for a read scenario either. So
+-- UC-SCH6-001 had no usable anchor at all and had to mint capacity, exactly as
+-- the FAN-OUT NOTE in sch5/draft-anchors.sql anticipated.
+--
+-- 2024 rather than a reused year: every key any other fixture pins is <= 2023
+-- (sch5 took 2022-2023), so "year >= 2024 belongs to sch6" is STRUCTURAL — no
+-- cross-domain collision is even expressible. Purely additive; no existing row
+-- changes. Safe for the year LIST too, on the same grounds sch5 recorded: nothing
+-- asserts its contents, and the app has no default working context to shift.
+--
+-- CATEGORY ROWS ARE NOT MIRRORED HERE, and for Schedule 6 that needs restating
+-- rather than inheriting: delivery's ROAD_MAINTENANCE_REPORT carries the composite
+-- FK RM_RPT_ILCR_RCAT_FK -> ILCR_RCAT_PK (verified ENABLED in all_constraints,
+-- 2026-09-17), so the PATCH must seed eleven ILCR_REPORT_CATEGORY rows per anchor
+-- or the first record save 500s on the real Oracle. The Flyway test schema models
+-- ILCR_REPORT_CATEGORY with a PK and NO FK, so those rows change nothing here —
+-- the same reasoning as the header's "NOT REPLICATED, deliberately" paragraph.
+-- If a future migration ever adds that FK to the test schema, this block needs
+-- category rows too.
+--
+-- Empty editable Draft at rest; the S01 scenario creates its road record and
+-- deletes it again through the app's own DELETE endpoint.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, ENTRY_USERID) VALUES (2024, DATE '2024-01-01', DATE '2024-12-31', 'E2E_SEED');
+-- 9050/2024 — S01 add (TSA + Supply Block happy path).
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 9050,  'D', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
 -- Banner status dates (sec S01 asserts "Sch 1-10 - Status: Draft - Date:
