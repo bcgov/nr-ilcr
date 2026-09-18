@@ -260,8 +260,11 @@ public class Schedule1Service {
     // trusting that the Schedule 3 save was itself permitted. Schedule 1 and Schedule 3 share the
     // mill/year track today, so a permitted Schedule 3 save already implies a permitted write here
     // — this guard preserves the invariant if that ever diverges. Unlike every other write gate
-    // this one returns rather than throwing: a blocked push is the WRN-002 outcome, not a 409.
-    if (!caller.allows(repository.findTrackStatus(millId, year).orElse(null))) {
+    // this one returns rather than throwing: a blocked push is the WRN-002 outcome, not a 409. The
+    // read is the locked one (Story 15.3, D8): the Schedule 3 save that calls this already holds
+    // the
+    // row, so re-locking it here is free, and the gate stays binding if it is ever called alone.
+    if (!caller.allows(repository.findTrackStatusForUpdate(millId, year).orElse(null))) {
       return false;
     }
     int summaryId = summary.summaryId();
@@ -526,7 +529,7 @@ public class Schedule1Service {
    * #296 moved only the main page off this guard; see {@link #getOrCreateEditableSummary}.
    */
   private int requireEditableSummary(long millId, int year, EditableStatuses caller) {
-    requireEditable(millId, year, caller);
+    requireEditableForUpdate(millId, year, caller);
     return repository
         .findSummary(millId, year, SCHEDULE_1_CATEGORY)
         .orElseThrow(ScheduleNotFoundException::new)
@@ -550,24 +553,14 @@ public class Schedule1Service {
   }
 
   /**
-   * The plain editability gate (AD-9): the caller must be permitted to write at the Schedules 1-10
-   * track's current status, else 409.
-   */
-  private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!caller.allows(trackStatus)) {
-      throw new ScheduleNotEditableException();
-    }
-    return trackStatus;
-  }
-
-  /**
    * The editability gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
    * report-status row so concurrent first-saves for the same mill/year serialize on it.
    * Load-bearing, not decoration: the real schema has no unique constraint on (year, mill,
    * category), so without the lock two concurrent first-saves can both see "not matched" in the
-   * create MERGE and both insert a permanent duplicate. Only write paths call this, inside
-   * {@code @Transactional}.
+   * create MERGE and both insert a permanent duplicate. Since Story 15.3 (D8) it is also the gate
+   * of every sub-resource write: the submit transition locks the same row before re-running the
+   * ten-schedule gate, so a save and a transition on one mill/year serialize instead of racing.
+   * Only write paths call this, inside {@code @Transactional}.
    */
   private String requireEditableForUpdate(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
@@ -672,7 +665,8 @@ public class Schedule1Service {
         millId,
         year,
         caller,
-        repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null));
+        repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null),
+        true);
   }
 
   /**
@@ -693,7 +687,30 @@ public class Schedule1Service {
   public Optional<Schedule1Response> findSchedule1(long millId, int year, EditableStatuses caller) {
     return repository
         .findSummary(millId, year, SCHEDULE_1_CATEGORY)
-        .map(summary -> assemble(millId, year, caller, summary));
+        .map(summary -> assemble(millId, year, caller, summary, true));
+  }
+
+  /**
+   * The same existence-aware read WITHOUT the BR-03 crown pre-fill — the document exactly as it is
+   * stored. For a REPORTING consumer, which must show what was reported rather than what a data
+   * entry screen would offer.
+   *
+   * <p>{@link #findSchedule1} serves the S02 screen, so a mill/year whose volumes are all blank but
+   * whose Schedule 3 carries a Crown Timber volume comes back with that volume copied into all
+   * thirteen volume fields, unsaved, plus WRN-001 asking the user to save. That is right for the
+   * screen and wrong for a report: it would print thirteen volume figures for a Schedule 1 nobody
+   * has filled in, where legacy read the persisted row and printed its no-data marker.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param caller the track statuses this caller may edit
+   * @return the stored document, or empty when no Schedule 1 summary exists
+   */
+  public Optional<Schedule1Response> findStoredSchedule1(
+      long millId, int year, EditableStatuses caller) {
+    return repository
+        .findSummary(millId, year, SCHEDULE_1_CATEGORY)
+        .map(summary -> assemble(millId, year, caller, summary, false));
   }
 
   /**
@@ -703,7 +720,11 @@ public class Schedule1Service {
    * Delete on a never-saved schedule (#296 AC3, the #292 rule).
    */
   private Schedule1Response assemble(
-      long millId, int year, EditableStatuses caller, SummaryRow summary) {
+      long millId,
+      int year,
+      EditableStatuses caller,
+      SummaryRow summary,
+      boolean allowCrownPrefill) {
     List<DetailRow> details =
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
@@ -733,7 +754,7 @@ public class Schedule1Service {
     // 143, 144 + silviculture 1, 2, 139, 140 — D2 reversed per the use cases; never the Other-Costs
     // shared volume) in the SERVED document only. Nothing is persisted; the user must Save (hence
     // WRN-001 "Please check and save schedule.").
-    boolean prefill = sch3CrownVolume != null && allVolumesEmpty(details);
+    boolean prefill = allowCrownPrefill && sch3CrownVolume != null && allVolumesEmpty(details);
 
     List<LineItem> lineItems = new ArrayList<>();
     for (Integer code : LINE_ITEM_CODES) {

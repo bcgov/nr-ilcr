@@ -11,10 +11,22 @@ package ca.bc.gov.nrs.ilcr.userlookup.dto;
  * <p>A candidate is a lookup result only — holding one proves nothing about mill access or the
  * {@code ILCR_SUBMITTER} role. Authorization stays with the xref check.
  *
+ * <p>{@code firstName} and {@code lastName} are carried beside {@code displayName}, never instead
+ * of it: the mill's associated-user grid renders legacy's separate First Name / Last Name columns
+ * ({@code mills.xhtml:112-118}), while the submitter picker keeps rendering {@code displayName}
+ * unchanged.
+ *
  * @param userGuid the 32-char directory GUID, the association key
  * @param displayName the person's name as the directory renders it, or null when it has none
  * @param idpUsername the provider username (e.g. the IDIR id), for display beside the name
  * @param identityProvider {@code IDIR} or {@code BCEIDBUSINESS}
+ * @param firstName the directory's given name, or null when it carries none
+ * @param lastName the directory's family name, or null when it carries none
  */
 public record DirectoryUser(
-    String userGuid, String displayName, String idpUsername, String identityProvider) {}
+    String userGuid,
+    String displayName,
+    String idpUsername,
+    String identityProvider,
+    String firstName,
+    String lastName) {}

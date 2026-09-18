@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,7 +21,9 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.millcontext.MillYearNotSelectedException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
+import ca.bc.gov.nrs.ilcr.security.ReportSubmission;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,21 +33,30 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for {@link CheckStatusController} — the ONE mill/year guard the sweep owns (Story 15.1
- * AC 9) and the sweep's own not-found semantics (AC 5). Mocked guard and sweep, no Spring: the HTTP
- * statuses and verbatim texts are proven by {@code CheckStatusContextGuardIT}; this pins the ORDER
- * (guard before any schedule is touched) and the exception translation, which an IT can only infer.
+ * Unit test for {@link CheckStatusController} — the ONE mill/year guard both endpoints own (Story
+ * 15.1 AC 9, Story 15.3 AC 8) and the page's own not-found semantics (AC 5). Mocked guard, sweep
+ * and transition, no Spring: the HTTP statuses and verbatim texts are proven by {@code
+ * CheckStatusContextGuardIT} and {@code CheckStatusSubmitIT}; this pins the ORDER (guard before any
+ * schedule is touched), the exception translation, the offer flag riding on the 1–10 track only,
+ * and the success envelope's text resolution — which an IT can only infer.
  */
 @ExtendWith(MockitoExtension.class)
 class CheckStatusControllerTest {
 
+  private static final Authentication SUBMITTER =
+      new TestingAuthenticationToken("dev-submitter", "N/A", "SUBMITTER");
+
   @Mock private MillContextService millContextService;
   @Mock private CheckStatusSweepService sweepService;
-  @Mock private ReportTransitionService transitionService;
+  @Mock private ReportTrackTransitionService transitionService;
+  // Story 17.1's verify service, a second transition collaborator beside 15.3's.
+  @Mock private ReportTransitionService verifyService;
+  @Mock private ReportSubmission reportSubmission;
   @Mock private MessageSource messageSource;
   @Mock private Authentication authentication;
   @InjectMocks private CheckStatusController controller;
@@ -61,7 +73,7 @@ class CheckStatusControllerTest {
         .thenReturn(new MillYearContext(514, 2021));
     when(sweepService.sweep(514, 2021)).thenReturn(emptySweep());
 
-    var response = controller.checkStatus("514", "2021");
+    var response = controller.checkStatus("514", "2021", SUBMITTER);
 
     assertThat(response.getStatusCode().value()).isEqualTo(200);
     InOrder order = inOrder(millContextService, sweepService);
@@ -78,7 +90,7 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("516", "2021"))
         .thenThrow(new MillClosedException());
 
-    assertThatThrownBy(() -> controller.checkStatus("516", "2021"))
+    assertThatThrownBy(() -> controller.checkStatus("516", "2021", SUBMITTER))
         .isInstanceOf(MillClosedException.class);
     verifyNoInteractions(sweepService);
   }
@@ -89,7 +101,7 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive(null, "2021"))
         .thenThrow(new MillYearNotSelectedException());
 
-    assertThatThrownBy(() -> controller.checkStatus(null, "2021"))
+    assertThatThrownBy(() -> controller.checkStatus(null, "2021", SUBMITTER))
         .isInstanceOf(MillYearNotSelectedException.class);
     verifyNoInteractions(sweepService);
   }
@@ -102,7 +114,7 @@ class CheckStatusControllerTest {
     ScheduleNotFoundException guardFailure = new ScheduleNotFoundException();
     when(millContextService.validateMillYearActive("999999", "2021")).thenThrow(guardFailure);
 
-    assertThatThrownBy(() -> controller.checkStatus("999999", "2021"))
+    assertThatThrownBy(() -> controller.checkStatus("999999", "2021", SUBMITTER))
         .isInstanceOfSatisfying(
             CheckStatusScheduleNotFoundException.class,
             ex -> {
@@ -120,7 +132,7 @@ class CheckStatusControllerTest {
         .thenReturn(new MillYearContext(514, 2021));
     when(sweepService.sweep(514, 2021)).thenThrow(new ScheduleNotFoundException());
 
-    assertThatThrownBy(() -> controller.checkStatus("514", "2021"))
+    assertThatThrownBy(() -> controller.checkStatus("514", "2021", SUBMITTER))
         .isInstanceOf(CheckStatusScheduleNotFoundException.class);
   }
 
@@ -130,7 +142,7 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("757", "2021"))
         .thenReturn(new MillYearContext(757, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(transitionService.verifySchedules1To10(757, 2021, "verifyadmin", null)).thenReturn("V");
+    when(verifyService.verifySchedules1To10(757, 2021, "verifyadmin", null)).thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
@@ -142,9 +154,9 @@ class CheckStatusControllerTest {
     assertThat(response.getBody().message().text())
         .isEqualTo("Schedules 1-10 status has been updated to verified.");
 
-    InOrder order = inOrder(millContextService, transitionService);
+    InOrder order = inOrder(millContextService, verifyService);
     order.verify(millContextService).validateMillYearActive("757", "2021");
-    order.verify(transitionService).verifySchedules1To10(757, 2021, "verifyadmin", null);
+    order.verify(verifyService).verifySchedules1To10(757, 2021, "verifyadmin", null);
   }
 
   @Test
@@ -155,7 +167,7 @@ class CheckStatusControllerTest {
 
     assertThatThrownBy(() -> controller.verifySchedules1To10("761", "2021", authentication))
         .isInstanceOf(MillClosedException.class);
-    verifyNoInteractions(transitionService);
+    verifyNoInteractions(verifyService);
   }
 
   @Test
@@ -165,6 +177,62 @@ class CheckStatusControllerTest {
         .thenThrow(new MillYearNotSelectedException());
 
     assertThatThrownBy(() -> controller.verifySchedules1To10(null, "2021", authentication))
+        .isInstanceOf(MillYearNotSelectedException.class);
+    verifyNoInteractions(verifyService);
+  }
+
+  @Test
+  @DisplayName(
+      "15.3 AC 9: canSubmit is the offer rule's answer for the 1-10 status; Schedule 11 carries none")
+  void sweep_carriesCanSubmitOnTheOneToTenTrackOnly() {
+    when(millContextService.validateMillYearActive("514", "2021"))
+        .thenReturn(new MillYearContext(514, 2021));
+    when(sweepService.sweep(514, 2021)).thenReturn(emptySweep());
+    when(reportSubmission.canSubmit(SUBMITTER, "D", 514)).thenReturn(true);
+
+    CheckStatusSweepResponse body = controller.checkStatus("514", "2021", SUBMITTER).getBody();
+
+    assertThat(body).isNotNull();
+    assertThat(body.schedules1To10().canSubmit()).isTrue();
+    assertThat(body.schedules1To10().statusCode()).isEqualTo("D");
+    assertThat(body.schedule11().canSubmit()).isNull();
+    verify(reportSubmission).canSubmit(SUBMITTER, "D", 514);
+    verify(reportSubmission, never()).canSubmit(any(), isNull(), anyLong());
+  }
+
+  @Test
+  @DisplayName(
+      "15.3 AC 8: submit runs the SAME guard once, before the transition, on the raw params")
+  void submit_guardRunsBeforeTheTransition() {
+    when(millContextService.validateMillYearActive("760", "2021"))
+        .thenReturn(new MillYearContext(760, 2021));
+    when(transitionService.submit(760, 2021, SUBMITTER, "dev-submitter"))
+        .thenReturn("sch1-10SubmittedMsg");
+    when(messageSource.getMessage(
+            eq("sch1-10SubmittedMsg"), isNull(), eq("sch1-10SubmittedMsg"), any(Locale.class)))
+        .thenReturn("Schedules 1-10 are successfully submitted.");
+
+    var response = controller.submit("760", "2021", SUBMITTER);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody()).isNotNull();
+    assertThat(response.getBody().message().key()).isEqualTo("sch1-10SubmittedMsg");
+    assertThat(response.getBody().message().text())
+        .isEqualTo("Schedules 1-10 are successfully submitted.");
+    InOrder order = inOrder(millContextService, reportSubmission, transitionService);
+    order.verify(millContextService).validateMillYearActive("760", "2021");
+    order.verify(reportSubmission).validateSubmitterMillAccess(SUBMITTER, 760);
+    order.verify(transitionService).submit(760, 2021, SUBMITTER, "dev-submitter");
+    verifyNoInteractions(sweepService);
+  }
+
+  @Test
+  @DisplayName("15.3 AC 8: missing mill/year on submit is the guard's ERR-001, untranslated")
+  void submit_missingParams_millYearNotSelectedPassesThrough() {
+    when(millContextService.validateMillYearActive("abc", null))
+        .thenThrow(new MillYearNotSelectedException());
+
+    assertThatThrownBy(() -> controller.submit("abc", null, SUBMITTER))
         .isInstanceOf(MillYearNotSelectedException.class);
     verifyNoInteractions(transitionService);
   }
@@ -183,6 +251,22 @@ class CheckStatusControllerTest {
               assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
               assertThat(ex.getMessageKey()).isEqualTo("checkStatusScheduleNotFoundErrorMsg");
             });
+    verifyNoInteractions(verifyService);
+  }
+
+  @Test
+  @DisplayName("15.3 AC 8: no status row on submit is the CHECK STATUS not-found, re-keyed")
+  void submit_absentContext_isTheCheckStatusNotFound() {
+    ScheduleNotFoundException guardFailure = new ScheduleNotFoundException();
+    when(millContextService.validateMillYearActive("999999", "2021")).thenThrow(guardFailure);
+
+    assertThatThrownBy(() -> controller.submit("999999", "2021", SUBMITTER))
+        .isInstanceOfSatisfying(
+            CheckStatusScheduleNotFoundException.class,
+            ex -> {
+              assertThat(ex.getMessageKey()).isEqualTo("checkStatusScheduleNotFoundErrorMsg");
+              assertThat(ex.getCause()).isSameAs(guardFailure);
+            });
     verifyNoInteractions(transitionService);
   }
 
@@ -197,7 +281,7 @@ class CheckStatusControllerTest {
             new MockUserPrincipal("mockadmin", "MOCKGUID0000111122223333AAAA0001"), "n/a");
     when(millContextService.validateMillYearActive("757", "2021"))
         .thenReturn(new MillYearContext(757, 2021));
-    when(transitionService.verifySchedules1To10(
+    when(verifyService.verifySchedules1To10(
             757, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001"))
         .thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
@@ -206,7 +290,7 @@ class CheckStatusControllerTest {
     var response = controller.verifySchedules1To10("757", "2021", mockAuth);
 
     assertThat(response.getStatusCode().value()).isEqualTo(200);
-    verify(transitionService)
+    verify(verifyService)
         .verifySchedules1To10(757, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001");
   }
 
@@ -220,13 +304,13 @@ class CheckStatusControllerTest {
         new UsernamePasswordAuthenticationToken(new MockUserPrincipal("mockadmin", "  "), "n/a");
     when(millContextService.validateMillYearActive("757", "2021"))
         .thenReturn(new MillYearContext(757, 2021));
-    when(transitionService.verifySchedules1To10(757, 2021, "mockadmin", null)).thenReturn("V");
+    when(verifyService.verifySchedules1To10(757, 2021, "mockadmin", null)).thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
     controller.verifySchedules1To10("757", "2021", mockAuth);
 
-    verify(transitionService).verifySchedules1To10(757, 2021, "mockadmin", null);
+    verify(verifyService).verifySchedules1To10(757, 2021, "mockadmin", null);
   }
 
   @Test
@@ -237,7 +321,7 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("757", "2021"))
         .thenReturn(new MillYearContext(757, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(transitionService.verifySchedules1To10(757, 2021, "verifyadmin", null)).thenReturn("V");
+    when(verifyService.verifySchedules1To10(757, 2021, "verifyadmin", null)).thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("sch1-10VerifiedMsg");
 
@@ -253,10 +337,35 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("757", "2021"))
         .thenReturn(new MillYearContext(757, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(transitionService.verifySchedules1To10(757, 2021, "verifyadmin", null))
+    when(verifyService.verifySchedules1To10(757, 2021, "verifyadmin", null))
         .thenThrow(new ScheduleNotFoundException());
 
     assertThatThrownBy(() -> controller.verifySchedules1To10("757", "2021", authentication))
         .isInstanceOf(CheckStatusScheduleNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "a not-found raised inside the transaction (row gone under the lock) is re-keyed too")
+  void submit_notFoundInsideTheTransaction_isTheCheckStatusNotFound() {
+    when(millContextService.validateMillYearActive("760", "2021"))
+        .thenReturn(new MillYearContext(760, 2021));
+    when(transitionService.submit(760, 2021, SUBMITTER, "dev-submitter"))
+        .thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> controller.submit("760", "2021", SUBMITTER))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("the transition's own 409s pass through untranslated (two different texts)")
+  void submit_transitionRefusalsPassThrough() {
+    when(millContextService.validateMillYearActive("515", "2021"))
+        .thenReturn(new MillYearContext(515, 2021));
+    when(transitionService.submit(515, 2021, SUBMITTER, "dev-submitter"))
+        .thenThrow(new ReportNotSubmittedException());
+
+    assertThatThrownBy(() -> controller.submit("515", "2021", SUBMITTER))
+        .isInstanceOf(ReportNotSubmittedException.class);
   }
 }

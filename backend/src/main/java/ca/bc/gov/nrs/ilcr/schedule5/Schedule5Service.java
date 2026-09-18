@@ -1230,7 +1230,7 @@ public class Schedule5Service {
    * {@code :71-76}), which the story's committed AC and the UC documents both record incorrectly
    * (deviation (A)).
    */
-  enum SubPage {
+  public enum SubPage {
 
     /** Other Camp Expenses — item 62, &plusmn;9,999,999, footer volume = SUM of row volumes. */
     CAMP(ITEM_OTHER_CAMP_EXPENSE_ROW, COST_STANDARD_LIMIT, COST_KEY_STANDARD),

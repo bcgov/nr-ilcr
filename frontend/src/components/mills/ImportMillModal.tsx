@@ -13,7 +13,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
-import { CheckmarkOutline } from '@carbon/icons-react'
+import { CheckmarkOutline, Reset, Search } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import type { ImportableMill, MessageText } from '@/interfaces/MillMaintenance'
@@ -158,10 +158,16 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
             value={millName}
             onChange={(event) => setMillName(event.target.value)}
           />
-          <Button type="submit" size="sm" disabled={searching || busy}>
+          <Button type="submit" size="sm" renderIcon={Search} disabled={searching || busy}>
             Search
           </Button>
-          <Button size="sm" kind="secondary" disabled={searching || busy} onClick={clear}>
+          <Button
+            size="sm"
+            kind="secondary"
+            renderIcon={Reset}
+            disabled={searching || busy}
+            onClick={clear}
+          >
             Clear
           </Button>
         </form>

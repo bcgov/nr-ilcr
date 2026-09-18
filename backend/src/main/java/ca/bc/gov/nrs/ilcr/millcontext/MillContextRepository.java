@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillYearTrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import java.util.List;
 import java.util.Optional;
@@ -218,6 +219,28 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
         .map(e -> new TrackCodes(e.schedules1To10Code(), e.schedule11Code()));
   }
 
+  /**
+   * Every {@code ILCR_MILL_REPORT_STATUS} row for the given mills across a year range, in one query
+   * — the bulk read the Data Extract's "Data Verified" rule needs across its whole selection, where
+   * a round trip per (mill, year) pair would be M × Y reads before a single figure is fetched.
+   * Ordered mill id then year. A pair with no row is simply absent from the result; the caller
+   * decides what absence means.
+   *
+   * @param millIds the mills to read (non-empty)
+   * @param fromYear the first reporting year, inclusive
+   * @param toYear the last reporting year, inclusive
+   * @return the rows found, mill id then year ascending
+   */
+  default List<MillYearTrackCodes> findTrackStatusCodes(
+      List<Long> millIds, int fromYear, int toYear) {
+    return findMillReportStatuses(millIds, fromYear, toYear).stream()
+        .map(
+            e ->
+                new MillYearTrackCodes(
+                    e.millId(), e.year(), e.schedules1To10Code(), e.schedule11Code()))
+        .toList();
+  }
+
   @Query(
       """
       SELECT s.ILCR_MILL_ID, s.ILCR_MILL_REPORT_STATUS_CODE, s.MILL_SILVICULTUR_STATUS_CODE
@@ -226,6 +249,51 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
          AND s.REPORT_YEAR = :year
       """)
   Optional<MillReportStatusEntity> findMillReportStatus(
+      @Param("millId") long millId, @Param("year") int year);
+
+  @Query(
+      """
+      SELECT s.ILCR_MILL_ID, s.REPORT_YEAR, s.ILCR_MILL_REPORT_STATUS_CODE,
+             s.MILL_SILVICULTUR_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS s
+       WHERE s.ILCR_MILL_ID IN (:millIds)
+         AND s.REPORT_YEAR BETWEEN :fromYear AND :toYear
+       ORDER BY s.ILCR_MILL_ID, s.REPORT_YEAR
+      """)
+  List<MillYearReportStatusEntity> findMillReportStatuses(
+      @Param("millIds") List<Long> millIds,
+      @Param("fromYear") int fromYear,
+      @Param("toYear") int toYear);
+
+  /**
+   * Same as {@link #findTrackStatusCodes} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row (Story 15.3, D8). This is the one locked status read
+   * millcontext owns for both tracks (AD-9): the Schedules 1–10 status transition takes it before
+   * re-running the ten-schedule gate, and the write-path editability gate of a schedule with no
+   * repository twin of its own (Schedule 11) reads through it, so a save cannot commit between the
+   * transition's gate and its commit, and a transition cannot commit between a save's gate and its
+   * write. Must run inside the write {@code @Transactional} — a {@code FOR UPDATE} outside one
+   * locks nothing, because autocommit releases it at once. A mill/year with no status row locks
+   * nothing and returns empty.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the pair of codes, locked until the caller's transaction ends; empty when no row exists
+   */
+  default Optional<TrackCodes> findTrackStatusCodesForUpdate(long millId, int year) {
+    return findMillReportStatusForUpdate(millId, year)
+        .map(e -> new TrackCodes(e.schedules1To10Code(), e.schedule11Code()));
+  }
+
+  @Query(
+      """
+      SELECT s.ILCR_MILL_ID, s.ILCR_MILL_REPORT_STATUS_CODE, s.MILL_SILVICULTUR_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS s
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<MillReportStatusEntity> findMillReportStatusForUpdate(
       @Param("millId") long millId, @Param("year") int year);
 
   /**

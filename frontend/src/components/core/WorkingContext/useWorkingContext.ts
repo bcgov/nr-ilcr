@@ -7,12 +7,15 @@ import type WorkingContext from '@/interfaces/WorkingContext'
 // one fetch and one set of stale-response guards. Returns the context ONLY when it matches the current
 // (millId, year): a null context, a failed fetch, or an in-flight PREVIOUS context all resolve to null
 // (the caller renders nothing), so a stale mill's data never lingers while a newer fetch is in flight.
-// `reloadToken` re-reads the context for the same mill/year when the caller changes it — the status
-// lines are stale after a report-status transition, which the transition's own reply does not describe.
-// Optional and defaulted, so the banner and every tombstone that does not pass one are unaffected.
+//
+// `reloadToken` re-fetches the SAME context after an action has moved a track's status, so the status
+// lines catch up in place — the previous lines keep rendering until the new response lands. A re-fetch
+// that fails leaves a context that was already correct standing: blanking Mill/Year and both status
+// lines under a "successfully submitted" banner would take away a display nothing has invalidated.
 export default function useWorkingContext(
   millId: number | null,
   year: number | null,
+  /** Effect-trigger key only — bump to re-fetch the same context; the value itself is never read. */
   reloadToken = 0,
 ): WorkingContext | null {
   const [context, setContext] = useState<WorkingContext | null>(null)
@@ -36,9 +39,14 @@ export default function useWorkingContext(
         }
       })
       .catch(() => {
-        // Passive chrome: any fetch failure suppresses the display silently (AC8). No error surface.
+        // Passive chrome: a fetch failure suppresses the display silently (AC8). No error surface.
+        // Only a context already held for THIS mill/year survives it — the initial load has none.
         if (active) {
-          setContext(null)
+          setContext((previous) =>
+            previous != null && previous.millId === millId && previous.reportYear === year
+              ? previous
+              : null,
+          )
         }
       })
     return () => {

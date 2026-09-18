@@ -17,7 +17,7 @@ import net.sf.jasperreports.pdf.JRPdfExporter;
  *
  * <p><b>Not the response body.</b> {@link PdfSpooler} consumes this — exporting it to a temp file
  * and closing it — while the controller is still on the synchronous path, and the controller sends
- * the resulting {@link ExportedPdf} instead. That ordering is the point: exporting straight to the
+ * the resulting {@link SpooledFile} instead. That ordering is the point: exporting straight to the
  * servlet stream, as this used to, put the export's failures AFTER the response commit, where they
  * could only ever reach the user as a truncated PDF. So {@code writeTo} takes any stream and knows
  * nothing about responses.

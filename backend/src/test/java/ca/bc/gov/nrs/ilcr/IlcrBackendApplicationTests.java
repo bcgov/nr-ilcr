@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr;
 
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
+import ca.bc.gov.nrs.ilcr.checkstatus.ReportTrackTransitionRepository;
 import ca.bc.gov.nrs.ilcr.checkstatus.ReportTransitionRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
@@ -63,6 +65,9 @@ class IlcrBackendApplicationTests {
   @MockitoBean private CostDetailSnapshotRepository costDetailSnapshotRepository;
 
   @MockitoBean private ReportSummarySnapshotRepository reportSummarySnapshotRepository;
+  // Story 15.3: the submit transition's writer and the licensee lookup it records (BR-05).
+  @MockitoBean private ReportTrackTransitionRepository reportTrackTransitionRepository;
+  @MockitoBean private MillUserXrefRepository millUserXrefRepository;
 
   // The report-status transition repository (Story 17.1) — same story: a Spring Data JDBC
   // repository, so absent with the datasource off, and the check-status controller now depends on

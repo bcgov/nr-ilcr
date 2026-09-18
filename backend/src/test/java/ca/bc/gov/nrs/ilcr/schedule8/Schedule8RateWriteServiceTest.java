@@ -80,7 +80,8 @@ class Schedule8RateWriteServiceTest {
 
   @Test
   void unknownSample_throwsNotFound() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(false);
     assertThrows(
         ScheduleNotFoundException.class,
@@ -90,7 +91,8 @@ class Schedule8RateWriteServiceTest {
 
   @Test
   void add_insertsRateRow() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), CallerRights.SUBMITTER, USER);
     verify(repository)
@@ -99,7 +101,8 @@ class Schedule8RateWriteServiceTest {
 
   @Test
   void editUnknownRow_throwsNotFound() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(7000, SAMPLE)).thenReturn(false);
     assertThrows(
@@ -109,7 +112,8 @@ class Schedule8RateWriteServiceTest {
 
   @Test
   void editStaleRevision_throwsStale() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(7000, SAMPLE)).thenReturn(true);
     when(repository.updateRateRow(
@@ -122,7 +126,8 @@ class Schedule8RateWriteServiceTest {
 
   @Test
   void deleteUnknownRow_isNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(7000, SAMPLE)).thenReturn(false);
     service.deleteRate(MILL, YEAR, SAMPLE, 7000, CallerRights.SUBMITTER);

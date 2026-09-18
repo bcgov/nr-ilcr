@@ -70,5 +70,31 @@ public enum Action {
    * a licensee's verify attempt with the status matrix's 409 rather than an authorization 403.
    * Submitting is the licensee's own transition and is not covered by this action.
    */
-  SET_REPORT_STATUS
+  SET_REPORT_STATUS,
+  /**
+   * Submit the Schedules 1–10 track for ministry review (UC-CHK-002, FR5) — the Check Status page's
+   * Submit button. SUBMITTER-only: legacy {@code UserSessionMB.canUserSubmitReport():502-521}
+   * enabled the button for {@code ILCR_LICENSEE} alone, and PRD FR5 keeps "ministry users cannot
+   * submit on a Licensee's behalf" as a role rule. ADMIN alone therefore receives 403. Epic 16
+   * unions capabilities for a dual-role ADMIN+SUBMITTER, but this action retains SUBMITTER mill
+   * scope: the caller must be actively assigned to the mill. Holding the action says only that
+   * Submit may be OFFERED; whether it succeeds is the track status and the ten-schedule validation
+   * gate, decided in the domain service.
+   */
+  SUBMIT_REPORT,
+  /**
+   * Extract reported cost data to CSV (UC-EXT-001) — the Generate Reports ▸ Data Extract surface.
+   * ADMIN-only: a SUBMITTER hitting the extract API is denied 403.
+   *
+   * <p>Deliberately NOT {@link #GENERATE_MILL_REPORTS}, even though both live in the Generate
+   * Reports area. Legacy derived each page's WebADE action from its view id ({@code
+   * AuthorizationPhaseListener.getAuthKey}, so on submit the key was {@code extractData/Generate
+   * Report}), separate from the {@code generateReports} action that rendered the submenu around it
+   * — a distinction the rebuild keeps rather than collapses. The menu item itself ({@code
+   * menu.xhtml:39}) carried no per-item {@code rendered} action of its own, unlike its two report
+   * siblings; the page's own action rests on the view-id derivation alone (D2, ratified). It also
+   * matters on its own terms: this action releases every selected mill's cost and volume data in
+   * one file, which is a wider capability than viewing one ministry report.
+   */
+  GENERATE_DATA_EXTRACT
 }

@@ -12,8 +12,8 @@
 /**
  * One mill on the administration surface (`millmaintenance/dto/AdminMill.java`).
  *
- * <p>Carries NO audit columns, so legacy's "Last Edited by / on date" line has no source here
- * (deviation (A)); extending the record is a logged follow-up, not this page's work.
+ * <p>Now carries the audit columns legacy's "Last Edited by / on date" line reads from
+ * (deviation (A) closed).
  */
 export interface AdminMill {
   readonly millId: number
@@ -30,6 +30,10 @@ export interface AdminMill {
   readonly headOfficeContactInd?: string
   readonly headOfficeContactId?: number
   readonly divisionContactId?: number
+  /** The acting administrator's username from the last write. Absent on a row never updated. */
+  readonly updateUserid?: string
+  /** ISO date, no time — legacy rendered it dd/MM/yyyy and discarded the time. */
+  readonly updateTimestamp?: string
 }
 
 /** A ministry mill not yet tracked in ILCR, offered for import (BR-04). No revision — the row is new. */

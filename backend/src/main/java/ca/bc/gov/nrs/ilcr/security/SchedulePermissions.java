@@ -38,8 +38,15 @@ public class SchedulePermissions {
             Action.MAINTAIN_USERS,
             Action.GENERATE_MILL_REPORTS,
             Action.MAINTAIN_MILLS,
-            Action.SET_REPORT_STATUS));
-    ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
+            Action.SET_REPORT_STATUS,
+            Action.GENERATE_DATA_EXTRACT));
+    // SUBMIT_REPORT (Story 15.3) is the first action granted only by the SUBMITTER role: ADMIN
+    // alone
+    // is denied 403. Under Epic 16's role union, ADMIN+SUBMITTER retains the action, while
+    // ReportSubmission preserves its SUBMITTER mill-assignment scope.
+    ROLE_ACTIONS.put(
+        Role.SUBMITTER,
+        EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.SUBMIT_REPORT));
   }
 
   /**

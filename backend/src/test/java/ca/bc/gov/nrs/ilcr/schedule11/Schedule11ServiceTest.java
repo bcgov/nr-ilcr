@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -92,7 +93,11 @@ class Schedule11ServiceTest {
   }
 
   private void stubTrack(String code) {
-    when(millContextService.findSchedule11TrackStatusCode(MILL, YEAR))
+    lenient()
+        .when(millContextService.findSchedule11TrackStatusCode(MILL, YEAR))
+        .thenReturn(Optional.ofNullable(code));
+    lenient()
+        .when(millContextService.findSchedule11TrackStatusCodeForUpdate(MILL, YEAR))
         .thenReturn(Optional.ofNullable(code));
   }
 

@@ -1,0 +1,947 @@
+/**
+ * UC-SCH5-001 (Schedule 5 — Report Camp and Access Expenses) pinned test data.
+ * DB-grounded through the app's own API, never fabricated.
+ *
+ * ANCHOR SCARCITY — read this before adding the remaining slices.
+ * Surveyed 2026-09-08 against the seeded local delivery DB (THE/…@localhost:1525/DBDOCK_01) with
+ * sqlplus, then confirmed through `GET /api/v1/schedule5?millId=<m>&year=<y>`:
+ *   - THE.ILCR_MILL_REPORT_STATUS holds 123 rows (107 "D", 9 "S", 7 "V"); opened reporting years are
+ *     2015–2021 only, and there are 17 ACT + 4 CLS listable mills.
+ *   - `preflight/anchor-keys.ts` already counts 119 (mill, year) keys pinned by the sch1/sch2/sch3/
+ *     sch4/sch11/sec fixtures.
+ *   - Exactly THREE Draft mill-years were pinned by nobody — 1/2017, 14050/2018, 25051/2017 — and all
+ *     three are CLS mills that answer HTTP 409. (The probe is sound: 16050/2018, 23052/2019 and
+ *     13050/2018 answer 200 editable with camps=0.)
+ * So the 17×7 grid had just three empty cells — 9050/2016, 16050/2015, 16050/2016 — and two were
+ * already pinned (16050/2015 is sch3's `never-started` 404 guard, whose fixture IS the absence of a
+ * row; 16050/2016 is shared by sch11 and sec). `real-test-data-patches/sch5/draft-anchors.sql` opens
+ * the last one. Every FURTHER mutating anchor must MINT capacity — see that file's FAN-OUT NOTE
+ * (preferred: open reporting year 2022+, which makes "year >= 2022 belongs to sch5" a structural
+ * invariant since every key pinned today is <= 2021).
+ *
+ * WHY SCHEDULE 5 NEEDS NO SUMMARY ROW, unlike Schedule 3: a valid ACTIVE mill-year holding no camps is
+ * the legitimate empty state and answers 200 `camps: []`, never a 404 (Schedule5Service.java:46-47,
+ * deviation (a)). The scarcity here is anchor EXCLUSIVITY, not missing schedule data.
+ *
+ * CROSS-SCHEDULE COUPLING: Schedule 5 is one of the domains that reads Schedule 3 (`Schedule3Service`'s
+ * own consumer list is schedule1, schedule2, schedule5, reporting), so a sch3 scenario on the same
+ * (mill, year) could move figures under a Schedule 5 assertion. 9050/2016 is pinned by no other
+ * fixture at all, which settles it: sch4 owns mill 9050 in 2015 and 2018–2021 and sch1 in 2017, but
+ * anchors are (mill, year) PAIRS and the cross-domain guard compares pairs, not mills.
+ *
+ * PARALLEL SAFETY: the suite runs `fullyParallel`, and a Schedule 5 save creates a real CAMP_REPORT
+ * row, so every MUTATING scenario owns a DEDICATED (mill, year) no other scenario writes to.
+ *
+ * CLEANUP CONTRACT (confirmed by probe 2026-09-08 on this exact anchor):
+ *   POST   /api/v1/schedule5/camps?millId=9050&year=2016            -> 200 "Data saved successfully"
+ *   DELETE /api/v1/schedule5/camps/{campId}?millId=&year=&revisionCount=
+ *                                                                   -> 200 "Data deleted successfully"
+ * and the re-GET returns camps: [] — the anchor's at-rest state. That DELETE is what the cleanup
+ * registry calls, so the anchor is left as found.
+ *
+ * A re-extract can renumber this data — re-grounding these values is part of any re-extract, and
+ * `preflight/sch5-anchors.setup.ts` fails the whole run fast with one clear message if it drifts.
+ * Change values HERE only (single source of truth for the sch5 specs).
+ */
+
+export interface ScheduleKey {
+  millId: number;
+  year: number;
+}
+
+export interface MillRef {
+  millNumber: string;
+  millName: string;
+}
+
+export interface Sch5Anchor {
+  key: ScheduleKey;
+  mill: MillRef;
+}
+
+const MILL_760: MillRef = { millNumber: '760', millName: 'WESTEROS' }; // millId 9050, ACT
+const MILL_2121: MillRef = { millNumber: '2121', millName: 'SESAME STREET' }; // millId 10050, ACT
+const MILL_987: MillRef = { millNumber: '987', millName: 'TURTLE DOVE' }; // millId 12050, ACT
+const MILL_999: MillRef = { millNumber: '999', millName: 'ISP TEST' }; // millId 13050, ACT
+const MILL_514: MillRef = { millNumber: '514', millName: 'AAA MILLING' }; // millId 16050, ACT
+const MILL_727: MillRef = { millNumber: '727', millName: 'Updated Mill E2E' }; // millId 17052, ACT
+const MILL_20171: MillRef = { millNumber: '20171', millName: 'MILES MILLING' }; // millId 22050, ACT
+const MILL_20172: MillRef = { millNumber: '20172', millName: 'COVEY CUSTOM CUT' }; // millId 22051, ACT
+const MILL_20173: MillRef = { millNumber: '20173', millName: 'TOMTESTMILL042017' }; // millId 23050, ACT
+const MILL_20174: MillRef = { millNumber: '20174', millName: 'AO CUSTOM' }; // millId 23051, ACT
+const MILL_20176: MillRef = { millNumber: '20176', millName: 'TANNER LOGS' }; // millId 23052, ACT
+const MILL_7777: MillRef = { millNumber: '7777', millName: 'CGT TEST MILL7' }; // millId 24050, ACT
+const MILL_8888: MillRef = { millNumber: '8888', millName: 'CGI TEST MILL8' }; // millId 24051, ACT
+const MILL_9171: MillRef = { millNumber: '9171', millName: 'BCOVEY-TEST' }; // millId 25050, ACT
+const MILL_9172: MillRef = { millNumber: '9172', millName: 'MDOBIE-TEST' }; // millId 25051, CLS
+const MILL_9173: MillRef = { millNumber: '9173', millName: 'MRICE-TEST' }; // millId 25052, ACT
+const MILL_9174: MillRef = { millNumber: '9174', millName: 'AOLSON-TEST' }; // millId 25053, ACT
+const MILL_9175: MillRef = { millNumber: '9175', millName: 'TCASEY-TEST' }; // millId 25054, ACT
+
+// ---------------------------------------------------------------------------------------------------
+// MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
+// editable:true and holds NO camps at rest; `preflight/sch5-anchors.setup.ts` asserts all of that,
+// because the scenarios open by asserting a blank panel or an empty Existing Camps table.
+//
+// ALL SEEDED. The extract had no free Draft mill-year left for Schedule 5 (see the header), so
+// `real-test-data-patches/sch5/draft-anchors.sql` opens reporting years 2022-2023 and claims 21 cells
+// in them, plus 9050/2016 which was the last free cell of the old grid. Each is folded into the CI
+// seed `db-e2e/R__80_e2e_anchor_seed.sql` in the same change (a patch not folded in does not exist in
+// CI) and the patch also seeds the eleven ILCR_REPORT_CATEGORY rows delivery's composite FK
+// CMP_RPT_ILCR_RCAT_FK requires — without them the page opens but the first save 500s.
+//
+// Every one of the 22 was confirmed through `GET /api/v1/schedule5` on 2026-09-09: 200, camps=0, and
+// the expected track code.
+// ---------------------------------------------------------------------------------------------------
+
+/** S01 — Add a New Camp With Descriptors and Fixed-Category Expenses (Happy Path). */
+export const ADD_ANCHOR: Sch5Anchor = { key: { millId: 9050, year: 2016 }, mill: MILL_760 };
+
+/** S02 — Edit an Existing Camp. */
+export const EDIT_ANCHOR: Sch5Anchor = { key: { millId: 9050, year: 2022 }, mill: MILL_760 };
+/** S03 — Copy an Existing Camp and Save With a New Name. */
+export const COPY_ANCHOR: Sch5Anchor = { key: { millId: 10050, year: 2022 }, mill: MILL_2121 };
+/** S04 — Other Camp/Access Expenses sub-page for an EXISTING camp. */
+export const SUBPAGE_EXISTING_ANCHOR: Sch5Anchor = { key: { millId: 12050, year: 2022 }, mill: MILL_987 };
+/** S05 — Other Camp/Access Expenses sub-page for a NEW, unsaved camp (the save-first gate). */
+export const SUBPAGE_NEW_ANCHOR: Sch5Anchor = { key: { millId: 13050, year: 2022 }, mill: MILL_999 };
+/** S06 — Check Status, all requirements met. */
+export const CHECK_MET_ANCHOR: Sch5Anchor = { key: { millId: 17052, year: 2022 }, mill: MILL_727 };
+/** S07 — Delete an Existing Camp. */
+export const DELETE_ANCHOR: Sch5Anchor = { key: { millId: 22050, year: 2022 }, mill: MILL_20171 };
+/** S08 — Same camp name allowed in a DIFFERENT mill/year: the first of the pair. */
+export const SAME_NAME_A_ANCHOR: Sch5Anchor = { key: { millId: 22051, year: 2022 }, mill: MILL_20172 };
+/** S08 — ...and the second. Two anchors by construction: the slice IS the cross-mill-year comparison. */
+export const SAME_NAME_B_ANCHOR: Sch5Anchor = { key: { millId: 23050, year: 2022 }, mill: MILL_20173 };
+/** S09 — Recoveries reduces the Camp Total (the volume-less twelfth category). */
+export const RECOVERIES_ANCHOR: Sch5Anchor = { key: { millId: 23051, year: 2022 }, mill: MILL_20174 };
+/** S10 — Close/navigate away with unsaved changes prompts a discard confirm. */
+export const DISCARD_CLOSE_ANCHOR: Sch5Anchor = { key: { millId: 23052, year: 2022 }, mill: MILL_20176 };
+/** S11 — Switching to a different camp while editing prompts a discard confirm (needs two camps). */
+export const CAMP_SWITCH_ANCHOR: Sch5Anchor = { key: { millId: 24050, year: 2022 }, mill: MILL_7777 };
+/** S13 — Duplicate camp name on save, case-insensitive (BR-02). */
+export const DUPLICATE_NAME_ANCHOR: Sch5Anchor = { key: { millId: 24051, year: 2022 }, mill: MILL_8888 };
+/** S14 — Save a copied camp without renaming it. */
+export const COPY_DUPLICATE_ANCHOR: Sch5Anchor = { key: { millId: 25050, year: 2022 }, mill: MILL_9171 };
+/** S20 — Check Status finds missing required values. */
+export const CHECK_MISSING_ANCHOR: Sch5Anchor = { key: { millId: 25052, year: 2022 }, mill: MILL_9173 };
+/** S21 — Other ACCESS expense description left blank. */
+export const ACCESS_DESC_BLANK_ANCHOR: Sch5Anchor = { key: { millId: 25053, year: 2022 }, mill: MILL_9174 };
+/** S22 — Other CAMP expense description blank, blocked at sub-page save. */
+export const CAMP_DESC_BLANK_ANCHOR: Sch5Anchor = { key: { millId: 25054, year: 2022 }, mill: MILL_9175 };
+/** S23 — Invalid cost on the Other CAMP Expense sub-page (the ±9,999,999 band). */
+export const SUBPAGE_COST_ANCHOR: Sch5Anchor = { key: { millId: 9050, year: 2023 }, mill: MILL_760 };
+
+/**
+ * S23 — the Other ACCESS Expense half (the ±99,999,999 band), on its OWN anchor.
+ *
+ * ONE SLICE, TWO ANCHORS — the same construction S08 needs, for a different reason. S23 has to
+ * exercise both sub-pages because the two bands are the whole point, and a single scenario visiting
+ * both pages of one camp is not workable: returning from a sub-page leaves the camp panel open and
+ * DIRTY (its Other-expense figures have moved underneath it), so the next navigation raises a
+ * discard confirm — "Switch camp report" on Edit, "Leave camp report" on a sub-page link. Answering
+ * those is S10/S11's subject and would make S23 partly about confirms. Two single-page scenarios say
+ * what S23 means with no confirm in either, and they parallelise.
+ *
+ * Minted 2026-09-10 in sch5's own 2023 range, so it collides with nobody — the same reasoning that
+ * added 17052/2023 for S12.
+ */
+export const SUBPAGE_COST_ACCESS_ANCHOR: Sch5Anchor = {
+  key: { millId: 22050, year: 2023 },
+  mill: MILL_20171,
+};
+/** S24 — Check Status includes unsaved edits: a violation entered but not saved (BR-12 family). */
+export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch5Anchor = { key: { millId: 10050, year: 2023 }, mill: MILL_2121 };
+/** S25 — Check Status includes unsaved edits: a correction not yet saved clears the error. */
+export const CHECK_UNSAVED_FIX_ANCHOR: Sch5Anchor = { key: { millId: 12050, year: 2023 }, mill: MILL_987 };
+
+/**
+ * S24's GREEN companion — the panel gate that makes the two BR-11 scenarios red.
+ *
+ * Its own anchor, and it learned that the hard way: it first shared `check-unsaved-violation` with
+ * S24 and, because both seed a camp of the same name, the pair raced under `fullyParallel` — the
+ * loser's POST answered 409 and its cleanup then deleted the WINNER's camp mid-run, so S24 failed
+ * against an empty Existing Camps table while an empty schedule vacuously reported "requirements
+ * met". Exactly the collision the fixture header's dedication rule exists to prevent, reproduced by
+ * ignoring it. Minted 2026-09-11 in sch5's own 2023 range.
+ */
+export const CHECK_PANEL_GATE_ANCHOR: Sch5Anchor = { key: { millId: 22051, year: 2023 }, mill: MILL_20172 };
+
+/**
+ * GAP-4 — the ONLY anchor that deliberately ends up holding TWO camps, and it has to.
+ *
+ * The per-camp "All requirements for <camp> have been met." line (`campRequirementsMetMsg`) is emitted
+ * only when the SCHEDULE fails and some individual camp passes: on a pass `Schedule5Service.checkStatus`
+ * returns the schedule banner with `camps: []` and never enters the per-camp loop (:946-950, mirroring
+ * legacy `Schedule5MB.java:324-326`). That is SPEC-3, and it is why S06 and S20 both assert this line is
+ * ABSENT — a pass is the one state it cannot appear in.
+ *
+ * So the line was live, user-facing and pinned in the fixtures purely so two scenarios could assert its
+ * absence, with nothing proving it can ever appear. An assertion that a string never shows is only as good
+ * as the knowledge that it CAN. This anchor is the mixed state that proves it: one complete camp, one
+ * missing its road distance.
+ *
+ * Its own cell, per the dedication rule — it writes. It is still EMPTY AT REST like every other mutating
+ * anchor (both camps are created by the scenario and removed by the cleanup registry), so it belongs in
+ * `EDITABLE_DRAFT_ANCHORS` and preflight's "no camps" assertion holds unchanged; it is only during the
+ * scenario that it carries two. Minted 2026-09-15 in sch5's own 2023 range, so it collides with nobody.
+ */
+export const CHECK_MIXED_ANCHOR: Sch5Anchor = { key: { millId: 23050, year: 2023 }, mill: MILL_20173 };
+
+/**
+ * The four ACCESSIBILITY anchors (GAP-5 / NFR1 / issue #97's second half).
+ *
+ * WHY FOUR AND NOT ONE. Each axe sweep is its own scenario — a scenario that scanned several surfaces in
+ * sequence would stop at the first violation and silently skip the rest (sch4's `accessibility.feature`
+ * header records the same reasoning). Each of these four scenarios SAVES a camp to have something to
+ * scan, and a scenario that writes cannot share a (mill, year) under `fullyParallel`. So: one anchor per
+ * writing sweep.
+ *
+ * TWO MORE SURFACES NEED NO ANCHOR OF THEIR OWN, deliberately:
+ *   - the NEW-camp panel sweep opens a blank panel and saves nothing, so it rides `VALIDATION_ANCHOR`
+ *     (the validate-only cell, whose whole contract is that nothing is ever written there);
+ *   - the READ-ONLY sweep reads `READ_ONLY_ANCHOR`'s seeded camp, which S19 also only reads.
+ * Both are pure GETs, so they cannot collide with anything — including each other.
+ *
+ * Minted 2026-09-16 in sch5's own 2023 range (eight cells were still free), so they collide with nobody.
+ */
+export const A11Y_LIST_ANCHOR: Sch5Anchor = { key: { millId: 23051, year: 2023 }, mill: MILL_20174 };
+export const A11Y_PANEL_ANCHOR: Sch5Anchor = { key: { millId: 23052, year: 2023 }, mill: MILL_20176 };
+export const A11Y_SUBPAGE_CAMP_ANCHOR: Sch5Anchor = { key: { millId: 24050, year: 2023 }, mill: MILL_7777 };
+export const A11Y_SUBPAGE_ACCESS_ANCHOR: Sch5Anchor = { key: { millId: 24051, year: 2023 }, mill: MILL_8888 };
+
+/**
+ * The camps the accessibility sweeps seed — one name per scenario, following sch4's convention.
+ *
+ * Distinct names are not required for correctness (BR-02 scopes uniqueness to a mill/year, and each of
+ * these lives on its own anchor) but they make a failure message say WHICH sweep left residue behind.
+ */
+export const A11Y_CAMPS = {
+  list: 'E2E A11y Camp',
+  panel: 'E2E A11y Panel',
+  subPageCamp: 'E2E A11y Sub Camp',
+  subPageAccess: 'E2E A11y Sub Acc',
+} as const;
+
+/**
+ * S15 — VALIDATE-ONLY. Nothing is ever saved here: every scenario proves an entry is REJECTED, so the
+ * anchor must be one no scenario creates on. Deliberately not any mutating key above — a validate-only
+ * assertion sharing a happy-path anchor is the classic way a "nothing was written" claim goes green
+ * for the wrong reason.
+ */
+export const VALIDATION_ANCHOR: Sch5Anchor = { key: { millId: 13050, year: 2023 }, mill: MILL_999 };
+
+/**
+ * S12 — required descriptive field blank. MUTATING, which is why it is not the validate-only anchor.
+ *
+ * S12 has two arms and the second one SAVES: the licensee fills the field the validator complained
+ * about and the camp is stored. A writer cannot share a key with anything under `fullyParallel`, so
+ * S12 took its own cell rather than S15's. Added after the first fan-out — 2023 is sch5's own range,
+ * so minting one more collides with nobody.
+ */
+export const REQUIRED_FIELD_ANCHOR: Sch5Anchor = { key: { millId: 17052, year: 2023 }, mill: MILL_727 };
+
+// ---------------------------------------------------------------------------------------------------
+// READ-ONLY and GUARD anchors — no exclusivity needed, because nothing writes to them.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * S19 — Schedule not editable, report not in Draft. Seeded Submitted ("S"), so `editable` is false and
+ * the page renders its read-only view. Confirmed 2026-09-09: 200, trackStatus "S", editable false.
+ */
+export const READ_ONLY_ANCHOR: Sch5Anchor = { key: { millId: 16050, year: 2023 }, mill: MILL_514 };
+
+/**
+ * S17 — Selected mill not active for the reporting year (ERR-002 -> HTTP 409).
+ *
+ * NOT seeded and NOT modified: 25051 is an existing CLS mill that already carries a 2017 report-status
+ * row, which is what makes the 409 reachable (without a row MillContextService answers 404 first and
+ * the 409 is never reached). No other fixture pins 25051/2017. Confirmed 2026-09-09: HTTP 409.
+ */
+export const CLOSED_MILL_ANCHOR: Sch5Anchor = { key: { millId: 25051, year: 2017 }, mill: MILL_9172 };
+
+/**
+ * S18 — No Schedule 5 record found for mill/year (HTTP 404).
+ *
+ * The ABSENCE is the fixture. The fan-out opens 2022 for sixteen of the seventeen ACT mills and skips
+ * 16050 precisely so a 404 anchor exists inside sch5's own new year. Registered in
+ * DELIBERATELY_ABSENT in `preflight/ci-seed-parity.setup.ts`, which fails the run if anyone seeds it.
+ * Confirmed 2026-09-09: HTTP 404.
+ */
+export const NO_SCHEDULE_ANCHOR: Sch5Anchor = { key: { millId: 16050, year: 2022 }, mill: MILL_514 };
+
+/** Every anchor that must be an empty, editable Draft — the list preflight iterates. */
+export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5Anchor }> = [
+  { name: 'add (S01)', anchor: ADD_ANCHOR },
+  { name: 'edit (S02)', anchor: EDIT_ANCHOR },
+  { name: 'copy (S03)', anchor: COPY_ANCHOR },
+  { name: 'subpage-existing (S04)', anchor: SUBPAGE_EXISTING_ANCHOR },
+  { name: 'subpage-new (S05)', anchor: SUBPAGE_NEW_ANCHOR },
+  { name: 'check-met (S06)', anchor: CHECK_MET_ANCHOR },
+  { name: 'delete (S07)', anchor: DELETE_ANCHOR },
+  { name: 'same-name-a (S08)', anchor: SAME_NAME_A_ANCHOR },
+  { name: 'same-name-b (S08)', anchor: SAME_NAME_B_ANCHOR },
+  { name: 'recoveries (S09)', anchor: RECOVERIES_ANCHOR },
+  { name: 'discard-close (S10)', anchor: DISCARD_CLOSE_ANCHOR },
+  { name: 'camp-switch (S11)', anchor: CAMP_SWITCH_ANCHOR },
+  { name: 'duplicate-name (S13)', anchor: DUPLICATE_NAME_ANCHOR },
+  { name: 'copy-duplicate (S14)', anchor: COPY_DUPLICATE_ANCHOR },
+  { name: 'check-missing (S20)', anchor: CHECK_MISSING_ANCHOR },
+  { name: 'access-desc-blank (S21)', anchor: ACCESS_DESC_BLANK_ANCHOR },
+  { name: 'camp-desc-blank (S22)', anchor: CAMP_DESC_BLANK_ANCHOR },
+  { name: 'subpage-cost (S23)', anchor: SUBPAGE_COST_ANCHOR },
+  { name: 'subpage-cost-access (S23)', anchor: SUBPAGE_COST_ACCESS_ANCHOR },
+  { name: 'check-unsaved-violation (S24)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
+  { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
+  { name: 'check-panel-gate (S24 green)', anchor: CHECK_PANEL_GATE_ANCHOR },
+  { name: 'check-mixed (GAP-4)', anchor: CHECK_MIXED_ANCHOR },
+  { name: 'a11y-list (GAP-5)', anchor: A11Y_LIST_ANCHOR },
+  { name: 'a11y-panel (GAP-5)', anchor: A11Y_PANEL_ANCHOR },
+  { name: 'a11y-subpage-camp (GAP-5)', anchor: A11Y_SUBPAGE_CAMP_ANCHOR },
+  { name: 'a11y-subpage-access (GAP-5)', anchor: A11Y_SUBPAGE_ACCESS_ANCHOR },
+  { name: 'validation (S15)', anchor: VALIDATION_ANCHOR },
+  { name: 'required-field (S12)', anchor: REQUIRED_FIELD_ANCHOR },
+];
+
+/** The guard anchors and the HTTP status each must still produce. */
+export const GUARD_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5Anchor; expectHttp: number }> = [
+  { name: 'closed-mill (S17)', anchor: CLOSED_MILL_ANCHOR, expectHttp: 409 },
+  { name: 'no-schedule (S18)', anchor: NO_SCHEDULE_ANCHOR, expectHttp: 404 },
+];
+
+// ---------------------------------------------------------------------------------------------------
+// S01 input values and the derived figures they produce.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The camp S01 creates. The name is the Gherkin's own literal, kept verbatim for traceability and
+ * confirmed unused: `SELECT ... FROM THE.CAMP_REPORT WHERE ILCR_CATEGORY_ID='5' AND (UPPER(CAMP_NAME)
+ * LIKE '%CEDAR%' OR UPPER(CAMP_NAME) LIKE '%E2E%')` returned zero rows across the whole extract
+ * (2026-09-08). CAMP_NAME is VARCHAR2(30) in delivery, so 16 characters is well inside the cap.
+ */
+export const NEW_CAMP_NAME = 'Cedar Creek Camp';
+
+/** The descriptors, transcribed from UC-SCH5-001-S01.feature and valid against `validation.ts`. */
+export const NEW_CAMP_DESCRIPTORS = {
+  roadDistanceToOperatingArea: '12.5',
+  sizeOfCamp: '40',
+  associatedCampVolume: '5000',
+  isolatedCamp: 'Yes',
+} as const;
+
+/**
+ * The nine fixed-category costs S01 enters, keyed by the category's VERBATIM grid label (including the
+ * trailing ": " where the app has one — `components/schedule5/validation.ts` GRID_ROWS is the single
+ * source of row order and labels, and the accessible name of each input is `<label without ": "> cost`
+ * / `… volume`).
+ *
+ * `recoveries` is deliberately absent: the Gherkin never enters it, and it is the volume-less twelfth
+ * category. Leaving it null keeps Camp Total equal to Camp Sub-Total, which is what S01 asserts.
+ */
+export const NEW_CAMP_COSTS: ReadonlyArray<{ label: string; cost: string }> = [
+  { label: 'Catering and Food', cost: '1000' },
+  { label: 'Wages and Benefits', cost: '2000' },
+  { label: 'Depreciation/Lease', cost: '500' },
+  { label: 'General Camp Expenses', cost: '300' },
+  { label: 'Crew Transportation', cost: '700' },
+  { label: 'Land', cost: '400' },
+  { label: 'Rail', cost: '0' },
+  { label: 'Air', cost: '0' },
+  { label: 'Water', cost: '0' },
+];
+
+/**
+ * The eleven volume-bearing categories BR-03 propagates `associatedCampVolume` into. TWELVE categories
+ * exist; `recoveries` has no volume cell at all (GRID_ROWS `hasVolume: false`), which is exactly why
+ * the Gherkin says "every one of the 11 expense-category Volume fields".
+ */
+export const VOLUME_BEARING_CATEGORY_LABELS: readonly string[] = [
+  'Catering and Food',
+  'Wages and Benefits',
+  'Depreciation/Lease',
+  'General Camp Expenses',
+  'Other Camp Expenses',
+  'Crew Transportation',
+  'Land',
+  'Rail',
+  'Air',
+  'Water',
+  'Other Access Expenses',
+];
+
+/**
+ * The server-derived totals the costs above produce. MEASURED, not computed by hand: POSTed to
+ * `/api/v1/schedule5/camps?millId=9050&year=2016` on 2026-09-08 and read back off the 200 response,
+ * then the probe camp was deleted again.
+ *
+ *   campSubTotal        1000 + 2000 + 500 + 300            = 3800   (+ Other Camp Expenses, 0 rows)
+ *   campTotal           3800 − recoveries (null)           = 3800
+ *   accessExpenseTotal  700 + 400 + 0 + 0 + 0              = 1100   (+ Other Access Expenses, 0 rows)
+ *   campAndAccessTotal  3800 + 1100                        = 4900
+ * and the $/m³ column against the 5000 camp volume: 3800/5000 = 0.76, 4900/5000 = 0.98.
+ */
+export const NEW_CAMP_EXPECTED_TOTALS = {
+  campSubTotalCost: 3800,
+  campTotalCost: 3800,
+  accessExpenseTotalCost: 1100,
+  campAndAccessTotalCost: 4900,
+  campTotalCostPerVolume: 0.76,
+  campAndAccessTotalCostPerVolume: 0.98,
+} as const;
+
+/** Carbon Dropdown option text for a mill — mirrors Home's `millItemToString` ("760 - WESTEROS"). */
+export const millOptionText = (m: MillRef): string => `${m.millNumber} - ${m.millName}`;
+
+/** The in-memory MillYearContext localStorage key (context/millYear/MillYearProvider.tsx). */
+export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
+
+/** The Schedule 5 read endpoint for a (mill, year) — the one place the query shape is spelled out. */
+export const scheduleUrl = (millId: number, year: number): string =>
+  `/api/v1/schedule5?millId=${millId}&year=${year}`;
+
+/** The camp DELETE the cleanup registry calls. `revisionCount` is required — a falsy 0 is valid. */
+export const campDeleteUrl = (
+  campId: number,
+  millId: number,
+  year: number,
+  revisionCount: number,
+): string =>
+  `/api/v1/schedule5/camps/${campId}?millId=${millId}&year=${year}&revisionCount=${revisionCount}`;
+
+// ---------------------------------------------------------------------------------------------------
+// S02 — Edit an Existing Camp.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The camp S02 edits. Created by the scenario's own Given through the app's POST (not SQL), so the
+ * precondition is exactly the shape a user's first save produces. Distinct from S01's name so the two
+ * can never be confused in a failure message, and confirmed unused across the extract.
+ */
+export const EDIT_CAMP_NAME = 'North Camp';
+
+/**
+ * The request body that seeds S02's baseline camp — S01's values, so the two slices share one
+ * arithmetic story and the edit's effect is isolated to the two fields it changes.
+ *
+ * All TWELVE categories are present because an omitted `CategoryEntry` CLEARS both halves server-side
+ * (Schedule5Request.ts) — there is no PATCH semantic. `otherCampExpenses`/`otherAccessExpenses` are
+ * volume-only (their cost is the sub-page row sum) and `recoveries` is cost-only.
+ */
+export const EDIT_CAMP_BASELINE = {
+  campName: EDIT_CAMP_NAME,
+  roadDistanceToOperatingArea: 12.5,
+  sizeOfCamp: 40,
+  associatedCampVolume: 5000,
+  isolatedCamp: true,
+  cateringAndFood: { volume: 5000, cost: 1000 },
+  wagesAndBenefits: { volume: 5000, cost: 2000 },
+  depreciationLease: { volume: 5000, cost: 500 },
+  generalCampExpenses: { volume: 5000, cost: 300 },
+  otherCampExpenses: { volume: 5000 },
+  recoveries: { cost: 0 },
+  crewTransportation: { volume: 5000, cost: 700 },
+  equipAndSuppliesLand: { volume: 5000, cost: 400 },
+  equipAndSuppliesRail: { volume: 5000, cost: 0 },
+  equipAndSuppliesAir: { volume: 5000, cost: 0 },
+  equipAndSuppliesWater: { volume: 5000, cost: 0 },
+  otherAccessExpenses: { volume: 5000 },
+} as const;
+
+/**
+ * How the baseline above RENDERS when the camp is reopened — the grouped display form, not the raw one.
+ *
+ * WHY THESE DIFFER FROM THE NUMBERS ABOVE, and why it is not a bug. A freshly typed panel holds the raw
+ * strings the user entered (S01 asserts "5000" on a propagated volume and passes). A REOPENED panel is
+ * seeded from the served document through `components/schedule5/masks.ts`, whose `fmtVolume` and
+ * `fmtCost` are `toLocaleString('en-CA')` with no decimals — so the same 1000 comes back as "1,000".
+ * Both masks are transcribed from the legacy JSF converters (ILCRVolumeConverter `#,###,###`,
+ * ILCRCostConverter `##,###,###`), so the grouping is legacy parity, not a rewrite artefact.
+ *
+ * Measured against the running app on 2026-09-09 — the first version of S02 asserted the raw "1000" and
+ * failed with `Received: "1,000"`, which is exactly the re-grounding this suite exists to do.
+ */
+export const EDIT_CAMP_DISPLAY = {
+  campName: EDIT_CAMP_NAME,
+  roadDistanceToOperatingArea: '12.5',
+  sizeOfCamp: '40',
+  /** The `Select`'s VALUE, not its label — the option text is "Yes". */
+  isolatedCamp: 'true',
+  cateringAndFoodCost: '1,000',
+  cateringAndFoodVolume: '5,000',
+} as const;
+
+/** What S02 changes on screen: one descriptor and one category cost. */
+export const EDIT_CAMP_CHANGES = {
+  roadDistanceToOperatingArea: '15.0',
+  cateringAndFoodCost: '1200',
+} as const;
+
+/**
+ * The server-derived figures after S02's edit. MEASURED on 2026-09-09 by POSTing the baseline to
+ * 9050/2022, PUTting the two changes, reading the 200 back, then deleting the camp.
+ *
+ *   campSubTotal        1200 + 2000 + 500 + 300 = 4000   (catering 1000 -> 1200)
+ *   campTotal           4000 − recoveries (0)   = 4000
+ *   accessExpenseTotal  unchanged               = 1100
+ *   campAndAccessTotal  4000 + 1100             = 5100
+ *
+ * NOTE the per-row `$/m³` are each computed against the 5000 camp volume, NOT against the camp total —
+ * accessExpenseTotal is 1100/5000 = 0.22 and catering is 1200/5000 = 0.24. Measured rather than
+ * derived by hand precisely because that is easy to get wrong.
+ */
+export const EDIT_CAMP_EXPECTED_TOTALS = {
+  campSubTotalCost: 4000,
+  campTotalCost: 4000,
+  accessExpenseTotalCost: 1100,
+  campAndAccessTotalCost: 5100,
+  campTotalCostPerVolume: 0.8,
+  accessExpenseTotalCostPerVolume: 0.22,
+  campAndAccessTotalCostPerVolume: 1.02,
+  cateringAndFoodCostPerVolume: 0.24,
+} as const;
+
+/** A saved camp starts at revisionCount 0; the first edit takes it to 1 (observed on the same probe). */
+export const EDIT_CAMP_EXPECTED_REVISION = 1;
+
+// ---------------------------------------------------------------------------------------------------
+// S03 — Copy an Existing Camp and Save With a New Name.
+// ---------------------------------------------------------------------------------------------------
+
+/** The camp S03 copies FROM. Created by the scenario's own Given, same baseline as S02. */
+export const COPY_SOURCE_CAMP_NAME = 'North Camp';
+/** The unique name the copy is saved under. */
+export const COPY_NEW_CAMP_NAME = 'North Camp Annex';
+
+/**
+ * WRN-001, resolved. The source Gherkin carried this as an `[UNKNOWN]` — it assumed literal `{0}`
+ * substitution but no live app existed to confirm it. Now confirmed in both directions:
+ *   * the template is `sch5.copy.msg=To complete copy of Camp: {0}, provide a new Camp Name and invoke
+ *     save.` (backend `messages.properties:253`);
+ *   * the app resolves it over HTTP rather than hardcoding it — `openCopy` GETs `/v1/messages` with
+ *     `{ key, arg: camp.campName }` (components/schedule5/index.tsx:713-718), so `{0}` really is the
+ *     SOURCE camp's name.
+ * The `[UNKNOWN]` marker in UC-SCH5-001's gherkin README can be retired for WRN-001 on this evidence.
+ */
+export const COPY_WARNING = `To complete copy of Camp: ${COPY_SOURCE_CAMP_NAME}, provide a new Camp Name and invoke save.`;
+
+// ---------------------------------------------------------------------------------------------------
+// S04 / S05 — the Other Camp/Access Expense sub-pages.
+//
+// There is NO second route: the sub-page level is driven by search params on `/schedule-5`
+// (`camp` = CAMP_REPORT_ID, `sub` = 'CAMP' | 'ACCESS'), mirroring Schedule 4. So the legacy
+// `schedule5CampExpenses.xhtml` / `schedule5AccessExpenses.xhtml` URLs re-ground to a query string, and
+// the browser Back button steps back to the camp list.
+// ---------------------------------------------------------------------------------------------------
+
+/** The two sub-pages, keyed by the vocabulary the feature files use. Verbatim from SUB_PAGE_DEFS. */
+export const SUB_PAGES = {
+  camp: {
+    sub: 'CAMP',
+    /** The label on the grid row that navigates there — the live count is interpolated into it. */
+    gridLabel: 'Other Camp Expenses',
+    addHeader: 'Add Other Camp Expense',
+    listHeader: 'Other Camp Expenses',
+  },
+  access: {
+    sub: 'ACCESS',
+    gridLabel: 'Other Access Expenses',
+    addHeader: 'Add Other Access Expense',
+    listHeader: 'Other Access Expenses',
+  },
+} as const;
+
+/** S04's row: added to an EXISTING camp's Other Camp Expenses list. */
+export const SUBPAGE_CAMP_ROW = { description: 'Generator Fuel', cost: '350' } as const;
+/** S05's row: added to a NEW camp's Other Access Expenses list, after the save-first confirm. */
+export const SUBPAGE_ACCESS_ROW = { description: 'Ferry Crossing', cost: '220' } as const;
+
+/** The camp S05 creates on screen and then auto-saves through the confirm. */
+export const SUBPAGE_NEW_CAMP_NAME = 'Elk Ridge Camp';
+
+/**
+ * CFM-004 — the save-first confirm, verbatim from `components/schedule5/index.tsx:85-86`. Matches the
+ * source Gherkin's text exactly, so nothing was re-grounded here beyond the control type: it is a
+ * Carbon `Modal` headed "Save camp report" with Yes/No buttons, not a PrimeFaces confirmDialog.
+ */
+export const CONFIRM_SAVE_NEW_CAMP =
+  'The information for the New Camp must be saved before you can add other expenses. '
+  + 'Would you like to save the information now?';
+
+// ---------------------------------------------------------------------------------------------------
+// S06 — Check Status, all requirements met.  |  S07 — Delete an existing camp.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Check Status texts, verbatim from `messages.properties`.
+ *
+ * `campMet` is deliberately kept even though S06 asserts its ABSENCE — the negative needs the exact
+ * string to be meaningful, and S20 (issues found) will assert its siblings. See SPEC-3: on a PASS the
+ * app emits the schedule banner alone, matching legacy `Schedule5MB.java:324-326`, where the per-camp
+ * loop lives in the `else` branch and is unreachable when the schedule passes.
+ */
+export const CHECK_STATUS_MESSAGES = {
+  /** `scheduleRequirementsMetMsg` (messages.properties:179). Note: no trailing full stop. */
+  scheduleMet: 'All requirements for this schedule have been met',
+  /** `campRequirementsMetMsg` (messages.properties:246) with {0} = camp name. WITH a full stop. */
+  campMet: (campName: string) => `All requirements for ${campName} have been met.`,
+} as const;
+
+/**
+ * S08 — the name deliberately reused across two mill-years.
+ *
+ * BR-02 scopes camp-name uniqueness to a single (mill, year): `Schedule5Service` excludes by campId
+ * within the served mill/year, never globally. S08 proves that scoping by saving the SAME name on
+ * `SAME_NAME_B_ANCHOR` while `SAME_NAME_A_ANCHOR` already holds it — which is why this slice needs two
+ * dedicated anchors rather than one.
+ */
+export const SAME_NAME_CAMP_NAME = 'North Camp';
+
+/**
+ * S10 / S11 — the two discard confirms, verbatim from `components/schedule5/index.tsx:74-88`.
+ *
+ * DEVIATION (K), worth knowing when reading these two slices: legacy attached its CLOSE confirm
+ * UNCONDITIONALLY (schedule5.xhtml:169, :192, :221, :244 — no dirty check anywhere), whereas the
+ * rewrite only prompts when the panel is actually dirty. Both slices supply a real unsaved change, so
+ * both systems prompt and the deviation is not in scope here — but a future "close a clean panel"
+ * scenario would land straight on it.
+ */
+export const CONFIRM_CLOSE_PANEL = {
+  /** CFM-002. Modal heading "Close camp report". */
+  text: 'Any unsaved data will be lost. Are you sure you would like to continue?',
+  heading: 'Close camp report',
+} as const;
+
+export const CONFIRM_CAMP_SWITCH = {
+  /** CFM-003. Modal heading "Switch camp report". Note "changes to the current camp report", not "data". */
+  text: 'Any unsaved changes to the current camp report will be lost. Are you sure you would like to continue?',
+  heading: 'Switch camp report',
+} as const;
+
+/** S11 needs two camps on one anchor — the slice IS switching between them. */
+export const SWITCH_CAMP_NAMES = { first: 'North Camp', second: 'South Camp' } as const;
+
+/** The value S11 types into the open panel and then discards. Distinct from every seeded figure. */
+export const DISCARDED_COST = '9999';
+
+/** CFM-001, verbatim from `components/schedule5/index.tsx:74`. Modal heading is "Delete camp". */
+export const CONFIRM_DELETE_CAMP = 'This will delete the current record. Do you want to continue?';
+
+// ---------------------------------------------------------------------------------------------------
+// S12 / S13 / S14 / S15 — the validation messages, verbatim from `components/schedule5/validation.ts`
+// CAMP_MESSAGES, which is itself transcribed from the backend bundle so client advice and server
+// rejection are byte-identical.
+// ---------------------------------------------------------------------------------------------------
+
+export const VALIDATION_MESSAGES = {
+  /**
+   * FLD-001. The source Gherkin carries this as `[UNKNOWN]` — legacy overrode no `requiredMessage`, so
+   * its text was whatever the JSF runtime's default happened to be and could not be recovered from
+   * source. The rewrite states both explicitly, so the `[UNKNOWN]` is RESOLVED by observation.
+   */
+  campNameRequired: 'Camp Name is required.',
+  isolatedCampRequired: 'Isolated Camp is required.',
+  /** ERR-001 / BR-02. Already observed verbatim from the app during the S01 stress run. */
+  campNameDuplicate: 'Camp name already exists.',
+  /**
+   * FLD-002. NOTE THE `.9` — the source Gherkin says "between 0 and 999,999." The app says
+   * "999,999.9", and that is a BUSINESS-DIRECTED correction, not a defect: legacy's text understated
+   * its own validator, which accepted up to 999,999.9, and the Ministry ruled the TEXT the defect and
+   * confirmed the BOUND (PR #370, 2026-08-27 — the value is in km). See VER-4.
+   */
+  distanceRange: 'Entered distance must be between 0 and 999,999.9.',
+  sizeRange: 'Entered number of persons must be between 1 and 999.',
+  volumeRange: 'Entered volume must be between 0 and 9,999,999.',
+  /** The STANDARD cost band — the eight ordinary categories. */
+  costRange: 'Entered cost must be between -9,999,999 and 9,999,999.',
+  /** Recoveries alone: floored at 0, because it is stored positive and SUBTRACTED. */
+  costRangeNonNegative: 'Entered cost must be between 0 and 9,999,999.',
+} as const;
+
+/** S13's duplicate is typed in a DIFFERENT CASE — BR-02 is case-insensitive. */
+export const DUPLICATE_NAME_UPPERCASE = 'NORTH CAMP';
+
+// ---------------------------------------------------------------------------------------------------
+// S20 — Check Status finds missing required values.
+// ---------------------------------------------------------------------------------------------------
+
+/** The camp S20 seeds with one required field deliberately absent. */
+export const CHECK_MISSING_CAMP_NAME = 'North Camp';
+
+/**
+ * S20's baseline: S02's camp MINUS `roadDistanceToOperatingArea`.
+ *
+ * Exactly ONE field is omitted, on purpose. Check Status emits one line per missing field in a fixed
+ * order, so a camp missing three fields would produce three lines and the assertion would no longer
+ * be about the field the slice names. Road Distance is also the field the source Gherkin picks.
+ *
+ * Note it is still SAVEABLE: only Camp Name and Isolated Camp are required to save (S12 proves that),
+ * while Check Status tests a DIFFERENT set — camp name, road distance, size of camp, associated camp
+ * volume and the four sub-list conditions (`Schedule5Service.evaluateCamp`). That asymmetry is what
+ * makes this slice possible at all: the camp stores happily and only Check Status objects.
+ */
+export const CHECK_MISSING_BASELINE = {
+  campName: CHECK_MISSING_CAMP_NAME,
+  sizeOfCamp: 40,
+  associatedCampVolume: 5000,
+  isolatedCamp: true,
+  cateringAndFood: { volume: 5000, cost: 1000 },
+  wagesAndBenefits: { volume: 5000, cost: 2000 },
+  depreciationLease: { volume: 5000, cost: 500 },
+  generalCampExpenses: { volume: 5000, cost: 300 },
+  otherCampExpenses: { volume: 5000 },
+  recoveries: { cost: 0 },
+  crewTransportation: { volume: 5000, cost: 700 },
+  equipAndSuppliesLand: { volume: 5000, cost: 400 },
+  equipAndSuppliesRail: { volume: 5000, cost: 0 },
+  equipAndSuppliesAir: { volume: 5000, cost: 0 },
+  equipAndSuppliesWater: { volume: 5000, cost: 0 },
+  otherAccessExpenses: { volume: 5000 },
+} as const;
+
+/**
+ * The composed Check Status finding, byte-for-byte.
+ *
+ * `Schedule5CheckStatusResolver.composedValueRequired` builds
+ * `"Camp Report Name : " + campName + segment + ": " + text`, where the segment carries a LEADING
+ * space and NO trailing one (`:40-50`) — so there is no space before the final colon. Schedule 6's
+ * equivalent segments carry both, which is exactly the one-byte trap the resolver's own comment warns
+ * about. MEASURED against the running app on 2026-09-10, not transcribed.
+ */
+export const CHECK_MISSING_MESSAGE =
+  `Camp Report Name : ${CHECK_MISSING_CAMP_NAME} - Road Distance to Operating Area: Value Required`;
+
+/** What S20's second arm types into the field Check Status complained about. */
+export const CHECK_MISSING_FIX_DISTANCE = '12.5';
+
+// ---------------------------------------------------------------------------------------------------
+// GAP-4 — the MIXED state: one camp passing, one failing, on one anchor.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The two camps the GAP-4 scenario seeds, deliberately named so the assertions cannot pass by accident.
+ *
+ * DISTINCT NAMES, and not the usual "North Camp" both times: the per-camp messages are composed FROM the
+ * camp name, so two camps sharing one name would make "the met line names the right camp" unprovable —
+ * and BR-02 forbids it within a mill/year anyway.
+ */
+export const CHECK_MIXED_COMPLETE_CAMP_NAME = 'Complete Camp';
+export const CHECK_MIXED_INCOMPLETE_CAMP_NAME = 'Incomplete Camp';
+
+/**
+ * The per-camp PASS line for the complete camp — the string GAP-4 exists to reach.
+ *
+ * Built through `CHECK_STATUS_MESSAGES.campMet` rather than re-typed, so the trailing full stop (which
+ * the schedule-level banner does NOT carry) stays in one place.
+ */
+export const CHECK_MIXED_MET_MESSAGE = CHECK_STATUS_MESSAGES.campMet(
+  CHECK_MIXED_COMPLETE_CAMP_NAME,
+);
+
+/**
+ * And the failing camp's composed finding, in the same byte-exact shape as `CHECK_MISSING_MESSAGE` —
+ * asserted alongside the met line so the scenario proves the response carries BOTH per-camp verdicts,
+ * not merely that it stopped being a pass.
+ */
+export const CHECK_MIXED_MISSING_MESSAGE =
+  `Camp Report Name : ${CHECK_MIXED_INCOMPLETE_CAMP_NAME} - Road Distance to Operating Area: Value Required`;
+
+// ---------------------------------------------------------------------------------------------------
+// S24 / S25 — BR-11: does Check Status judge the SCREEN or the last SAVED document?
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The field both slices use, and it is the only sound choice.
+ *
+ * `Size of Camp` is (a) actively tested by Check Status and (b) NOT required at save — so a camp
+ * stores cleanly without it and only Check Status objects, which is the state both arms need. The
+ * source Gherkin's own note records that it first used a category COST and had to be corrected:
+ * the twelve camp/access expense amounts are NOT check-status conditions (legacy's are commented
+ * out, and `Schedule5Service.evaluateCamp` tests only the four descriptors plus the four sub-list
+ * conditions). Do not substitute an expense amount here.
+ */
+export const UNSAVED_CHECK_FIELD = 'Size of Camp';
+
+/** S25's baseline: complete for Check Status EXCEPT `sizeOfCamp`, so exactly one finding is emitted. */
+export const SIZE_MISSING_BASELINE = {
+  campName: 'North Camp',
+  roadDistanceToOperatingArea: 12.5,
+  associatedCampVolume: 5000,
+  isolatedCamp: true,
+  cateringAndFood: { volume: 5000, cost: 1000 },
+  wagesAndBenefits: { volume: 5000, cost: 2000 },
+  depreciationLease: { volume: 5000, cost: 500 },
+  generalCampExpenses: { volume: 5000, cost: 300 },
+  otherCampExpenses: { volume: 5000 },
+  recoveries: { cost: 0 },
+  crewTransportation: { volume: 5000, cost: 700 },
+  equipAndSuppliesLand: { volume: 5000, cost: 400 },
+  equipAndSuppliesRail: { volume: 5000, cost: 0 },
+  equipAndSuppliesAir: { volume: 5000, cost: 0 },
+  equipAndSuppliesWater: { volume: 5000, cost: 0 },
+  otherAccessExpenses: { volume: 5000 },
+} as const;
+
+/**
+ * The single finding a camp missing only `sizeOfCamp` produces. MEASURED 2026-09-11 through
+ * `POST /check-status` (outcome ISSUES, one camp, one message).
+ */
+export const SIZE_MISSING_MESSAGE =
+  'Camp Report Name : North Camp - Size of Camp: Value Required';
+
+/** The stored size S24's camp keeps throughout — its edit is never saved, so this must not move. */
+export const UNSAVED_CHECK_STORED_SIZE = 40;
+
+/** What S25 types on screen without saving. Valid per `SIZE_OF_CAMP` (1..999). */
+export const UNSAVED_CHECK_SUPPLIED_SIZE = '40';
+
+// ---------------------------------------------------------------------------------------------------
+// S21 / S22 / S23 — the expense sub-pages' own validation.
+//
+// THE TWO PAGES ARE NOT SYMMETRIC, and every difference below is a separately verified legacy fact
+// rather than an inconsistency in the rewrite (`components/schedule5SubPage/validation.ts` carries
+// the source line for each):
+//   * COST BAND is per PAGE, not per control — every Camp cost input carries `costSize="7"`
+//     (±9,999,999); neither Access input carries one, so Access gets the ILCRCostValidator default
+//     (±99,999,999).
+//   * REQUIRED TIMING on a GRID row's description differs — the Access grid input carries
+//     `<f:ajax event="change">` so it reports immediately; the Camp grid input does not, so its check
+//     is deferred to Save. That timing IS the S21/S22 distinction.
+//   * BOTH ADD-FORMS require a description. The source Gherkin says the Camp one does not; it does.
+//     See SPEC-4.
+// ---------------------------------------------------------------------------------------------------
+
+export const SUB_PAGE_MESSAGES = {
+  /**
+   * FLD-001's sub-page twin, RESOLVED by observation. Both S21 and S22 carry this as `[UNKNOWN]` —
+   * legacy set no custom `requiredMessage`, so its text was whatever the JSF runtime default happened
+   * to be and could not be recovered from source. The rewrite states it: `Value Required`, the same
+   * `missingRequiredFieldMsg` bundle string Check Status uses.
+   */
+  descriptionRequired: 'Value Required',
+  /** The Other CAMP page's band — `costSize="7"` on every cost input there. */
+  campCostRange: 'Entered cost must be between -9,999,999 and 9,999,999.',
+  /** The Other ACCESS page's band — no `costSize`, so the validator default applies. */
+  accessCostRange: 'Entered cost must be between -99,999,999 and 99,999,999.',
+} as const;
+
+/** The camp S21/S22/S23 open a sub-page on. Created by each scenario's own Given. */
+export const SUB_PAGE_HOST_CAMP = 'North Camp';
+
+/** S23's rejected costs — each one step outside its own page's band, and inside the other's. */
+export const SUB_PAGE_INVALID_COSTS = {
+  /** Rejected on the Camp page (>9,999,999); would be ACCEPTED on the Access page. */
+  camp: '15000000',
+  /** Rejected on the Access page (>99,999,999). */
+  access: '150000000',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S16 / S17 / S18 — the three EF2 guards, and S19 — the read-only render.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The guard banners, keyed by the vocabulary `render-states.feature` uses.
+ *
+ * RE-GROUNDED, and the shape matters more than the text. The source Gherkin expects all three in a
+ * PrimeFaces "business-exception panel" driven by `isScheduleNotFound()`-style flags. The rewrite has
+ * no `p:messages` panel at all: S17/S18 render the API's OWN `detail` inside a Carbon notification
+ * titled "Unable to load Schedule 5" (index.tsx:1151-1161), and S16 never issues a request — it is a
+ * client-side guard on the missing working context (index.tsx:1130-1141). So the SEVERITY and the
+ * MESSAGE survive re-grounding; the mechanism does not.
+ *
+ * Both server details were confirmed verbatim against the running app on 2026-09-10:
+ *   GET /api/v1/schedule5?millId=25051&year=2017 -> 409 {"detail":"This Mill is not active …"}
+ *   GET /api/v1/schedule5?millId=16050&year=2022 -> 404 {"detail":"Schedule not found."}
+ * They match the source Gherkin's ERR-004 / ERR-005 strings exactly, so nothing was re-worded.
+ */
+export const GUARD_MESSAGES = {
+  /** ERR-003 — the client-only banner, `ERR_MILL_YEAR_NOT_SELECTED` (index.tsx:67). */
+  millYearNotSelected: 'Please Select Mill and Reporting Year in the Home Page.',
+  /** Its notification TITLE. Severity is carried by a word, never by colour alone (WCAG 2.1 AA). */
+  millYearNotSelectedTitle: 'Mill and Reporting Year required',
+  /** ERR-004 — the 409 detail, served by the API and echoed unchanged. */
+  millNotActive:
+    'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.',
+  /**
+   * ERR-004's own TITLE. A mill closed for the reporting year is a CONTEXT the reporter changes on the
+   * Home page, not the app failing to load, so `core/ScheduleLoadState` titles it separately instead of
+   * letting it fall through to the generic failure below. Shared by every schedule — sch4 pins the same
+   * string as `titleMillClosed`.
+   */
+  millNotActiveTitle: 'Mill not active for Reporting Year',
+  /** ERR-005 — the 404 detail. */
+  scheduleNotFound: 'Schedule not found.',
+  /**
+   * The GENERIC load-failure title, which ERR-005 still renders under — but ERR-004 no longer does.
+   * Asserting its ABSENCE on the closed-mill guard is what keeps the two framings apart: the detail
+   * alone reads identically either way.
+   */
+  loadFailedTitle: 'Unable to load Schedule 5',
+} as const;
+
+/** The two guard anchors keyed for the step, with the status each must still answer. */
+export const GUARDS: Record<string, { anchor: Sch5Anchor; expectHttp: number; detail: string }> = {
+  'closed-mill': {
+    anchor: CLOSED_MILL_ANCHOR,
+    expectHttp: 409,
+    detail: GUARD_MESSAGES.millNotActive,
+  },
+  'not-found': {
+    anchor: NO_SCHEDULE_ANCHOR,
+    expectHttp: 404,
+    detail: GUARD_MESSAGES.scheduleNotFound,
+  },
+};
+
+/**
+ * S19's camp — seeded by `real-test-data-patches/sch5/view-mode-camp.sql`, NOT created by the
+ * scenario.
+ *
+ * WHY IT CANNOT BE CREATED BY THE TEST: the anchor is Submitted, and every write to a non-Draft
+ * document is refused with HTTP 409 — which is the very condition S19 exists to prove. So the camp is
+ * seed data, exactly as sch4's read-only arm had to be (`sch4/view-mode-amounts.sql`).
+ */
+export const VIEW_CAMP_NAME = 'E2E View Camp';
+
+/**
+ * How the seeded camp RENDERS in the read-only panel — the grouped display form.
+ *
+ * The panel is seeded from the served document through `masks.ts`, so 5000 comes back as "5,000"
+ * (`numStrGroup`), while `sizeOfCamp` is ungrouped by design (legacy's `numberOfPersonsConverter`,
+ * index.tsx:142-143). The `Select`'s VALUE is the string "true", not its "Yes" label.
+ *
+ * MEASURED against the running app on 2026-09-10, not derived from the SQL by hand.
+ */
+export const VIEW_CAMP_DISPLAY = {
+  campName: VIEW_CAMP_NAME,
+  roadDistanceToOperatingArea: '12.5',
+  sizeOfCamp: '40',
+  associatedCampVolume: '5,000',
+  isolatedCamp: 'true',
+  cateringAndFoodCost: '1,000',
+  cateringAndFoodVolume: '5,000',
+} as const;
+
+/**
+ * The derived rows as the read-only panel prints them.
+ *
+ * These are the SERVED figures — `derived` is null on a non-editable document (index.tsx:1191), so
+ * nothing here is a client-side mirror. They are S01's arithmetic (see the seed patch header), which
+ * is why they are the same numbers `NEW_CAMP_EXPECTED_TOTALS` already pins: the suite proves the
+ * server computes them on the write path, and S19 reads them back on the read path.
+ */
+export const VIEW_CAMP_DERIVED: ReadonlyArray<{ label: string; cost: string; perVolume: string }> = [
+  { label: 'Camp Sub-Total: ', cost: '3,800', perVolume: '0.76' },
+  { label: 'Camp Total: ', cost: '3,800', perVolume: '0.76' },
+  { label: 'Access Expense Total: ', cost: '1,100', perVolume: '0.22' },
+  // NOTE the label is 'Camp and Access: ', NOT 'Camp and Access Total: ' — GRID_ROWS:220.
+  { label: 'Camp and Access: ', cost: '4,900', perVolume: '0.98' },
+];
+
+/** ERR/SUC message text, verbatim from backend `messages.properties`. */
+export const MESSAGES = {
+  /** `dataSavedSuccesfullyInfoMsg` (messages.properties:168) — the Gherkin's expected text, unchanged. */
+  saved: 'Data saved successfully',
+  /** `dataDeletedSuccesfullyInfoMsg` — observed on the cleanup DELETE during the 2026-09-08 probe. */
+  deleted: 'Data deleted successfully',
+} as const;

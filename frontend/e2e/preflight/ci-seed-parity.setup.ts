@@ -125,6 +125,14 @@ const DELIBERATELY_ABSENT = new Map<AnchorKey, string>([
   ],
   ['13/2016', 'sch2 "not-found" — 404 on a closed mill that has no row for this year.'],
   ['25051/2018', 'sch4 "not-found" — 404. Mill 25051 IS seeded (CLS) and has a 2015 row for the 409 arm.'],
+  [
+    '16050/2022',
+    'sch5 "no-schedule" (S18, "No Schedule 5 Record Found for Mill/Year" -> 404). The hole is CARVED '
+      + 'rather than found: the sch5 fan-out opens 2022 for sixteen of the seventeen ACT mills and skips '
+      + 'this one precisely so a 404 anchor exists inside its own new year. Seeding it would delete the '
+      + 'fixture, not fix it. Distinct from 16050/2016 and 16050/2015 above — same mill, three different '
+      + 'years, one 404 each for sch11/sec, sch3 and sch5, so no two domains share a key.',
+  ],
 ]);
 
 /**
@@ -557,6 +565,7 @@ const EXPLICIT_ID_COLUMNS: Record<string, string> = {
   ILCR_REPORT_SUMMARY: 'ILCR_REPORT_SUMMARY_ID',
   ILCR_COST_REPORT_DETAIL: 'ILCR_COST_REPORT_DETAIL_ID',
   TRANSPORTATION_REPORT: 'TRANSPORTATION_REPORT_ID',
+  CAMP_REPORT: 'CAMP_REPORT_ID',
   BASIC_SILVICULTURE_REPORT: 'BASIC_SILVICULTURE_REPORT_ID',
   BIOGEOCLIMATIC_CATALOGUE: 'BIOGEOCLIMATIC_CATALOGUE_ID',
 };
@@ -594,22 +603,41 @@ test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented
     }
   }
 
-  // Parent references, which the Flyway test schema does NOT enforce for these two — an orphan detail
-  // row inserts happily and then simply never appears in any response, so the scenario fails on a value
+  // Parent references, which the Flyway test schema does NOT enforce for these — an orphan detail row
+  // inserts happily and then simply never appears in any response, so the scenario fails on a value
   // that "should be there" with nothing pointing at the cause.
-  const summaries = new Set(
-    parseInserts(e2eOnly, 'ILCR_REPORT_SUMMARY').map((r) => r.ILCR_REPORT_SUMMARY_ID),
-  );
-  const reports = new Set(
-    parseInserts(e2eOnly, 'TRANSPORTATION_REPORT').map((r) => r.TRANSPORTATION_REPORT_ID),
-  );
+  //
+  // ILCR_COST_REPORT_DETAIL carries ONE FK per report family and they are mutually exclusive: a row
+  // belongs to a summary (schedules 1/2/3), a transportation report (schedule 4), or a camp
+  // (schedule 5). Every family this seed uses must be listed — a MISSING family reads exactly like an
+  // orphan, which is how the sch5 read-only camp first tripped this gate (2026-09-10). If a future
+  // schedule adds another FK column (V31's ROAD_MAINTENANCE_REPORT_ID is the obvious next one), add
+  // it here in the same change or its rows will be reported as parentless.
+  const parentsByColumn: ReadonlyArray<{ column: string; ids: Set<string | null> }> = [
+    {
+      column: 'ILCR_REPORT_SUMMARY_ID',
+      ids: new Set(parseInserts(e2eOnly, 'ILCR_REPORT_SUMMARY').map((r) => r.ILCR_REPORT_SUMMARY_ID)),
+    },
+    {
+      column: 'TRANSPORTATION_REPORT_ID',
+      ids: new Set(
+        parseInserts(e2eOnly, 'TRANSPORTATION_REPORT').map((r) => r.TRANSPORTATION_REPORT_ID),
+      ),
+    },
+    {
+      column: 'CAMP_REPORT_ID',
+      ids: new Set(parseInserts(e2eOnly, 'CAMP_REPORT').map((r) => r.CAMP_REPORT_ID)),
+    },
+  ];
   const orphans = parseInserts(e2eOnly, 'ILCR_COST_REPORT_DETAIL')
     .filter((r) => {
-      const summary = r.ILCR_REPORT_SUMMARY_ID;
-      const report = r.TRANSPORTATION_REPORT_ID;
-      if (summary !== null && summary !== undefined) return !summaries.has(summary);
-      if (report !== null && report !== undefined) return !reports.has(report);
-      return true; // neither parent named at all
+      for (const { column, ids } of parentsByColumn) {
+        const value = r[column];
+        if (value !== null && value !== undefined) {
+          return !ids.has(value);
+        }
+      }
+      return true; // no parent column named at all
     })
     .map((r) => `detail ${r.ILCR_COST_REPORT_DETAIL_ID}`);
   if (orphans.length > 0) {

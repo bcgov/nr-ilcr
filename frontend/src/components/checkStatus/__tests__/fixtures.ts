@@ -593,6 +593,12 @@ type SweepOptions = {
   /** The 1–10 track's status code; `null` OMITS the property, as the wire does for a null column. */
   readonly statusCode1To10?: string | null
   readonly statusCode11?: string | null
+  /**
+   * The server's Submit offer for the 1–10 track; `null` (the default) OMITS it. Deliberately NOT
+   * derived from `statusCode1To10`: the real flag is role-aware (ReportSubmission.java:52-54), so a
+   * Draft default would enable the admin-at-Draft arm and invite the wrong fix. Set it per arm.
+   */
+  readonly canSubmit1To10?: boolean | null
   /** Replace individual verdicts; anything not named stays met. */
   readonly overrides?: readonly ScheduleCheckResult[]
 }
@@ -606,6 +612,7 @@ export const sweep = ({
   year = 2017,
   statusCode1To10 = 'D',
   statusCode11 = null,
+  canSubmit1To10 = null,
   overrides = [],
 }: SweepOptions = {}): CheckStatusSweepResponse => {
   const byCode = new Map<ScheduleCode, ScheduleCheckResult>(
@@ -624,6 +631,7 @@ export const sweep = ({
       ...(statusCode1To10 === null ? {} : { statusCode: statusCode1To10 }),
       requirementsMet: first.every((entry) => entry.requirementsMet),
       schedules: first,
+      ...(canSubmit1To10 === null ? {} : { canSubmit: canSubmit1To10 }),
     },
     schedule11: {
       ...(statusCode11 === null ? {} : { statusCode: statusCode11 }),

@@ -20,8 +20,11 @@ package ca.bc.gov.nrs.ilcr.checkstatus.dto;
  *
  * @param millId the validated mill id
  * @param year the validated reporting year
- * @param schedules1To10 the Schedules 1–10 track: eleven verdicts (7A and 7B separately) and the
- *     {@code ILCR_MILL_REPORT_STATUS_CODE}
+ *     <p>Story 15.3 added ONE field, additively (AD-12): {@code schedules1To10.canSubmit}, the
+ *     server-decided "is Submit offered to this caller" flag ({@code TrackCheckResult#canSubmit}).
+ *     {@code schedule11} carries none until Epic 26.
+ * @param schedules1To10 the Schedules 1–10 track: eleven verdicts (7A and 7B separately), the
+ *     {@code ILCR_MILL_REPORT_STATUS_CODE} and {@code canSubmit}
  * @param schedule11 the Schedule 11 track: one verdict and the {@code MILL_SILVICULTUR_STATUS_CODE}
  */
 public record CheckStatusSweepResponse(

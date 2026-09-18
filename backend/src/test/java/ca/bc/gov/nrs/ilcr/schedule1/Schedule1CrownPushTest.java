@@ -56,12 +56,15 @@ class Schedule1CrownPushTest {
     BigDecimal volume = new BigDecimal("54321");
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // Draft → editable
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
+        .thenReturn(Optional.of("D")); // Draft → editable
 
     boolean pushed =
         service.applyCrownTimberVolume(MILL, YEAR, volume, CallerRights.SUBMITTER, USER);
 
     assertTrue(pushed);
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
     // The aggregate revision is bumped (AR11) so a stale-token main-page save is rejected.
     verify(repository).touchSummary(SUMMARY_ID, USER);
     // Fixed-line items get a VOLUME-only upsert; the item-19 Other-Costs rows are overwritten en
@@ -89,7 +92,7 @@ class Schedule1CrownPushTest {
   void applyCrownTimberVolume_noOp_whenSchedule1NotDraft() {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    when(repository.findTrackStatus(MILL, YEAR))
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
         .thenReturn(Optional.of("S")); // submitted, not Draft
 
     boolean pushed =
@@ -99,6 +102,8 @@ class Schedule1CrownPushTest {
     // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown
     // push.
     assertFalse(pushed);
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
     verify(repository, never()).touchSummary(anyInt(), any());
     verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
     verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());

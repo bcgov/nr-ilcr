@@ -12,6 +12,10 @@ type NotificationColumnProps = {
    * the viewport but not focus. Optional and defaulted off, so every existing caller is unaffected.
    */
   focusRef?: Ref<HTMLDivElement>
+  // Optional hook for a page that renders SEVERAL of these at once and needs to assert how many
+  // there are and in what order. Carbon's own InlineNotification is role="status", which a page may
+  // also use for a live region, so role alone cannot distinguish them.
+  testId?: string
 }
 
 /**
@@ -21,8 +25,21 @@ type NotificationColumnProps = {
  * markup. Severity is always carried by BOTH the `kind` and an explicit `title` word, never colour
  * alone (WCAG 2.1 AA). Text is passed verbatim from the API where applicable (AD-8).
  */
-const NotificationColumn: FC<NotificationColumnProps> = ({ kind, title, subtitle, focusRef }) => (
-  <Column sm={4} md={8} lg={16} ref={focusRef} tabIndex={focusRef ? -1 : undefined}>
+const NotificationColumn: FC<NotificationColumnProps> = ({
+  kind,
+  title,
+  subtitle,
+  focusRef,
+  testId,
+}) => (
+  <Column
+    sm={4}
+    md={8}
+    lg={16}
+    ref={focusRef}
+    tabIndex={focusRef ? -1 : undefined}
+    data-testid={testId}
+  >
     <InlineNotification kind={kind} lowContrast title={title} subtitle={subtitle} />
   </Column>
 )

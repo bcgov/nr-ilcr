@@ -1316,7 +1316,7 @@ public class Schedule3Service {
    * moved only the main page off this guard; see {@link #getOrCreateEditableSummary}.
    */
   private SummaryRow requireEditableSummary(long millId, int year, EditableStatuses caller) {
-    requireEditable(millId, year, caller);
+    requireEditableForUpdate(millId, year, caller);
     return repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
   }
 
@@ -1336,24 +1336,14 @@ public class Schedule3Service {
   }
 
   /**
-   * The plain editability gate (AD-9): the caller must be permitted to write at the Schedules 1-10
-   * track's current status, else 409.
-   */
-  private String requireEditable(long millId, int year, EditableStatuses caller) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!caller.allows(trackStatus)) {
-      throw new ScheduleNotEditableException();
-    }
-    return trackStatus;
-  }
-
-  /**
    * The editability gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
    * report-status row so concurrent first-saves for the same mill/year serialize on it.
    * Load-bearing, not decoration: the real schema has no unique constraint on (year, mill,
    * category), so without the lock two concurrent first-saves can both see "not matched" in the
-   * create MERGE and both insert a permanent duplicate. Only write paths call this, inside
-   * {@code @Transactional}.
+   * create MERGE and both insert a permanent duplicate. Since Story 15.3 (D8) it is also the gate
+   * of every sub-resource write: the submit transition locks the same row before re-running the
+   * ten-schedule gate, so a save and a transition on one mill/year serialize instead of racing.
+   * Only write paths call this, inside {@code @Transactional}.
    */
   private String requireEditableForUpdate(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);

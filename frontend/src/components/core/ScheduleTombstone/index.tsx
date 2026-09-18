@@ -12,8 +12,7 @@ type Props = {
   // The sub-page trail under the title, rendered breadcrumb-style. A single string is one crumb; an
   // array threads the current level (e.g. ["Special Log Transportation Systems", "Harbour Dump", "Towing"]).
   subtitle?: string | string[]
-  // Bump to re-read the working context for the same mill/year, after an action changed the status
-  // lines this header shows. Omitted, the context is read once per mill/year as before.
+  // Bump to re-read the working context in place after an action on this page moved a track's status.
   reloadToken?: number
 }
 
