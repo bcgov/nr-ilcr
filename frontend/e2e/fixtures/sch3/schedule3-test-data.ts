@@ -328,10 +328,14 @@ export const MSG_SAVE_BEFORE_SUB_PAGE = 'The schedule has to be saved before ope
  * (`schedule3.xhtml:293`, the `includedUnacceptableCostsEditsEnabledAlert` variant). Note the capital U
  * and "Unacceptable costs" rather than "other costs": legacy wrote two distinct strings, one per link.
  *
- * The rewrite has only ONE — `ALT_SAVE_BEFORE_SUB_PAGE` is shown for BOTH links from the single generic
- * `openSubPage` handler (`components/schedule3/index.tsx:272`), so opening Included Unacceptable Costs
- * from a never-saved schedule shows the *Other Costs* wording. That is **defects.md DIV-7**, asserted by
- * the deliberately-red S19 in `save-first-gate.feature`. Schedule 1 is NOT affected: legacy gives it one
+ * The rewrite once had only ONE — a single constant was shown for BOTH links from the generic
+ * `openSubPage` handler, so opening Included Unacceptable Costs from a never-saved schedule showed the
+ * *Other Costs* wording. That was **defects.md DIV-7** ([#373](https://github.com/bcgov/nr-ilcr/issues/373)),
+ * **FIXED 2026-09-18**: `components/schedule3/index.tsx` now holds both constants and looks the message
+ * up by the blocked route, and S19 in `save-first-gate.feature` went green with no assertion edited.
+ * Both strings below stay byte-verbatim and deliberately inconsistent with each other — legacy's own
+ * inconsistency is the contract, and these two are what `exact: true` pins. Schedule 1 is NOT affected:
+ * legacy gives it one
  * such link and one string (`schedule1.xhtml:497`), which the app matches verbatim. Verified by sweeping
  * every legacy `.xhtml` for "saved before opening" — exactly three hits, all accounted for here.
  */
