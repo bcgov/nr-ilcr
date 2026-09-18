@@ -153,7 +153,7 @@ class CheckStatusSweepIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("514/2021: Schedule 4's ISSUES verdict rides through verbatim; nothing is mutated")
+  @DisplayName("514/2021: Schedule 4's verdict rides through verbatim; nothing is mutated")
   void sweep_carriesSchedule4Verdict_mutatesNothing() throws Exception {
     String before = footprint(514, 2021);
 
@@ -161,17 +161,21 @@ class CheckStatusSweepIT extends AbstractOracleIT {
         .perform(sweep(514, 2021))
         .andExpect(status().isOk())
         .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].schedule", is("4")))
-        .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].requirementsMet", is(false)))
+        // MET since #465: Harbour Dump's Volume-only category is not a finding (legacy never
+        // required a Schedule 4 Cost).
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].requirementsMet", is(true)))
         // The schedule's own DTO, untouched: outcome/messages/locations exactly as
-        // Schedule4CheckStatusIT.mixed_issues pins them.
-        .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].verdict.outcome", is("ISSUES")))
-        .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].verdict.messages.length()", is(0)))
+        // Schedule4CheckStatusIT.volumeOnlyCategory_notReported_met pins them.
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].verdict.outcome", is("MET")))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".schedules[3].verdict.messages.length()", is(1)))
         .andExpect(
             jsonPath(TRACK_1_TO_10 + ".schedules[3].verdict.locations[0].name", is("Harbour Dump")))
         .andExpect(
+            jsonPath(TRACK_1_TO_10 + ".schedules[3].verdict.locations[0].issues.length()", is(0)))
+        .andExpect(
             jsonPath(
-                TRACK_1_TO_10 + ".schedules[3].verdict.locations[0].issues[0].message.text",
-                is("Value Required")));
+                TRACK_1_TO_10 + ".schedules[3].verdict.locations[0].messages[0].text",
+                is("All requirements for Harbour Dump have been met.")));
 
     assertEquals(before, footprint(514, 2021), "the sweep must not change any data or status");
   }

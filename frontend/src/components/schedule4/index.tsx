@@ -43,6 +43,8 @@ import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import {
   ALL_CATEGORIES,
+  checkStatusFieldLabel,
+  checkStatusLocationName,
   isLocationFormValid,
   validateLocationForm,
   type CategoryForm,
@@ -64,6 +66,18 @@ const copyWarning = (name: string): string =>
 // unsaved NEW location — must save first). Client-only confirm chrome, verbatim from the bundle.
 // Per-location comments cap (backend @Size(3500); the TRANSPORTATION_REPORT.COMMENTS column is 4000).
 const COMMENTS_MAX = 3500
+
+// A Check Status issue arrives as {code, message} — the API names the field by code and sends the
+// bare "Value Required" (Story 10.4 §Decision 4). Legacy named the field on every issue
+// ("Location : <name> - Lakeside Dry Dump (Cost $): Value Required", Schedule4MB.java:688); without
+// it two issues on one location render as two identical banners (#326). The label is the client's
+// own display name for that code (validation.ts), so prefixing it is not inventing text the API
+// never sent (AD-8) — the same route Schedule 8 takes with `field`. An unknown code falls back to
+// the bare text. Since #465 the only field the API reports is the location description.
+const describeIssue = (code: number, text: string): string => {
+  const label = checkStatusFieldLabel(code)
+  return label === undefined ? text : `${label}: ${text}`
+}
 
 // Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
 // browser Back button returns from a sub-page to the location list.
@@ -969,10 +983,10 @@ const Schedule4: FC = () => {
               />
             ))}
             {checkResult.locations.map((location) => (
-              <div key={`loc-${location.id ?? location.name}`}>
+              <div key={`loc-${location.id ?? checkStatusLocationName(location)}`}>
                 {location.messages.map((msg) => (
                   <InlineNotification
-                    key={`met-${location.id ?? location.name}-${msg.key}-${msg.text}`}
+                    key={`met-${location.id ?? checkStatusLocationName(location)}-${msg.key}-${msg.text}`}
                     kind="success"
                     lowContrast
                     title="Check Status"
@@ -981,11 +995,11 @@ const Schedule4: FC = () => {
                 ))}
                 {location.issues.map((issue) => (
                   <InlineNotification
-                    key={`issue-${location.id ?? location.name}-${issue.code}`}
+                    key={`issue-${location.id ?? checkStatusLocationName(location)}-${issue.code}`}
                     kind="warning"
                     lowContrast
-                    title={`${location.name} — required`}
-                    subtitle={issue.message.text}
+                    title={`${checkStatusLocationName(location)} — required`}
+                    subtitle={describeIssue(issue.code, issue.message.text)}
                   />
                 ))}
               </div>
