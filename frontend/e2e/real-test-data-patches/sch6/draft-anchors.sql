@@ -209,7 +209,14 @@ DECLARE
     -- on (every other domain pins <= 2023), so 2025 collides with nothing by construction. The
     -- reporting-period insert above now derives its year from this table, so the 2025 period row is
     -- created automatically and Home's year dropdown offers it.
-    t_anchor( 9050, 2025, 'D')   -- S23 stored-incomplete, fixed on screen (false-RED arm)
+    t_anchor( 9050, 2025, 'D'),  -- S23 stored-incomplete, fixed on screen (false-RED arm)
+    -- The two ACCESSIBILITY sweeps that need a SAVED RECORD on screen (added 2026-09-18). Every other
+    -- @a11y sweep is a pure reader and needs no cell of its own: the empty-Draft, blank-Add-panel and
+    -- validation-error sweeps ride the validate-only cell (nothing is ever written there), the
+    -- read-only sweep reads S17's seeded records, and the context-suppressed sweep needs no anchor at
+    -- all. Also in 2025, for the same reason S23 is.
+    t_anchor(10050, 2025, 'D'),  -- @a11y a saved record's row expanded
+    t_anchor(12050, 2025, 'D')   -- @a11y a Check Status verdict with findings on screen
   );
 BEGIN
   FOR i IN 1 .. l_anchors.COUNT LOOP

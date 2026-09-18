@@ -11,13 +11,14 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-18 — ALL 23 SLICES AUTHORED AND GREEN** (thirty-two scenarios; several slices are
-more than one — see the count below). **23 of 23 slices covered.**
+**STATUS 2026-09-18 — COMPLETE.** All **23 of 23 slices** plus the **accessibility sweeps**:
+thirty-nine scenarios, **37 passing** and **2 deliberate tagged reds** excluded from
+`npm run test:gate`. `defects.md` GAP-1 (accessibility) is CLOSED.
 
-**The story is NOT done.** Accessibility (`accessibility.feature`, `@a11y`) is in scope and is **not
-yet written** — the entire remaining half. This is exactly the shape of Story 28.4's GAP-5, where
-Schedule 5 reached "all 25 slices authored" with zero accessibility coverage and the slice count read
-as completeness. The count now reads 23 of 23; the board item is not. See `defects.md` GAP-1.
+The two reds are both `@discovered-bug`, and only one of them is this page's: **BUG-1** is the app-wide
+Carbon `aria-errormessage` wiring, already tracked elsewhere and merely confirmed present here;
+**BUG-2** is new — a live character counter left on the disabled General Comments field of a submitted
+schedule. See `defects.md` sections 2 and 3.
 
 **Scope is 23 slices, S01–S23.** The slice catalogue said 21 in three places while the Gherkin folder
 carried 23; corrected under SPEC-1 on the planning branch (`docs/story-28-5-schedule-6-e2e`) before
@@ -30,15 +31,18 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                   11 files
-scenarios (bddgen, @UC-SCH6-001)             32
-preflight/sch6-anchors.setup.ts              22 checks
-pinned (mill, year) anchors                  19  — 15 mutating/validate-only in 2024, 1 in 2025
-                                                  (9050/2025, S23 — 2024's ACT mills are exhausted),
-                                                  1 read-only (24051/2024, Submitted + seeded), plus
-                                                  2 guards (1/2017 closed-mill, 23050/2024
-                                                  deliberately absent)
-@discovered-divergence / @discovered-bug      0
+features/sch6/**/*.feature                   12 files
+scenarios (bddgen, @UC-SCH6-001)             39  — 32 slice + 7 accessibility
+  ...of which pass `npm run test:gate`         37  (2 excluded by @discovered-bug)
+preflight/sch6-anchors.setup.ts              24 checks
+pinned (mill, year) anchors                  21  — 15 mutating/validate-only in 2024, 3 in 2025
+                                                  (9050 S23, 10050 + 12050 the two a11y sweeps that
+                                                  need a saved record — 2024's ACT mills are
+                                                  exhausted), 1 read-only (24051/2024, Submitted +
+                                                  seeded), plus 2 guards (1/2017 closed-mill,
+                                                  23050/2024 deliberately absent)
+@discovered-divergence / @discovered-bug      2  — both @discovered-bug, both accessibility:
+                                                  BUG-1 (app-wide, tracked elsewhere) and BUG-2 (new)
 ```
 
 Thirty-two scenarios over twenty-three slices, because five slices need more than one:
@@ -51,7 +55,17 @@ Thirty-two scenarios over twenty-three slices, because five slices need more tha
 | S14 | 4 | a 3-row `Scenario Outline` (both bounds + the 3-decimal case) plus a correction arm |
 | S16 | 3 | a 2-row `Scenario Outline` (both bounds) plus a correction arm |
 
-Verification runs, 2026-09-18 (S21/S22/S23 — the last three):
+Verification runs, 2026-09-18 (the accessibility sweeps):
+
+- full suite preflight → **204 passed**, at `--workers=2`
+- `@a11y` sweeps → **5 of 7 green**; the 2 reds are the tagged ones (BUG-1, BUG-2)
+- under the gate filter (`--grep-invert "@discovered-bug|@discovered-divergence"`) → **5 passed**
+- `--repeat-each=5 --workers=1` over the five green sweeps → **25 passed**, 5/5 stable
+- whole UC at `--workers=2` → **37 passed**, 2 tagged reds; under the gate filter **37 passed**
+- two reds triaged before authoring was called done: one is the known app-wide rule (quiet-logged by
+  `KNOWN_A11Y_RULES`), the other measured from the rendered pixels rather than taken on axe's word
+
+Earlier, for S21/S22/S23 — the last three slices:
 
 - full suite preflight → **202 passed** (180 before sch6 + 22), at `--workers=2`
 - the three scenarios: S22/S23 green first run, **S21 red first run on a strict-mode violation** — the
@@ -125,6 +139,31 @@ every domain. It happened here to sch1's `13050/2017`. The fix is NOT a manual D
 domain's own scenario (`--grep @S01 --no-deps`) exercises its real teardown and restores the anchor,
 because fixtures tear down even when the scenario fails. Verified — preflight returned to green with no
 hand-written SQL.
+
+**A fourth trap, found by the full-suite gate run on 2026-09-18 — a worker CRASH is not an interrupt,
+and the documented recovery above does NOT apply to it.** The whole-suite `test:gate` run finished
+**521 passed, 1 failed**, and the failure was not an assertion:
+
+```
+Error: worker process exited unexpectedly (code=3221226505, signal=null)
+```
+
+`0xC0000409` is `STATUS_STACK_BUFFER_OVERRUN` — the Chromium worker process died. S11 was mid-flight, so
+its fixture teardown never ran and it stranded `E2E S11 supply-block-less record` on `23052/2024`. S11
+then passed **3/3 in isolation**, so this is the flake/environment class, not the test and not the app.
+
+**Why re-running the scenario does NOT fix it here, unlike the interrupt case above.** S11's anchor
+Given asserts the cell is empty *before* the record Given registers its cleanup. With a stranded record
+the FIRST Given fails, the second never runs, nothing is registered, and the teardown that would have
+removed the residue never happens — so the re-run fails identically, for ever. The interrupt case
+self-heals only because the scenario got far enough to register.
+
+The correct recovery is the one preflight's own failure message prints: delete the leftover through the
+**app's own endpoint**, not hand-written SQL —
+`DELETE /api/v1/schedule6/records/{recordId}?millId=<m>&year=<y>` (no `revisionCount`; that endpoint
+carries no revision token). Verified: the anchor returned to empty, preflight went green, and S11 then
+passed. So the rule is: **an interrupted run → re-run that scenario; a CRASHED worker → delete the
+residue through the API first, then re-run.**
 
 Scenario runs in this domain use `--no-deps` so a sibling domain's residue cannot block them; the sch6
 preflight is always run separately and in full, so nothing sch6 depends on goes unchecked.
@@ -757,14 +796,75 @@ dropped or `@skip`ped - there is no scenario to skip, because the state it descr
 
 ---
 
+## Accessibility (`accessibility.feature`, `@a11y`) - NFR1, WCAG 2.1 AA
+
+Seven sweeps, **one scan per scenario**, pointer parked before each. Not driven by the slice catalogue -
+accessibility is an NFR that no slice asks for, which is exactly why it is tracked separately
+(`defects.md` GAP-1, now CLOSED).
+
+| # | Surface | Anchor | Result |
+|---|---|---|---|
+| 1 | the empty Draft schedule - list placeholder, totals, general comment | validate-only (no write) | green |
+| 2 | the blank Add panel - six entry controls, two filterable comboboxes | validate-only (no write) | green |
+| 3 | the Add panel showing **validation errors** | validate-only (no write) | **red - BUG-1** (app-wide) |
+| 4 | a saved record's **expanded row** - row editor, derived cells, Delete | 10050/2025 | green |
+| 5 | a **Check Status verdict with findings** - the notification list | 12050/2025 | green |
+| 6 | the **read-only** (non-Draft) schedule - every control disabled | 24051/2024 (S17's, read-only) | **red - BUG-2** (new) |
+| 7 | the **context-suppressed** guard state - notification instead of body | none needed | green |
+
+**Why one sweep covers all three context guards.** S06/S07/S08 render through the same shared
+`components/core/ScheduleLoadState` and differ only in message text and title, so sweeping one exercises
+the whole render path; three sweeps would re-scan identical structure. The context-suppressed one is
+used because it needs no anchor at all.
+
+**Why most sweeps need no anchor of their own.** Rows 1-3 ride the shared **validate-only** cell, whose
+contract is that nothing is ever written there - three more pure readers cannot collide with each other
+or with S05/S12-S16. Row 6 reads S17's seeded read-only cell, which S17 also only reads. Row 7 needs
+none. Only rows 4 and 5 put a saved record on screen, so only those two have cells, and both are in 2025
+because 2024's ACT mills are exhausted.
+
+**One scan per scenario is load-bearing, not tidiness.** A scenario that swept several surfaces in
+sequence would stop at the first violation and silently lose the rest - and two of these surfaces ARE
+red, so the scans after them would have been lost.
+
+### The two reds, and why neither is masked
+
+Both are tagged `@discovered-bug`, so both are **excluded from `npm run test:gate`** and neither blocks
+it. The failing state IS the tracking signal; Playwright isolates tests, so an honest red costs nothing
+else.
+
+- **BUG-1** (`aria-valid-attr-value`, critical) - Carbon points assistive technology at an error message
+  it never announces, so a validation error reaches nobody. **App-wide, already tracked** (sch11's
+  BUG-1) and listed in `KNOWN_A11Y_RULES`, so it logs one line rather than a full dump. Confirmed
+  present here on `#add-volume`; the fix belongs to the app-wide item.
+- **BUG-2** - the disabled General Comments field still shows its live character counter, at **1.73:1**.
+  New, and found by this work. Measured from the rendered pixels (`rgba(22, 22, 22, 0.25)` composited to
+  `rgb(197, 197, 197)` on white) rather than taken on axe's word. **Probably WCAG-exempt** - 1.4.3 gives
+  text in an *inactive* component no contrast requirement - but it still points at a real oddity, and
+  the WCAG call is BA/QA's rather than the test author's, so it stays red pending their choice.
+
+**`color-contrast` is deliberately NOT added to `KNOWN_A11Y_RULES`.** That list is scoped by rule id
+suite-wide, and `color-contrast` carries GENUINE reds elsewhere - the authored Home welcome message
+(sec BUG-1) and Schedule 4's row-hover contrast. Silencing it would hide those. The louder logging is
+the correct trade.
+
+---
+
 ## Remaining work
 
-**All 23 slices are authored and green.** What is left is the accessibility half:
+**Nothing outstanding in this use case.** All 23 slices and the accessibility sweeps are authored;
+`defects.md` GAP-1 is closed.
 
-- `accessibility.feature` (`@a11y`) is **not yet written** - `defects.md` GAP-1. This is the whole
-  remaining scope of the story, and the slice count now reads complete while it is untouched, which is
-  precisely the trap Story 28.4's GAP-5 recorded.
-- One clean `npm run test:gate` over the whole suite at `--workers=2` is still owed.
+- **The full-suite `npm run test:gate` at `--workers=2` has now been RUN** (2026-09-18, 26 minutes):
+  **521 passed, 1 failed** - and the one failure was a Chromium **worker crash**
+  (`STATUS_STACK_BUFFER_OVERRUN`) on S11, not an assertion. S11 passed 3/3 in isolation afterwards, and
+  the residue the crash stranded was cleared through the app's own DELETE. So the suite is green on
+  merit, but **a clean single-pass 522/522 has not yet been observed** - the crash is an environment
+  flake on this box (see the fourth trap above), and it is worth one more run on CI, where `workers: 1`
+  makes it far less likely.
+- Four items await a human, all on `defects.md`: **BUG-2** (the only one that is a code change),
+  **SPEC-2** (accept the required-field wording), **VER-5** (the lingering error), **VER-7** (should a
+  comment-only schedule count as met). None blocks the gate.
 
 S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
 when the SCHEDULE fails while some individual record passes, which takes two records on one anchor -

@@ -1,6 +1,8 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  A11Y_CHECK_ANCHOR,
+  A11Y_ROW_ANCHOR,
   AREA_TYPE_CORRECTION_ANCHOR,
   COMMENT_ONLY_ANCHOR,
   MIXED_CHECK_ANCHOR,
@@ -88,6 +90,8 @@ const ANCHORS: Record<string, Sch6Anchor> = {
   'multi-missing': MULTI_MISSING_ANCHOR,
   'unsaved-break': UNSAVED_BREAK_ANCHOR,
   'unsaved-fix': UNSAVED_FIX_ANCHOR,
+  'a11y-row': A11Y_ROW_ANCHOR,
+  'a11y-check': A11Y_CHECK_ANCHOR,
 };
 
 Given(
@@ -1121,6 +1125,18 @@ Then('Check Status reports the second row is missing its cost', async ({ schedul
   await expect(schedule6Page.notification(S20_MISSING_COST_LINE)).toBeVisible();
   // And the severity word, not colour alone (NFR1).
   await expect(schedule6Page.notification('Action required')).toBeVisible();
+});
+
+// ---- Shared by the accessibility sweeps ------------------------------------------------------------
+
+When('I expand the saved record', async ({ schedule6Page, world }) => {
+  // A VALUE-FREE expand, unlike the slice steps that expand and then assert their own figures. The
+  // a11y sweeps care about the row EDITOR being on screen — its six inputs, its derived cells and its
+  // Delete button — not about what the record contains, so binding this to any slice's values would
+  // make the sweep fail for a reason that has nothing to do with accessibility.
+  //
+  // Ordinal 1: every a11y anchor holds exactly the one record its own Given created.
+  await schedule6Page.expandRecord(1, world.sch6RecordId!);
 });
 
 // ---- S21 — one record missing several values at once -----------------------------------------------

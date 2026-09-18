@@ -14,27 +14,37 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-18 — ALL 23 SLICES AUTHORED AND GREEN** (thirty-two scenarios); **23 of 23 slices
-covered.** Seven verified-not-a-defect findings. **No divergences and no bugs were found in the
-application anywhere in this use case** — every red encountered across all 23 slices turned out to be
-the test being wrong, and each is recorded where it happened.
+**STATUS 2026-09-18 — COMPLETE.** All **23 of 23 slices** plus the **accessibility sweeps** are
+authored: thirty-nine scenarios, of which **37 pass** and **2 are deliberate, tagged reds** excluded
+from `npm run test:gate`. Seven verified-not-a-defect findings.
 
-**The story is not finished.** Accessibility (`accessibility.feature`, `@a11y`) is in scope and has not
-been started — see GAP-1. The slice count now reads complete; the board item does not.
+**Across the 23 functional slices, no divergence and no bug was found in the application** — every red
+encountered there turned out to be the test being wrong, and each is recorded where it happened.
+
+**The accessibility work found two**, which is the point of having done it:
+
+- **BUG-1** — validation errors are not announced to screen readers. **App-wide Carbon issue, already
+  tracked** elsewhere; confirmed present here.
+- **BUG-2** — a live character counter is still shown on the disabled General Comments field of a
+  submitted schedule, at 1.73:1. **New.** Probably WCAG-exempt (inactive component) but pointing at a
+  real oddity; needs a BA/QA choice. See section 2.
 
 **Worth stating plainly for triage:** S22/S23, the two slices that are a live defect on Schedule 5
 (issue #476 / app-wide #359), are **green here**. Schedule 6 already judges what is on screen rather
 than what is in the database. They stand as a regression guard — see section 1.
 
-**Three things need a human, all on this page.** None blocks the story:
+**Four things need a human, all on this page.** None blocks the gate:
 
-1. **SPEC-2** — please accept the wording *"TSA or TFL: Value is required."* for a blank TSA/TFL
+1. **BUG-2** — hide the character counter on the disabled General Comments field (recommended), or
+   accept the contrast as WCAG-exempt and record a node exclusion. Either closes it. *This is the only
+   one of the four that is a code change.*
+2. **SPEC-2** — please accept the wording *"TSA or TFL: Value is required."* for a blank TSA/TFL
    submission. It cannot be checked against legacy (the old message came from a framework that is
    gone), so it is a decision rather than a lookup.
-2. **VER-5** — a corrected field keeps showing its old error until Add Report is pressed again. Not a
+3. **VER-5** — a corrected field keeps showing its old error until Add Report is pressed again. Not a
    fault, and nothing is mis-stored; the question is whether you want it to clear as you type, which
    would be an enhancement.
-3. **VER-7** — should a mill that saved only a general comment and no road records count as having met
+4. **VER-7** — should a mill that saved only a general comment and no road records count as having met
    Schedule 6's requirements? The app says yes; legacy said no (recorded deviation (d)). A business
    rule question, not a defect.
 
@@ -63,32 +73,110 @@ than what is in the database. They stand as a regression guard — see section 1
 
 ## 2. Bugs / regressions
 
-*None.*
+### BUG-1 — validation errors are not announced to screen readers — OPEN (app-wide, already tracked)
+
+**Not Schedule 6's defect, and not new.** When a field is rejected, Carbon's text input points assistive
+technology at an error message it never actually announces. A screen-reader user presses **Add Report**,
+hears nothing, and the form simply does not submit — they are given no way to know why.
+
+**It affects every schedule's validation-error state**, not this page: it is a wiring problem inside the
+`@carbon/react` component. Already found, triaged and recorded as **BUG-1** in
+`features/sch11/uc-sch11-001-report-costs/defects.md`, and listed in the suite's `KNOWN_A11Y_RULES`
+(rule `aria-valid-attr-value`, impact **critical**) so a known red reports one line instead of a full
+dump.
+
+**Confirmed present on Schedule 6** by the accessibility sweep of the Add panel's error state
+(2026-09-18), on the Volume field. Recorded here so this UC's own ledger is complete; **the fix belongs
+to the app-wide item, not to this story.**
+
+**Test:** `accessibility.feature` `@discovered-bug` — deliberately RED, and excluded from
+`npm run test:gate`. It goes green on its own when the app-wide fix lands.
+
+### BUG-2 — a live character counter on a field nobody can type into — OPEN (new, found by the sweep)
+
+**This is the one finding the accessibility work turned up.**
+
+**What's wrong.** On a **submitted** (non-Draft) Schedule 6, everything is correctly locked — but the
+General Comments box still displays its live character counter, *"372 characters remaining"*, and it is
+rendered so faintly as to be effectively invisible.
+
+**Expected vs actual.** Expected: a field that cannot be typed into does not advertise how much room is
+left in it. Actual: the counter is still there, greyed to the point of being unreadable.
+
+**How caught.** The read-only accessibility sweep (`accessibility.feature`), then measured directly from
+the rendered pixels rather than taken on the scanner's word:
+
+| Text | Colour | Effective over white | Ratio | WCAG 1.4.3 (4.5:1) |
+|---|---|---|---|---|
+| "372 characters remaining", field **disabled** | `rgba(22, 22, 22, 0.25)` | `rgb(197, 197, 197)` | **1.73:1** | fails on its face |
+| the same helper text **enabled**, for reference | `#525252` | — | 7.81:1 | passes |
+
+**Is it actually a WCAG failure? Probably not — and that matters.** WCAG 1.4.3 carries an explicit
+exception: text that is *"part of an inactive user interface component"* has **no contrast
+requirement**. The field is genuinely disabled, so its own helper text is exempt by the letter of the
+standard. The scanner flags it only because the counter is a separate element beside the field rather
+than the field itself, so the rule cannot tell it belongs to something inactive. That is a known
+limitation of the check, not a verdict about this page.
+
+**So why is it recorded as a bug, and left failing?** Two reasons:
+
+1. **The contrast question is BA/QA's to settle, not the test author's.** Waving away a critical-looking
+   scanner result on a WCAG interpretation is exactly the sort of call that should be made by the people
+   who own the standard for this product.
+2. **The finding points at something real regardless of the contrast.** A live "characters remaining"
+   counter on a field nobody can edit is simply wrong — it is telling a reporter about capacity they
+   cannot use. **Not rendering the counter when the field is disabled fixes the odd behaviour and
+   clears the scanner finding as a side effect**, which is why it is the recommended direction.
+
+**What is being asked of BA/QA.** Choose one:
+
+- **(recommended)** hide the character counter when the General Comments field is disabled — a small
+  frontend change that resolves both halves; or
+- accept the contrast as WCAG-exempt and record a node-level exclusion for this one element, leaving the
+  counter as it is.
+
+Either way this closes. **Nothing else on the read-only page is affected** — the sweep reports this one
+element and nothing more, which is what makes the finding precise rather than a blanket red.
+
+**Why the rule is not silenced suite-wide.** `color-contrast` carries *genuine* failures elsewhere in
+this suite — the authored Home welcome message (sec BUG-1) and Schedule 4's row-hover contrast — so
+adding it to `KNOWN_A11Y_RULES` would hide those. The louder logging is the correct trade.
+
+**Test:** `accessibility.feature` `@p1 @S17 @discovered-bug` — deliberately RED, excluded from
+`npm run test:gate`.
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — accessibility coverage not yet authored — OPEN
+### GAP-1 — accessibility coverage — CLOSED 2026-09-18
 
-**What is missing.** All 23 slices are covered. **The accessibility sweeps are not written at all** —
-`accessibility.feature` (`@a11y`) does not exist yet, and it is now the ENTIRE remaining scope of this
-story.
+**What was missing.** All 23 slices were covered while `accessibility.feature` did not exist at all.
+This entry existed because accessibility is an NFR that **no slice in the catalogue asks for**, so the
+slice count would otherwise have read as completeness — which is exactly what happened on Story 28.4
+(Schedule 5 reached "all 25 slices authored" with zero accessibility coverage; its GAP-5, whose lesson
+was *"a slice catalogue is not a completeness test"*).
 
-**This is the moment GAP-1 was written for.** The slice ledger reads 23 of 23, and a reader glancing at
-the count would call the story done. Story 28.4 did exactly that: Schedule 5 reached "all 25 slices
-authored" with zero accessibility coverage, because accessibility is an NFR that no slice in the
-catalogue asks for, so the count read as completeness while half of board item #97 was unverified. The
-recorded lesson was *"a slice catalogue is not a completeness test."* It applies now, not earlier.
+**Now closed.** `accessibility.feature` sweeps seven surfaces, one scan per scenario, pointer parked:
 
-**What it will take.** Sibling precedent is `features/sch4/.../accessibility.feature` — axe sweeps over
-each distinct render state, using the shared `the {string} view has no WCAG 2.1 AA accessibility
-violations` steps that already exist in `steps/common/assertions.steps.ts`. Schedule 6's distinct states
-are: the empty Draft, the Add panel open, a saved record expanded, the totals/comment strip, the
-read-only (non-Draft) render, the three context guards, and a Check Status verdict on screen. Several
-need no new anchor — the read-only sweep can read S17's seeded cell and the guards write nothing — but a
-sweep that opens the Add panel will want the validate-only cell rather than a mutating one.
+| Surface | Result |
+|---|---|
+| the empty Draft schedule | green |
+| the blank Add panel | green |
+| the Add panel showing validation errors | **red — BUG-1**, app-wide, already tracked |
+| a saved record's expanded row | green |
+| a Check Status verdict with findings | green |
+| the read-only (non-Draft) schedule | **red — BUG-2**, new (see above) |
+| the context-suppressed guard state | green |
 
-**Disposition.** Expected to close within Story 28.5. Board item **#101**; the PR body must say
-"Fixes #101", so this entry closing is a precondition for that claim being true.
+**One sweep covers all three context guards** — S06/S07/S08 render through the same shared
+`ScheduleLoadState` component and differ only in message text, so sweeping one exercises the whole
+render path. The context-suppressed one is used because it needs no anchor at all.
+
+**Five of seven green; both reds are tagged `@discovered-bug`** and therefore excluded from
+`npm run test:gate`, so neither blocks the gate while it is open. Stability: `--repeat-each=5` over the
+five green sweeps → 25/25.
+
+**Disposition.** Closed. Board item **#101** — the remaining open items on this page are BUG-2 (new,
+needs a BA/QA choice), BUG-1 (app-wide, not this story's), and the three judgement items in the header.
 
 ### GAP-2 — one scenario in the source cannot happen on this screen — OPEN (informational)
 

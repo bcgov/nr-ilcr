@@ -232,6 +232,30 @@ export const UNSAVED_BREAK_ANCHOR: Sch6Anchor = { key: { millId: 25054, year: 20
  */
 export const UNSAVED_FIX_ANCHOR: Sch6Anchor = { key: { millId: 9050, year: 2025 }, mill: MILL_760 };
 
+// ---------------------------------------------------------------------------------------------------
+// THE ACCESSIBILITY SWEEPS (@a11y, NFR1 — WCAG 2.1 AA)
+//
+// MOST SWEEPS NEED NO ANCHOR OF THEIR OWN, and that is deliberate rather than thrifty:
+//   * the empty-Draft, blank-Add-panel and validation-error sweeps all ride VALIDATE_ONLY_ANCHOR,
+//     whose whole contract is that nothing is ever written there — three more pure readers cannot
+//     collide with each other or with S05/S12-S16;
+//   * the read-only sweep reads READ_ONLY_ANCHOR's seeded records, which S17 also only reads;
+//   * the context-suppressed sweep needs no anchor at all — it is about the ABSENCE of a working
+//     context, which lives in the browser.
+// Only the two sweeps that need a SAVED RECORD on screen have to write, so only those two get cells.
+//
+// BOTH ARE IN 2025, because 2024 is full: the extract has 17 ACT mills and sch6 pins 15 of them at
+// 2024 (plus 23050, whose absence is S08's fixture), and S21/S22 took the last two. Same structural
+// invariant as S23 — "year >= 2024 belongs to sch6" — and `draft-anchors.sql` derives its
+// reporting-period row from the anchor table, so 2025 needs no separate bookkeeping.
+// ---------------------------------------------------------------------------------------------------
+
+/** @a11y — a saved record's row expanded, so the row editor's own fields are in the scan. */
+export const A11Y_ROW_ANCHOR: Sch6Anchor = { key: { millId: 10050, year: 2025 }, mill: MILL_2121 };
+
+/** @a11y — a Check Status verdict with findings on screen (the notification list). */
+export const A11Y_CHECK_ANCHOR: Sch6Anchor = { key: { millId: 12050, year: 2025 }, mill: MILL_987 };
+
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
   { name: 'edit (S02)', anchor: EDIT_ANCHOR },
@@ -249,6 +273,8 @@ export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'multi-missing (S21)', anchor: MULTI_MISSING_ANCHOR },
   { name: 'unsaved-break (S22)', anchor: UNSAVED_BREAK_ANCHOR },
   { name: 'unsaved-fix (S23)', anchor: UNSAVED_FIX_ANCHOR },
+  { name: 'a11y-row', anchor: A11Y_ROW_ANCHOR },
+  { name: 'a11y-check', anchor: A11Y_CHECK_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
