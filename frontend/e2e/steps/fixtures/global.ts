@@ -96,6 +96,22 @@ export type World = {
    */
   sch4ListedBefore?: string[];
 
+  // --- sch6 ---
+  // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above, so
+  // the promoted common step (steps/common/home-context.steps.ts) serves Schedule 6 unchanged.
+  /**
+   * The per-record comment the scenario owns — its cleanup handle AND the way later steps find the
+   * record it created. A road record has no unique natural key (the same TSA/Supply Block pair may
+   * legitimately repeat), so the comment is what identifies "the record this scenario made".
+   */
+  sch6RecordComment?: string;
+  /**
+   * The `ROAD_MAINTENANCE_REPORT_ID` of the record the scenario created, read back from the API once
+   * the add succeeds. Needed because every row-scoped locator is keyed on it (`row-<recordId>-volume`),
+   * so a Then cannot address the new row until a previous step has captured this.
+   */
+  sch6RecordId?: number;
+
   // --- sch11 ---
   // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above —
   // Schedule 11 deliberately reuses them so the promoted common step
