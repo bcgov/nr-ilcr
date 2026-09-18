@@ -782,6 +782,28 @@ describe('Schedule8 sample level', () => {
     expect(await screen.findByText('Page Summary')).toBeInTheDocument()
   })
 
+  // @carbon/react 1.116 throws when a TextInput's labelText holds interactive content, which is how
+  // the two Skyline fields used to carry their legacy "Note:" hint. The hint now sits beside a visible
+  // heading above the input; the input's own (visually hidden) label is the bare field name, so the
+  // accessible name is not polluted by the hint's text.
+  test('the Skyline note fields keep a plain label and a separate tooltip trigger (lock-file #462)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openSamples()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+
+    const support = screen.getByLabelText('Support Number')
+    expect(support).toHaveAccessibleName('Support Number')
+    await userEvent.type(support, '3')
+    expect(support).toHaveValue('3')
+    expect(screen.getByLabelText('Support Avg Distance (m)')).toHaveAccessibleName(
+      'Support Avg Distance (m)',
+    )
+    // The hints are still reachable, as their own focusable triggers.
+    expect(screen.getByRole('button', { name: 'enter number' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'enter number - average' })).toBeInTheDocument()
+  })
+
   test('a nonzero Helicopter % reveals the Helicopter sub-block and enforces its fields', async () => {
     const put = vi.fn()
     server.use(
