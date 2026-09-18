@@ -302,27 +302,43 @@ public class ReportTrackTransitionService {
     TrackTransition transition =
         TrackTransition.resolve(current, TrackTransition.VERIFY.to())
             .filter(TrackTransition.VERIFY::equals)
-            .orElseThrow(
-                () -> {
-                  // Legacy's own answer, not a fix over it: the DAO returned false
-                  // (isMillReportStatusValid:448 refuses a no-op and both direct D<->V jumps),
-                  // ILCRService.submitReport:718-723 — void — turned that into
-                  // ILCSException(SCHEDULE_NOT_SUBMITTED), ILCSException:50 maps it to
-                  // reportSubmissionErrorMsg, and the bean's catch (CheckStatusMB:289-292) showed
-                  // it INSTEAD of the verified message at :284. Passing null selects that generic
-                  // key deliberately: VERIFY.rejectedKey() carries 15.4's more specific wording,
-                  // which is a ruled DEPARTURE from legacy and belongs to submit, not here.
-                  log.info(
-                      "Verify 409: transition {}->{} is not legal for millId={} year={}",
-                      current,
-                      TrackTransition.VERIFY.to(),
-                      millId,
-                      year);
-                  return new ReportTransitionRejectedException(null);
-                });
+            .orElseThrow(() -> refusedVerify(current, millId, year));
 
     return writer.write(
         millId, year, transition.to(), transition.categoryState(), actingUser, actorGuid);
+  }
+
+  /**
+   * The 409 for a verify the track cannot make &mdash; a no-op, either direct Draft&harr;Verified
+   * jump, or a pair legacy's category map never named.
+   *
+   * <p><strong>It carries legacy's generic {@code reportSubmissionErrorMsg}, and that is legacy,
+   * not a fallback.</strong> The legacy DAO's guard returned {@code false} without writing; the
+   * service above it was declared {@code void} and converted that into {@code
+   * ILCSException(SCHEDULE_NOT_SUBMITTED)}, which the exception map keyed to that message, and the
+   * managed bean's catch block rendered it <em>instead of</em> the verified message it would
+   * otherwise have added. So a refused verify showed an error over an unchanged database. {@code
+   * UC-CHK-007-S07} records a "silent success" defect here; that record stops at the bean and the
+   * DAO without reading the service, and hedges itself as unconfirmed.
+   *
+   * <p>Passing {@code null} rather than {@link TrackTransition#VERIFY} is therefore deliberate:
+   * {@link TrackTransition#rejectedKey()} carries Story 15.4's more specific wording, which is a
+   * business-ruled DEPARTURE from legacy and belongs to submit. Epic 17's tie-breaker is legacy.
+   *
+   * @param current the track's stored status code, for the log line only
+   * @param millId the mill
+   * @param year the reporting year
+   * @return the exception to throw
+   */
+  private static ReportTransitionRejectedException refusedVerify(
+      String current, long millId, int year) {
+    log.info(
+        "Verify 409: transition {}->{} is not legal for millId={} year={}",
+        current,
+        TrackTransition.VERIFY.to(),
+        millId,
+        year);
+    return new ReportTransitionRejectedException(null);
   }
 
   /**

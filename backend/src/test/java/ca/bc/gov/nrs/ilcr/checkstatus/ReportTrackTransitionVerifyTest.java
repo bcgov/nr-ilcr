@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -79,7 +80,7 @@ class ReportTrackTransitionVerifyTest {
     verify(millContextService).findTrackStatusCodes(MILL, YEAR);
     // The lock is submit's (15.3 D10). Verify keeping it off is Epic 17's ratified legacy parity,
     // and the gate->write race it leaves is recorded open in deferred-work.md, not closed here.
-    verify(millContextService, org.mockito.Mockito.never()).lockTrackStatusCodes(MILL, YEAR);
+    verify(millContextService, never()).lockTrackStatusCodes(MILL, YEAR);
   }
 
   @Test

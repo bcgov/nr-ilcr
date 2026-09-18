@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -65,11 +64,18 @@ class ReportTransitionWriterTest {
     }
   }
 
-  /** As above, but one category row missing — the partial-enrolment shape the guard exists for. */
+  /** As above, but ONE category row missing — nine advance, the partial-enrolment shape. */
   private void givenOneCategoryRowIsMissing() {
     for (String categoryId : CATEGORIES) {
       when(repository.advanceCategoryState(MILL, YEAR, categoryId, "V", USER))
           .thenReturn(CATEGORIES.get(0).equals(categoryId) ? 0 : 1);
+    }
+  }
+
+  /** No category row advances at all — zero, which must not read as "nothing to do". */
+  private void givenNoCategoryRowsAdvance() {
+    for (String categoryId : CATEGORIES) {
+      when(repository.advanceCategoryState(MILL, YEAR, categoryId, "V", USER)).thenReturn(0);
     }
   }
 
@@ -150,7 +156,7 @@ class ReportTransitionWriterTest {
   @DisplayName("zero category rows advanced is refused too, not treated as nothing to do")
   void zeroCategoryAdvanceFailsTheTransition() {
     givenTheStatusRowMoves();
-    givenOneCategoryRowIsMissing();
+    givenNoCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
     assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
@@ -175,9 +181,7 @@ class ReportTransitionWriterTest {
   @Test
   @DisplayName("no directory GUID records no auditor, and the transition still succeeds")
   void noDirectoryGuidRecordsNoAuditor() {
-    when(repository.updateTrackStatusWithAuditor(
-            eq(MILL), eq(YEAR), eq("V"), eq(null), eq(null), eq(USER)))
-        .thenReturn(1);
+    when(repository.updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER)).thenReturn(1);
     givenTenCategoryRowsAdvance();
 
     assertThat(writer.write(MILL, YEAR, "V", "V", USER, null)).isEqualTo("V");
@@ -190,9 +194,7 @@ class ReportTransitionWriterTest {
   @DisplayName("an admin with no cross-reference records NULL in both auditor columns")
   void noXrefRecordsNullAuditor() {
     when(millUserXrefRepository.findAssignment(MILL, GUID)).thenReturn(Optional.empty());
-    when(repository.updateTrackStatusWithAuditor(
-            eq(MILL), eq(YEAR), eq("V"), eq(null), eq(null), eq(USER)))
-        .thenReturn(1);
+    when(repository.updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER)).thenReturn(1);
     givenTenCategoryRowsAdvance();
 
     assertThat(writer.write(MILL, YEAR, "V", "V", USER, GUID)).isEqualTo("V");

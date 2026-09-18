@@ -372,6 +372,20 @@ class VerifyReportIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.message.key", is("sch1-10VerifiedMsg")))
         .andExpect(jsonPath("$.message.text", is(VERIFIED_MSG)));
 
+    // Four phases, each a named method rather than one 29-assertion block. The verify MUTATES this
+    // mill, so they cannot be separate @Test methods -- a second POST would answer 409.
+    assertTransitionApplied();
+    assertEveryRowStamped();
+    assertRevisionsFollowLegacy(
+        statusRevisionBefore, summaryRevisionBefore, categoryRevisionBefore);
+    assertNoAuditRowsInserted(summaryAuditBefore, costDetailAuditBefore);
+    assertWrongCategoryDecoysUntouched();
+  }
+
+  /**
+   * AC1/AC2: the track moved, the ten categories with it, Schedule 11 did not, auditor recorded.
+   */
+  private void assertTransitionApplied() {
     assertThat(trackStatus(HAPPY_MILL)).isEqualTo("V");
     assertThat(categoryStates(HAPPY_MILL)).hasSize(10).containsOnly("V");
 
@@ -383,9 +397,13 @@ class VerifyReportIT extends AbstractOracleIT {
     // row.
     assertThat(auditorGuid(HAPPY_MILL)).isEqualTo(ADMIN_GUID);
     assertThat(auditorMillId(HAPPY_MILL)).isEqualTo(764L);
+  }
 
-    // Audit columns: EVERY row stamped, not merely one. Each paired with its row count so an
-    // empty table cannot satisfy the assertion vacuously.
+  /**
+   * AC3: EVERY row stamped, not merely one. Each assertion is paired with its row count so an empty
+   * table cannot satisfy it vacuously.
+   */
+  private void assertEveryRowStamped() {
     assertThat(rowCount("ILCR_MILL_REPORT_STATUS", HAPPY_MILL)).isOne();
     assertThat(unstampedRows("ILCR_MILL_REPORT_STATUS", HAPPY_MILL)).isZero();
 
@@ -400,25 +418,44 @@ class VerifyReportIT extends AbstractOracleIT {
     // through an aggregate that could not distinguish the two.
     assertThat(unstampedCategoryRows(HAPPY_MILL)).isZero();
     assertThat(categoryUpdateUser(HAPPY_MILL, "11")).isEqualTo(SEED_USER);
+  }
 
-    // REVISION_COUNT follows legacy entity by entity: the status row is NOT bumped (plain
-    // @Column), while ILCR_REPORT_SUMMARY and ILCR_REPORT_CATEGORY are (@Version at
-    // ILCRReportSummary:82 / ILCRReportCategory:39, which Hibernate incremented when the sweep
-    // dirtied them). This is load-bearing on the summary: it is the row StaleRevisionException
-    // guards, so legacy REJECTED a concurrent schedule save holding revision n after a verify.
-    assertThat(statusRevision(HAPPY_MILL)).isEqualTo(statusRevisionBefore);
-    assertThat(minSummaryRevision(HAPPY_MILL)).isEqualTo(summaryRevisionBefore + 1);
-    assertThat(minCategoryRevision(HAPPY_MILL)).isEqualTo(categoryRevisionBefore + 1);
+  /**
+   * {@code REVISION_COUNT} follows legacy entity by entity: the status row is NOT bumped (a plain
+   * {@code @Column}), while {@code ILCR_REPORT_SUMMARY} and {@code ILCR_REPORT_CATEGORY} are
+   * ({@code @Version} at {@code ILCRReportSummary:82} / {@code ILCRReportCategory:39}, which
+   * Hibernate incremented when the sweep dirtied them). Load-bearing on the summary: it is the row
+   * {@code StaleRevisionException} guards, so legacy REJECTED a concurrent schedule save holding
+   * revision n after a verify.
+   */
+  private void assertRevisionsFollowLegacy(
+      int statusBefore, int summaryBefore, int categoryBefore) {
+    assertThat(statusRevision(HAPPY_MILL)).isEqualTo(statusBefore);
+    assertThat(minSummaryRevision(HAPPY_MILL)).isEqualTo(summaryBefore + 1);
+    assertThat(minCategoryRevision(HAPPY_MILL)).isEqualTo(categoryBefore + 1);
+  }
 
-    // AC3: the application inserts no _AUD row — delivery triggers own those, and the test
-    // snapshot creates the shadow tables without them (V20260910), so this is directly provable.
+  /**
+   * AC3: the application inserts no {@code _AUD} row — delivery triggers own those, and the test
+   * snapshot creates the shadow tables without them ({@code V20260910}), so this is directly
+   * provable.
+   */
+  private void assertNoAuditRowsInserted(int summaryAuditBefore, int costDetailAuditBefore) {
     assertThat(auditRowCount("ILCR_REPORT_SUMMARY_AUDIT")).isEqualTo(summaryAuditBefore);
     assertThat(auditRowCount("ILCR_COST_REPORT_DETAIL_AUD")).isEqualTo(costDetailAuditBefore);
+  }
 
-    // PARITY: legacy reached five of the thirteen audit tables through a DAO call carrying an
-    // ilcr_category id, so a row of another category was never stamped. R__55 seeds one
-    // wrong-category decoy in EACH of those five tables for this mill; each must still read 'SEED'.
-    // Drop the ILCR_CATEGORY_ID predicate from the sweep and every one of these flips.
+  /**
+   * PARITY: legacy reached five of the thirteen audit tables through a DAO call carrying an {@code
+   * ilcr_category} id, so a row of another category was never stamped. {@code R__55} seeds one
+   * wrong-category decoy in EACH of those five tables for this mill; each must still read {@code
+   * SEED}. Drop the {@code ILCR_CATEGORY_ID} predicate from the sweep and every one flips.
+   *
+   * <p>The last three hide the category in their DAO signature ({@code Schedule4DAO:390}, {@code
+   * Schedule5DAO:308}, {@code Schedule8DAO:134} each bind it internally) — legacy filtered these
+   * too, which an earlier cut got wrong by reading the signatures instead of the named queries.
+   */
+  private void assertWrongCategoryDecoysUntouched() {
     assertThat(decoyUpdateUser("ROAD_MAINTENANCE_REPORT", "ROAD_MAINTENANCE_REPORT_ID", 1078))
         .isEqualTo(SEED_USER);
     assertThat(decoyUpdateUser("CONTRACTUAL_WORK_REPORT", "CONTRACTUAL_WORK_REPORT_ID", 1079))
@@ -427,9 +464,6 @@ class VerifyReportIT extends AbstractOracleIT {
     assertThat(decoyUpdateUser("CULVERT_REPORT", "CULVERT_REPORT_ID", 1081)).isEqualTo(SEED_USER);
     assertThat(decoyUpdateUser("ROAD_CONSTRUCTION_REPRT", "ROAD_CONSTRUCTION_REPRT_ID", 1082))
         .isEqualTo(SEED_USER);
-    // The three whose DAO signature hides the category (Schedule4DAO:390, Schedule5DAO:308,
-    // Schedule8DAO:134 each bind it internally) — legacy filtered these too, which an earlier cut
-    // got wrong by reading the signatures instead of the named queries.
     assertThat(decoyUpdateUser("TRANSPORTATION_REPORT", "TRANSPORTATION_REPORT_ID", 1083))
         .isEqualTo(SEED_USER);
     assertThat(decoyUpdateUser("CAMP_REPORT", "CAMP_REPORT_ID", 1084)).isEqualTo(SEED_USER);
