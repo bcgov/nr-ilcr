@@ -1412,6 +1412,86 @@ describe('Verify the Schedules 1–10 track (Story 17.2)', () => {
     expect(linesIn(item(SCHEDULE_TITLES['1']))).toHaveLength(linesBefore)
     expect(screen.queryAllByRole('status')).toHaveLength(pageBefore + 1)
   })
+
+  // ---- Stale context ---------------------------------------------------------------------------
+
+  test('stale context: a settled verify outcome does not follow the mill/year change — the banner goes, the prompt goes, and the new report is gated on its own status', async () => {
+    const posted = vi.fn()
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+          }),
+        )
+      }),
+      verifyHandler(posted, ok),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await screen.findAllByText(MET_TEXT)
+    // Mill 999 is Submitted as well, so the pair is live again — on ITS status, not left greyed by a
+    // success that belongs to the report the user moved away from, and with no banner from it either.
+    expect(screen.queryByText(VERIFIED_MSG)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    await waitFor(() => {
+      const buttons = verifiedButtons1To10()
+      expect(buttons).toHaveLength(2)
+      for (const button of buttons) {
+        expect(button).toBeEnabled()
+      }
+    })
+    expect(posted).toHaveBeenCalledTimes(1)
+  })
+
+  test('stale context: a prompt left pending across a mill/year change is dismissed, not re-shown over the new report', async () => {
+    const posted = vi.fn()
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+          }),
+        )
+      }),
+      verifyHandler(posted, ok),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    // The change is unreachable behind Carbon's overlay for a real user; the guarantee is that a
+    // question asked about mill 13050 can never be answered `Yes` against mill 999.
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await screen.findAllByText(MET_TEXT)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(posted).not.toHaveBeenCalled()
+
+    // Positive control: asking again in the new context still works.
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1))
+  })
 })
 
 // =================================================================================================
@@ -2059,6 +2139,41 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     // Positive control: the un-flipped flow renders the banner (the AC 1 arms); here the second sweep
     // was for the NEW context, so the page is live for mill 999 with no message from mill 13050.
     expect(String(sweepCalls(getSpy)[1][0])).toContain('millId=999')
+    // And the in-flight lock came off with it. Released only for the dispatching context it would
+    // strand mill 999's pair greyed for the life of the mount, with no banner to explain why.
+    await expectSubmits1To10('enabled')
+  })
+
+  test('stale context: a SETTLED submit outcome does not follow the mill/year change — the banner goes and the new report’s Submit is live', async () => {
+    server.use(
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            canSubmit1To10: true,
+          }),
+        )
+      }),
+    )
+    const submit = submitHandler(submitOk)
+    const user = userEvent.setup()
+    renderAsSubmitter(<ContextSwitchHarness />)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    // The success locks THIS context's pair (D7) — the state that must not be carried over.
+    await expectSubmits1To10('disabled')
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    expect(screen.queryByText(SUBMITTED)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    // Mill 999 is Draft with `canSubmit` true: its Submit is offered on its own verdict.
+    await expectSubmits1To10('enabled')
+    expect(submit.count).toBe(1)
   })
 
   // ---- D10 / regression: nothing else on the three bars gains a click -----------------------

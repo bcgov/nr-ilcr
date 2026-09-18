@@ -257,6 +257,22 @@ const CheckStatus: FC = () => {
   const [verifying, setVerifying] = useState(false)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
 
+  // Every piece of action state above belongs to ONE working context. mill/year lives in a provider,
+  // so a context change does NOT remount this page — the sweep re-issues in place, which is what
+  // `useCheckStatusSweep` and the response guards are all built around — and nothing was resetting
+  // the settled outcome with it (Story 17.2 review, SScholefield). Left standing, the previous
+  // context's banner reappears the moment the new sweep lands, `busy` derived from a success greys
+  // that context's Submit against its own `canSubmit`, and a prompt still pending would answer for a
+  // report the user never confirmed. Adjusted DURING render, not in an effect, so no committed render
+  // ever reads the old context's outcome (React's "adjusting state when a prop changes").
+  const contextKey = `${millId}/${year}`
+  const [actionContext, setActionContext] = useState(contextKey)
+  if (actionContext !== contextKey) {
+    setActionContext(contextKey)
+    setConfirming(null)
+    setOutcome(null)
+  }
+
   // Synchronous, unlike the state flag: two clicks inside one tick would both see `verifying` false.
   const busyRef = useRef(false)
   // Which button opened the prompt, so declining puts focus back where it was. The prompt is mounted
@@ -336,9 +352,11 @@ const CheckStatus: FC = () => {
         }
       })
       .finally(() => {
-        if (isCurrent()) {
-          setSaving(false)
-        }
+        // Released unconditionally, as verify's is: gated on `isCurrent()` it strands the lock when
+        // the context moved while the POST was in flight, and the new context's Submit pair stays
+        // greyed for the life of the mount. The two branches above are what must not write across a
+        // context change; the lock is the opposite — it must always come off.
+        setSaving(false)
       })
   }
 
