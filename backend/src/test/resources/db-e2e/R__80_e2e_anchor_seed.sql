@@ -487,6 +487,15 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- EDITABLE_DRAFT_ANCHORS in the fixture and has its own preflight check, because the list that file
 -- asserts is Draft + editable + record-free and this anchor is none of the three.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 24051, 'S', 'D', 'E2E_SEED');
+-- 25050 / 25052 / 25053 in 2024 — S18, S19 and S20, added 2026-09-18. Each writes, so each needs its
+-- own cell, and all three are empty at rest because every one reaches its state through the app's own
+-- endpoints. S18 stores only a general comment (the backend carries it on a bare BR-09 placeholder row,
+-- which the comment-clearing cleanup PUT removes again, exactly like S04's 13050/2024). S20 is the one
+-- that needs TWO records on ONE cell — Check Status mixed results — which is why it cannot borrow any
+-- other anchor, all of which are asserted record-free at rest.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25052, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25053, 'D', 'D', 'E2E_SEED');
 -- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
 -- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
 -- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It

@@ -77,6 +77,9 @@ const MILL_20174: MillRef = { millNumber: '20174', millName: 'AO CUSTOM' }; // m
 const MILL_20176: MillRef = { millNumber: '20176', millName: 'TANNER LOGS' }; // millId 23052, ACT
 const MILL_7777: MillRef = { millNumber: '7777', millName: 'CGT TEST MILL7' }; // millId 24050, ACT
 const MILL_8888: MillRef = { millNumber: '8888', millName: 'CGI TEST MILL8' }; // millId 24051, ACT
+const MILL_9171: MillRef = { millNumber: '9171', millName: 'BCOVEY-TEST' }; // millId 25050, ACT
+const MILL_9173: MillRef = { millNumber: '9173', millName: 'MRICE-TEST' }; // millId 25052, ACT
+const MILL_9174: MillRef = { millNumber: '9174', millName: 'AOLSON-TEST' }; // millId 25053, ACT
 
 // ---------------------------------------------------------------------------------------------------
 // MUTATING anchors — one per scenario that saves. Every one is an ACT mill, trackStatus "D",
@@ -176,6 +179,31 @@ export const CHECK_MISSING_SUPPLY_BLOCK_ANCHOR: Sch6Anchor = { key: { millId: 23
  */
 export const AREA_TYPE_CORRECTION_ANCHOR: Sch6Anchor = { key: { millId: 24050, year: 2024 }, mill: MILL_7777 };
 
+/**
+ * S18 — the schedule stores ONLY a general comment.
+ *
+ * Empty at rest, and for the same reason S04's anchor is: the comment lives on a bare BR-09
+ * PLACEHOLDER row, and clearing the comment when it is the only stored thing removes the placeholder
+ * again (`Schedule6Service:428-437`). So its cleanup is the comment-clearing PUT, not a record DELETE.
+ * Its own cell rather than S04's because both WRITE, and a writer cannot share a (mill, year) under
+ * `fullyParallel`.
+ */
+export const COMMENT_ONLY_ANCHOR: Sch6Anchor = { key: { millId: 25050, year: 2024 }, mill: MILL_9171 };
+
+/** S19 — reclassify an existing record from TSA to TFL. An ordinary record writer. */
+export const RECLASSIFY_ANCHOR: Sch6Anchor = { key: { millId: 25052, year: 2024 }, mill: MILL_9173 };
+
+/**
+ * S20 — Check Status mixed results, which needs TWO records on ONE cell.
+ *
+ * THIS IS WHY IT COULD NOT BORROW ANY EXISTING ANCHOR, and the note is worth keeping: the per-record
+ * "met" line is emitted only when the SCHEDULE fails while some individual record passes, so the state
+ * requires at least two records that disagree. Every other anchor is asserted to hold NO records at
+ * rest, and two scenarios writing to one cell races under `fullyParallel`. Still empty at rest — the
+ * scenario's own Given creates both records through the app's POST and cleans both up by comment.
+ */
+export const MIXED_CHECK_ANCHOR: Sch6Anchor = { key: { millId: 25053, year: 2024 }, mill: MILL_9174 };
+
 export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'add (S01)', anchor: ADD_ANCHOR },
   { name: 'edit (S02)', anchor: EDIT_ANCHOR },
@@ -187,6 +215,9 @@ export const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch6Anchor }[] = [
   { name: 'check-missing-tfl (S10)', anchor: CHECK_MISSING_TFL_ANCHOR },
   { name: 'check-missing-supply-block (S11)', anchor: CHECK_MISSING_SUPPLY_BLOCK_ANCHOR },
   { name: 'area-type-correction (S12)', anchor: AREA_TYPE_CORRECTION_ANCHOR },
+  { name: 'comment-only (S18)', anchor: COMMENT_ONLY_ANCHOR },
+  { name: 'reclassify (S19)', anchor: RECLASSIFY_ANCHOR },
+  { name: 'mixed-check (S20)', anchor: MIXED_CHECK_ANCHOR },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -512,6 +543,141 @@ export const S17_TOTALS = {
 
 /** The schedule-level general comment seeded on the read-only anchor (BR-09: on every cat-6 row). */
 export const S17_GENERAL_COMMENT = 'E2E S17 read-only schedule general comment.';
+
+// ---------------------------------------------------------------------------------------------------
+// S18 — THE SCHEDULE STORES ONLY A GENERAL COMMENT
+//
+// The state S04 creates as a side effect, now as a subject in its own right: saving a comment on an
+// otherwise empty schedule makes the backend insert a bare BR-09 PLACEHOLDER row to carry it
+// (`Schedule6Service:425`), and the read side excludes any row whose classification is entirely blank
+// (:470). So the document comes back with the comment, NO records, and totals at rest.
+//
+// THE ONE RE-GROUNDING, AND IT IS A REAL ONE. The Gherkin says `totalVol`, `totalCos` and `totalCal`
+// "show zero". Probed 2026-09-18 on this very anchor:
+//     PUT {generalComments: "...", records: []}  ->  200
+//     GET -> generalComments set, roadRecords [], totalVolume 0, totalCost 0,
+//            totalCostPerVolume NULL
+// Two of the three are real zeros; the RATE is null, because 0/0 is undefined — and `ratioMask(null)`
+// renders the EMPTY STRING, not "0" (index.tsx:86-95, whose comment states the distinction outright:
+// "null (0/0 is undefined) while totalVolume/totalCost are real zeros that must still show"). So the
+// third total shows BLANK. Asserting "0" there would fail, and asserting it loosely would hide a real
+// behaviour. Recorded as defects.md VER-7.
+// ---------------------------------------------------------------------------------------------------
+
+/** The comment S18 stores. Distinct from S04's so a cleanup cannot confuse the two anchors. */
+export const S18_GENERAL_COMMENT = 'E2E S18 comment-only schedule general comment.';
+
+/**
+ * The totals a comment-only schedule shows.
+ *
+ * `costPerVolume` is the EMPTY STRING deliberately — see the re-grounding note above. It is the one
+ * value here that is not a zero, and it is the reason this fixture spells the three out separately
+ * instead of reusing a "zero totals" helper.
+ */
+export const S18_TOTALS = {
+  volume: '0',
+  cost: '0',
+  costPerVolume: '',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S19 — RECLASSIFY AN EXISTING RECORD FROM TSA TO TFL
+//
+// The slice S02 deliberately left alone ("S02's subject is the amounts; the TSA->TFL switch on a saved
+// record has its own slice, and mixing them would make a failure ambiguous"). The record is created
+// through the app's own POST as a TSA record, then reclassified ON THE ROW and saved with the
+// page-level Save (PUT).
+//
+// THE FIGURES ARE HELD CONSTANT ACROSS THE SWITCH, on purpose: 40,000 / 10,000 = 4.00 exactly, before
+// and after. Only the CLASSIFICATION changes, so the RMG moving from "15" to "10" cannot be confused
+// with an amounts recalculation — and the unchanged rate doubles as proof the PUT did not disturb the
+// figures it was not asked to touch.
+// ---------------------------------------------------------------------------------------------------
+
+/** The record S19 creates as a TSA record, and the TFL it is then reclassified to. */
+export const S19_RECORD = {
+  comments: 'E2E S19 reclassified record',
+  /** As created: the TSA / Supply Block branch, RMG derived from the block. */
+  before: {
+    areaTypeCode: '01',
+    supplyBlockCode: '01B',
+    rmg: '15',
+  },
+  /** After the switch: the TFL branch, RMG derived from the fixed RoadGroupLookup table. */
+  after: {
+    areaTypeOption: TFL_OPTION,
+    tflNumber: VALID_TFL.number,
+    rmg: VALID_TFL.rmg,
+  },
+  /** Unchanged by the reclassification — 40,000 / 10,000 = 4.00 exactly, before and after. */
+  volume: 10000,
+  cost: 40000,
+  volumeDisplay: '10,000',
+  costDisplay: '40,000',
+  costPerVolumeDisplay: '4.00',
+} as const;
+
+// ---------------------------------------------------------------------------------------------------
+// S20 — CHECK STATUS, MIXED RESULTS ACROSS TWO RECORDS
+//
+// The only state in which the PER-RECORD "met" line appears at all: it is emitted when the SCHEDULE
+// fails while some individual record passes, so it needs at least two records that disagree. That is
+// why S20 has its own anchor — every other cell is asserted record-free at rest.
+//
+// VERIFIED AGAINST THE RUNNING ENDPOINT 2026-09-18 (two records posted to 25053/2024, then
+// POST /check-status on the served payload, then both records deleted):
+//     outcome  : "ISSUES"
+//     messages : []                                   <- no schedule-level banner
+//     record 1 : met true,  metMessage "All requirements for 1 have been met."
+//     record 2 : met false, issue cost "Road : 2 - TSA or TFL (Cost $) : Value Required"
+// Both literals are byte-identical to the source Gherkin. `roadRequirementsMetMsg` is
+// `All requirements for {0} have been met.` with the 1-based DISPLAY ORDINAL substituted as a STRING
+// (never an int — MessageFormat would group it, so ordinal 1000 rendered "1,000";
+// Schedule6CheckStatusResolver:89-96).
+//
+// NOTE THE TRAILING PERIOD, and that it is the opposite of the schedule-level message: the per-record
+// line ENDS in a period while `scheduleRequirementsMetMsg` does NOT ("All requirements for this
+// schedule have been met"). Both are pinned verbatim, and the difference is real rather than a
+// transcription slip — messages.properties:151 vs :191.
+// ---------------------------------------------------------------------------------------------------
+
+/** S20's two records: row 1 complete, row 2 identical but for an ABSENT cost. */
+export const S20_RECORDS = {
+  /** Row 1 — complete, so it passes and emits the per-record met line. */
+  complete: {
+    areaTypeCode: '01',
+    supplyBlockCode: '01B',
+    volume: 10000,
+    cost: 30000,
+    comments: 'E2E S20 complete record',
+  },
+  /**
+   * Row 2 — the SAME classification, missing only the cost.
+   *
+   * Identical but for the one absent field on purpose: it makes the finding attributable to the cost
+   * and nothing else. An ABSENT cost, not a zero — the check is null-only (D2 precedent), so a cost of
+   * 0 would PASS and this scenario would have no failing record at all.
+   */
+  missingCost: {
+    areaTypeCode: '01',
+    supplyBlockCode: '01B',
+    volume: 20000,
+    comments: 'E2E S20 cost-less record',
+  },
+} as const;
+
+/**
+ * The per-record "requirements met" line for a given display ordinal.
+ *
+ * A function rather than a literal because the ordinal is substituted into the message
+ * (`roadRequirementsMetMsg`), and S20's whole point is WHICH row passed — hardcoding "1" would let a
+ * bug that reported the wrong ordinal slip through when the numbers happened to line up.
+ */
+export const roadRequirementsMet = (ordinal: number): string =>
+  `All requirements for ${String(ordinal)} have been met.`;
+
+/** S20's failing line — the second row's absent cost, carrying the legacy mislabel verbatim. */
+export const S20_MISSING_COST_LINE = 'Road : 2 - TSA or TFL (Cost $) : Value Required';
 
 // THE REJECTED ENTRIES THEMSELVES ARE NOT PINNED HERE — they live in each slice's `Scenario Outline`
 // Examples table in `amount-validation.feature`, with the reason for each row in that file's header.

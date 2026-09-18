@@ -21,10 +21,11 @@
 #  * `schedule6Form:messages` -> Carbon notifications carrying an explicit severity word.
 #  * ANCHOR: 10050/2024, opened by real-test-data-patches/sch6/draft-anchors.sql. EMPTY AT REST like
 #    every other mutating anchor — the Given creates the record it then edits through the app's own
-#    POST /records. Seeding the row in SQL instead would need an explicit-id ROAD_MAINTENANCE_REPORT
-#    row plus its ILCR_COST_REPORT_DETAIL children mirrored into the CI seed, and
-#    ROAD_MAINTENANCE_REPORT_ID is not yet a parent column in preflight/ci-seed-parity.setup.ts. This
-#    is the same "the scenarios' own Givens save the state they then edit" pattern sch4 and sch5 use.
+#    POST /records, the same "the scenarios' own Givens save the state they then edit" pattern sch4 and
+#    sch5 use. Creating through the API stays preferred over seeding a row in SQL even though the seed
+#    route now works (S17 added ROAD_MAINTENANCE_REPORT_ID to the parity gate's parentsByColumn on
+#    2026-09-18), because an app-created record is one whose shape the write path itself produced.
+#    Only S17 has to seed, its page being non-Draft and so refusing every write.
 #
 # BEYOND THE LEGACY TEXT, and both earn their place:
 #  * The edit must UPDATE IN PLACE, asserted as exactly one row surviving. The page-level Save posts
@@ -33,9 +34,32 @@
 #  * The fields S02 does NOT touch (area type, supply block, and the RMG derived from it) are asserted
 #    unchanged, so a PUT that blanked what it was not asked to change cannot pass.
 #
-# NOT COVERED HERE (see coverage.md): changing an existing record's AREA TYPE is S19's subject
-# (TSA -> TFL on a saved record) and is deliberately not mixed in — S02 is about the amounts. Optimistic
-# locking on a stale revisionCount is its own concern and is not part of this slice.
+# NOT COVERED HERE (see coverage.md): optimistic locking on a stale revisionCount is its own concern
+# and is not part of either slice in this file.
+#
+# ---------------------------------------------------------------------------------------------------
+# S19 (below) — THE OTHER KIND OF EDIT: the CLASSIFICATION, not the amounts.
+# Re-grounded from UC-SCH6-001-S19.feature. S02 deliberately leaves this alone so that a failure in
+# either slice is unambiguous; here the amounts are instead held CONSTANT across the switch
+# (40,000 / 10,000 = 4.00 exactly, before and after), so the RMG moving from "15" to "10" cannot be
+# mistaken for an amounts recalculation — and the unchanged rate doubles as proof the PUT did not
+# disturb what it was not asked to touch.
+#
+# THE SAME BR-02 TOGGLE AS S03, NOW ON A SAVED ROW. Choosing "TFL" enables the row's TFL number field
+# and disables its Supply Block, because the row editor renders the very same `RoadRecordFields`
+# component as the Add panel (one definition, index.tsx:240-364) — which is exactly why the
+# counterpart-clear has to be proved at the DATABASE and not on screen.
+#
+# THE LOAD-BEARING ASSERTION IS THE COUNTERPART-CLEAR ON AN **UPDATE**. A PUT that set the TFL side
+# while leaving the old TSA and Supply Block populated would store a row belonging to both branches at
+# once — and the screen would look perfectly correct, because the form disables the Supply Block
+# control regardless of what is stored behind it. S03 proves this clearing happens on an INSERT; only
+# this slice proves it happens on an UPDATE, which is a different code path
+# (updateRoadRecord vs insertRoadReport).
+#
+# ANCHOR: 25052/2024, its own cell because S19 writes. Empty at rest; its Given creates the TSA record
+# through the app's POST and asserts it really started on the TSA branch — a record that arrived
+# already on the TFL branch would make every later assertion pass while testing nothing.
 
 @sch6 @UC-SCH6-001 @edit
 Feature: Report Road Management Costs (Schedule 6) — edit an existing road maintenance record
@@ -58,3 +82,19 @@ Feature: Report Road Management Costs (Schedule 6) — edit an existing road mai
     Then I should see the message "Data saved successfully"
     And the edited amounts are persisted
     And the schedule totals are recomputed from the edited record
+
+  @p1 @S19
+  Scenario: Switch an existing record's area type from TSA to TFL and save
+    Given the Schedule 6 anchor "reclassify" is an editable Draft with no road records
+    And a TSA road maintenance record commented "E2E S19 reclassified record" already exists on that anchor
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 6
+    And I switch the record's area type to TFL
+    # BR-02 on a saved row, both halves — either alone would pass on a form that disabled nothing.
+    Then the row's TFL number is enabled and its Supply Block is disabled
+    When I save the schedule
+    Then I should see the message "Data saved successfully"
+    # The RMG is re-derived from the TFL code via RoadGroupLookup, not from a supply block: "48" gives
+    # "10", deliberately different from the block-derived "15" it started with.
+    And the row shows its re-derived RMG
+    And the reclassified record is persisted with its re-derived RMG

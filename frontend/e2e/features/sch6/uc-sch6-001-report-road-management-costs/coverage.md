@@ -11,8 +11,8 @@ a narrative.
 - Slice catalogue — `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH6-001/UC-SCH6-001-slices.md`
 - Detailed UC / technical sidecar — same directory, `-detailed.md` / `-technical.md`
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S17 authored and green (twenty-six scenarios; several slices
-are more than one — see the count below). **17 of 23 slices covered.** Accessibility is in scope from
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S20 authored and green (twenty-nine scenarios; several slices
+are more than one — see the count below). **20 of 23 slices covered.** Accessibility is in scope from
 the start (`accessibility.feature`, `@a11y`) and is NOT yet written — carried deliberately as the
 lesson from Story 28.4's GAP-5, where "all slices authored" read as complete while half of the board
 item was unverified because a11y is an NFR that no slice asks for.
@@ -29,15 +29,15 @@ Measured, never incremented — re-measure rather than editing these numbers by 
 
 ```
 features/sch6/**/*.feature                   10 files
-scenarios (bddgen, @UC-SCH6-001)             26
-preflight/sch6-anchors.setup.ts              16 checks
-pinned (mill, year) anchors                  13  — 10 mutating/validate-only in 2024, 1 read-only
+scenarios (bddgen, @UC-SCH6-001)             29
+preflight/sch6-anchors.setup.ts              19 checks
+pinned (mill, year) anchors                  16  — 13 mutating/validate-only in 2024, 1 read-only
                                                   (24051/2024, Submitted + seeded), plus 2 guards
                                                   (1/2017 closed-mill, 23050/2024 deliberately absent)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Twenty-six scenarios over seventeen slices, because five slices need more than one:
+Twenty-nine scenarios over twenty slices, because five slices need more than one:
 
 | Slice | Scenarios | Why |
 |---|---|---|
@@ -47,7 +47,15 @@ Twenty-six scenarios over seventeen slices, because five slices need more than o
 | S14 | 4 | a 3-row `Scenario Outline` (both bounds + the 3-decimal case) plus a correction arm |
 | S16 | 3 | a 2-row `Scenario Outline` (both bounds) plus a correction arm |
 
-Verification runs, 2026-09-18 (S17):
+Verification runs, 2026-09-18 (S18/S19/S20):
+
+- full suite preflight → **199 passed** (180 before sch6 + 19), at `--workers=2`
+- the three scenarios green on the first run; `--repeat-each=5 --workers=1` → **15 passed**, 5/5 stable
+- whole UC at `--workers=2` → **29 passed** (S01–S17 unregressed)
+- all thirteen mutating/validate-only anchors confirmed empty afterwards, and the read-only anchor
+  confirmed intact
+
+Earlier, for S17:
 
 - full suite preflight → **196 passed** (180 before sch6 + 16), run at `--workers=2`
 - `--grep @read-only --workers=1` → **1 passed** on the first run
@@ -534,10 +542,120 @@ ordinal from the served document by matching the per-record **comment**, which i
 
 ---
 
+## S18 - the schedule holds only a general comment
+
+Scenario: `general-comment.feature` -> `@p1 @S18` (alongside S04, whose behaviour it builds on).
+Anchor **25050/2024** - its own cell because it WRITES the comment; empty at rest, because clearing the
+comment removes the BR-09 placeholder with it.
+
+| # | Source item (S18 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | The only stored data is a general-comment record | the comment lives on a bare BR-09 placeholder row (`Schedule6Service:425`) | `Given only a general comment is stored for that mill and year` (via the API, then the page is opened fresh) | covered |
+| 2 | The empty-records placeholder is displayed | the read side excludes rows whose classification is entirely blank (`:470`) | `Then the Schedule 6 record list shows no records` | covered |
+| 3 | The comments field shows the previously saved comment | re-seeded from the response | `And the general comment field shows the stored comment` | covered |
+| 4 | `totalVol` / `totalCos` / `totalCal` show zero | volume and cost are real `0`; the RATE is `null` | `And the schedule totals are at rest` | covered (**re-grounded** - two zeroes and a BLANK; `defects.md` VER-7) |
+| 5 | *(beyond the Gherkin)* Check Status answers **MET**, with no phantom failing row | the placeholder is excluded from the check candidates too (`:779-784`) | `When I run Schedule 6 Check Status` / `Then I should see the message ...` | covered (recorded **deviation (d)**; VER-7) |
+
+**Why item 4 is a re-grounding and not a weakened assertion.** Probed on this anchor: `totalVolume` 0,
+`totalCost` 0, `totalCostPerVolume` **null**. Volume and cost are real zeros that must still show; the
+rate is null because 0/0 is undefined, and `ratioMask(null)` renders the empty string
+(`index.tsx:86-95`, whose own comment states the distinction). Asserting `"0"` on the third total would
+fail; asserting it loosely would hide real behaviour. So the step asserts two zeroes and a blank.
+
+**Why item 5 was added though the Gherkin never mentions Check Status.** `general-comment.feature`'s
+header had flagged it as S18's subject, and it is the assertion that proves the placeholder exclusion
+holds **end to end**. S04 proves the placeholder is not *served* as a record; this proves it is not
+*evaluated* as one either. If that filter broke, the schedule would report "a phantom failing row,
+since a placeholder has no area type, no supply block and no cost" - the service's own words. The MET
+verdict is recorded **deviation (d)**: legacy reported ISSUES for a comment-only mill/year.
+
+---
+
+## S19 - reclassify an existing record from TSA to TFL
+
+Scenario: `edit.feature` -> `@p1 @S19` (alongside S02, which deliberately leaves the classification
+alone). Anchor **25052/2024**.
+
+| # | Source item (S19 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | A TSA-type record already exists and is listed | created by the Given through the app's own POST | `Given a TSA road maintenance record commented ... already exists on that anchor` | covered |
+| 2 | Expand the record's accordion tab | Carbon `AccordionItem`; required for visibility (VER-2) | `When I switch the record's area type to TFL` (expands first) | covered |
+| 3 | Select "TFL" from the row's area-type dropdown | the row renders the same `CodeComboBox` as the Add panel | same step | covered |
+| 4 | Enter a valid TFL number in the row's field | `#row-<recordId>-tfl-number` | same step | covered |
+| 5 | Click Save -> "Data saved successfully" | page-level `PUT` | `When I save the schedule` / `Then I should see the message ...` | covered |
+| 6 | The row's TFL number field is ENABLED | enabled only on the TFL branch | `Then the row's TFL number is enabled and its Supply Block is disabled` | covered |
+| 7 | The row's Supply Block field is DISABLED | `disabled` when `areaType === 'TFL'` (BR-02) | same step | covered |
+| 8 | The row's RMG shows the **re-derived** grouping | server-derived from the TFL code via `RoadGroupLookup` | `And the row shows its re-derived RMG` | covered |
+| 9 | *(beyond the Gherkin)* BR-02 counterpart-clear on an **UPDATE** | the service clears the TSA side (`Schedule6Service:597`) | `And the reclassified record is persisted with its re-derived RMG` | covered |
+| 10 | *(beyond the Gherkin)* the amounts are UNCHANGED | volume, cost and the rate survive a classification-only edit | same step | covered |
+| 11 | *(beyond the Gherkin)* updated IN PLACE | exactly one row survives | same step | covered |
+| 12 | *(beyond the Gherkin)* the record really STARTED on the TSA branch | the Given asserts the seeded block and its block-derived RMG | the Given | covered |
+
+**Item 9 is why this slice exists as well as S03.** A PUT that set the TFL side while leaving the old
+TSA and Supply Block populated would store a row belonging to **both** branches at once - and the
+screen would look perfectly correct, because the form disables the Supply Block control regardless of
+what sits behind it. S03 proves the clearing happens on an INSERT; only this slice proves it on an
+UPDATE, which is a different code path (`updateRoadRecord` vs `insertRoadReport`).
+
+**Why the amounts are held constant (item 10).** 40,000 / 10,000 = 4.00 exactly, before and after, so
+the RMG moving from `15` to `10` cannot be mistaken for an amounts recalculation - and the unchanged
+rate doubles as proof the PUT did not disturb what it was not asked to touch. Item 12 is the mirror
+guard: a record that arrived already on the TFL branch would make every later assertion pass while
+testing nothing.
+
+---
+
+## S20 - Check Status, mixed results across two records
+
+Scenario: `check-status-missing.feature` -> `@p1 @S20`. Anchor **25053/2024** - **the only cell that
+holds two records at once**, which is why it could not borrow any of S09/S10/S11's.
+
+| # | Source item (S20 Gherkin) | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | Two records exist: row 1 complete, row 2 with a blank cost | both created by the Given through the app's POST | `Given two road maintenance records exist on that anchor, the second missing its cost` | covered |
+| 2 | "All requirements for 1 have been met." | `roadRequirementsMetMsg` with the display ordinal substituted as a **String** | `Then Check Status reports that row 1 has met its requirements` | covered |
+| 3 | "Road : 2 - TSA or TFL (Cost $) : Value Required" | composed server-side, legacy mislabel included | `And Check Status reports the second row is missing its cost` | covered |
+| 4 | The schedule-level met banner is NOT shown | `outcome: ISSUES` emits no schedule message | `And Check Status does not report the schedule as met` | covered |
+| 5 | *(beyond the Gherkin)* the finding carries a severity WORD | "Action required" title, not colour alone | `And Check Status reports the second row ...` | covered |
+| 6 | *(beyond the Gherkin)* row 2's cost is ABSENT, not `0` | the check is null-only, so `0` would PASS | the Given asserts `cost` is null | covered |
+| 7 | *(beyond the Gherkin)* the served ORDER puts the complete record first | the read side sorts by `ROAD_MAINTENANCE_REPORT_ID` | the Given asserts the served comment order | covered |
+
+**This is the only state in which the per-record "met" line appears at all** - it is emitted when the
+schedule fails while some individual record passes, so it needs two records that disagree. Verified
+against the running endpoint before authoring: `outcome "ISSUES"`, `messages: []`, record 1 met, record
+2 failing on cost. Both literals are byte-identical to the Gherkin.
+
+**Note the trailing period, and that it is the opposite of the schedule-level message.** The per-record
+line ends in one (`messages.properties:151`) while `"All requirements for this schedule have been met"`
+does not (`:191`). Both are pinned verbatim; the difference is real, not a transcription slip. The two
+also cannot collide in the assertions - the per-record text does not contain the schedule-level text,
+so the absence check in item 4 is not satisfied or defeated by the met line in item 2.
+
+**Items 6 and 7 both guard against a vacuous green.** If row 2's cost were `0` rather than absent it
+would PASS (null-only check, D2 precedent), the schedule would legitimately be MET, and item 4 would
+then be asserting the banner's absence against a schedule that had every right to show it. Item 7
+matters because items 2 and 3 assert *which* ordinal passed and which failed - the row counter is the
+1-based display position, so the order is part of the claim rather than incidental.
+
+### Recorded so nobody adds it later
+
+| Not asserted | Why |
+|---|---|
+| A record missing SEVERAL values at once | S21 |
+| The mixed state re-evaluated after the missing cost is filled in | S22/S23's family (Check Status over unsaved on-screen edits) |
+| Pagination of the per-record lines beyond 5 rows | SPEC-3 is still open; two records keeps this slice clear of it |
+
+---
+
 ## Remaining slices
 
-S18-S23 not yet authored (17 of 23 covered). Accessibility sweeps not yet authored. Each will be added
+S21-S23 not yet authored (20 of 23 covered). Accessibility sweeps not yet authored. Each will be added
 here with its own item table as it lands; `defects.md` carries anything found along the way.
+
+S21 (a record missing several values at once) needs no new anchor shape - one record with two gaps on a
+cell of its own. S22/S23 are the Check-Status-includes-unsaved-edits pair, **expected green here**
+(unlike Schedule 5's live divergence) because this endpoint already evaluates the on-screen payload -
+see `defects.md` section 1.
 
 S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
 when the SCHEDULE fails while some individual record passes, which takes two records on one anchor -

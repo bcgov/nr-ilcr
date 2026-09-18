@@ -31,9 +31,35 @@
 # it WRITES, and a writer cannot share a (mill, year) under `fullyParallel`.
 #
 # NOT COVERED HERE (see coverage.md): the 3500-character cap on this field rides the validation
-# slices. The lone-comment schedule's effect on Check Status ordinals and its MET/ISSUES outcome is
-# S18's subject — recorded deviation (d), where a comment-only mill/year deliberately flips legacy's
-# ISSUES to MET.
+# slices.
+#
+# ---------------------------------------------------------------------------------------------------
+# S18 (below) — THE SAME PLACEHOLDER, NOW AS THE SUBJECT.
+# Re-grounded from UC-SCH6-001-S18.feature. S04 CREATES the comment-only state as a side effect; S18
+# opens a page that is ALREADY in it and asserts what a reporter sees. So its Given stores the comment
+# through the API rather than by typing: the state has to exist before the browser is driven, and
+# entering it through the UI would re-test S04 and then assert S18 on a page that had never reloaded.
+#
+# TWO RE-GROUNDINGS, both verified against the running app on this slice's own anchor and both
+# recorded as defects.md VER-7.
+#
+#  1. THE THIRD TOTAL IS BLANK, NOT ZERO. The Gherkin says `totalVol`, `totalCos` and `totalCal` all
+#     "show zero". Probed: totalVolume 0, totalCost 0, totalCostPerVolume **null**. Volume and cost are
+#     real zeros that must still show; the RATE is null because 0/0 is undefined, and `ratioMask(null)`
+#     renders the empty string — index.tsx:86-95 states the distinction outright. Asserting "0" on the
+#     third would fail; asserting it loosely would hide real behaviour. So two zeroes and a blank.
+#
+#  2. CHECK STATUS ANSWERS **MET**, which is recorded deviation (d) — legacy reported ISSUES for a
+#     comment-only mill/year. Probed: outcome "MET" with the schedule banner and `records: []`. This is
+#     the assertion that proves the placeholder exclusion holds END TO END: a row whose classification
+#     is entirely blank is not a road record (Schedule6Service:779-784), so it is excluded from both
+#     the served document AND the check candidates. Were that filter to break, the schedule would
+#     report "a phantom failing row, since a placeholder has no area type, no supply block and no
+#     cost" — the service's own words. S04 asserts the exclusion at the API; this asserts the verdict a
+#     reporter actually reads.
+#
+# ANCHOR: 25050/2024, its own cell because S18 WRITES (the comment). Empty at rest for the same reason
+# S04's is — clearing the comment removes the placeholder with it, which is what its cleanup PUT does.
 
 @sch6 @UC-SCH6-001 @general-comment
 Feature: Report Road Management Costs (Schedule 6) — enter or update the schedule general comment
@@ -53,3 +79,21 @@ Feature: Report Road Management Costs (Schedule 6) — enter or update the sched
     Then I should see the message "Data saved successfully"
     And the general comment field retains the text
     And the general comment is persisted without adding a road record
+
+  @p1 @S18
+  Scenario: A schedule holding only a general comment shows the empty-records placeholder
+    Given the Schedule 6 anchor "comment-only" is an editable Draft with no road records
+    And only a general comment is stored for that mill and year
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 6
+    # The placeholder, not a phantom row: the BR-09 row carrying the comment has a blank
+    # classification, and the read side excludes it from the served records.
+    Then the Schedule 6 record list shows no records
+    And the general comment field shows the stored comment
+    # Two zeroes and a BLANK — the rate is null because 0/0 is undefined. See the header (VER-7).
+    And the schedule totals are at rest
+    When I run Schedule 6 Check Status
+    # Deviation (d): legacy reported ISSUES for a comment-only mill/year; here the placeholder is
+    # excluded from the check candidates too, so the schedule passes rather than reporting a phantom
+    # failing row with no area type, no supply block and no cost.
+    Then I should see the message "All requirements for this schedule have been met"

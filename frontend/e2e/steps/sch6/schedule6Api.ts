@@ -183,6 +183,48 @@ export async function clearGeneralComment(
 }
 
 /**
+ * Store the schedule-level general comment on an otherwise EMPTY schedule, and prove the state landed.
+ *
+ * How S18 reaches its subject: a comment saved with no records makes the backend insert a bare BR-09
+ * PLACEHOLDER row to carry it (`Schedule6Service:425`), and that placeholder is never served as a
+ * record (:470). So this is the one write that produces "stored data, but no road records".
+ *
+ * Done through the API rather than by typing in the page, deliberately: S18's subject is what the page
+ * RENDERS when it opens on that stored state, so the state must exist BEFORE the browser is driven. S04
+ * already covers entering the comment through the UI, so doing it that way here would re-test S04 and
+ * then assert S18 on a page that had never been reloaded.
+ *
+ * `records: []` is correct rather than lazy — the PUT requires every SERVED row, and a placeholder is
+ * never served.
+ */
+export async function setGeneralComment(
+  request: APIRequestContext,
+  key: ScheduleKey,
+  text: string,
+): Promise<void> {
+  const res = await request.put(scheduleUrl(key.millId, key.year), {
+    data: { generalComments: text, records: [] },
+  });
+  await expect(
+    res,
+    `PUT (set general comment) on ${key.millId}/${key.year} -> HTTP ${res.status()}`,
+  ).toBeOK();
+
+  // Read back BOTH halves, because the pair IS the fixture: the comment is stored AND the placeholder
+  // it lives on is still not served as a record. If the blank-classification exclusion ever broke, the
+  // scenario would otherwise fail later on a phantom row with no hint that the cause was here.
+  const doc = await readSchedule6(request, key);
+  expect(
+    doc.generalComments ?? null,
+    `the general comment did not store on ${key.millId}/${key.year}`,
+  ).toBe(text);
+  expect(
+    doc.roadRecords.map((r) => r.recordId),
+    'a comment-only schedule must serve NO road records — the BR-09 placeholder is not a record',
+  ).toEqual([]);
+}
+
+/**
  * Remove every record carrying `comments` from (mill, year), and PROVE the anchor is back at rest.
  *
  * Deleting all matches rather than the first is deliberate: a killed run can leave more than one, and a

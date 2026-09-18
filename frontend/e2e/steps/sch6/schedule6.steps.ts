@@ -2,13 +2,22 @@ import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
   AREA_TYPE_CORRECTION_ANCHOR,
+  COMMENT_ONLY_ANCHOR,
+  MIXED_CHECK_ANCHOR,
   NO_COMPUTED_RATE,
   READ_ONLY_ANCHOR,
+  RECLASSIFY_ANCHOR,
   S12_RECORD,
   S17_GENERAL_COMMENT,
   S17_RECORDS,
   S17_TOTALS,
+  S18_GENERAL_COMMENT,
+  S18_TOTALS,
+  S19_RECORD,
+  S20_MISSING_COST_LINE,
+  S20_RECORDS,
   VALIDATION_AMOUNTS,
+  roadRequirementsMet,
   CHECK_MISSING_COST_ANCHOR,
   CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
   CHECK_MISSING_TFL_ANCHOR,
@@ -37,7 +46,7 @@ import {
   millOptionText,
   scheduleUrl,
 } from '../../fixtures/sch6/schedule6-test-data';
-import { addRecord, readSchedule6 } from './schedule6Api';
+import { addRecord, readSchedule6, setGeneralComment } from './schedule6Api';
 
 /**
  * UC-SCH6-001 (Schedule 6 — Report Road Management Costs) steps.
@@ -60,6 +69,9 @@ const ANCHORS: Record<string, Sch6Anchor> = {
   'check-missing-tfl': CHECK_MISSING_TFL_ANCHOR,
   'check-missing-supply-block': CHECK_MISSING_SUPPLY_BLOCK_ANCHOR,
   'area-type-correction': AREA_TYPE_CORRECTION_ANCHOR,
+  'comment-only': COMMENT_ONLY_ANCHOR,
+  reclassify: RECLASSIFY_ANCHOR,
+  'mixed-check': MIXED_CHECK_ANCHOR,
 };
 
 Given(
@@ -906,6 +918,193 @@ Then('the general comment remains visible', async ({ schedule6Page }) => {
   // page. The disabled assertion itself lives in `expectEntryControlsLocked`.
   await expect(schedule6Page.generalComments).toBeVisible();
   await expect(schedule6Page.generalComments).toHaveValue(S17_GENERAL_COMMENT);
+});
+
+// ---- S18 — the schedule stores only a general comment ----------------------------------------------
+
+Given(
+  'only a general comment is stored for that mill and year',
+  async ({ request, world, schedule6CommentCleanup }) => {
+    // Registered BEFORE the write. The undo is the comment-clearing PUT, which also removes the BR-09
+    // placeholder the comment lives on — so it returns the anchor to genuinely empty, the same way
+    // S04's cleanup does.
+    schedule6CommentCleanup.push(world.scheduleKey!);
+    await setGeneralComment(request, world.scheduleKey!, S18_GENERAL_COMMENT);
+  },
+);
+
+Then('the general comment field shows the stored comment', async ({ schedule6Page }) => {
+  await expect(schedule6Page.generalComments).toHaveValue(S18_GENERAL_COMMENT);
+});
+
+Then('the schedule totals are at rest', async ({ schedule6Page }) => {
+  // TWO ZEROES AND A BLANK, which is the S18 re-grounding and NOT a weakened assertion. The Gherkin
+  // says all three totals "show zero"; volume and cost genuinely do, but the RATE is null because 0/0
+  // is undefined, and `ratioMask(null)` renders the empty string (index.tsx:86-95, whose own comment
+  // states the distinction: "null (0/0 is undefined) while totalVolume/totalCost are real zeros that
+  // must still show"). Asserting "0" on the third would fail; asserting it loosely would hide real
+  // behaviour. Recorded as defects.md VER-7.
+  await expect(schedule6Page.total('Volume m³')).toHaveText(S18_TOTALS.volume);
+  await expect(schedule6Page.total('Cost $')).toHaveText(S18_TOTALS.cost);
+  await expect(schedule6Page.total('$ / m³')).toHaveText(S18_TOTALS.costPerVolume);
+});
+
+// ---- S19 — reclassify an existing record from TSA to TFL -------------------------------------------
+
+Given(
+  'a TSA road maintenance record commented {string} already exists on that anchor',
+  async ({ request, world, schedule6Cleanup }, comments: string) => {
+    world.sch6RecordComment = comments;
+    schedule6Cleanup.push({ key: world.scheduleKey!, comments });
+
+    const created = await addRecord(request, world.scheduleKey!, {
+      areaType: S19_RECORD.before.areaTypeCode,
+      supplyBlock: S19_RECORD.before.supplyBlockCode,
+      volume: S19_RECORD.volume,
+      cost: S19_RECORD.cost,
+      comments,
+    });
+    // The BEFORE state is asserted, not assumed: S19's whole claim is that the classification CHANGES,
+    // which is only meaningful if it started where we think. A record that arrived already on the TFL
+    // branch would make every later assertion pass while testing nothing.
+    expect(created.supplyBlock, 'the seeded record must start on the TSA branch').toBe(
+      S19_RECORD.before.supplyBlockCode,
+    );
+    expect(created.rmg, 'the seeded record must start with the block-derived RMG').toBe(
+      S19_RECORD.before.rmg,
+    );
+    world.sch6RecordId = created.recordId;
+  },
+);
+
+When("I switch the record's area type to TFL", async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  // Expanded first (VER-2) — the row's controls are in the DOM whether or not the panel is open, so
+  // acting on a collapsed row would be driving something the reporter cannot see.
+  await schedule6Page.expandRecord(1, recordId);
+  await schedule6Page.selectRowAreaType(recordId, S19_RECORD.after.areaTypeOption);
+  await schedule6Page.setRowTflNumber(recordId, S19_RECORD.after.tflNumber);
+});
+
+Then("the row's TFL number is enabled and its Supply Block is disabled", async ({ schedule6Page, world }) => {
+  // BR-02 on an EXISTING row, enforced the same way as in the Add panel: exactly one side of the
+  // classification stays populated, and the form disables the other rather than validating after the
+  // fact. Both halves asserted, because either alone would pass on a form that disabled nothing.
+  const recordId = world.sch6RecordId!;
+  await expect(schedule6Page.rowTflNumber(recordId)).toBeEnabled();
+  await expect(schedule6Page.rowSupplyBlock(recordId)).toBeDisabled();
+});
+
+Then('the reclassified record is persisted with its re-derived RMG', async ({ request, world }) => {
+  const key = world.scheduleKey!;
+  const recordId = world.sch6RecordId!;
+
+  // Polled on the RMG rather than on the TFL number: the RMG is the server's own re-derivation, so it
+  // is the value that proves the switch was processed rather than merely echoed.
+  await expect
+    .poll(
+      async () => {
+        const doc = await readSchedule6(request, key);
+        return doc.roadRecords.find((r) => r.recordId === recordId)?.rmg ?? null;
+      },
+      { message: `record ${recordId} never re-derived its RMG to ${S19_RECORD.after.rmg}` },
+    )
+    .toBe(S19_RECORD.after.rmg);
+
+  const doc = await readSchedule6(request, key);
+  const record = doc.roadRecords.find((r) => r.recordId === recordId)!;
+
+  expect(record.areaType, 'a reclassified record is served with the TFL sentinel').toBe(
+    S19_RECORD.after.areaTypeOption,
+  );
+  expect(record.tflNumber, 'the stored TFL number').toBe(S19_RECORD.after.tflNumber);
+  // THE ASSERTION THIS SLICE EXISTS FOR. BR-02's counterpart-clear has to happen on an UPDATE, not just
+  // on an insert: a PUT that set the TFL side while leaving the old TSA/Supply Block populated would
+  // store a row belonging to both branches at once, and the screen would look right because the form
+  // disables the Supply Block control. Only a read-back shows it held.
+  expect(record.supplyBlock, 'reclassifying to TFL must CLEAR the supply block (BR-02)').toBeFalsy();
+  // The amounts were never touched, so they must be untouched — the mirror risk to the above.
+  expect(record.volume, 'volume is unchanged by a reclassification').toBe(S19_RECORD.volume);
+  expect(record.cost, 'cost is unchanged by a reclassification').toBe(S19_RECORD.cost);
+  expect(record.costPerVolume, 'the rate is unchanged by a reclassification').toBe(
+    Number(S19_RECORD.costPerVolumeDisplay),
+  );
+  // Updated IN PLACE: the page-level Save posts every served row, so a bug that treated the edited row
+  // as new would leave the old one behind and still display the new figures.
+  expect(doc.roadRecords.length, 'reclassifying must update in place, not add a row').toBe(1);
+});
+
+Then("the row shows its re-derived RMG", async ({ schedule6Page, world }) => {
+  const recordId = world.sch6RecordId!;
+  await expect(schedule6Page.rowDerived(recordId, 'RMG')).toHaveText(S19_RECORD.after.rmg);
+  // The rate is asserted too, unchanged — it is what makes "only the classification moved" a claim
+  // about the screen rather than only about the database.
+  await expect(schedule6Page.rowDerived(recordId, '$ / m³')).toHaveText(
+    S19_RECORD.costPerVolumeDisplay,
+  );
+});
+
+// ---- S20 — Check Status, mixed results across two records ------------------------------------------
+
+Given(
+  'two road maintenance records exist on that anchor, the second missing its cost',
+  async ({ request, world, schedule6Cleanup }) => {
+    const key = world.scheduleKey!;
+    // BOTH registered before either is created, so a failure between the two still tears down.
+    schedule6Cleanup.push({ key, comments: S20_RECORDS.complete.comments });
+    schedule6Cleanup.push({ key, comments: S20_RECORDS.missingCost.comments });
+
+    // ORDER IS THE SUBJECT HERE. The read side sorts by ROAD_MAINTENANCE_REPORT_ID and the row counter
+    // is the 1-based position in that list, so the complete record must be created FIRST to be row 1.
+    // S20 asserts "All requirements for 1 ..." and "Road : 2 ...", i.e. it asserts WHICH row passed —
+    // so the ordinals are part of the claim, not incidental.
+    const complete = await addRecord(request, key, {
+      areaType: S20_RECORDS.complete.areaTypeCode,
+      supplyBlock: S20_RECORDS.complete.supplyBlockCode,
+      volume: S20_RECORDS.complete.volume,
+      cost: S20_RECORDS.complete.cost,
+      comments: S20_RECORDS.complete.comments,
+    });
+    const missingCost = await addRecord(request, key, {
+      areaType: S20_RECORDS.missingCost.areaTypeCode,
+      supplyBlock: S20_RECORDS.missingCost.supplyBlockCode,
+      volume: S20_RECORDS.missingCost.volume,
+      comments: S20_RECORDS.missingCost.comments,
+    });
+
+    // ABSENT, not zero. The cost check is null-only (D2 precedent), so a cost of 0 would PASS and this
+    // scenario would have no failing record at all — it would then assert the schedule-met banner's
+    // absence against a schedule that legitimately passed.
+    expect(missingCost.cost ?? null, 'row 2 must genuinely have NO cost stored').toBeNull();
+    expect(complete.cost, 'row 1 must be complete').toBe(S20_RECORDS.complete.cost);
+
+    // The served ORDER is what the row counters follow, so it is verified rather than assumed.
+    const doc = await readSchedule6(request, key);
+    expect(
+      doc.roadRecords.map((r) => r.comments),
+      'the complete record must be served FIRST — S20 asserts which ordinal passed',
+    ).toEqual([S20_RECORDS.complete.comments, S20_RECORDS.missingCost.comments]);
+  },
+);
+
+Then(
+  'Check Status reports that row {int} has met its requirements',
+  async ({ schedule6Page }, ordinal: number) => {
+    // The PER-RECORD met line, which appears only in this mixed state: the schedule fails while an
+    // individual record passes. Note the trailing period — the per-record message has one and the
+    // schedule-level message does not (messages.properties:151 vs :191), a real difference both pinned
+    // verbatim. The ordinal is substituted, so this asserts WHICH row passed.
+    await expect(schedule6Page.notification(roadRequirementsMet(ordinal))).toBeVisible();
+  },
+);
+
+Then('Check Status reports the second row is missing its cost', async ({ schedule6Page }) => {
+  // Byte-for-byte, legacy mislabel included: the missing-COST line names the TSA/TFL field
+  // (Schedule6MB.checkStatus:172). The text IS the requirement — if it is ever corrected this should
+  // fail loudly rather than tolerate both spellings.
+  await expect(schedule6Page.notification(S20_MISSING_COST_LINE)).toBeVisible();
+  // And the severity word, not colour alone (NFR1).
+  await expect(schedule6Page.notification('Action required')).toBeVisible();
 });
 
 Then('the corrected TFL record is persisted', async ({ request, world }) => {

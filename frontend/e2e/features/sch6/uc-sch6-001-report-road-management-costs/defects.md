@@ -14,11 +14,11 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-18 — IN PROGRESS.** S01–S17 authored and green (twenty-six scenarios); **17 of 23
-slices covered.** Six verified-not-a-defect findings. **Still no divergences and no bugs found in the
+**STATUS 2026-09-18 — IN PROGRESS.** S01–S20 authored and green (twenty-nine scenarios); **20 of 23
+slices covered.** Seven verified-not-a-defect findings. **Still no divergences and no bugs found in the
 app** — every red encountered so far has been the test being wrong, not the application.
 
-**Two things need a human, both on this page.** Neither blocks the story:
+**Three things need a human, all on this page.** None blocks the story:
 
 1. **SPEC-2** — please accept the wording *"TSA or TFL: Value is required."* for a blank TSA/TFL
    submission. It cannot be checked against legacy (the old message came from a framework that is
@@ -26,6 +26,9 @@ app** — every red encountered so far has been the test being wrong, not the ap
 2. **VER-5** — a corrected field keeps showing its old error until Add Report is pressed again. Not a
    fault, and nothing is mis-stored; the question is whether you want it to clear as you type, which
    would be an enhancement.
+3. **VER-7** — should a mill that saved only a general comment and no road records count as having met
+   Schedule 6's requirements? The app says yes; legacy said no (recorded deviation (d)). A business
+   rule question, not a defect.
 
 ---
 
@@ -49,11 +52,12 @@ app** — every red encountered so far has been the test being wrong, not the ap
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 6 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 3 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** S01–S17 are covered. **S18–S23** and the axe sweeps are still to be written.
-(Was "12 of 23" when S01–S11 were the whole of it; the S12–S16 validation block and S17 both landed
-2026-09-18.)
+**What is missing.** S01–S20 are covered. **S21–S23** and the axe sweeps are still to be written.
+(Was "12 of 23" when S01–S11 were the whole of it; the S12–S16 block, S17, and S18/S19/S20 all landed
+2026-09-18. The accessibility half has not started, and by slice count alone it is now easy to read
+this story as nearly done — which is exactly the GAP-5 trap this entry exists to prevent.)
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
@@ -307,3 +311,45 @@ claim, "a reporter cannot change anything", is checked on the surface where the 
 is no greyed-out add form on screen — the Add button is simply unavailable. Recorded because, like
 VER-1 (where the derived RMG figure moved from the add panel onto the saved row), this is a case where
 comparing the old script to the new test otherwise looks like a dropped assertion.
+
+### VER-7 — a comment-only schedule: the "$ / m³" total is blank, and Check Status passes — 2026-09-18
+
+Two findings about the same situation: a mill/year where a reporter has saved a **general comment** and
+never added a road record. Both were confirmed against the running app.
+
+**Background, because this state is easy to misread.** There is no such thing as storing a bare
+comment: the comment has to hang off a row, so the system quietly creates an otherwise-empty
+"placeholder" record to carry it. That placeholder is deliberately hidden — it is not shown in the
+records list, not counted in the totals, and not judged by Check Status. The screen therefore shows
+"No records found." with the comment still in its box, which is exactly what the slice asks for.
+
+**Finding 1 — the third total shows blank, not zero.** The scenario expects `totalVol`, `totalCos` and
+`totalCal` to "show zero". Volume and Cost do show **0**. The **$ / m³** cell is **empty**.
+
+*Why that is right.* $ / m³ is cost divided by volume, and here both are zero — zero divided by zero
+has no answer, so the app shows nothing rather than inventing a figure. The code says so where the
+formatting is decided: *"null (0/0 is undefined) while totalVolume/totalCost are real zeros that must
+still show"*. Printing `0.00` there would be stating a rate that does not exist. The test asserts two
+zeroes and a blank.
+
+**Finding 2 — Check Status reports the schedule as MET.** Pressing Check Status on a comment-only
+schedule gives *"All requirements for this schedule have been met"*, with no findings at all. **Legacy
+reported problems here instead.**
+
+*Why that is right, and deliberate.* This is a recorded parity deviation — deviation **(d)** — decided
+when the backend was built, not something introduced by accident. The reasoning is that the hidden
+placeholder is not a road record, so judging it would produce a complaint about a row the reporter
+cannot see and cannot fix: it has no area type, no supply block and no cost, so it would fail three
+checks at once. The app therefore ignores it, and a schedule with nothing but a comment has nothing
+outstanding. Legacy's behaviour was arguably the bug.
+
+**How handled.** Both are asserted as the app behaves, and Finding 2 is asserted **deliberately** even
+though the original scenario never mentions Check Status — it is the check that proves the placeholder
+stays hidden from end to end. If that ever broke, a reporter would see a phantom failing row appear out
+of nowhere, and this is the assertion that would catch it.
+
+**For BA/QA.** One thing worth confirming, and it is a business question rather than a defect: **should
+a mill that has saved only a comment and no road records count as having met Schedule 6's
+requirements?** The app says yes; legacy said no. If the Ministry expects "no records" to block
+submission, that is a rule change rather than a bug fix — and it would belong with the submit gate, not
+with this screen. Nothing is blocked either way.

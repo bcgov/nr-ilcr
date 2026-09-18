@@ -87,3 +87,42 @@ Feature: Report Road Management Costs (Schedule 6) — Check Status names the mi
     And I run Schedule 6 Check Status
     Then Check Status reports "Road : 1 - Supply Block : Value Required"
     And Check Status does not report the schedule as met
+
+  # -------------------------------------------------------------------------------------------------
+  # S20 — MIXED RESULTS, and the only state in which the PER-RECORD "met" line appears at all.
+  # Re-grounded from UC-SCH6-001-S20.feature. That line is emitted when the SCHEDULE fails while some
+  # individual record passes, so it needs at least two records that disagree — which is why S20 has its
+  # own anchor rather than borrowing one of the three above. Every anchor here is asserted record-free
+  # at rest, and two scenarios writing to one cell races under `fullyParallel`.
+  #
+  # VERIFIED AGAINST THE RUNNING ENDPOINT before authoring (two records posted, check-status on the
+  # served payload, both records then deleted): outcome "ISSUES", `messages: []`, record 1 met with
+  # "All requirements for 1 have been met.", record 2 failing with
+  # "Road : 2 - TSA or TFL (Cost $) : Value Required". Both literals byte-identical to the Gherkin.
+  #
+  # NOTE THE TRAILING PERIOD, and that it is the OPPOSITE of the schedule-level message: the per-record
+  # line ends in one (`roadRequirementsMetMsg`, messages.properties:151) while the schedule-level
+  # "All requirements for this schedule have been met" does NOT (:191). Both are pinned verbatim; the
+  # difference is real, not a transcription slip.
+  #
+  # THE ORDINALS ARE PART OF THE CLAIM. "for 1" and "Road : 2" say WHICH row passed and which failed,
+  # and the row counter is the 1-based DISPLAY position — so the Given creates the complete record
+  # FIRST and then asserts the served order, rather than trusting insertion order to survive.
+  #
+  # ROW 2 IS THE SAME CLASSIFICATION AS ROW 1, missing only the cost, so the finding is attributable to
+  # that one field and nothing else. Its cost is ABSENT rather than 0: the check is null-only (D2
+  # precedent), so a stored 0 would PASS and this scenario would have no failing record at all — it
+  # would then be asserting the absence of the schedule banner against a schedule that legitimately
+  # passed, which is a vacuous green.
+  @p1 @S20
+  Scenario: Check Status reports each record's own result when one passes and one fails
+    Given the Schedule 6 anchor "mixed-check" is an editable Draft with no road records
+    And two road maintenance records exist on that anchor, the second missing its cost
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 6
+    And I run Schedule 6 Check Status
+    Then Check Status reports that row 1 has met its requirements
+    And Check Status reports the second row is missing its cost
+    # The passing record does NOT earn the schedule a pass — the schedule-level banner must stay away
+    # while any record is incomplete.
+    And Check Status does not report the schedule as met

@@ -174,7 +174,21 @@ DECLARE
     -- seeded by the sibling patch `view-mode-road-records.sql`, and it is deliberately kept OUT of
     -- EDITABLE_DRAFT_ANCHORS in the fixture — the list preflight asserts is Draft, editable and
     -- record-free. It gets its own preflight check instead.
-    t_anchor(24051, 2024, 'S')   -- S17 read-only: Submitted, and holds the seeded records
+    t_anchor(24051, 2024, 'S'),  -- S17 read-only: Submitted, and holds the seeded records
+    -- S18/S19/S20 (added 2026-09-18). All three WRITE, so each needs its own cell; all three are
+    -- Draft and empty at rest, because each one's Given creates the state it then exercises through
+    -- the app's own endpoints rather than being seeded here.
+    --   S18 stores ONLY a general comment, which makes the backend insert a bare BR-09 placeholder
+    --       row to carry it. Its cleanup is the comment-clearing PUT (clearing the comment when it is
+    --       the only stored thing removes the placeholder), exactly as S04's is — so this cell really
+    --       is empty at rest, the same way 13050/2024 is.
+    --   S19 creates a TSA record and reclassifies it to TFL, so it is an ordinary record writer.
+    --   S20 needs TWO records on ONE cell (Check Status mixed results), which is why it cannot borrow
+    --       any other anchor: every one of them is asserted to hold no records at rest, and two
+    --       scenarios writing to a shared cell races under `fullyParallel`.
+    t_anchor(25050, 2024, 'D'),  -- S18 comment-only schedule (BR-09 placeholder)
+    t_anchor(25052, 2024, 'D'),  -- S19 switch an existing record's area type TSA -> TFL
+    t_anchor(25053, 2024, 'D')   -- S20 Check Status mixed results across two records
   );
 BEGIN
   -- The new reporting year. Additive: 2015-2023 already exist and are untouched.

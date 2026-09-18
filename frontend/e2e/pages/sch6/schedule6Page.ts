@@ -427,6 +427,17 @@ export class Schedule6Page {
   }
 
   /**
+   * Change a saved row's area type, by the option's rendered description (S19).
+   *
+   * Goes through the same filterable-combobox routine as the Add panel, because a row renders the very
+   * same `CodeComboBox`. Expand the row first — `selectRowAreaType` does not do it, so that a caller
+   * who forgot gets `expandRecord`'s clear message rather than a click timeout on a collapsed panel.
+   */
+  async selectRowAreaType(recordId: number, optionText: string): Promise<void> {
+    await this.selectCombo(rowField(recordId).areaType, optionText);
+  }
+
+  /**
    * Overwrite a saved row's TFL number — including clearing it.
    *
    * This is how S10 reaches its state AT ALL. A TFL record with no TFL number cannot be SAVED (the add
