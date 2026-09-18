@@ -162,7 +162,7 @@ public class ReportTrackTransitionService {
           millId,
           year,
           "status row");
-      touchEveryScheduleRow(millId, year, user);
+      writer.stampAuditColumns(millId, year, user);
       for (String categoryId : track.categoryIds()) {
         requireOneRow(
             repository.advanceCategoryState(
@@ -181,34 +181,6 @@ public class ReportTrackTransitionService {
     }
     log.info("Schedules 1-10 submitted for millId={} year={}", millId, year);
     return transition.successKey();
-  }
-
-  /**
-   * The thirteen Schedule 1&ndash;10 row families, in legacy tab order, audit columns only. Each
-   * statement is scoped by its schedule's own mill/year predicate; zero rows is normal for a
-   * schedule with no data.
-   */
-  private void touchEveryScheduleRow(long millId, int year, String user) {
-    repository.touchReportSummaries(millId, year, user);
-    repository.touchReportSummaryCostDetails(millId, year, user);
-    repository.touchTransportationReports(millId, year, user);
-    repository.touchTransportationCostDetails(millId, year, user);
-    repository.touchCamps(millId, year, user);
-    repository.touchCampCostDetails(millId, year, user);
-    repository.touchRoadMaintenanceReports(millId, year, user);
-    repository.touchRoadMaintenanceCostDetails(millId, year, user);
-    repository.touchBridges(millId, year, user);
-    repository.touchBridgeCostDetails(millId, year, user);
-    repository.touchCulverts(millId, year, user);
-    repository.touchCulvertCostDetails(millId, year, user);
-    repository.touchTreeToTruckReports(millId, year, user);
-    repository.touchTreeToTruckDetailReports(millId, year, user);
-    repository.touchTreeToTruckRateDetails(millId, year, user);
-    repository.touchContractualWorkReports(millId, year, user);
-    repository.touchContractualWorkCostDetails(millId, year, user);
-    repository.touchRoadConstructionReports(millId, year, user);
-    repository.touchRoadConstructionDetails(millId, year, user);
-    repository.touchRoadConstructionCostDetails(millId, year, user);
   }
 
   /**

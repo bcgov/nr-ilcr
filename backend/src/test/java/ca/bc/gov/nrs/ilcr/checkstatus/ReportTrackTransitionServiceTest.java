@@ -32,7 +32,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -62,9 +61,29 @@ class ReportTrackTransitionServiceTest {
   @Mock private MillUserXrefRepository millUserXrefRepository;
   @Mock private ReportTrackTransitionRepository repository;
 
-  @InjectMocks private ReportTrackTransitionService service;
+  private ReportTrackTransitionService service;
 
   private Authentication submitter;
+
+  /**
+   * The writer is REAL, over the same mocked repository. Submit's audit sweep lives in {@link
+   * ReportTransitionWriter#stampAuditColumns} (one copy, shared with verify), so a mocked writer
+   * would silently retire every touch assertion below — the statement-order test, the deadlock arm,
+   * and the two never()-touched arms. Its {@code @Transactional} is inert here: nothing proxies it
+   * in a plain unit test, and in the application the method carries none of its own and joins
+   * submit's transaction.
+   */
+  @BeforeEach
+  void wire() {
+    service =
+        new ReportTrackTransitionService(
+            millContextService,
+            sweepService,
+            reportSubmission,
+            millUserXrefRepository,
+            repository,
+            new ReportTransitionWriter(repository, millUserXrefRepository));
+  }
 
   @BeforeEach
   void principal() {

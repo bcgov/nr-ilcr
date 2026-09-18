@@ -1413,6 +1413,50 @@ describe('Verify the Schedules 1–10 track (Story 17.2)', () => {
     expect(screen.queryAllByRole('status')).toHaveLength(pageBefore + 1)
   })
 
+  // ---- The refused verify re-reads, exactly as the refused submit does -------------------------
+
+  test('CHK-012 S03: a gate 409 re-sweeps, so the newly-failing schedule is on screen behind the verbatim banner', async () => {
+    const posted = vi.fn()
+    let sweeps = 0
+    let failing = false
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () => {
+        sweeps += 1
+        return HttpResponse.json(
+          sweep({
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+            overrides: failing
+              ? [{ schedule: '7B', requirementsMet: false, verdict: schedule7bFail }]
+              : [],
+          }),
+        )
+      }),
+      verifyHandler(posted, () => {
+        // A schedule fell out of compliance since the page was read. The gate runs before the
+        // transition, so this is the 409 the user gets, and the verdict on screen is now stale.
+        failing = true
+        return problem(409, NOT_SUBMITTED_MSG)
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+    expect(screen.queryByText(SCH7B_ERROR_TEXT)).not.toBeInTheDocument() // the "changed" control
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(NOT_SUBMITTED_MSG, verbatimUntrimmed)).toBeInTheDocument()
+    expect(posted).toHaveBeenCalledTimes(1)
+    // The panels now agree with the banner's reason: the refusal re-read, as submit's 409 does.
+    // Without the re-read the user reads why it was refused while the page still shows all-met.
+    expect(await screen.findByText(SCH7B_ERROR_TEXT)).toBeInTheDocument()
+    await waitFor(() => expect(sweeps).toBe(2))
+    expect(screen.getByText(NOT_SUBMITTED_MSG, verbatimUntrimmed)).toBeInTheDocument()
+  })
+
   // ---- Stale context ---------------------------------------------------------------------------
 
   test('stale context: a settled verify outcome does not follow the mill/year change — the banner goes, the prompt goes, and the new report is gated on its own status', async () => {

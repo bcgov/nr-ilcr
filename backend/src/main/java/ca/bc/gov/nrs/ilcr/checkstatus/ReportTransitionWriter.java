@@ -24,10 +24,13 @@ import org.springframework.transaction.annotation.Transactional;
  * Legacy had that same window and a wider one, since its verdict came from a {@code @ViewScoped}
  * in-memory snapshot rather than from the database.
  *
- * <p>Used by VERIFY only. Submit reaches the same {@link ReportTrackTransitionRepository} from
- * inside its own transaction, because 15.3 ruled the opposite boundary for that transition &mdash;
- * lock the status row first, then gate inside the write. Both rulings stand; this class is where
- * the legacy-faithful one is expressed, and the repository beneath it is now shared.
+ * <p>{@link #write} is used by VERIFY only. Submit reaches the same {@link
+ * ReportTrackTransitionRepository} from inside its own transaction, because 15.3 ruled the opposite
+ * boundary for that transition &mdash; lock the status row first, then gate inside the write. Both
+ * rulings stand; this class is where the legacy-faithful one is expressed, and the repository
+ * beneath it is now shared. What the two transitions <em>do</em> share is {@link
+ * #stampAuditColumns}: the twenty-statement audit sweep is identical for both, so it lives here
+ * once and submit calls it from inside its own transaction.
  */
 @Service
 @Slf4j
@@ -120,11 +123,11 @@ public class ReportTransitionWriter {
       // loudly rather than commit a half-transitioned report behind a 200.
       if (categories != EXPECTED_CATEGORY_ROWS) {
         log.error(
-            "Verify failed for millId={} year={}: expected {} category rows to advance for millId={}"
-                + " year={} but {} were updated",
-            EXPECTED_CATEGORY_ROWS,
+            "Verify failed for millId={} year={}: expected {} category rows to advance but {} were"
+                + " updated",
             millId,
             year,
+            EXPECTED_CATEGORY_ROWS,
             categories);
         throw new ReportSubmissionException();
       }
@@ -148,12 +151,19 @@ public class ReportTransitionWriter {
   }
 
   /**
-   * Stamp the actor and timestamp on every table holding the track's data — thirteen of them via
-   * twenty statements, reproducing legacy's per-schedule sweep. Business data is untouched here.
+   * Stamp the actor and timestamp on every table holding the track's data — the thirteen Schedule
+   * 1&ndash;10 row families in legacy tab order, via twenty statements, reproducing legacy's
+   * per-schedule sweep. Each statement is scoped by its schedule's own mill/year predicate; zero
+   * rows is normal for a schedule with no data. Business data is untouched here.
+   *
+   * <p>Package-private because submit reaches it too: {@link ReportTrackTransitionService#submit}
+   * calls it from inside <em>its</em> transaction, which is sound precisely because this method
+   * carries no {@code @Transactional} of its own — it joins whichever transaction is already open.
+   * One copy, because two copies of twenty repository calls drift.
    *
    * @return the total rows stamped, for the audit log line
    */
-  private int stampAuditColumns(long millId, int year, String user) {
+  int stampAuditColumns(long millId, int year, String user) {
     int rows = 0;
     rows += repository.touchReportSummaries(millId, year, user);
     rows += repository.touchReportSummaryCostDetails(millId, year, user);

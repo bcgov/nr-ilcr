@@ -383,6 +383,13 @@ const CheckStatus: FC = () => {
       .catch((error: unknown) => {
         if (!isCurrent()) return
         setOutcome({ kind: 'error', text: extractDetail(error) || VERIFY_FAILED })
+        // A 409 means the verdict this button was offered on has gone stale underneath it — the
+        // gate now fails, the mill closed, or the status moved. Re-sweep so what is on screen
+        // agrees with the reason in the banner, exactly as confirmSubmit does; without this the
+        // user reads why it was refused while the table still shows the state that offered it.
+        if (isConflict(error)) {
+          setReloadToken((token) => token + 1)
+        }
       })
       .finally(() => {
         busyRef.current = false

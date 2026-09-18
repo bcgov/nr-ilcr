@@ -30,11 +30,14 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * <p>Every genuine failure asserts the {@code (status, detail)} pair; the two texts that coincide
  * (a rejected transition and a persistence failure) are distinguishable only by status code.
  *
- * <p>A <em>refused</em> transition is not a failure here: per decision D4 (legacy parity, ratified
- * 2026-09-16) a no-op or an illegal Draft&harr;Verified jump answers 200 with {@code
- * sch1-10VerifiedMsg} and writes nothing, because legacy discarded the DAO's boolean and emitted
- * the verified message regardless. Those arms assert the 200, the stored {@code trackStatus}, and
- * the before/after fingerprint — the fingerprint being what keeps a 200 from covering a silent
+ * <p>A <em>refused</em> transition answers <strong>409</strong> with {@code
+ * reportSubmissionErrorMsg} and writes nothing: a second click on an already-Verified track and the
+ * illegal Draft&harr;Verified jump are both rejections. An earlier cut returned 200 for those as
+ * decision D4 (legacy parity); {@code d9952af} reverted it, because UC-CHK-007's own slice
+ * catalogue titles that behaviour a <em>known defect</em> ("Verification Silently Reports Success
+ * Despite Rejected Transition"), and the epic's rule is legacy-wins <em>except</em> where the use
+ * cases record legacy as defective. Those arms assert the 409, the stored {@code trackStatus}, and
+ * the before/after fingerprint — the fingerprint being what keeps a refusal from covering a silent
  * write.
  *
  * <p>Mills are this class's own ({@code R__55}). Verifying mutates the status row, ten category
@@ -57,7 +60,7 @@ class VerifyReportIT extends AbstractOracleIT {
   private static final String CLOSED_MILL = "768";
   private static final String NO_XREF_MILL = "769";
 
-  /** The admin seeded with an {@code ILCR_MILL_USER_XREF} row for mill 764, and only 757. */
+  /** The admin seeded with an {@code ILCR_MILL_USER_XREF} row for mill 764, and only 764. */
   private static final String ADMIN_GUID = "VERIFYADMIN0000111122223333AAAA1";
 
   /** The principal name, which is what lands in the audit columns (30-char limit). */

@@ -162,6 +162,7 @@ sense against this directory, `mvn clean` before believing it.
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
+   | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
    | Verify transition (17.1)  | **764–770**     | `R__55`; 768 is CLS, 769 has no auditor xref, 770 is the rollback arm |
 
    **Verify transition (`R__55`, UC-CHK-007/012)** — the Submitted→Verified endpoint needs seven
@@ -176,27 +177,29 @@ sense against this directory, `mvn clean` before believing it.
    because the mill-active guard refuses it before any schedule is read. `769`
    repeats the happy path with **no** admin association, covering the legacy behaviour of writing
    NULL into both auditor columns. `770` is the rollback arm: `S` and all-met, so the forced
-   persistence failure is reached after every guard has passed. Summaries take `1060–1077` and cost details `2711–2912`; The band moved from 757-763 to 764-770 on 2026-09-18: Epic 21's `R__60` had claimed 760-762 for
-   the Data Extract fixtures, and two repeatable migrations inserting the same `THE.MILL` row fail
-   the whole Flyway run. The
-   prefix is `55` rather than anything above `70` so `R__70`'s set-based submitter association
-   covers these mills, which is what makes the submitter-refused arm fail for the right reason.
-   | Data Extract CSV          | **767–769**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
+   persistence failure is reached after every guard has passed. Summaries take `1060–1077` and
+   cost details `2711–2912`.
+
+   Two facts about the band and the prefix are worth not undoing. The band moved from `757–763` to
+   `764–770` on 2026-09-18: Epic 21's `R__60` had already claimed `760–762`, and two repeatable
+   migrations inserting the same `THE.MILL` row fail the whole Flyway run. And the prefix is `55`
+   rather than anything above `70` so `R__70`'s set-based submitter association covers these mills,
+   which is what makes the submitter-refused arm fail for the right reason.
 
    **Data Extract CSV (`R__60`, UC-EXT-001)** — three mills whose two status tracks disagree in the
-   three ways the "Data Verified" rule has to tell apart: `767` is `V`/`V`, `768` is `V`/`D` and
-   `769` is `S`/`V`, so a selection naming Schedules 1–10 and one also naming Schedule 11 reach
-   different verdicts on the same mills. `767` carries a Schedule 1 **and** a Schedule 3 summary;
-   `768` carries a Schedule 1 and a Schedule 2 summary and deliberately **no** Schedule 3, which is
-   the `*** NO SCHEDULE 3 ***` sentinel case; `769` carries no schedule data at all, so a
+   three ways the "Data Verified" rule has to tell apart: `760` is `V`/`V`, `761` is `V`/`D` and
+   `762` is `S`/`V`, so a selection naming Schedules 1–10 and one also naming Schedule 11 reach
+   different verdicts on the same mills. `760` carries a Schedule 1 **and** a Schedule 3 summary;
+   `761` carries a Schedule 1 and a Schedule 2 summary and deliberately **no** Schedule 3, which is
+   the `*** NO SCHEDULE 3 ***` sentinel case; `762` carries no schedule data at all, so a
    whole-schedule no-data marker is reachable while other mills in the same selection still have
    rows. Mill NUMBERs are out of mill-id order on purpose (7620/7600/7610), because the title block
    renders numbers while section rows are ordered by id.
 
    The Story 21.2 code review (2026-09-14) found the Schedule 3 sub-page, 4, 5, 8 and 10 walks had
-   never executed against a fixture row, so `767` now also carries one row for each of them, `768`
+   never executed against a fixture row, so `760` now also carries one row for each of them, `761`
    one silviculture location (its `V`/`D` split is what proves the Schedule 11 STATUS cell reads the
-   silviculture track), and `769` an EMPTY Schedule 1 summary (`1320`, legacy's all-records-empty
+   silviculture track), and `762` an EMPTY Schedule 1 summary (`1320`, legacy's all-records-empty
    whole-schedule marker). Those rows live in tables with their own primary keys, so `R__60` claims
    **one** further band, **`6600–6699`**, verified free of any `66xx` literal in `db/` and `db-e2e/`
    and below every sequence start those tables draw from (`9000`+): `TRANSPORTATION_REPORT`
