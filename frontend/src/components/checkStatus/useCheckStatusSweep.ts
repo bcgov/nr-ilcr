@@ -10,20 +10,34 @@ type UseCheckStatusSweepResult = {
   readonly data: CheckStatusSweepResponse | null
   readonly isLoading: boolean
   readonly errorDetail: string | null
+  /**
+   * A reload is open for the context already on screen: the last settled result answered an EARLIER
+   * `reloadToken`, so what the caller is rendering is the pre-transition state. Distinct from
+   * `isLoading`, which means there is nothing to render at all. A caller whose controls are gated on
+   * the status this hook returns must treat the window as busy — otherwise the gate answers from a
+   * status the server has already moved past.
+   */
+  readonly isReloading: boolean
 }
 
-/** One settled request, tagged with the context it was issued for. */
+/**
+ * One settled request, tagged with the context it was issued for — and with the `reloadToken` it
+ * answered, so "this result predates the reload the caller asked for" is derivable in render like
+ * everything else here, rather than tracked as a second piece of state.
+ */
 type Settled =
   | {
       readonly kind: 'data'
       readonly millId: number
       readonly year: number
+      readonly reloadToken: number
       readonly data: CheckStatusSweepResponse
     }
   | {
       readonly kind: 'error'
       readonly millId: number
       readonly year: number
+      readonly reloadToken: number
       readonly detail: string
     }
 
@@ -46,7 +60,8 @@ type Settled =
  * `reloadToken` re-issues the sweep for the SAME mill/year when the caller changes it: a status
  * transition has to re-read the track from the server, since the transition reply carries only its own
  * outcome. The last settled result stays current while that request is open, so the page keeps
- * rendering instead of flashing its loading state.
+ * rendering instead of flashing its loading state — and `isReloading` names that window, because what
+ * is on screen during it is the status the transition just moved past.
  */
 export function useCheckStatusSweep(
   millId: number | null,
@@ -72,15 +87,21 @@ export function useCheckStatusSweep(
         }
         const body = response.data
         if (body.millId !== millId || body.year !== year) {
-          setSettled({ kind: 'error', millId, year, detail: LOAD_FAILED })
+          setSettled({ kind: 'error', millId, year, reloadToken, detail: LOAD_FAILED })
         } else {
-          setSettled({ kind: 'data', millId, year, data: body })
+          setSettled({ kind: 'data', millId, year, reloadToken, data: body })
         }
       })
       .catch((error: unknown) => {
         // An abort rejects too; `active` is already false by then, so it never becomes an error.
         if (active) {
-          setSettled({ kind: 'error', millId, year, detail: extractDetail(error) || LOAD_FAILED })
+          setSettled({
+            kind: 'error',
+            millId,
+            year,
+            reloadToken,
+            detail: extractDetail(error) || LOAD_FAILED,
+          })
         }
       })
     return () => {
@@ -96,6 +117,10 @@ export function useCheckStatusSweep(
     data: current?.kind === 'data' ? current.data : null,
     errorDetail: current?.kind === 'error' ? current.detail : null,
     isLoading: hasContext && current === null,
+    // True from the render that bumps the token until that request settles — the effect has not even
+    // dispatched yet on the first of those renders, which is the point: there must be no frame in
+    // which the caller believes the stale status is current.
+    isReloading: hasContext && current !== null && current.reloadToken !== reloadToken,
   }
 }
 

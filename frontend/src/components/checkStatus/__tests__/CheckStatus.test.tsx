@@ -23,6 +23,7 @@ import CheckStatus, {
   HINT_NOT_SUBMITTED,
   HINT_NOT_SUBMITTED_11,
   HINT_NOT_SUBMITTER,
+  HINT_NOT_WIRED,
   CONFIRM_HEADING,
   VERIFY_FAILED,
 } from '../index'
@@ -816,18 +817,23 @@ describe('Check Status page (Story 15.2)', () => {
     render(<CheckStatus />)
     await screen.findAllByText(MET_TEXT)
 
-    // 1–10 Submitted → both 1–10 bars: Set to Draft (enabled), Submit (greyed), Verified (enabled).
+    // 1–10 Submitted → both 1–10 bars: Set to Draft, Submit (greyed), Verified (enabled).
+    // The reversal is RENDERED by legacy's rule but greyed until Epic 18 wires it (17.2 review):
+    // legacy's was enabled and worked, and a live control that silently does nothing is worse than
+    // a greyed one that says why.
     const setToDraft = screen.getAllByRole('button', { name: 'Set to Draft' })
     expect(setToDraft).toHaveLength(2)
     for (const button of setToDraft) {
-      expect(button).toBeEnabled()
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_WIRED)
       expect(region11().contains(button)).toBe(false)
     }
     expect(within(region1To10()).queryByRole('button', { name: 'Set to Submit' })).toBeNull()
-    // Schedule 11 Verified → its bar: Set to Submit (enabled), Submit (greyed), Verified (greyed).
+    // Schedule 11 Verified → its bar: Set to Submit (greyed, same reason), Submit and Verified greyed.
     const bar11 = item(SCHEDULE_TITLES['11'])
     const setToSubmit = within(bar11).getByRole('button', { name: 'Set to Submit' })
-    expect(setToSubmit).toBeEnabled()
+    expect(setToSubmit).toBeDisabled()
+    expect(hintFor(setToSubmit)).toHaveTextContent(HINT_NOT_WIRED)
     expect(within(bar11).queryByRole('button', { name: 'Set to Draft' })).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Set to Submit' })).toHaveLength(1)
     expect(within(bar11).getByRole('button', { name: 'Submit' })).toBeDisabled()
@@ -1143,6 +1149,139 @@ describe('Verify the Schedules 1–10 track (Story 17.2)', () => {
 
     release()
     expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+  })
+
+  test('AC10 (17.2 review): the button stays out of action until the refresh lands, not just until the POST does', async () => {
+    // Legacy re-gated the button in the SAME round trip that carried the message. We read the status
+    // from a second request, so the window between the 200 and the reload landing is ours to close:
+    // in it the sweep still answers Submitted, and a second verify would draw the server's
+    // support-escalation 409 over the success the user just earned.
+    const posted = vi.fn()
+    let verified = false
+    let sweeps = 0
+    let releaseReload: () => void = () => undefined
+    const reloadHeld = new Promise<void>((resolve) => {
+      releaseReload = resolve
+    })
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, async () => {
+        sweeps += 1
+        if (sweeps > 1) {
+          await reloadHeld
+        }
+        return HttpResponse.json(
+          sweep({ statusCode1To10: verified ? 'V' : 'S', statusCode11: 'D' }),
+        )
+      }),
+      http.post(VERIFY_URL, () => {
+        posted()
+        verified = true
+        return ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+
+    // The success is on screen and the reload is open, but the sweep still says Submitted.
+    await waitFor(() => expect(sweeps).toBe(2))
+    // `Set to Draft` renders only while the track is Submitted, so its presence IS the proof that
+    // the gate is still reading the pre-transition status.
+    expect(screen.getAllByRole('button', { name: 'Set to Draft' })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Set to Submit' })).toBeNull()
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeDisabled()
+    }
+    // Clicking cannot even reach the prompt, so there is nothing to confirm.
+    await user.click(verifiedButtons1To10()[0])
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(posted).toHaveBeenCalledTimes(1)
+
+    // Positive control: once the refresh lands the button is still disabled, now because the server
+    // says Verified — and the success message the first attempt earned is still the one on screen.
+    releaseReload()
+    await waitFor(() => expect(verifiedButtons1To10()[0]).toBeDisabled())
+    expect(screen.getByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+    expect(screen.queryByText(SUBMISSION_ERROR_MSG, verbatim)).toBeNull()
+    expect(posted).toHaveBeenCalledTimes(1)
+  })
+
+  test('AC10 (17.2 review): a refused verify releases the button once its own refresh-free arm settles', async () => {
+    // The positive control for the test above: `busy` must not strand the button. An error bumps no
+    // reload token, so the moment the request settles the gate is back on the server's status — still
+    // Submitted — and a corrected report can be re-verified without leaving the page.
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(http.post(VERIFY_URL, () => problem(409, NOT_SUBMITTED_MSG)))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(NOT_SUBMITTED_MSG, verbatim)).toBeInTheDocument()
+
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeEnabled()
+    }
+    server.use(verifyHandler(posted, ok))
+    await user.click(verifiedButtons1To10()[1])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+    expect(posted).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([
+    ['success', () => ok(), VERIFIED_MSG],
+    ['error', () => problem(409, NOT_SUBMITTED_MSG), NOT_SUBMITTED_MSG],
+  ])(
+    'AC11 (17.2 review): confirming moves focus to the outcome banner, not to <body> (%s)',
+    async (_name, reply, text) => {
+      // The prompt is mounted only while pending, so on confirm there is no dialog for Carbon to
+      // restore focus from, and the launching button may now be greyed: focus fell to <body> and the
+      // user was dropped to the top of the document with nothing announced.
+      submittedSweep()
+      server.use(http.post(VERIFY_URL, reply))
+      const user = userEvent.setup()
+      renderAsAdmin(<CheckStatus />)
+      await screen.findAllByText(MET_TEXT)
+
+      await user.click(verifiedButtons1To10()[1])
+      await user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }),
+      )
+      const banner = await screen.findByText(text, verbatim)
+
+      await waitFor(() => expect(document.activeElement).not.toBe(document.body))
+      const focused = document.activeElement as HTMLElement
+      expect(focused.contains(banner)).toBe(true)
+      // A programmatic target only — never picked up by Tab.
+      expect(focused).toHaveAttribute('tabindex', '-1')
+    },
+  )
+
+  test('AC11 (17.2 review): declining still returns focus to the button, and moves it nowhere else', async () => {
+    // The positive control for the pair above: the decline path predates this fix and must be intact.
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(verifyHandler(posted, ok))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    const launcher = verifiedButtons1To10()[1]
+    await user.click(launcher)
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+    )
+
+    await waitFor(() => expect(document.activeElement).toBe(launcher))
+    expect(posted).not.toHaveBeenCalled()
   })
 
   // ---- Error arms. Every one renders the server's verbatim `detail`; the page never branches on the

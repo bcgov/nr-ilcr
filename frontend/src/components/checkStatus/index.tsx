@@ -1,5 +1,5 @@
 import type { FC, ReactNode } from 'react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Accordion, AccordionItem, Column, Grid, Modal } from '@carbon/react'
 import useAuth from '@/context/auth/useAuth'
 import { ILCR_ROLES } from '@/context/auth/mockUsers'
@@ -42,6 +42,12 @@ export const VERIFY_FAILED = 'The report could not be verified.'
 // Client-authored hints beside a greyed button (legacy greyed with no explanation). Chosen here, by
 // which half of the legacy rule failed, and passed down — the bar itself knows nothing about roles.
 export const HINT_NOT_SUBMITTER = "Submitting is the licensee's action"
+// Set to Draft / Set to Submit render by legacy's own `rendered=` rules and legacy had them working;
+// only the transition is deferred (Epic 18). Until it lands the button is GREYED with this hint
+// rather than left live and silently inert: Story 17.2 is what first makes Verified reachable from
+// inside the app, so `Set to Submit` is now on the screen an administrator lands on immediately
+// after a successful verify, where a dead control reads as a broken one.
+export const HINT_NOT_WIRED = 'This action is not available yet'
 export const HINT_NOT_DRAFT = 'Available while Schedules 1-10 are in Draft'
 export const HINT_NOT_DRAFT_11 = 'Available while Schedule 11 is in Draft'
 export const HINT_NOT_ADMIN = "Verifying is an administrator's action"
@@ -117,10 +123,14 @@ type Outcome = {
 }
 
 /**
- * How a track's Verified button behaves. `busy` greys it for the duration of a request the button
- * itself started — legacy left it clickable, and its server had no idempotency guard either, so this
- * is deliberate hardening rather than parity. A track with no wiring keeps an inert click, which is
- * what the reversals and Schedule 11 still have until their own stories land.
+ * How a track's Verified button behaves. `busy` greys it from the click until the page is showing
+ * post-transition truth — the POST AND the refresh that follows it, not just the POST. Legacy needed
+ * no such flag: its one ajax round trip delivered the message and the re-rendered, re-gated button
+ * together, so there was never an instant where the screen said "verified" while the button still
+ * offered to verify. Ours reads the status from a SECOND request, and between the two the sweep
+ * still answers Submitted, so without this the button re-enables and a second POST is reachable —
+ * which the server then refuses with the support-escalation 409, replacing the success the user just
+ * earned. A track with no wiring keeps an inert click, which is what Schedule 11 has until Epic 26.
  */
 type VerifyWiring = {
   readonly onClick: () => void
@@ -134,8 +144,8 @@ const INERT: VerifyWiring = { onClick: () => undefined, busy: false }
  * CheckStatusMB.java:162-192): Submit = that track in Draft AND the user is the licensee
  * (ILCR_SUBMITTER); Verified = that track Submitted AND the user is NOT the licensee (ILCR_ADMIN);
  * Set to Draft is RENDERED only for an admin while the track is Submitted, Set to Submit only for
- * an admin while it is Verified (both enabled whenever rendered — `canUserSetToDraft/Submit` is the
- * same admin test). Validity is not part of any of them — the eleven-schedule gate fires on the click,
+ * an admin while it is Verified (legacy enabled both whenever rendered — `canUserSetToDraft/Submit`
+ * is the same admin test; ours greys them until Epic 18 supplies the transition, see `reversal`). Validity is not part of any of them — the eleven-schedule gate fires on the click,
  * server-side, and an administrator on a Submitted-but-failing report gets an enabled button and the
  * server's verbatim refusal. Display state only; the server is the authorization.
  */
@@ -148,10 +158,14 @@ const trackActions = (
 ): TrackActions => {
   const canSubmit = isSubmitter && track.statusCode === DRAFT
   const canVerify = isAdmin && track.statusCode === SUBMITTED
+  // Legacy rendered these ENABLED for an admin and they worked. Ours has no transition behind it
+  // until Epic 18, so it ships greyed: `onClick` absent is exactly the "no handler ⇒ disabled"
+  // contract TrackAction documents, which means Epic 18 enables the button by supplying a handler
+  // and changes nothing here. `enabled` still carries legacy's own rule so that is a one-line move.
   const reversal: TrackAction = {
     enabled: isAdmin,
-    disabledReason: isAdmin ? undefined : HINT_NOT_ADMIN,
-    onClick: () => undefined,
+    disabledReason: isAdmin ? HINT_NOT_WIRED : HINT_NOT_ADMIN,
+    onClick: undefined,
   }
   return {
     setToDraft: isAdmin && track.statusCode === SUBMITTED ? reversal : undefined,
@@ -184,7 +198,11 @@ const CheckStatus: FC = () => {
   // Bumped after a transition commits, so both reads that describe the track — the sweep's status code
   // and the tombstone's status lines — come back from the server rather than being guessed at here.
   const [reloadToken, setReloadToken] = useState(0)
-  const { data, isLoading, errorDetail } = useCheckStatusSweep(millId, year, reloadToken)
+  const { data, isLoading, errorDetail, isReloading } = useCheckStatusSweep(
+    millId,
+    year,
+    reloadToken,
+  )
   const { hasRole } = useAuth()
   const [confirmingVerify, setConfirmingVerify] = useState(false)
   const [verifying, setVerifying] = useState(false)
@@ -194,6 +212,24 @@ const CheckStatus: FC = () => {
   // Which button opened the prompt, so declining puts focus back where it was. The prompt is mounted
   // only while it is pending, so there is no dialog left for Carbon to restore focus from on close.
   const launcherRef = useRef<HTMLElement | null>(null)
+  // The outcome banner, and a latch so only a settled verify moves focus to it.
+  const outcomeRef = useRef<HTMLDivElement>(null)
+  const focusOutcomeRef = useRef(false)
+
+  // Confirming unmounts the prompt, and the button that launched it may now be greyed, so there is
+  // nothing for Carbon to restore focus to and it lands on <body> — the user is dropped to the top of
+  // the document and never told what happened. Focus the banner instead: it announces the outcome and
+  // brings it into view in one move, which is the same answer schedule4 reached (index.tsx:552-561)
+  // when a `window.scrollTo` was found to move the viewport but not focus. Latched, so only a verify
+  // this page dispatched moves focus, and applied to BOTH arms — legacy's `oncomplete` repositioned
+  // the page on either outcome too (checkStatus.xhtml:202).
+  useEffect(() => {
+    if (!focusOutcomeRef.current || outcome === null) {
+      return
+    }
+    focusOutcomeRef.current = false
+    outcomeRef.current?.focus()
+  }, [outcome])
 
   const header = <ScheduleTombstone title={PAGE_TITLE} reloadToken={reloadToken} />
   const loadState = renderScheduleLoadState({
@@ -235,6 +271,7 @@ const CheckStatus: FC = () => {
       return
     }
     busyRef.current = true
+    focusOutcomeRef.current = true
     setConfirmingVerify(false)
     setVerifying(true)
     api()
@@ -265,7 +302,7 @@ const CheckStatus: FC = () => {
     isSubmitter,
     isAdmin,
     { notDraft: HINT_NOT_DRAFT, notSubmitted: HINT_NOT_SUBMITTED },
-    { onClick: requestVerify, busy: verifying },
+    { onClick: requestVerify, busy: verifying || isReloading },
   )
   const actions11 = trackActions(data.schedule11, isSubmitter, isAdmin, {
     notDraft: HINT_NOT_DRAFT_11,
@@ -281,6 +318,7 @@ const CheckStatus: FC = () => {
             kind={outcome.kind}
             title={outcome.kind === 'success' ? 'Success' : 'Action failed'}
             subtitle={outcome.text}
+            focusRef={outcomeRef}
           />
         )}
         <CheckStatusActions {...actions1To10} />
