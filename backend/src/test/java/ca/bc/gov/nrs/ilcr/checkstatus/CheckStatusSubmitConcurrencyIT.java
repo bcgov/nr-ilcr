@@ -32,7 +32,7 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Acceptance test — Story 15.3 AC 6: two concurrent submits for the same mill/year serialize on the
  * status row's {@code FOR UPDATE} lock. Exactly one commits {@code S}; the other blocks, then reads
- * {@code S} and answers the guard's 409 ({@code reportSubmissionErrorMsg}), having written nothing.
+ * {@code S} and answers the guard's 409 ({@code submitNotDraftErrorMsg}), having written nothing.
  * Whichever thread wins, the database ends in the same state — one submission, one revision bump,
  * every category advanced once — which is what makes the assertion order-independent.
  *
@@ -45,9 +45,8 @@ import org.springframework.test.web.servlet.MvcResult;
 class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/check-status/submit";
-  private static final String SUBMISSION_ERROR =
-      "An error has been found submitting schedules. The error details have been logged. Please"
-          + " contact ILCR application support.";
+  private static final String NOT_DRAFT =
+      "Schedules 1-10 are no longer in Draft and cannot be submitted.";
 
   @Autowired private JdbcTemplate jdbc;
   @MockitoSpyBean private MillContextService millContextService;
@@ -56,7 +55,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
   private record Outcome(int status, JsonNode body, long millis) {}
 
   @Test
-  @DisplayName("781/2021: exactly one 200, one 409 reportSubmissionErrorMsg; S committed once")
+  @DisplayName("781/2021: exactly one 200, one 409 submitNotDraftErrorMsg; S committed once")
   void twoSubmits_exactlyOneCommits() throws Exception {
     CountDownLatch firstHasLock = new CountDownLatch(1);
     CountDownLatch releaseFirst = new CountDownLatch(1);
@@ -131,7 +130,7 @@ class CheckStatusSubmitConcurrencyIT extends AbstractOracleIT {
     Outcome winner = outcomes.stream().filter(o -> o.status() == 200).findFirst().orElseThrow();
     Outcome loser = outcomes.stream().filter(o -> o.status() == 409).findFirst().orElseThrow();
     assertThat(winner.body().path("message").path("key").asText()).isEqualTo("sch1-10SubmittedMsg");
-    assertThat(loser.body().path("detail").asText()).isEqualTo(SUBMISSION_ERROR);
+    assertThat(loser.body().path("detail").asText()).isEqualTo(NOT_DRAFT);
     System.out.printf(
         "15.3 AC 6 timing (D10): winning submit held the lock ~%d ms; blocked submit answered in"
             + " %d ms%n",
