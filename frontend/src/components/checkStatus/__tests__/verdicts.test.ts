@@ -197,11 +197,13 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
     ])
   })
 
-  test('checkStatusLocationName: null, blank and whitespace names fall back to the id; a null id to "Location"', () => {
+  test('checkStatusLocationName: null, blank and whitespace names fall back to the id; a null or undefined id to "Location"', () => {
     expect(checkStatusLocationName({ id: 7001, name: null })).toBe('Location 7001')
     expect(checkStatusLocationName({ id: 7001, name: '' })).toBe('Location 7001')
     expect(checkStatusLocationName({ id: 7001, name: '   ' })).toBe('Location 7001')
     expect(checkStatusLocationName({ id: null, name: null })).toBe('Location')
+    expect(checkStatusLocationName({ id: undefined, name: null })).toBe('Location')
+    expect(checkStatusLocationName({ id: undefined, name: undefined })).toBe('Location')
     expect(checkStatusLocationName({ id: 7001, name: 'Harbour Dump' })).toBe('Harbour Dump')
   })
 

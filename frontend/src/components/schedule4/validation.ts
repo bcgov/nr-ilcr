@@ -73,13 +73,15 @@ export function checkStatusFieldLabel(code: number): string | undefined {
  * printed "Location Descriprion - " followed by nothing.
  */
 export function checkStatusLocationName(location: {
-  readonly id: number | null
+  readonly id: number | null | undefined
   readonly name: string | null | undefined
 }): string {
   if (location.name !== null && location.name !== undefined && location.name.trim() !== '') {
     return location.name
   }
-  return location.id === null ? 'Location' : `Location ${location.id}`
+  // Guard undefined as well as null: `id` is typed nullable, but a payload that omits it would
+  // otherwise render "Location undefined".
+  return location.id === null || location.id === undefined ? 'Location' : `Location ${location.id}`
 }
 
 const VOLUME = { min: 0, max: 9_999_999 }
