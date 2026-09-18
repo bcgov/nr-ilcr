@@ -296,6 +296,102 @@ export const S04_GENERAL_COMMENT =
 export const GENERAL_COMMENTS_FIELD = '#general-comments';
 
 // ---------------------------------------------------------------------------------------------------
+// THE THREE CONTEXT GUARDS (S06, S07, S08)
+//
+// None of them writes anything, so none needs a mutating anchor. S06 needs no anchor at all — it is
+// about the absence of a working context, which lives in the browser.
+//
+// The messages come from the SHARED `core/ScheduleLoadState`, so most of them are identical across
+// schedules; only the generic load-failure title carries the schedule's own name
+// (`scheduleName: 'Schedule 6'`, index.tsx:576).
+// ---------------------------------------------------------------------------------------------------
+
+export const GUARD_MESSAGES = {
+  /**
+   * ERR-001 — the CLIENT-ONLY banner (`ERR_MILL_YEAR_NOT_SELECTED`,
+   * components/core/ScheduleLoadState/index.tsx:12).
+   *
+   * NOTE THE MISSING TRAILING SPACE. The legacy Gherkin quotes
+   * "Please Select Mill and Reporting Year in the Home Page. " WITH one, because that is the SERVER's
+   * ERR-001 literal. This guard never reaches the server — the page suppresses the request entirely —
+   * so what renders is the client literal, which has no trailing space by sibling convention
+   * (index.tsx:52-55 says so explicitly). The server's spaced version still renders verbatim when a
+   * request genuinely returns it.
+   */
+  millYearNotSelected: 'Please Select Mill and Reporting Year in the Home Page.',
+  /** Its notification TITLE. Severity is carried by a word, never by colour alone (WCAG 2.1 AA). */
+  millYearNotSelectedTitle: 'Mill and Reporting Year required',
+  /** ERR-002 — the 409 detail, served by the API and echoed unchanged. */
+  millNotActive:
+    'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.',
+  /**
+   * ERR-002's own TITLE. A mill closed for the reporting year is a CONTEXT the reporter changes on the
+   * Home page, not the app failing to load, so ScheduleLoadState titles it separately rather than
+   * letting it fall through to the generic failure below.
+   */
+  millNotActiveTitle: 'Mill not active for Reporting Year',
+  /** ERR-003 — the 404 detail. */
+  scheduleNotFound: 'Schedule not found.',
+  /**
+   * The GENERIC load-failure title, which ERR-003 still renders under — but ERR-002 does NOT.
+   * Asserting its ABSENCE on the closed-mill guard is what keeps the two framings apart: the detail
+   * alone reads identically either way.
+   */
+  loadFailedTitle: 'Unable to load Schedule 6',
+} as const;
+
+const MILL_11: MillRef = {
+  millNumber: '11',
+  millName: 'EVANS FOR. PROD. (DIV. OF LOUISIANA PACIFIC)',
+}; // millId 1, CLS
+
+const MILL_20173: MillRef = { millNumber: '20173', millName: 'TOMTESTMILL042017' }; // millId 23050, ACT
+
+/**
+ * S07 — a mill that is CLOSED for the reporting year, so the document GET answers 409.
+ *
+ * REUSED FROM THE EXTRACT RATHER THAN MINTED. 1/2017 is one of only two Draft cells the whole suite
+ * left unpinned (see the header survey), and it is unusable as a mutating anchor for exactly the
+ * reason that makes it perfect here: mill 1 is CLS, so it answers 409. Verified 2026-09-17 through the
+ * API, detail byte-for-byte.
+ *
+ * NOT minted in 2024, deliberately: opening 2024 for a closed mill would mean adding a report-status
+ * row for a CLS mill, and flipping any mill's ILCR_MILL_STATUS_XREF is what sch5's patch header warns
+ * would silently redden the closed-mill guards sch2/sch3/sch4/sch5 already pin. Reusing a cell that is
+ * ALREADY closed touches nothing.
+ *
+ * Mill 1 is seeded in the CI seed with its CLS xref; only the 2017 report-status row had to be added
+ * (a row must EXIST for the year, or MillContextService answers 404 first and the 409 is never
+ * reached — the same trap sch3's own comment records for 1/2016).
+ */
+export const CLOSED_MILL_ANCHOR: Sch6Anchor = { key: { millId: 1, year: 2017 }, mill: MILL_11 };
+
+/**
+ * S08 — an ACTIVE mill with NO Schedule 6 report-status row, so the GET answers 404.
+ *
+ * THE FIXTURE IS THE ABSENCE. 23050/2024 is a hole CARVED in sch6's own minted year: the patch opens
+ * 2024 for six mills and deliberately skips this one, so a 404 anchor exists inside the range sch6
+ * controls. Seeding it would DELETE the fixture, not fix it — which is why it is registered in
+ * DELIBERATELY_ABSENT in `preflight/ci-seed-parity.setup.ts`, whose reverse check fails if anyone ever
+ * gives it a row. Same construction as sch5's 16050/2022.
+ */
+export const NO_SCHEDULE_ANCHOR: Sch6Anchor = { key: { millId: 23050, year: 2024 }, mill: MILL_20173 };
+
+/** The two guard anchors keyed for the step, with the status each must still answer. */
+export const GUARDS: Record<string, { anchor: Sch6Anchor; expectHttp: number; detail: string }> = {
+  'closed-mill': {
+    anchor: CLOSED_MILL_ANCHOR,
+    expectHttp: 409,
+    detail: GUARD_MESSAGES.millNotActive,
+  },
+  'not-found': {
+    anchor: NO_SCHEDULE_ANCHOR,
+    expectHttp: 404,
+    detail: GUARD_MESSAGES.scheduleNotFound,
+  },
+};
+
+// ---------------------------------------------------------------------------------------------------
 // Verbatim app messages. Rendered from the API's `message.text` / ProblemDetail.detail (AD-8), so these
 // are transcriptions of what the server sends, confirmed by the probes above — never invented copy.
 // ---------------------------------------------------------------------------------------------------

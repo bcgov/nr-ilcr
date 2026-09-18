@@ -27,23 +27,27 @@ authoring began. The two uncounted slices were S22/S23, the Check-Status-include
 Measured, never incremented — re-measure rather than editing these numbers by hand:
 
 ```
-features/sch6/**/*.feature                    5 files
-scenarios (bddgen, @UC-SCH6-001)              6
-preflight/sch6-anchors.setup.ts               9 checks
-pinned (mill, year) anchors                   6  (9050, 10050, 12050, 13050, 17052, 22050 — all /2024)
+features/sch6/**/*.feature                    6 files
+scenarios (bddgen, @UC-SCH6-001)              9
+preflight/sch6-anchors.setup.ts              11 checks
+pinned (mill, year) anchors                   8  — 6 mutating/validate-only in 2024, plus 2 guards
+                                                  (1/2017 closed-mill, 23050/2024 deliberately absent)
 @discovered-divergence / @discovered-bug      0
 ```
 
-Six scenarios over five slices: S05 is two scenarios (a reject arm and a correction arm) because the
-legacy file has two and they cannot share an anchor — see its feature header.
+Nine scenarios over eight slices: S05 is two (a reject arm and a correction arm) because the legacy
+file has two and they cannot share an anchor — see its feature header.
 
 Verification runs, 2026-09-17:
 
-- full suite preflight → **189 passed** (180 before sch6 + 9)
-- `--grep @UC-SCH6-001 --workers=1` → **6 passed**
-- `--repeat-each=5 --workers=1` → **30 passed**, 5/5 stable per scenario
-- `--workers=2` single pass → **6 passed**, every anchor empty afterwards
-- All six anchors confirmed empty, with no stranded `ROAD_MAINTENANCE_REPORT` rows in 2024
+- full suite preflight → **191 passed** (180 before sch6 + 11), run at `--workers=2`
+- `--grep @UC-SCH6-001 --workers=1` → **9 passed**
+- `--repeat-each=5 --workers=1` → **45 passed**, 5/5 stable per scenario
+- `--workers=2` single pass → **9 passed**, every anchor empty afterwards
+- All six mutating anchors confirmed empty, with no stranded `ROAD_MAINTENANCE_REPORT` rows in 2024
+
+Preflight itself must also be run at `--workers=2` on this box. At the default (6) two unrelated sch4
+anchor checks failed and then passed in isolation — the same overload described below, not drift.
 
 ### How to stress these, and two traps that cost real time
 
@@ -225,16 +229,65 @@ failed; the app was right.
 
 ---
 
+## S06 / S07 / S08 — the three context guards
+
+Scenarios: `render-states.feature` → `@p1 @S06 @ERR-001`, `@p1 @S07 @ERR-002`, `@p1 @S08 @ERR-003`.
+None writes anything. S06 needs no anchor; S07 = **1/2017** (closed mill, reused from the extract);
+S08 = **23050/2024** (a deliberate absence).
+
+| # | Source item | App enforcement | Scenario step | Status |
+|---|---|---|---|---|
+| 1 | No mill/year in session → the select-a-context error | client-only banner; the request is never issued | `When I open Schedule 6 with no working context` / `Then the Schedule 6 mill and reporting year guard is shown` | covered (message re-grounded — see `defects.md` VER-4) |
+| 2 | Its notification carries a severity WORD, not colour alone | `Mill and Reporting Year required` title | same step | covered |
+| 3 | Mill not active for the year → ERR-002, verbatim | API 409 detail, echoed unchanged (AD-8) | `Then the Schedule 6 page shows the closed-mill guard` | covered |
+| 4 | *(beyond the Gherkin)* ERR-002 is framed as a CONTEXT problem, not a load failure | its own title; the generic one is absent | same step | covered |
+| 5 | No Schedule 6 record → ERR-003, verbatim | API 404 detail | `Then the Schedule 6 page is blocked as a load failure` | covered |
+| 6 | *(beyond the Gherkin)* ERR-003 IS framed as a load failure | the generic title is present | same step | covered |
+| 7 | The road-maintenance data-entry forms are not displayed (all three) | the page returns its load state instead of the body | `Then the Schedule 6 data-entry surface is suppressed` | covered |
+
+**Why items 4 and 6 exist.** S07 and S08 read almost identically — both suppress the page and show a
+message — and the detail text alone cannot tell the two framings apart. So each scenario asserts the
+*other's* title: a closed mill is a context the reporter fixes on Home and must **not** say "Unable to
+load Schedule 6", while a missing record genuinely is a load failure and must. Without this pair the
+two guards could be transposed and both would still pass.
+
+**Why item 7 asserts absence rather than a disabled state.** A guarded page returns its load state
+instead of the body (`index.tsx:840`), so the Add toggle, Add Report, the totals region and the general
+comment are not in the page at all. Asserting "disabled" would pass vacuously against an element that
+does not exist.
+
+### Anchor notes for these two guards
+
+Both are read-only, so neither needed a mutating cell — but both needed care:
+
+- **1/2017 is reused from the extract, not minted.** It is one of only two Draft cells the whole suite
+  left unpinned, and what makes it useless as a mutating anchor is exactly what makes it right here:
+  mill 1 is CLS, so the GET answers 409. Minting a closed cell in 2024 was **rejected** — flipping any
+  mill's `ILCR_MILL_STATUS_XREF` to manufacture a guard would silently redden the closed-mill guards
+  sch2/sch3/sch4/sch5 already pin. Its 2017 report-status row was added to the CI seed, because a row
+  must EXIST for the year or `MillContextService` answers 404 first and the 409 is never reached.
+- **23050/2024's fixture is its absence**, carved inside sch6's own minted year. Registered in
+  `DELIBERATELY_ABSENT` in `preflight/ci-seed-parity.setup.ts`, whose reverse check fails if anyone
+  ever seeds it. The mill is seeded and holds 2017–2023 rows, so the mill resolves and only the YEAR is
+  missing — which is what makes this a 404 rather than an unknown-mill failure.
+
+Both are proved at the API in preflight *and* again in each scenario's Given, status and detail. A
+guard's fixture is a failure mode, and failure modes rot quietly: if mill 1 were ever reopened the GET
+would start answering 200 and the scenario would fail on a missing banner, which reads as a UI defect
+rather than as drifted data.
+
+---
+
 ## Remaining slices
 
-S06–S23 not yet authored (18 of 23). Accessibility sweeps not yet authored. Each will be added here
+S09–S23 not yet authored (15 of 23). Accessibility sweeps not yet authored. Each will be added here
 with its own item table as it lands; `defects.md` carries anything found along the way.
 
-The next slices (S06–S08) are the three context guards, which need no mutating anchor at all — they
-assert HTTP 400/409/404 outcomes. S07 and S08 will need a closed-mill and a no-schedule anchor; note
-that the no-schedule one is an **absence**, so it must be registered in `DELIBERATELY_ABSENT` in
-`preflight/ci-seed-parity.setup.ts` or the parity gate will report it as missing, and seeding it would
-delete the fixture rather than fix it.
+Next up are the Check Status outcomes (S09–S11, then the S20/S21 compositions). Two things to plan for:
+the endpoint takes the **on-screen** payload, so a scenario must control what is on screen rather than
+what is stored; and `GAP-4`-style per-record "met" lines only appear when the SCHEDULE fails and some
+individual record passes, which needs two records on one anchor — a state every current anchor is
+asserted NOT to hold, so it will need its own cell.
 
 **Anchor budget note for whoever continues this.** Every further mutating scenario needs its OWN
 `(mill, year)` — the suite runs `fullyParallel` and an add creates a real `ROAD_MAINTENANCE_REPORT`

@@ -468,6 +468,19 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- 22050/2024 — the VALIDATE-ONLY anchor: S05's reject arm now, S12-S16 later. Nothing ever saves
 -- here, which is what lets non-writing scenarios share it.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22050, 'D', 'D', 'E2E_SEED');
+-- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
+-- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
+-- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It
+-- is registered in DELIBERATELY_ABSENT in preflight/ci-seed-parity.setup.ts, whose reverse check fails
+-- if anyone ever gives it a row. Same construction as sch5's 16050/2022.
+--
+-- 1/2017 — S07's closed-mill guard (GET -> 409). Mill 1 and its CLS xref are already seeded above;
+-- only this report-status row was missing. A row must EXIST for the year or MillContextService answers
+-- 404 first and the 409 the scenario asserts is never reached — the same trap the 1/2016 comment
+-- records for sch3. REUSED from the extract rather than minted in 2024 deliberately: opening 2024 for
+-- a closed mill is fine, but no mill's ILCR_MILL_STATUS_XREF may be flipped to create a guard, since
+-- that would silently redden the closed-mill guards sch2/sch3/sch4/sch5 already pin.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2017, 1,     'D', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
 -- Banner status dates (sec S01 asserts "Sch 1-10 - Status: Draft - Date:

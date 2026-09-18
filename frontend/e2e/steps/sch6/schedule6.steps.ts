@@ -3,6 +3,8 @@ import {
   ADD_ANCHOR,
   EDIT_ANCHOR,
   GENERAL_COMMENT_ANCHOR,
+  GUARDS,
+  GUARD_MESSAGES,
   INVALID_TFL,
   type Sch6Anchor,
   S01_RECORD,
@@ -18,6 +20,7 @@ import {
   VALIDATE_ONLY_ANCHOR,
   VALID_TFL,
   millOptionText,
+  scheduleUrl,
 } from '../../fixtures/sch6/schedule6-test-data';
 import { addRecord, readSchedule6 } from './schedule6Api';
 
@@ -468,6 +471,66 @@ Then('no road record was stored on that anchor', async ({ request, world }) => {
 
 When('I correct the TFL number', async ({ schedule6Page }) => {
   await schedule6Page.enterTflNumber(VALID_TFL.number);
+});
+
+// ---- S06 / S07 / S08 — the three context guards ----------------------------------------------------
+
+Given('the Schedule 6 guard anchor {string}', async ({ request, world }, name: string) => {
+  const guard = GUARDS[name];
+  expect(guard, `unknown Schedule 6 guard "${name}" — add it to GUARDS in the fixture`).toBeTruthy();
+
+  // PROVED AT THE API BEFORE THE BROWSER IS DRIVEN. A guard's whole fixture is a failure mode, so if
+  // the data drifted (a reopened mill, or a report-status row that should not exist) the GET would
+  // answer 200 and the scenario would fail on a MISSING error banner — which reads as a UI defect.
+  // Checking here means the failure names the data instead.
+  const res = await request.get(scheduleUrl(guard.anchor.key.millId, guard.anchor.key.year));
+  expect(
+    res.status(),
+    `guard "${name}" (${guard.anchor.key.millId}/${guard.anchor.key.year}) must answer HTTP `
+      + `${guard.expectHttp}`,
+  ).toBe(guard.expectHttp);
+
+  world.scheduleKey = guard.anchor.key;
+  world.millOption = millOptionText(guard.anchor.mill);
+});
+
+When('I open Schedule 6 with no working context', async ({ schedule6Page }) => {
+  await schedule6Page.openWithNoContext();
+});
+
+When('I open Schedule 6 expecting a guard message', async ({ schedule6Page }) => {
+  await schedule6Page.openExpectingGuard();
+});
+
+Then('the Schedule 6 mill and reporting year guard is shown', async ({ schedule6Page }) => {
+  // NOTE THE ABSENT TRAILING SPACE. The legacy Gherkin quotes this message WITH one, because that is
+  // the SERVER's ERR-001 literal — but this guard never reaches the server (the page suppresses the
+  // request), so what renders is the CLIENT literal, which carries no trailing space by sibling
+  // convention. Recorded in defects.md VER-4.
+  await expect(schedule6Page.notification(GUARD_MESSAGES.millYearNotSelected)).toBeVisible();
+  // The TITLE too: severity is carried by a word, never by colour alone (WCAG 2.1 AA).
+  await expect(schedule6Page.notification(GUARD_MESSAGES.millYearNotSelectedTitle)).toBeVisible();
+});
+
+Then('the Schedule 6 page shows the closed-mill guard', async ({ schedule6Page }) => {
+  await expect(schedule6Page.notification(GUARD_MESSAGES.millNotActive)).toBeVisible();
+  await expect(schedule6Page.notification(GUARD_MESSAGES.millNotActiveTitle)).toBeVisible();
+  // AND NOT the generic load-failure framing. This is the assertion that keeps the two apart: a mill
+  // closed for the reporting year is a CONTEXT the reporter changes on the Home page, not the app
+  // failing to load, so ScheduleLoadState titles it separately. The DETAIL alone reads identically
+  // either way, so only the absence of this title distinguishes them.
+  await expect(schedule6Page.notification(GUARD_MESSAGES.loadFailedTitle)).toHaveCount(0);
+});
+
+Then('the Schedule 6 page is blocked as a load failure', async ({ schedule6Page }) => {
+  await expect(schedule6Page.notification(GUARD_MESSAGES.scheduleNotFound)).toBeVisible();
+  // A missing record IS a load failure and keeps the generic title — the mirror of the closed-mill
+  // assertion above, so the pair proves the framings are not swapped.
+  await expect(schedule6Page.notification(GUARD_MESSAGES.loadFailedTitle)).toBeVisible();
+});
+
+Then('the Schedule 6 data-entry surface is suppressed', async ({ schedule6Page }) => {
+  await schedule6Page.expectDataEntrySuppressed();
 });
 
 Then('the corrected TFL record is persisted', async ({ request, world }) => {

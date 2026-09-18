@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   ADD_ANCHOR,
   EDITABLE_DRAFT_ANCHORS,
+  GUARDS,
   scheduleUrl,
 } from '../fixtures/sch6/schedule6-test-data';
 
@@ -131,3 +132,36 @@ test('preflight: Schedule 6 anchors are all distinct', async () => {
       + `${shared.join('; ')}. Mint another cell in reporting year 2024+ instead (see the patch header).`,
   ).toEqual([]);
 });
+
+/**
+ * The two guard anchors still produce the EXACT status their scenario reads.
+ *
+ * Asserted here as well as in the scenario because a guard's whole fixture is a FAILURE mode, and
+ * failure modes rot quietly: if 1/2017's mill were ever reopened, or if 23050 gained a 2024
+ * report-status row, the GET would start answering 200 and the scenario would fail on a missing error
+ * banner — which reads as a UI defect rather than as drifted data. This names the cause in the setup
+ * project instead.
+ *
+ * The DETAIL is checked too, not just the status: both scenarios assert the message byte-for-byte, and
+ * the API is where that text comes from (AD-8 — the page echoes it, never substitutes its own).
+ */
+for (const [name, guard] of Object.entries(GUARDS)) {
+  test(`preflight: Schedule 6 guard anchor ${name} still answers HTTP ${guard.expectHttp}`, async ({
+    request,
+  }) => {
+    const res = await request.get(scheduleUrl(guard.anchor.key.millId, guard.anchor.key.year));
+    expect(
+      res.status(),
+      `Schedule 6 guard "${name}" (${guard.anchor.key.millId}/${guard.anchor.key.year}) must answer `
+        + `HTTP ${guard.expectHttp}. A 200 means the data drifted — a reopened mill, or a report-status `
+        + `row that should not exist. ${HINT}`,
+    ).toBe(guard.expectHttp);
+
+    const body = (await res.json()) as { detail?: string };
+    expect(
+      body.detail,
+      `Schedule 6 guard "${name}" must carry its verbatim detail — the page echoes the API's text `
+        + `rather than substituting its own (AD-8). ${HINT}`,
+    ).toBe(guard.detail);
+  });
+}

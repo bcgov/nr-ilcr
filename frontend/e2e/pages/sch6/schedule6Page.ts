@@ -1,11 +1,13 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { SchedulePage } from '../common/schedulePage';
+import { navigateViaSideNav } from '../common/authNav';
 import { byId, fieldError } from '../common/carbonHelpers';
 import {
   ADD_FIELD,
   ADD_PANEL_HEADING,
   EMPTY_LIST,
   GENERAL_COMMENTS_FIELD,
+  MILL_YEAR_STORAGE_KEY,
   rowField,
 } from '../../fixtures/sch6/schedule6-test-data';
 
@@ -54,6 +56,57 @@ export class Schedule6Page {
   /** Open Schedule 6 via the side-nav (client-side, so the saved working context survives). */
   async open(): Promise<void> {
     await this.schedule.open('Schedule 6');
+  }
+
+  /**
+   * Open Schedule 6 via the side-nav when a GUARD is expected.
+   *
+   * A separate path from `open()` because that one waits for the tombstone's working-context region,
+   * which a guarded page never renders — the guard replaces the whole body. So this asserts only that
+   * the route was reached. Anchored with `$` so a deeper path could not satisfy it.
+   */
+  async openExpectingGuard(): Promise<void> {
+    await navigateViaSideNav(this.page, { group: 'Schedules', link: 'Schedule 6' });
+    await expect(this.page).toHaveURL(/\/schedule-6$/);
+  }
+
+  /**
+   * Open Schedule 6 with NO working context (S06).
+   *
+   * Seeds an EMPTY MillYearContext into localStorage — the supported empty state
+   * (`context/millYear/MillYearProvider.tsx`) — and loads the route directly, so the page renders its
+   * context-missing guard WITHOUT ever issuing a request. Going through Home and declining to pick a
+   * mill would leave the context UNSET rather than empty, which is a different state and would not
+   * exercise the same branch.
+   */
+  async openWithNoContext(): Promise<void> {
+    await this.page.addInitScript(
+      ([key]) => {
+        window.localStorage.setItem(key, JSON.stringify({ millId: null, year: null }));
+      },
+      [MILL_YEAR_STORAGE_KEY],
+    );
+    await this.page.goto('/schedule-6');
+    await expect(this.page).toHaveURL(/\/schedule-6$/);
+  }
+
+  /** A Carbon notification containing `text` — how every guard message reaches the reporter. */
+  notification(text: string): Locator {
+    return this.page.getByRole('status').filter({ hasText: text });
+  }
+
+  /**
+   * The whole data-entry surface the three guards must suppress.
+   *
+   * Asserts ABSENCE (`toHaveCount(0)`), not disabled-ness: a guarded Schedule 6 returns its load state
+   * instead of the body (`index.tsx:840`), so these controls are not in the page at all. Checking for
+   * "disabled" would pass vacuously against an element that does not exist.
+   */
+  async expectDataEntrySuppressed(): Promise<void> {
+    await expect(this.addToggle).toHaveCount(0);
+    await expect(this.addReportButton).toHaveCount(0);
+    await expect(this.totals).toHaveCount(0);
+    await expect(this.generalComments).toHaveCount(0);
   }
 
   // ---- The Add panel (legacy's toggled `roadAddPanel`) --------------------------------------------

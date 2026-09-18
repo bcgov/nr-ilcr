@@ -14,8 +14,8 @@ BA/QA reader who does not know the codebase — plain language first, code refer
 `OPEN` means "found and evidenced", not "agreed". Nothing here is closed or ticketed without your
 confirmation.
 
-**STATUS 2026-09-17 — IN PROGRESS.** S01–S05 authored and green (six scenarios; S05 is two); 5 of 23
-slices covered. Three verified-not-a-defect findings. No divergences and no bugs found in the app so
+**STATUS 2026-09-17 — IN PROGRESS.** S01–S08 authored and green (nine scenarios; S05 is two); 8 of 23
+slices covered. Four verified-not-a-defect findings. No divergences and no bugs found in the app so
 far — every red encountered so far has been the test being wrong, not the application.
 
 ---
@@ -40,9 +40,9 @@ far — every red encountered so far has been the test being wrong, not the appl
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
-### GAP-1 — 18 of 23 slices, and all accessibility coverage, not yet authored — OPEN
+### GAP-1 — 15 of 23 slices, and all accessibility coverage, not yet authored — OPEN
 
-**What is missing.** S01–S05 are covered. S06–S23 and the axe sweeps are still to be written.
+**What is missing.** S01–S08 are covered. S09–S23 and the axe sweeps are still to be written.
 
 **Why it is recorded rather than left implicit.** Story 28.4's GAP-5 is the precedent: Schedule 5
 reached "all 25 slices authored" with **zero** accessibility coverage, because accessibility is an NFR
@@ -180,3 +180,23 @@ is proved by reading the schedule back, which is the assertion that actually mat
 timing change, not a behaviour change, and nothing is stored either way. If the immediate feedback is
 considered important, that would be a new requirement rather than a defect, because it would mean
 sending the TFL number to the server as the user leaves the field.
+
+### VER-4 — the "select a mill and year" message has no trailing space here — 2026-09-17
+
+**What looked wrong.** The S06 Gherkin quotes the message as
+`"Please Select Mill and Reporting Year in the Home Page. "` — with a space after the full stop. The
+rebuilt page shows it without one, so a byte-for-byte assertion on the quoted text fails.
+
+**Why it is not a defect.** There are two literals, and the scenario reaches the other one. Legacy's
+trailing-space version is the SERVER's ERR-001 text, returned when a request is made without a mill
+and year. This guard never makes that request: with no working context the page suppresses the call
+entirely and shows a client-side banner, whose literal carries no trailing space by the convention
+every sibling schedule follows. The app states this at the point of definition
+(`components/schedule6/index.tsx:52-55`), and notes that the server's spaced version still renders
+verbatim when a request genuinely returns it — so neither literal has been lost.
+
+**How handled.** The assertion uses the client literal, and the feature header records why. Nothing
+was weakened: the message is still matched exactly, just the correct one of the two.
+
+**For BA/QA.** No action. A reporter sees the same sentence; the difference is one invisible character
+at the end, and only in the case where no request is sent.
