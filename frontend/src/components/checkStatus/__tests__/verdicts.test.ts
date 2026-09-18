@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { labelFor } from '@/components/schedule4/validation'
+import {
+  checkStatusFieldLabel,
+  checkStatusLocationName,
+  labelFor,
+} from '@/components/schedule4/validation'
 import { flattenVerdict, SCHEDULE_TITLES } from '../verdicts'
 import {
   MET_TEXT,
@@ -151,9 +155,9 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
     expect(issues.requirementsMetMessage).toBeNull()
   })
 
-  test('Schedule 4 ISSUES: category from the client label table (D5) plus the legacy unit; met locations render nothing (D8)', () => {
+  test('Schedule 4 ISSUES: a NULL-named location is identified by id, the field from the client label table (D5); met locations render nothing (D8)', () => {
     const flat = flattenVerdict({ schedule: '4', requirementsMet: false, verdict: schedule4Issues })
-    expect(texts(flat.errors)).toEqual(['Harbour Dump - Rail Haul - Cost $: Value Required'])
+    expect(texts(flat.errors)).toEqual(['Location 7001 - Description: Value Required'])
     expect(flat.errors[0].key).toBe('missingRequiredFieldMsg')
     expect(texts(flat.errors)).not.toContain(SCH4_EMPTY_LANDING_MET_TEXT)
     expect(flat.requirementsMetMessage).toBeNull()
@@ -164,6 +168,62 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
     expect(flat.requirementsMetMessage?.text).toBe(MET_TEXT)
     expect(flat.errors).toEqual([])
     expect(JSON.stringify(flat)).not.toContain(SCH4_ALL_GOOD_MET_TEXT)
+  })
+
+  test('a cost-item code, were one ever emitted again, names its category the way the Schedule 4 page does (#326)', () => {
+    const flat = flattenVerdict({
+      schedule: '4',
+      requirementsMet: false,
+      verdict: {
+        ...schedule4Issues,
+        locations: [
+          {
+            id: 7001,
+            name: 'Harbour Dump',
+            met: false,
+            messages: [],
+            issues: [
+              { code: 52, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              { code: 999, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+            ],
+          },
+        ],
+      },
+    })
+    expect(texts(flat.errors)).toEqual([
+      'Harbour Dump - Rail Haul (Cost $): Value Required',
+      // An unknown code names the location only — never a fabricated field.
+      'Harbour Dump: Value Required',
+    ])
+  })
+
+  test('checkStatusLocationName: null, blank and whitespace names fall back to the id; a null or undefined id to "Location"', () => {
+    expect(checkStatusLocationName({ id: 7001, name: null })).toBe('Location 7001')
+    expect(checkStatusLocationName({ id: 7001, name: '' })).toBe('Location 7001')
+    expect(checkStatusLocationName({ id: 7001, name: '   ' })).toBe('Location 7001')
+    expect(checkStatusLocationName({ id: null, name: null })).toBe('Location')
+    expect(checkStatusLocationName({ id: undefined, name: null })).toBe('Location')
+    expect(checkStatusLocationName({ id: undefined, name: undefined })).toBe('Location')
+    expect(checkStatusLocationName({ id: 7001, name: 'Harbour Dump' })).toBe('Harbour Dump')
+  })
+
+  test('Schedule 4 ISSUES: a blank-string name flattens the same way as a null one', () => {
+    const flat = flattenVerdict({
+      schedule: '4',
+      requirementsMet: false,
+      verdict: {
+        ...schedule4Issues,
+        locations: [{ ...schedule4Issues.locations[0], name: '' }],
+      },
+    })
+    expect(texts(flat.errors)).toEqual(['Location 7001 - Description: Value Required'])
+  })
+
+  test('checkStatusFieldLabel: Description for code 0, "<category> (Cost $)" for a cost-item code, undefined otherwise', () => {
+    expect(checkStatusFieldLabel(0)).toBe('Description')
+    expect(checkStatusFieldLabel(40)).toBe('Lakeside Dry Dump (Cost $)')
+    expect(checkStatusFieldLabel(46)).toBe('Truck Rehaul-Dewater/Transfer (Cost $)')
+    expect(checkStatusFieldLabel(999)).toBeUndefined()
   })
 
   test('labelFor covers every category and sub-page code and is undefined for an unknown code', () => {
@@ -195,7 +255,7 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
         ],
       },
     })
-    expect(texts(flat.errors)).toEqual(['Odd Dump - Cost $: Value Required'])
+    expect(texts(flat.errors)).toEqual(['Odd Dump: Value Required'])
   })
 
   test('Schedule 5: eight failing-camp lines, text already composed; the met camp renders nothing (D8)', () => {

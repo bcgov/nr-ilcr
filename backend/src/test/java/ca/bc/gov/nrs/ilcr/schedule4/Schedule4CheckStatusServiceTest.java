@@ -13,6 +13,7 @@ import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
@@ -26,10 +27,11 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for {@code Schedule4Service.checkStatus} (Story 4.4) — the requirement rule (AD-5).
- * Mocked repository so it isolates the null-only Cost check (0 = present), the
- * distance-not-enforced default (§Decision 2), sub-page-row Cost enforcement, per-location
- * aggregation, and the schedule all-or-nothing MET.
+ * Unit test for {@code Schedule4Service.checkStatus} (Story 4.4) — the requirement rule (AD-5) as
+ * re-grounded by issue #465: legacy's Schedule 4 check required the location description and
+ * nothing else. Mocked repository so it isolates that rule — a null Cost on a category or a
+ * sub-page row is NOT a finding, a blank description is — plus per-location aggregation and the
+ * schedule all-or-nothing MET.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4CheckStatusServiceTest {
@@ -55,7 +57,7 @@ class Schedule4CheckStatusServiceTest {
   }
 
   @Test
-  void allCostsPresent_scheduleMet() {
+  void namedLocationWithCosts_scheduleMet() {
     draft();
     when(repository.findLocations(MILL, YEAR))
         .thenReturn(List.of(new LocationRow(1, "Loc A", null, null, 0)));
@@ -73,45 +75,32 @@ class Schedule4CheckStatusServiceTest {
     assertTrue(a.issues().isEmpty());
   }
 
+  /**
+   * Issue #465 — the finding the old rule raised. Legacy gated every category Cost check behind an
+   * {@code isXxxToCheck} flag that was never true, so a Volume-only category was never reported.
+   */
   @Test
-  void zeroCost_countsAsPresent_met() {
+  void nullCategoryCost_isNotAFinding_met() {
     draft();
     when(repository.findLocations(MILL, YEAR))
         .thenReturn(List.of(new LocationRow(1, "Loc A", null, null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR))
-        .thenReturn(List.of(new DetailRow(1, 40, bd("100"), 0))); // cost 0 is present, NOT missing
+        .thenReturn(List.of(new DetailRow(1, 40, bd("100"), null))); // Volume, no Cost
 
     Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
-    assertTrue(r.locations().get(0).met());
-  }
-
-  @Test
-  void nullCategoryCost_issuesWithValueRequired() {
-    draft();
-    when(repository.findLocations(MILL, YEAR))
-        .thenReturn(List.of(new LocationRow(1, "Loc A", null, null, 0)));
-    when(repository.findInScopeDetails(MILL, YEAR))
-        .thenReturn(List.of(new DetailRow(1, 40, bd("100"), null))); // cost missing
-
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
-
-    assertEquals("ISSUES", r.outcome());
-    assertTrue(r.messages().isEmpty()); // no schedule banner on ISSUES
+    assertEquals("scheduleRequirementsMetMsg", r.messages().get(0).key());
     LocationCheckResult a = r.locations().get(0);
-    assertFalse(a.met());
-    assertEquals(1, a.issues().size());
-    assertEquals(40, a.issues().get(0).code());
-    assertEquals("missingRequiredFieldMsg", a.issues().get(0).message().key());
-    assertTrue(a.messages().isEmpty()); // no per-location met message when failing
+    assertTrue(a.met());
+    assertTrue(a.issues().isEmpty());
+    assertEquals("locationRequirementsMetMsg", a.messages().get(0).key());
   }
 
+  /** The same for a distance-based category: neither its Cost nor its Distance is enforced. */
   @Test
-  void distanceNotEnforced_costPresentButDistanceNull_met() {
+  void nullDistanceCategoryCostAndDistance_notFindings_met() {
     draft();
-    // A distance category (47) whose report DISTANCE is null but Cost is present -> still MET
-    // (§Decision 2: distance is not enforced; only Cost is).
     when(repository.findLocations(MILL, YEAR))
         .thenReturn(
             List.of(
@@ -119,15 +108,17 @@ class Schedule4CheckStatusServiceTest {
                 new LocationRow(2, "Loc A", null, null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(
-            List.of(new DetailRow(1, 40, bd("100"), 5000), new DetailRow(2, 47, bd("50"), 2000)));
+            List.of(new DetailRow(1, 40, bd("100"), 5000), new DetailRow(2, 47, bd("50"), null)));
 
     Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
+    assertTrue(r.locations().get(0).issues().isEmpty());
   }
 
+  /** Sub-page list rows (43/46/55) follow the same rule: a null Cost on a row is not a finding. */
   @Test
-  void subPageRowNullCost_fails() {
+  void subPageRowNullCost_isNotAFinding_met() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR))
         .thenReturn(List.of(new LocationRow(1, "Loc A", null, null, 0)));
@@ -141,9 +132,47 @@ class Schedule4CheckStatusServiceTest {
 
     Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
 
+    assertEquals("MET", r.outcome());
+    assertTrue(r.locations().get(0).met());
+    assertTrue(r.locations().get(0).issues().isEmpty());
+  }
+
+  /**
+   * The one field legacy DID require (Schedule4CheckStatus.java:19-23). Unreachable through the
+   * app's own write path (the request is {@code NotBlank}), so it is exercised here rather than
+   * against the Oracle fixtures.
+   */
+  @Test
+  void blankDescription_issuesWithValueRequired() {
+    draft();
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(List.of(new LocationRow(1, "   ", null, null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(List.of(new DetailRow(1, 40, bd("100"), 5000))); // Cost present — irrelevant
+
+    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+
     assertEquals("ISSUES", r.outcome());
-    assertFalse(r.locations().get(0).met());
-    assertEquals(43, r.locations().get(0).issues().get(0).code());
+    assertTrue(r.messages().isEmpty()); // no schedule banner on ISSUES
+    LocationCheckResult a = r.locations().get(0);
+    assertFalse(a.met());
+    assertEquals(1, a.issues().size());
+    assertEquals(FieldIssue.LOCATION_DESCRIPTION, a.issues().get(0).code());
+    assertEquals("missingRequiredFieldMsg", a.issues().get(0).message().key());
+    assertTrue(a.messages().isEmpty()); // no per-location met message when failing
+  }
+
+  @Test
+  void nullDescription_issues() {
+    draft();
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(List.of(new LocationRow(1, null, null, null, 0)));
+    lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+
+    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+
+    assertEquals("ISSUES", r.outcome());
+    assertEquals(FieldIssue.LOCATION_DESCRIPTION, r.locations().get(0).issues().get(0).code());
   }
 
   @Test
@@ -153,19 +182,19 @@ class Schedule4CheckStatusServiceTest {
         .thenReturn(
             List.of(
                 new LocationRow(1, "Pass Loc", null, null, 0),
-                new LocationRow(2, "Fail Loc", null, null, 0)));
+                new LocationRow(2, "", null, null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(
             List.of(
-                new DetailRow(1, 40, bd("100"), 5000), // Pass Loc OK
-                new DetailRow(2, 41, bd("200"), null))); // Fail Loc missing cost
+                new DetailRow(1, 40, bd("100"), null), // Pass Loc: Volume-only, still passes
+                new DetailRow(2, 41, bd("200"), 300))); // blank name fails regardless of its Cost
 
     Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
 
     assertEquals("ISSUES", r.outcome()); // all-or-nothing: one failure fails the schedule
     assertTrue(r.messages().isEmpty());
     assertTrue(r.locations().get(0).met()); // Pass Loc
-    assertFalse(r.locations().get(1).met()); // Fail Loc
+    assertFalse(r.locations().get(1).met()); // the unnamed one
   }
 
   @Test

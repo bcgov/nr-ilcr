@@ -328,13 +328,21 @@ public class Schedule4Service {
   /**
    * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year —
    * read-only (AD-5), mutates nothing. Reuses the assembled read model ({@link #getSchedule4}) and,
-   * per location, flags every in-scope category / sub-page row whose Cost is null as a missing
-   * field (0 counts as present; Distance is NOT enforced — §Decision 2, legacy parity; Comments are
-   * soft — §Decision 3). The schedule {@code outcome} is {@code MET} only when EVERY location
-   * passes (all-or-nothing, S31). Emits bundle KEYS; {@link Schedule4CheckStatusResolver} resolves
-   * the verbatim text (AD-8), substituting the location name into the per-location met message. A
-   * mill/year with no locations is vacuously MET (legacy {@code isSchedule4Valid}
-   * AND-over-locations).
+   * per location, flags a blank location description as the ONLY missing field — legacy parity
+   * (issue #465). Legacy's {@code Schedule4CheckStatus} enforced the description unconditionally
+   * ({@code :19-23}) and gated every per-category Cost check behind an {@code isXxxToCheck} flag
+   * that defaults to false and is set to false on load ({@code Schedule4DAO:243-337}) and never to
+   * true anywhere, so no Schedule 4 Cost was ever required; Distance and Comments were commented
+   * out (§Decisions 2 and 3). Story 10.4 §Decision 1 had read the dormant flags as an intended
+   * "Cost required when the category is stored" rule and enforced it; #465 reversed that. The
+   * schedule {@code outcome} is {@code MET} only when EVERY location passes (all-or-nothing, S31).
+   * Emits bundle KEYS; {@link Schedule4CheckStatusResolver} resolves the verbatim text (AD-8),
+   * substituting the location name into the per-location met message. A mill/year with no locations
+   * is vacuously MET (legacy {@code isSchedule4Valid} AND-over-locations).
+   *
+   * <p>The write path already rejects a blank name ({@code Schedule4LocationRequest} is {@code
+   * NotBlank}, as legacy's save was), so the description finding is reachable only for data that
+   * arrived outside the app. It is kept because it is the rule, not because it is expected.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -349,18 +357,12 @@ public class Schedule4Service {
     boolean scheduleMet = true;
     for (Location location : document.locations()) {
       List<FieldIssue> issues = new ArrayList<>();
-      // Every stored category (fixed + distance-based) with a null Cost is a missing field.
-      for (CategoryAmount category : location.categories()) {
-        if (category.cost() == null) {
-          issues.add(new FieldIssue(category.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
-        }
-      }
-      // Sub-page list rows enforce Cost only, same rule (Story 4.3 rows; distance/cycle not
-      // checked).
-      for (SubPageRow row : location.subPageRows()) {
-        if (row.cost() == null) {
-          issues.add(new FieldIssue(row.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
-        }
+      // The description is the one field legacy required (Schedule4CheckStatus.java:19). Category
+      // and sub-page-row Costs are NOT checked — see the Javadoc above (#465).
+      if (location.name() == null || location.name().isBlank()) {
+        issues.add(
+            new FieldIssue(
+                FieldIssue.LOCATION_DESCRIPTION, new MessageInfo(MSG_MISSING_REQUIRED, null)));
       }
       boolean met = issues.isEmpty();
       scheduleMet &= met;

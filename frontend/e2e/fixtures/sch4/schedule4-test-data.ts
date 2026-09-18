@@ -162,22 +162,18 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
   'subpage-bounds': at(MILL_20173, 23050, 2018, 'S24-S26 — row bounds are inclusive at both ends'),
 
   // --- Check Status (BR-07 / EF3) -------------------------------------------------------------------
-  'check-missing-cost': at(MILL_999, 13050, 2021, 'S28 — a missing category Cost is flagged, then passes'),
-  'check-zero-cost': at(MILL_20173, 23050, 2019, 'S28 — a stored Cost of zero counts as present'),
-  'check-mixed': at(MILL_7777, 24050, 2018, 'S31 — one complete and one incomplete location'),
-  'check-row-cost': at(MILL_20171, 22050, 2018, 'S28 — a sub-page row with no Cost fails its location'),
+  // Since issue #465 (legacy parity: only a blank description fails, and the save refuses to store one)
+  // every Check Status scenario is a PASS scenario; these pin that the states the old rule flagged pass.
+  'check-missing-cost': at(MILL_999, 13050, 2021, 'S28 — a Volume-only category passes (#465)'),
+  'check-zero-cost': at(MILL_20173, 23050, 2019, 'S28 — a stored Cost of zero passes'),
+  'check-mixed': at(MILL_7777, 24050, 2018, 'S31 — two locations each report met, banner shown'),
+  'check-row-cost': at(MILL_20171, 22050, 2018, 'S28 — a sub-page row with no Cost passes (#465)'),
   'check-distance': at(MILL_7777, 24050, 2019, 'S29 (re-grounded) — Distance is not enforced'),
   'check-comments': at(MILL_7777, 24050, 2020, 'S30 (re-grounded) — Comments are a soft gate'),
-  'check-issue-label': at(MILL_7777, 24050, 2021, 'Divergence #2 — the issue does not name the category'),
-  // BR-12 / #359 — Check Status must judge the OPEN PANEL, not the last saved location.
-  //
-  // SEEDED, not discovered: this mill-year has no report-status row in the extract, so
-  // `real-test-data-patches/sch4/unsaved-check-anchors.sql` adds one (Draft). That patch's header records
-  // why nothing else was available — 114 (mill, year) keys are already pinned across the six fixtures,
-  // Home only offers reporting years 2015-2021, and every unclaimed openable pair in that range is
-  // non-Draft, which disables Check Status. A first attempt reused 12050/2015 and preflight caught it:
-  // that pair is `nav-subpage-back`, declared across four lines, which a line-based search misses.
-  'check-unsaved': at(MILL_760, 9050, 2015, 'S33/S34 — Check Status vs an unsaved panel edit (#359)'),
+  // RELEASED 2026-09-18 (#465): `check-issue-label` (24050/2021, ex-DIV-2 / #326) — there is no finding
+  // left to label; and `check-unsaved` (9050/2015, S33/S34 / DIV-8 / #359) — nothing saved can be flagged,
+  // so the unsaved-panel arms have no Schedule 4 instance. 9050/2015 is a SEEDED Draft
+  // (`real-test-data-patches/sch4/unsaved-check-anchors.sql`); its teardown may now be applied.
 
   // --- the unsaved-change / recompute divergences ---------------------------------------------------
   'nav-dirty-panel': at(MILL_9171, 25050, 2016, 'S12 / Divergence #3 — closing a dirty panel must warn'),
@@ -565,8 +561,13 @@ export const CLIENT = {
   titleLoadFailed: 'Unable to load Schedule 4',
   /** S16's own title — a mill closed for the year is a context guard, not a load failure. */
   titleMillClosed: 'Mill not active for Reporting Year',
-  /** The per-location Check Status issue notification's title: `${location.name} — required`. */
+  /**
+   * The per-location Check Status issue notification's title: `${location.name} — required`. Since #465
+   * no scenario can produce one (see steps/sch4/checkStatus.steps.ts); the suffix is what the "no issue"
+   * step asserts the ABSENCE of.
+   */
   titleLocationRequired: (name: string): string => `${name} — required`,
+  titleLocationRequiredSuffix: '— required',
 } as const;
 
 /** The Carbon confirm/nav modals (components/schedule4/index.tsx + SubPage.tsx). */
