@@ -154,7 +154,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       VALUES
           (:id, :year, :millId, '8', :supportCentre, :region, :becZone, :tsaNumber, :supplyBlock,
            :tflNumber, :cuttingPermit, :license, :division, :contact, :phone, :comments, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   int insertPageRow(
       @Param("id") int id,
@@ -226,7 +226,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       UPDATE THE.TREE_TO_TRUCK_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_REPORT_ID = :id
          AND REVISION_COUNT = :expectedRevision
       """)
@@ -253,7 +253,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
              CONTACT_PHONE_NUMBER = :phone,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_REPORT_ID = :id
       """)
   void updatePageFields(
@@ -337,8 +337,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
           (:id, :pageId, :contractId, :cutBlock, :groundBasePct, :grapplePct, :skylinePct,
            :highleadPct, :helicopterPct, :otherSkiddingPct, :skylineSlopeDistance,
            :skylineSupportNumber, :supportAvgDistance, :cycleTime, :distance, :waterDump, :uphill,
-           :skidTypeCode, :coniferousVolume, :deciduousVolume, :originalRate, 0, :user, SYSTIMESTAMP,
-           :user, SYSTIMESTAMP)
+           :skidTypeCode, :coniferousVolume, :deciduousVolume, :originalRate, 0, :user, SYSDATE,
+           :user, SYSDATE)
       """)
   int insertSampleRow(
       @Param("id") int id,
@@ -425,7 +425,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
          AND REVISION_COUNT = :expectedRevision
       """)
@@ -458,7 +458,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
              DECIDUOUS_VOLUME = :deciduousVolume,
              ORIGINAL_TREE_TO_TRUCK_RATE = :originalRate,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
       """)
   void updateSampleFields(
@@ -533,7 +533,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :sampleId, :costTypeCode, :costItemCode, :itemDescription, :costingRate, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   int insertRateRow(
       @Param("id") int id,
@@ -575,7 +575,7 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
              COSTING_RATE = :costingRate,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_RATE_DETAIL_ID = :id
          AND REVISION_COUNT = :expectedRevision
       """)

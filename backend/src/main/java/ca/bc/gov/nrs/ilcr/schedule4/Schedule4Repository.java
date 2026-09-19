@@ -339,8 +339,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
            LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
-          (:id, :year, :millId, '4', :name, :distance, :cycle, 0, :user, SYSTIMESTAMP,
-           :user, SYSTIMESTAMP)
+          (:id, :year, :millId, '4', :name, :distance, :cycle, 0, :user, SYSDATE,
+           :user, SYSDATE)
       """)
   int insertReportRow(
       @Param("id") int id,
@@ -385,7 +385,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          SET REVISION_COUNT = REVISION_COUNT + 1,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND REVISION_COUNT = :expectedRevision
          AND ILCR_MILL_ID = :millId
@@ -407,7 +407,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       UPDATE THE.TRANSPORTATION_REPORT
          SET DISTANCE = :distance,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
       """)
   void updateReportDistance(
@@ -426,7 +426,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       UPDATE THE.TRANSPORTATION_REPORT
          SET LOCATION_DESCRIPTION = :newName,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '4'
@@ -446,7 +446,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          SET VOLUME = :volume,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND ILCR_REPORT_COST_ITEM_ID = :code
       """)
@@ -469,7 +469,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          SET DISTANCE = :distance,
              TRANSPORTATION_CYCLE_TIME = :cycle,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
       """)
   void updateSubPageReport(
@@ -491,7 +491,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
              COST = :cost,
              ITEM_DESCRIPTION = :description,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND ILCR_REPORT_COST_ITEM_ID = :code
       """)
@@ -512,7 +512,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
            UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
-           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   int insertDetailRow(
       @Param("reportId") int reportId,
@@ -546,7 +546,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
            UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
-           :volume, :cost, :description, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, :description, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertDetailWithDescription(
       @Param("reportId") int reportId,

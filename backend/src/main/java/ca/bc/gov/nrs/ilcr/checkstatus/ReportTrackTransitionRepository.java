@@ -60,7 +60,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
              LICENSEE_USER_GUID = :licenseeUserGuid,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_MILL_REPORT_STATUS_CODE = :expectedCode
@@ -72,6 +72,64 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       @Param("newCode") String newCode,
       @Param("licenseeMillId") Long licenseeMillId,
       @Param("licenseeUserGuid") String licenseeUserGuid,
+      @Param("user") String user);
+
+  /**
+   * The VERIFY status write &mdash; {@code S}&rarr;{@code V} recording the acting user as the
+   * report's auditor. A second statement beside {@link #updateTrackStatus} rather than a parameter
+   * on it, because the two transitions differ in three ways that are each ratified legacy behaviour
+   * for their own story, not stylistic:
+   *
+   * <ul>
+   *   <li>It writes the {@code AUDITOR_*} pair, not {@code LICENSEE_*} &mdash; legacy {@code
+   *       updateILCRMillReportStatus():403-413} wrote the licensee pair on a Submit and the auditor
+   *       pair on every other non-Draft transition ({@link TrackTransition.Recorded}).
+   *   <li>It does NOT bump {@code REVISION_COUNT}. Legacy's {@code REVISION_COUNT} was a plain
+   *       column, not a {@code @Version}, and no transition ever incremented it; Story 17.1's
+   *       parity ledger keeps that. Submit's own statement diverges deliberately, which is 15.3's
+   *       ruling and is left alone.
+   *   <li>It carries NO {@code expectedCode} predicate. Legacy's UPDATE was unconditional &mdash;
+   *       it had already decided legality in the bean &mdash; and Story 17.1 keeps the resulting
+   *       gate&rarr;write race on purpose (recorded open in {@code deferred-work.md}). Submit
+   *       closes it with a row lock plus the predicate, which is again 15.3's ruling.
+   * </ul>
+   *
+   * <p>&#9888; <strong>Correct for {@code S&rarr;V} only &mdash; do NOT reuse this method for the
+   * reversals.</strong> Legacy ({@code SubmitReportDAO.updateILCRMillReportStatus:403-414}) skips
+   * the association block <em>entirely</em> when the target is {@code 'D'}, leaving both pairs
+   * untouched, and writes the <em>licensee</em> pair (not the auditor pair) when the target is
+   * {@code 'S'}. Only a non-{@code D}, non-{@code S} target writes the auditor pair. So {@code
+   * S&rarr;D} or {@code V&rarr;S} routed through this statement would null out an auditor legacy
+   * preserves. {@link TrackTransition} is genuinely shared and {@link TrackTransition#recorded()}
+   * already names which pair each transition writes; this SET list is not shared, and Epic 18 needs
+   * its own.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param statusCode the status code to write
+   * @param auditorMillId the auditor cross-reference mill id, or null when the caller has none
+   * @param auditorUserGuid the auditor directory GUID, or null when the caller has none
+   * @param user the audit name
+   * @return rows updated; anything but 1 is a failure the caller rolls back on
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_REPORT_STATUS
+         SET ILCR_MILL_REPORT_STATUS_CODE = :statusCode,
+             AUDITOR_MILL_ID = :auditorMillId,
+             AUDITOR_USER_GUID = :auditorUserGuid,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """)
+  int updateTrackStatusWithAuditor(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("statusCode") String statusCode,
+      @Param("auditorMillId") Long auditorMillId,
+      @Param("auditorUserGuid") String auditorUserGuid,
       @Param("user") String user);
 
   // -----------------------------------------------------------------------------------------------
@@ -90,7 +148,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID IN ('1', '2', '3')
@@ -104,7 +162,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID IN (
              SELECT s.ILCR_REPORT_SUMMARY_ID
                FROM THE.ILCR_REPORT_SUMMARY s
@@ -125,7 +183,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.TRANSPORTATION_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '4'
@@ -138,7 +196,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID IN (
              SELECT tr.TRANSPORTATION_REPORT_ID
                FROM THE.TRANSPORTATION_REPORT tr
@@ -159,7 +217,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.CAMP_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '5'
@@ -171,7 +229,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CAMP_REPORT_ID IN (
              SELECT c.CAMP_REPORT_ID
                FROM THE.CAMP_REPORT c
@@ -192,7 +250,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ROAD_MAINTENANCE_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '6'
@@ -205,7 +263,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_MAINTENANCE_REPORT_ID IN (
              SELECT r.ROAD_MAINTENANCE_REPORT_ID
                FROM THE.ROAD_MAINTENANCE_REPORT r
@@ -228,7 +286,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.BRIDGE_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '7'
@@ -241,7 +299,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BRIDGE_REPORT_ID IN (
              SELECT b.BRIDGE_REPORT_ID
                FROM THE.BRIDGE_REPORT b
@@ -257,7 +315,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.CULVERT_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '7'
@@ -270,7 +328,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CULVERT_REPORT_ID IN (
              SELECT c.CULVERT_REPORT_ID
                FROM THE.CULVERT_REPORT c
@@ -294,7 +352,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       UPDATE THE.TREE_TO_TRUCK_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '8'
@@ -308,7 +366,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_REPORT_ID IN (
              SELECT p.TREE_TO_TRUCK_REPORT_ID
                FROM THE.TREE_TO_TRUCK_REPORT p
@@ -325,7 +383,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       UPDATE THE.TREE_TO_TRUCK_RATE_DETAIL
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID IN (
              SELECT s.TREE_TO_TRUCK_DETAIL_REPORT_ID
                FROM THE.TREE_TO_TRUCK_DETAIL_REPORT s
@@ -348,7 +406,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.CONTRACTUAL_WORK_REPORT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '9'
@@ -361,7 +419,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CONTRACTUAL_WORK_REPORT_ID IN (
              SELECT cwr.CONTRACTUAL_WORK_REPORT_ID
                FROM THE.CONTRACTUAL_WORK_REPORT cwr
@@ -384,7 +442,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ROAD_CONSTRUCTION_REPRT
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '10'
@@ -397,7 +455,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ROAD_CONSTRUCTION_REPRT_DTL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_ID IN (
              SELECT r.ROAD_CONSTRUCTION_REPRT_ID
                FROM THE.ROAD_CONSTRUCTION_REPRT r
@@ -413,7 +471,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (
              SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID
                FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
@@ -441,7 +499,7 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
          SET CATEGORY_STATE_CODE = :newState,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE REPORT_YEAR = :year
          AND ILCR_MILL_ID = :millId
          AND ILCR_CATEGORY_ID = :categoryId

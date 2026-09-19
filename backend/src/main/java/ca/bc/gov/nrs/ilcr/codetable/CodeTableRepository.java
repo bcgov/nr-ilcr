@@ -20,8 +20,8 @@ import org.springframework.stereotype.Repository;
  * so interpolating them into the SQL is safe — every VALUE (code, description, dates) is still a
  * bound named parameter. Columns are exactly those the legacy {@code AbstractILCRCode} mapped: the
  * code PK, {@code DESCRIPTION}, {@code EFFECTIVE_DATE}, {@code EXPIRY_DATE}, and {@code
- * UPDATE_TIMESTAMP} (stamped {@code SYSTIMESTAMP} on every write — the only audit column these
- * reference tables carry).
+ * UPDATE_TIMESTAMP} (stamped {@code SYSDATE} on every write — the only audit column these reference
+ * tables carry).
  *
  * <p>The Contractual Item Codes table has no backing {@code *_CODE} table (BR-08), so its
  * description-only operations use the Schedule 9 cost-item table in this repository as a
@@ -83,7 +83,7 @@ public class CodeTableRepository {
           jdbc.update(
               "UPDATE THE.ILCR_REPORT_COST_ITEM SET ITEM_NAME = :description, "
                   + "EFFECTIVE_DATE = :effectiveDate, EXPIRY_DATE = :expiryDate, "
-                  + "UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP, "
+                  + "UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE, "
                   + "REVISION_COUNT = REVISION_COUNT + 1 "
                   + "WHERE ILCR_REPORT_COST_ITEM_ID = :id AND ILCR_CATEGORY_ID = '9'",
               new MapSqlParameterSource()
@@ -109,7 +109,7 @@ public class CodeTableRepository {
             + "ILCR_SUBCATEGORY_ID, EFFECTIVE_DATE, EXPIRY_DATE, REVISION_COUNT, "
             + "ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
             + "VALUES (:id, :description, 'Y', '9', '1', :effectiveDate, :expiryDate, 0, "
-            + ":user, SYSTIMESTAMP, :user, SYSTIMESTAMP)",
+            + ":user, SYSDATE, :user, SYSDATE)",
         new MapSqlParameterSource()
             .addValue("id", id)
             .addValue("description", entry.description())
@@ -164,7 +164,7 @@ public class CodeTableRepository {
     String codeColumn = requireBackingTable(table).codeColumn();
     String sql =
         ("INSERT INTO %s (%s, DESCRIPTION, EFFECTIVE_DATE, EXPIRY_DATE, UPDATE_TIMESTAMP) "
-                + "VALUES (:code, :description, :effectiveDate, :expiryDate, SYSTIMESTAMP)")
+                + "VALUES (:code, :description, :effectiveDate, :expiryDate, SYSDATE)")
             .formatted(qualified(table), codeColumn);
     jdbc.update(sql, params(entry));
   }
@@ -173,7 +173,7 @@ public class CodeTableRepository {
     String codeColumn = requireBackingTable(table).codeColumn();
     String sql =
         ("UPDATE %s SET DESCRIPTION = :description, EFFECTIVE_DATE = :effectiveDate, "
-                + "EXPIRY_DATE = :expiryDate, UPDATE_TIMESTAMP = SYSTIMESTAMP WHERE %s = :code")
+                + "EXPIRY_DATE = :expiryDate, UPDATE_TIMESTAMP = SYSDATE WHERE %s = :code")
             .formatted(qualified(table), codeColumn);
     return jdbc.update(sql, params(entry));
   }
