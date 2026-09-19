@@ -116,7 +116,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, 19,
-           :volume, :cost, :description, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, :description, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertOtherCost(
       @Param("summaryId") int summaryId,
@@ -138,7 +138,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
          SET ITEM_DESCRIPTION = :description,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_COST_REPORT_DETAIL_ID = :detailId
          AND ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = 19
@@ -190,7 +190,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
          SET REVISION_COUNT = REVISION_COUNT + 1,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND REVISION_COUNT = :expectedRevision
       """)
@@ -213,7 +213,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
       """)
   void touchSummary(@Param("summaryId") int summaryId, @Param("user") String user);
@@ -246,7 +246,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
          SET VOLUME = :volume,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND ITEM_DESCRIPTION IS NULL
@@ -268,7 +268,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertFixedDetail(
       @Param("summaryId") int summaryId,
@@ -355,7 +355,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
                  COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
                  UPDATE_USERID, UPDATE_TIMESTAMP)
          VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '1',
-                 :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+                 :comments, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   int mergeSummaryRow(
       @Param("millId") long millId,
@@ -406,7 +406,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND ITEM_DESCRIPTION IS NULL
@@ -429,7 +429,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, NULL, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, NULL, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertFixedDetailVolume(
       @Param("summaryId") int summaryId,
@@ -455,7 +455,7 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = 19
       """)

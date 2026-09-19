@@ -37,8 +37,8 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
  * <p>Scoped to the repository packages so scanning only picks up the Spring Data repository
  * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link
  * Schedule3Repository}, {@link Schedule4Repository}, {@link MillContextRepository}, {@link
- * Schedule11Repository}). Gated on the same {@code ilcr.datasource.enabled} flag as the datasource
- * so contexts without a datasource are unaffected.
+ * Schedule11Repository}, {@link ReportTrackTransitionRepository}). Gated on the same {@code
+ * ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are unaffected.
  */
 @Configuration
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")

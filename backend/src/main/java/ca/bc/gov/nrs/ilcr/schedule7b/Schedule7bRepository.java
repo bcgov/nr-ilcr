@@ -176,7 +176,7 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
           (:#{#culvert.culvertReportId()}, :year, :millId, '7', :#{#culvert.culvertTypeCode()},
            :#{#culvert.spanSize()}, :#{#culvert.riseSize()}, :#{#culvert.length()},
            :#{#culvert.culvertPieceCount()}, :#{#culvert.comments()},
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCulvert(
       @Param("culvert") CulvertReportEntity culvert,
@@ -204,7 +204,7 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
              COMMENTS = :#{#culvert.comments()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CULVERT_REPORT_ID = :#{#culvert.culvertReportId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -263,7 +263,7 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CULVERT_REPORT_ID = :culvertReportId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
@@ -283,7 +283,7 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :culvertReportId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCost(
       @Param("id") long id,

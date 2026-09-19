@@ -211,7 +211,7 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
           (:id, :year, :millId, '9',
            :contractorId, :sideSlopePct, :numberOfUnits, :unitCode, :unitDescription,
            :sourceCode, :sourceDescription, :becZoneCode, :comments,
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertRecord(
       @Param("id") int id,
@@ -252,7 +252,7 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
              COMMENTS = :comments,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CONTRACTUAL_WORK_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -307,7 +307,7 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :recordId, :itemCode, :cost, :itemDescription, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCostLine(
       @Param("id") int id,
@@ -335,7 +335,7 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
              COST = :cost,
              ITEM_DESCRIPTION = :itemDescription,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CONTRACTUAL_WORK_REPORT_ID = :recordId
          AND ILCR_COST_REPORT_DETAIL_ID = (SELECT MIN(d.ILCR_COST_REPORT_DETAIL_ID)
                                              FROM THE.ILCR_COST_REPORT_DETAIL d

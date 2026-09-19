@@ -38,6 +38,7 @@ public class SchedulePermissions {
             Action.MAINTAIN_USERS,
             Action.GENERATE_MILL_REPORTS,
             Action.MAINTAIN_MILLS,
+            Action.SET_REPORT_STATUS,
             Action.GENERATE_DATA_EXTRACT));
     // SUBMIT_REPORT (Story 15.3) is the first action granted only by the SUBMITTER role: ADMIN
     // alone

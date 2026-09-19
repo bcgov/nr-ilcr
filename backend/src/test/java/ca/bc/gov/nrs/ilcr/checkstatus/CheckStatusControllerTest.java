@@ -20,6 +20,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.millcontext.MillYearNotSelectedException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import ca.bc.gov.nrs.ilcr.security.ReportSubmission;
 import java.util.List;
 import java.util.Locale;
@@ -33,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
 /**
@@ -54,6 +56,7 @@ class CheckStatusControllerTest {
   @Mock private ReportTrackTransitionService transitionService;
   @Mock private ReportSubmission reportSubmission;
   @Mock private MessageSource messageSource;
+  @Mock private Authentication authentication;
   @InjectMocks private CheckStatusController controller;
 
   private static CheckStatusSweepResponse emptySweep() {
@@ -132,6 +135,51 @@ class CheckStatusControllerTest {
   }
 
   @Test
+  @DisplayName("verify: the guard runs BEFORE the transition, on the raw params")
+  void verify_guardRunsBeforeTheTransition() {
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(authentication.getName()).thenReturn("verifyadmin");
+    when(transitionService.verify(764, 2021, "verifyadmin", null)).thenReturn("V");
+    when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
+        .thenReturn("Schedules 1-10 status has been updated to verified.");
+
+    var response = controller.verifySchedules1To10("764", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().trackStatus()).isEqualTo("V");
+    assertThat(response.getBody().message().key()).isEqualTo("sch1-10VerifiedMsg");
+    assertThat(response.getBody().message().text())
+        .isEqualTo("Schedules 1-10 status has been updated to verified.");
+
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("764", "2021");
+    order.verify(transitionService).verify(764, 2021, "verifyadmin", null);
+  }
+
+  @Test
+  @DisplayName("verify: a closed mill stops at the guard — no transition is attempted")
+  void verify_closedMillNeverReachesTheTransition() {
+    when(millContextService.validateMillYearActive("768", "2021"))
+        .thenThrow(new MillClosedException());
+
+    assertThatThrownBy(() -> controller.verifySchedules1To10("768", "2021", authentication))
+        .isInstanceOf(MillClosedException.class);
+    verifyNoInteractions(transitionService);
+  }
+
+  @Test
+  @DisplayName("verify: missing mill/year is the guard's ERR-001, untranslated")
+  void verify_missingParamsPassThrough() {
+    when(millContextService.validateMillYearActive(null, "2021"))
+        .thenThrow(new MillYearNotSelectedException());
+
+    assertThatThrownBy(() -> controller.verifySchedules1To10(null, "2021", authentication))
+        .isInstanceOf(MillYearNotSelectedException.class);
+    verifyNoInteractions(transitionService);
+  }
+
+  @Test
   @DisplayName(
       "15.3 AC 9: canSubmit is the offer rule's answer for the 1-10 status; Schedule 11 carries none")
   void sweep_carriesCanSubmitOnTheOneToTenTrackOnly() {
@@ -188,6 +236,23 @@ class CheckStatusControllerTest {
   }
 
   @Test
+  @DisplayName(
+      "verify: an absent mill-year is re-keyed to the Check Status not-found, as the GET is")
+  void verify_absentContextIsTheCheckStatusNotFound() {
+    ScheduleNotFoundException guardFailure = new ScheduleNotFoundException();
+    when(millContextService.validateMillYearActive("999999", "2021")).thenThrow(guardFailure);
+
+    assertThatThrownBy(() -> controller.verifySchedules1To10("999999", "2021", authentication))
+        .isInstanceOfSatisfying(
+            CheckStatusScheduleNotFoundException.class,
+            ex -> {
+              assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+              assertThat(ex.getMessageKey()).isEqualTo("checkStatusScheduleNotFoundErrorMsg");
+            });
+    verifyNoInteractions(transitionService);
+  }
+
+  @Test
   @DisplayName("15.3 AC 8: no status row on submit is the CHECK STATUS not-found, re-keyed")
   void submit_absentContext_isTheCheckStatusNotFound() {
     ScheduleNotFoundException guardFailure = new ScheduleNotFoundException();
@@ -201,6 +266,78 @@ class CheckStatusControllerTest {
               assertThat(ex.getCause()).isSameAs(guardFailure);
             });
     verifyNoInteractions(transitionService);
+  }
+
+  @Test
+  @DisplayName("verify: security off — the mock principal's GUID is recorded, not NULL")
+  void verify_mockPrincipalGuidIsResolved() {
+    // MockPrincipalFilter seeds this shape when ilcr.security.enabled=false, which is dev/UAT and
+    // the whole e2e suite. Handling only JwtAuthenticationToken wrote NULL into both auditor
+    // columns in every environment the e2e suite can reach.
+    var mockAuth =
+        new UsernamePasswordAuthenticationToken(
+            new MockUserPrincipal("mockadmin", "MOCKGUID0000111122223333AAAA0001"), "n/a");
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(transitionService.verify(764, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001"))
+        .thenReturn("V");
+    when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
+        .thenReturn("Schedules 1-10 status has been updated to verified.");
+
+    var response = controller.verifySchedules1To10("764", "2021", mockAuth);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    verify(transitionService).verify(764, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001");
+  }
+
+  @Test
+  @DisplayName("verify: a blank directory GUID is passed as null, not as an empty string")
+  void verify_blankGuidBecomesNull() {
+    // JwtPrincipalUtil.getIdpUserId returns "" — never null — when custom:idp_user_id is absent,
+    // so without normalizing, the documented no-identity short-circuit was dead for real tokens
+    // and a pointless cross-reference lookup on an empty GUID ran instead.
+    var mockAuth =
+        new UsernamePasswordAuthenticationToken(new MockUserPrincipal("mockadmin", "  "), "n/a");
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(transitionService.verify(764, 2021, "mockadmin", null)).thenReturn("V");
+    when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
+        .thenReturn("Schedules 1-10 status has been updated to verified.");
+
+    controller.verifySchedules1To10("764", "2021", mockAuth);
+
+    verify(transitionService).verify(764, 2021, "mockadmin", null);
+  }
+
+  @Test
+  @DisplayName("verify: a missing bundle key falls back to the key, never a post-commit 500")
+  void verify_missingMessageKeyFallsBackToTheKey() {
+    // The transition has already COMMITTED by the time the message is resolved, so the 3-arg
+    // getMessage's NoSuchMessageException would answer a succeeded sign-off with a 500.
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(authentication.getName()).thenReturn("verifyadmin");
+    when(transitionService.verify(764, 2021, "verifyadmin", null)).thenReturn("V");
+    when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
+        .thenReturn("sch1-10VerifiedMsg");
+
+    var response = controller.verifySchedules1To10("764", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().message().text()).isEqualTo("sch1-10VerifiedMsg");
+  }
+
+  @Test
+  @DisplayName("verify: a not-found raised by the transition itself is re-keyed the same way")
+  void verify_transitionNotFoundIsReKeyed() {
+    when(millContextService.validateMillYearActive("764", "2021"))
+        .thenReturn(new MillYearContext(764, 2021));
+    when(authentication.getName()).thenReturn("verifyadmin");
+    when(transitionService.verify(764, 2021, "verifyadmin", null))
+        .thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> controller.verifySchedules1To10("764", "2021", authentication))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
   }
 
   @Test
