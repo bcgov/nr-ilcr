@@ -25,7 +25,9 @@ import CheckStatus, {
   HINT_NOT_SUBMITTED,
   HINT_NOT_SUBMITTED_11,
   HINT_NOT_SUBMITTER,
+  HINT_NOT_WIRED,
   SUBMIT_FAILED,
+  VERIFY_FAILED,
 } from '../index'
 import { LOAD_FAILED } from '../useCheckStatusSweep'
 import { SCHEDULE_TITLES } from '../verdicts'
@@ -116,6 +118,15 @@ const millContextWithBothTracks = (code1To10: string, code11: string) =>
 
 /** Keeps the server's runs of spaces intact, so a multi-space text is matched byte for byte. */
 const verbatim = { normalizer: getDefaultNormalizer({ collapseWhitespace: false }) }
+
+/**
+ * As `verbatim`, but keeps a leading/trailing space as well. `verbatim` still trims — the default
+ * normalizer's `trim` is independent of `collapseWhitespace` — which would silently pass an ERR-001
+ * assertion whether or not the bundle's trailing space survived to the screen.
+ */
+const verbatimUntrimmed = {
+  normalizer: getDefaultNormalizer({ collapseWhitespace: false, trim: false }),
+}
 
 const asSubmitter = () => window.localStorage.setItem(MOCK_USER_STORAGE_KEY, 'submitter')
 
@@ -811,18 +822,23 @@ describe('Check Status page (Story 15.2)', () => {
     render(<CheckStatus />)
     await screen.findAllByText(MET_TEXT)
 
-    // 1–10 Submitted → both 1–10 bars: Set to Draft (enabled), Submit (greyed), Verified (enabled).
+    // 1–10 Submitted → both 1–10 bars: Set to Draft, Submit (greyed), Verified (enabled).
+    // The reversal is RENDERED by legacy's rule but greyed until Epic 18 wires it (17.2 review):
+    // legacy's was enabled and worked, and a live control that silently does nothing is worse than
+    // a greyed one that says why.
     const setToDraft = screen.getAllByRole('button', { name: 'Set to Draft' })
     expect(setToDraft).toHaveLength(2)
     for (const button of setToDraft) {
-      expect(button).toBeEnabled()
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_WIRED)
       expect(region11().contains(button)).toBe(false)
     }
     expect(within(region1To10()).queryByRole('button', { name: 'Set to Submit' })).toBeNull()
-    // Schedule 11 Verified → its bar: Set to Submit (enabled), Submit (greyed), Verified (greyed).
+    // Schedule 11 Verified → its bar: Set to Submit (greyed, same reason), Submit and Verified greyed.
     const bar11 = item(SCHEDULE_TITLES['11'])
     const setToSubmit = within(bar11).getByRole('button', { name: 'Set to Submit' })
-    expect(setToSubmit).toBeEnabled()
+    expect(setToSubmit).toBeDisabled()
+    expect(hintFor(setToSubmit)).toHaveTextContent(HINT_NOT_WIRED)
     expect(within(bar11).queryByRole('button', { name: 'Set to Draft' })).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Set to Submit' })).toHaveLength(1)
     expect(within(bar11).getByRole('button', { name: 'Submit' })).toBeDisabled()
@@ -948,6 +964,580 @@ describe('Check Status page (Story 15.2)', () => {
   })
 })
 
+// ================================================================================================
+// Verify the Schedules 1–10 track (Story 17.2 / UC-CHK-012, UC-CHK-007, UC-CHK-009 S03/S16)
+//
+// Legacy hung the server call on the confirm dialog's Yes, never on the button (checkStatus.xhtml:57-62
+// is type="button" whose only behaviour is confirmVerify.show(); the action is at :201-204). These
+// tests hold that shape: Cancel cannot reach the server because nothing is wired to it.
+// ================================================================================================
+
+const VERIFY_URL = `${API}/v1/check-status/verify`
+
+const VERIFIED_MSG = 'Schedules 1-10 status has been updated to verified.'
+const NOT_SUBMITTED_MSG =
+  'The report cannot be submitted. One or more of the Schedules have not passed validation. Please review and correct any errors.'
+const SUBMISSION_ERROR_MSG =
+  'An error has been found submitting schedules. The error details have been logged. Please contact ILCR application support.'
+const ERR_001 = 'Please Select Mill and Reporting Year in the Home Page. '
+
+/** A Submitted 1–10 track with Schedule 11 left in Draft, the state the Verified pair is enabled in. */
+const submittedSweep = () =>
+  server.use(
+    millContextWithBothTracks('S', 'D'),
+    http.get(SWEEP_URL, () =>
+      HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+    ),
+  )
+
+/** The verify POST, recorded by a spy so "no request was sent" is provable. */
+const verifyHandler = (spy: () => void, reply: () => HttpResponse) =>
+  http.post(VERIFY_URL, ({ request }) => {
+    spy()
+    void request
+    return reply()
+  })
+
+const ok = () =>
+  HttpResponse.json({
+    trackStatus: 'V',
+    message: { key: 'sch1-10VerifiedMsg', text: VERIFIED_MSG },
+  })
+
+describe('Verify the Schedules 1–10 track (Story 17.2)', () => {
+  test('CHK-012 BR-09 / S01: clicking Verified opens the verbatim confirmation and sends nothing yet', async () => {
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(verifyHandler(posted, ok))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText(
+        "Please confirm you'd like to set Schedules 1-10 to VERIFIED?",
+        verbatim,
+      ),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Yes' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    // Legacy's header, hard-coded in the XHTML rather than bundled (checkStatus.xhtml:201).
+    expect(within(dialog).getByText('Confirmation Required')).toBeInTheDocument()
+    // The transition hangs off Yes, so opening the prompt cannot have called the server.
+    expect(posted).not.toHaveBeenCalled()
+  })
+
+  test('CHK-012 S02 / CHK-009 S16: Cancel closes the confirmation and makes no server call', async () => {
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(verifyHandler(posted, ok))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+    )
+
+    // Asserted by the absence of the POST, not the absence of the prompt: Carbon keeps a closed
+    // Modal's content mounted (OpenReportingYear.test.tsx:88-90).
+    expect(posted).not.toHaveBeenCalled()
+    // Nothing changed: no outcome banner, and the pair is still enabled at Submitted.
+    expect(screen.queryByText(VERIFIED_MSG)).not.toBeInTheDocument()
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeEnabled()
+    }
+
+    // Positive control: the same handler DOES fire when Yes is clicked.
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1))
+  })
+
+  test('CHK-012 S01/S08: Yes verifies once, shows the server text, and the pair re-disables after the refresh', async () => {
+    const seen: string[] = []
+    // The sweep answers Submitted first and Verified afterwards, so a re-disabled button proves the
+    // page re-read the server rather than flipping a local copy of the status.
+    let verified = false
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: verified ? 'V' : 'S', statusCode11: 'D' })),
+      ),
+      http.post(VERIFY_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        seen.push(`${params.get('millId')}/${params.get('year')}`)
+        verified = true
+        return ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+
+    // The server's own words, verbatim.
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+    // Exactly one call, carrying the working context as query params (millId + year, not reportingYear).
+    expect(seen).toEqual(['13050/2017'])
+    // Both 1-10 bars re-disable, and the reversals swap over as legacy's `rendered=` rules do at V.
+    await waitFor(() => {
+      for (const button of verifiedButtons1To10()) {
+        expect(button).toBeDisabled()
+      }
+    })
+    expect(within(region1To10()).queryByRole('button', { name: 'Set to Draft' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Set to Submit' }).length).toBeGreaterThan(0)
+  })
+
+  test('CHK-012 S09 / BR-08: verifying 1-10 leaves the Schedule 11 action row untouched', async () => {
+    let verified = false
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: verified ? 'V' : 'S', statusCode11: 'D' })),
+      ),
+      http.post(VERIFY_URL, () => {
+        verified = true
+        return ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    const before = item(SCHEDULE_TITLES['11']).innerHTML
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    await screen.findByText(VERIFIED_MSG, verbatim)
+    await waitFor(() => expect(verifiedButtons1To10()[0]).toBeDisabled())
+
+    // Schedule 11's own row is an independent track: same markup before and after (S09).
+    expect(item(SCHEDULE_TITLES['11']).innerHTML).toBe(before)
+  })
+
+  test('AC10: a verify in flight cannot be sent twice', async () => {
+    const posted = vi.fn()
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    submittedSweep()
+    server.use(
+      http.post(VERIFY_URL, async () => {
+        posted()
+        await held
+        return ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+
+    // While the request is open both bars' buttons are out of action, so a second attempt is impossible.
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1))
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeDisabled()
+    }
+    await user.click(verifiedButtons1To10()[1])
+    expect(posted).toHaveBeenCalledTimes(1)
+
+    release()
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+  })
+
+  test('AC10 (17.2 review): the button stays out of action until the refresh lands, not just until the POST does', async () => {
+    // Legacy re-gated the button in the SAME round trip that carried the message. We read the status
+    // from a second request, so the window between the 200 and the reload landing is ours to close:
+    // in it the sweep still answers Submitted, and a second verify would draw the server's
+    // support-escalation 409 over the success the user just earned.
+    const posted = vi.fn()
+    let verified = false
+    let sweeps = 0
+    let releaseReload: () => void = () => undefined
+    const reloadHeld = new Promise<void>((resolve) => {
+      releaseReload = resolve
+    })
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, async () => {
+        sweeps += 1
+        if (sweeps > 1) {
+          await reloadHeld
+        }
+        return HttpResponse.json(
+          sweep({ statusCode1To10: verified ? 'V' : 'S', statusCode11: 'D' }),
+        )
+      }),
+      http.post(VERIFY_URL, () => {
+        posted()
+        verified = true
+        return ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+
+    // The success is on screen and the reload is open, but the sweep still says Submitted.
+    await waitFor(() => expect(sweeps).toBe(2))
+    // `Set to Draft` renders only while the track is Submitted, so its presence IS the proof that
+    // the gate is still reading the pre-transition status.
+    expect(screen.getAllByRole('button', { name: 'Set to Draft' })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Set to Submit' })).toBeNull()
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeDisabled()
+    }
+    // Clicking cannot even reach the prompt, so there is nothing to confirm.
+    await user.click(verifiedButtons1To10()[0])
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(posted).toHaveBeenCalledTimes(1)
+
+    // Positive control: once the refresh lands the button is still disabled, now because the server
+    // says Verified — and the success message the first attempt earned is still the one on screen.
+    releaseReload()
+    await waitFor(() => expect(verifiedButtons1To10()[0]).toBeDisabled())
+    expect(screen.getByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+    expect(screen.queryByText(SUBMISSION_ERROR_MSG, verbatim)).toBeNull()
+    expect(posted).toHaveBeenCalledTimes(1)
+  })
+
+  test('AC10 (17.2 review): a refused verify releases the button once its own refresh-free arm settles', async () => {
+    // The positive control for the test above: `busy` must not strand the button. An error bumps no
+    // reload token, so the moment the request settles the gate is back on the server's status — still
+    // Submitted — and a corrected report can be re-verified without leaving the page.
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(http.post(VERIFY_URL, () => problem(409, NOT_SUBMITTED_MSG)))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(NOT_SUBMITTED_MSG, verbatim)).toBeInTheDocument()
+
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeEnabled()
+    }
+    server.use(verifyHandler(posted, ok))
+    await user.click(verifiedButtons1To10()[1])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+    expect(posted).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([
+    ['success', () => ok(), VERIFIED_MSG],
+    ['error', () => problem(409, NOT_SUBMITTED_MSG), NOT_SUBMITTED_MSG],
+  ])(
+    'AC11 (17.2 review): confirming moves focus to the outcome banner, not to <body> (%s)',
+    async (_name, reply, text) => {
+      // The prompt is mounted only while pending, so on confirm there is no dialog for Carbon to
+      // restore focus from, and the launching button may now be greyed: focus fell to <body> and the
+      // user was dropped to the top of the document with nothing announced.
+      submittedSweep()
+      server.use(http.post(VERIFY_URL, reply))
+      const user = userEvent.setup()
+      renderAsAdmin(<CheckStatus />)
+      await screen.findAllByText(MET_TEXT)
+
+      await user.click(verifiedButtons1To10()[1])
+      await user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }),
+      )
+      const banner = await screen.findByText(text, verbatim)
+
+      await waitFor(() => expect(document.activeElement).not.toBe(document.body))
+      const focused = document.activeElement as HTMLElement
+      expect(focused.contains(banner)).toBe(true)
+      // A programmatic target only — never picked up by Tab.
+      expect(focused).toHaveAttribute('tabindex', '-1')
+    },
+  )
+
+  test('AC11 (17.2 review): declining still returns focus to the button, and moves it nowhere else', async () => {
+    // The positive control for the pair above: the decline path predates this fix and must be intact.
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(verifyHandler(posted, ok))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    const launcher = verifiedButtons1To10()[1]
+    await user.click(launcher)
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+    )
+
+    await waitFor(() => expect(document.activeElement).toBe(launcher))
+    expect(posted).not.toHaveBeenCalled()
+  })
+
+  // ---- Error arms. Every one renders the server's verbatim `detail`; the page never branches on the
+  // ---- text, because a 409 carries three different messages and the 500 duplicates one of them.
+  test.each([
+    ['CHK-012 S03 gate failure', 409, NOT_SUBMITTED_MSG],
+    ['CHK-007 S06 refused transition', 409, SUBMISSION_ERROR_MSG],
+    ['closed mill (ERR-002)', 409, NOT_ACTIVE],
+    ['schedules not found (ERR-003)', 404, NOT_FOUND],
+    ['missing context (ERR-001, trailing space)', 400, ERR_001],
+    ['caller lacks the action', 403, FORBIDDEN],
+  ])('%s: the verbatim detail renders and nothing changes', async (_name, status, detail) => {
+    submittedSweep()
+    server.use(http.post(VERIFY_URL, () => problem(status, detail)))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(detail, verbatimUntrimmed)).toBeInTheDocument()
+    // No success line anywhere (AC8), and the track is still Submitted so a retry stays possible.
+    expect(screen.queryByText(VERIFIED_MSG)).not.toBeInTheDocument()
+    await waitFor(() => {
+      for (const button of verifiedButtons1To10()) {
+        expect(button).toBeEnabled()
+      }
+    })
+  })
+
+  test('CHK-012 S03: a blocked verify can be retried, and the next outcome replaces the first', async () => {
+    let attempt = 0
+    submittedSweep()
+    server.use(
+      http.post(VERIFY_URL, () => {
+        attempt += 1
+        return attempt === 1 ? problem(409, NOT_SUBMITTED_MSG) : ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(NOT_SUBMITTED_MSG, verbatim)).toBeInTheDocument()
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+
+    // AC8: exactly one outcome on screen. Legacy could show an error AND a success from one click
+    // (CheckStatusMB.java:278-280 then :284); that defect is not reproduced.
+    expect(screen.queryByText(NOT_SUBMITTED_MSG)).not.toBeInTheDocument()
+  })
+
+  test('a failure with no problem+json body falls back to the page-owned text', async () => {
+    submittedSweep()
+    server.use(http.post(VERIFY_URL, () => HttpResponse.error()))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(VERIFY_FAILED)).toBeInTheDocument()
+  })
+
+  test('the licensee is never offered the action: no enabled Verified, and no dialog', async () => {
+    submittedSweep()
+    const posted = vi.fn()
+    server.use(verifyHandler(posted, ok))
+    renderAsSubmitter(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    // Rendered but greyed, exactly as legacy (no `rendered=` on the Verified button).
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_ADMIN)
+    }
+    expect(posted).not.toHaveBeenCalled()
+  })
+
+  test('AC11: the prompt is named by its heading, Escape declines it, and focus returns to the button', async () => {
+    const posted = vi.fn()
+    submittedSweep()
+    server.use(verifyHandler(posted, ok))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    const trigger = verifiedButtons1To10()[0]
+    await user.click(trigger)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName('Confirmation Required')
+
+    // Escape is handled by the dialog, so it must hold focus — as it does for a user once it opens.
+    within(dialog).getByRole('button', { name: 'Yes' }).focus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(posted).not.toHaveBeenCalled()
+    expect(trigger).toHaveFocus()
+  })
+
+  test('AC11: the outcome banner adds one page-level status line and leaves the per-schedule lines alone', async () => {
+    submittedSweep()
+    server.use(http.post(VERIFY_URL, () => problem(409, NOT_SUBMITTED_MSG)))
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    // Every InlineNotification renders role=status, so the new page-level banner must not leak into
+    // the per-item queries the rest of this suite counts on.
+    const linesBefore = linesIn(item(SCHEDULE_TITLES['1'])).length
+    const pageBefore = screen.queryAllByRole('status').length
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    await screen.findByText(NOT_SUBMITTED_MSG, verbatimUntrimmed)
+
+    expect(linesIn(item(SCHEDULE_TITLES['1']))).toHaveLength(linesBefore)
+    expect(screen.queryAllByRole('status')).toHaveLength(pageBefore + 1)
+  })
+
+  // ---- The refused verify re-reads, exactly as the refused submit does -------------------------
+
+  test('CHK-012 S03: a gate 409 re-sweeps, so the newly-failing schedule is on screen behind the verbatim banner', async () => {
+    const posted = vi.fn()
+    let sweeps = 0
+    let failing = false
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () => {
+        sweeps += 1
+        return HttpResponse.json(
+          sweep({
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+            overrides: failing
+              ? [{ schedule: '7B', requirementsMet: false, verdict: schedule7bFail }]
+              : [],
+          }),
+        )
+      }),
+      verifyHandler(posted, () => {
+        // A schedule fell out of compliance since the page was read. The gate runs before the
+        // transition, so this is the 409 the user gets, and the verdict on screen is now stale.
+        failing = true
+        return problem(409, NOT_SUBMITTED_MSG)
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+    expect(screen.queryByText(SCH7B_ERROR_TEXT)).not.toBeInTheDocument() // the "changed" control
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(NOT_SUBMITTED_MSG, verbatimUntrimmed)).toBeInTheDocument()
+    expect(posted).toHaveBeenCalledTimes(1)
+    // The panels now agree with the banner's reason: the refusal re-read, as submit's 409 does.
+    // Without the re-read the user reads why it was refused while the page still shows all-met.
+    expect(await screen.findByText(SCH7B_ERROR_TEXT)).toBeInTheDocument()
+    await waitFor(() => expect(sweeps).toBe(2))
+    expect(screen.getByText(NOT_SUBMITTED_MSG, verbatimUntrimmed)).toBeInTheDocument()
+  })
+
+  // ---- Stale context ---------------------------------------------------------------------------
+
+  test('stale context: a settled verify outcome does not follow the mill/year change — the banner goes, the prompt goes, and the new report is gated on its own status', async () => {
+    const posted = vi.fn()
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+          }),
+        )
+      }),
+      verifyHandler(posted, ok),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await screen.findAllByText(MET_TEXT)
+    // Mill 999 is Submitted as well, so the pair is live again — on ITS status, not left greyed by a
+    // success that belongs to the report the user moved away from, and with no banner from it either.
+    expect(screen.queryByText(VERIFIED_MSG)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    await waitFor(() => {
+      const buttons = verifiedButtons1To10()
+      expect(buttons).toHaveLength(2)
+      for (const button of buttons) {
+        expect(button).toBeEnabled()
+      }
+    })
+    expect(posted).toHaveBeenCalledTimes(1)
+  })
+
+  test('stale context: a prompt left pending across a mill/year change is dismissed, not re-shown over the new report', async () => {
+    const posted = vi.fn()
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+          }),
+        )
+      }),
+      verifyHandler(posted, ok),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    await screen.findAllByText(MET_TEXT)
+
+    await user.click(verifiedButtons1To10()[0])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    // The change is unreachable behind Carbon's overlay for a real user; the guarantee is that a
+    // question asked about mill 13050 can never be answered `Yes` against mill 999.
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await screen.findAllByText(MET_TEXT)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(posted).not.toHaveBeenCalled()
+
+    // Positive control: asking again in the new context still works.
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Yes' }))
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1))
+  })
+})
+
 // =================================================================================================
 // Story 15.4 — Submit Schedules 1–10 behind the confirmation.
 // =================================================================================================
@@ -962,7 +1552,7 @@ const NOT_SUBMITTED =
 const SUBMISSION_ERROR =
   'An error has been found submitting schedules. The error details have been logged. Please contact ILCR application support.'
 const NOT_DRAFT = 'Schedules 1-10 are no longer in Draft and cannot be submitted.'
-const ERR_001 = 'Please Select Mill and Reporting Year in the Home Page. '
+// ERR_001 is declared once for both suites, with 17.2's block above (its trailing space is real).
 
 const LOADING = { name: 'Loading Check Status' }
 const LOAD_TITLE = 'Unable to load Check Status'
@@ -1593,6 +2183,41 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     // Positive control: the un-flipped flow renders the banner (the AC 1 arms); here the second sweep
     // was for the NEW context, so the page is live for mill 999 with no message from mill 13050.
     expect(String(sweepCalls(getSpy)[1][0])).toContain('millId=999')
+    // And the in-flight lock came off with it. Released only for the dispatching context it would
+    // strand mill 999's pair greyed for the life of the mount, with no banner to explain why.
+    await expectSubmits1To10('enabled')
+  })
+
+  test('stale context: a SETTLED submit outcome does not follow the mill/year change — the banner goes and the new report’s Submit is live', async () => {
+    server.use(
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            canSubmit1To10: true,
+          }),
+        )
+      }),
+    )
+    const submit = submitHandler(submitOk)
+    const user = userEvent.setup()
+    renderAsSubmitter(<ContextSwitchHarness />)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    // The success locks THIS context's pair (D7) — the state that must not be carried over.
+    await expectSubmits1To10('disabled')
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    expect(screen.queryByText(SUBMITTED)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    // Mill 999 is Draft with `canSubmit` true: its Submit is offered on its own verdict.
+    await expectSubmits1To10('enabled')
+    expect(submit.count).toBe(1)
   })
 
   // ---- D10 / regression: nothing else on the three bars gains a click -----------------------
@@ -1627,15 +2252,27 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
     expect(getSpy).toHaveBeenCalled() // the spies see this instance's traffic (positive control)
 
-    const enabled = [
-      ...screen.getAllByRole('button', { name: 'Verified' }),
+    // AMENDED when Story 17.2 merged. Two of the three have moved on: the 1–10 Verified pair is now
+    // a live transition (its own suite covers it), and the reversals no longer render enabled — they
+    // are greyed until Epic 18 supplies their transition, because a live control that silently does
+    // nothing reads as a broken one. What this regression still owns is that everything WITHOUT a
+    // transition behind it stays unclickable and sends nothing.
+    const inert = [
+      within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Verified' }),
       ...screen.getAllByRole('button', { name: 'Set to Draft' }),
       ...screen.getAllByRole('button', { name: 'Set to Submit' }),
-    ].filter((button) => !(button as HTMLButtonElement).disabled)
-    // 2 Verified + 2 Set to Draft (1–10 Submitted), 1 Set to Submit (Schedule 11 Verified).
-    expect(enabled).toHaveLength(5)
-    for (const button of enabled) {
+    ]
+    // 1 Schedule 11 Verified (its track is at V, so not Submitted) + 2 Set to Draft + 1 Set to Submit.
+    expect(inert).toHaveLength(4)
+    for (const button of inert) {
+      expect(button).toBeDisabled()
       await user.click(button)
+    }
+    // Positive control: the pair that IS wired is enabled, so "disabled" above is not vacuous.
+    const live = verifiedButtons1To10()
+    expect(live).toHaveLength(2)
+    for (const button of live) {
+      expect(button).toBeEnabled()
     }
     expect(openDialog()).toBeNull()
     expect(postSpy).not.toHaveBeenCalled()

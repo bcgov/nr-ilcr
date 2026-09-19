@@ -1,0 +1,72 @@
+# Delivery schema probe — Story 17.1
+#
+# Committed so the claims that discharged V20260915's caveat and drove the SYSDATE change are
+# checkable rather than resting on a comment. Read-only ALL_TAB_COLUMNS queries.
+#
+# Date:      2026-09-16
+# Connect:   //nrcdb03.bcgov:1521/fortmp1.nrs.bcgov  (FTA dev THE — NOT the seeded local
+#            container at //host.docker.internal:1525/DBDOCK_01, which is the snapshot this
+#            probe corrects; reading that one instead would have been circular)
+# Account:   ILCR$WEB1
+# Probe src: scripts/probe-delivery-schema.java
+
+## THE.ILCR_MILL_REPORT_STATUS — all columns
+connected: Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+Version 19.10.0.0.0
+--- THE.ILCR_MILL_REPORT_STATUS columns ---
+REPORT_YEAR                      NUMBER       len=22     prec=4     nullable=N
+ILCR_MILL_ID                     NUMBER       len=22     prec=10    nullable=N
+ILCR_MILL_REPORT_STATUS_CODE     VARCHAR2     len=1      prec=-     nullable=N
+MILL_SILVICULTUR_STATUS_CODE     VARCHAR2     len=1      prec=-     nullable=N
+REPORT_COMPLETED_IND             VARCHAR2     len=1      prec=-     nullable=N
+AUDITOR_MILL_ID                  NUMBER       len=22     prec=10    nullable=Y
+AUDITOR_USER_GUID                VARCHAR2     len=32     prec=-     nullable=Y
+LICENSEE_MILL_ID                 NUMBER       len=22     prec=10    nullable=Y
+LICENSEE_USER_GUID               VARCHAR2     len=32     prec=-     nullable=Y
+COMMENTS                         VARCHAR2     len=4000   prec=-     nullable=Y
+REVISION_COUNT                   NUMBER       len=22     prec=5     nullable=N
+ENTRY_USERID                     VARCHAR2     len=30     prec=-     nullable=N
+ENTRY_TIMESTAMP                  DATE         len=7      prec=-     nullable=N
+UPDATE_USERID                    VARCHAR2     len=30     prec=-     nullable=N
+UPDATE_TIMESTAMP                 DATE         len=7      prec=-     nullable=N
+
+## UPDATE_TIMESTAMP type, every table the Story 17.1 sweep writes
+ILCR_MILL_REPORT_STATUS        DATE           nullable=N
+ILCR_REPORT_CATEGORY           DATE           nullable=N
+ILCR_REPORT_SUMMARY            DATE           nullable=N
+ILCR_COST_REPORT_DETAIL        DATE           nullable=N
+TRANSPORTATION_REPORT          DATE           nullable=N
+CAMP_REPORT                    DATE           nullable=N
+ROAD_MAINTENANCE_REPORT        DATE           nullable=N
+BRIDGE_REPORT                  DATE           nullable=N
+CULVERT_REPORT                 DATE           nullable=N
+TREE_TO_TRUCK_REPORT           DATE           nullable=N
+TREE_TO_TRUCK_DETAIL_REPORT    DATE           nullable=N
+TREE_TO_TRUCK_RATE_DETAIL      DATE           nullable=N
+CONTRACTUAL_WORK_REPORT        DATE           nullable=N
+ROAD_CONSTRUCTION_REPRT        DATE           nullable=N
+ROAD_CONSTRUCTION_REPRT_DTL    DATE           nullable=N
+
+## ENTRY_/UPDATE_TIMESTAMP type for EVERY table the backend writes a timestamp into
+## (probed 2026-09-16 before the repo-wide SYSTIMESTAMP -> SYSDATE fix)
+connected: Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+Version 19.10.0.0.0
+BASIC_SILVICULTURE_REPORT        ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_REPORT_COST_ITEM            ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_ROLE                        ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+BRIDGE_REPORT                    ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+CAMP_REPORT                      ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+CONTRACTUAL_WORK_REPORT          ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+CULVERT_REPORT                   ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_COST_REPORT_DETAIL          ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_REPORT_SUMMARY              ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ROAD_CONSTRUCTION_REPRT          ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ROAD_CONSTRUCTION_REPRT_DTL      ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ROAD_MAINTENANCE_REPORT          ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+TRANSPORTATION_REPORT            ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+TREE_TO_TRUCK_DETAIL_REPORT      ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+TREE_TO_TRUCK_RATE_DETAIL        ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+TREE_TO_TRUCK_REPORT             ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_MILL_REPORT_STATUS          ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_REPORT_CATEGORY             ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 
+ILCR_REPORTING_PERIOD            ENTRY_TIMESTAMP=DATE(null:N) UPDATE_TIMESTAMP=DATE(null:N) 

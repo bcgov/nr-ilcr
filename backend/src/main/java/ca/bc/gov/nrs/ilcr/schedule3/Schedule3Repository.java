@@ -133,7 +133,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
                  COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
                  UPDATE_USERID, UPDATE_TIMESTAMP)
          VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '3',
-                 :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+                 :comments, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   int mergeSummaryRow(
       @Param("millId") long millId,
@@ -188,7 +188,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
              COMMENTS = :comments,
              LOCATION = :override,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND REVISION_COUNT = :expectedRevision
       """)
@@ -211,7 +211,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
   @Query(
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
-         SET COST = :cost, UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
+         SET COST = :cost, UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND ITEM_DESCRIPTION IS NULL
@@ -236,7 +236,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           NULL, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           NULL, :cost, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertFixedDetailCost(
       @Param("summaryId") int summaryId,
@@ -256,7 +256,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
   @Query(
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
-         SET VOLUME = :volume, UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
+         SET VOLUME = :volume, UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND ITEM_DESCRIPTION IS NULL
@@ -279,7 +279,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, NULL, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, NULL, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertVolume(
       @Param("summaryId") int summaryId,
@@ -336,7 +336,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       """
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
-             UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
       """)
   void touchSummary(@Param("summaryId") int summaryId, @Param("user") String user);
@@ -354,7 +354,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           NULL, :cost, :description, :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           NULL, :cost, :description, :comments, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertSubPageRow(
       @Param("summaryId") int summaryId,
@@ -372,7 +372,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost, ITEM_DESCRIPTION = :description,
-             UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_COST_REPORT_DETAIL_ID = :detailId
          AND ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
@@ -391,7 +391,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost, ITEM_DESCRIPTION = :description,
-             UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND COMMENTS = :comments

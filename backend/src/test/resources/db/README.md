@@ -163,6 +163,28 @@ sense against this directory, `mvn clean` before believing it.
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
    | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
+   | Verify transition (17.1)  | **764–770**     | `R__55`; 768 is CLS, 769 has no auditor xref, 770 is the rollback arm |
+
+   **Verify transition (`R__55`, UC-CHK-007/012)** — the Submitted→Verified endpoint needs seven
+   mill/year shapes, all 2021, and it genuinely mutates the ones it succeeds on, so none can be
+   shared. `764` is the happy path: track `S`, all-met data, and the only mill with an **admin**
+   `ILCR_MILL_USER_XREF` row, which is what lets the auditor-recording assertion be made by value
+   rather than merely non-null. `765` is `S` with a Schedule 1 summary carrying no cost rows, so the
+   validation gate fails while everything else about the request is valid. `766` (`D`) and `767`
+   (`V`) are all-met so that a refused transition is refused for the *transition* reason and not by
+   the gate — the gate runs first, exactly as legacy's did. `768` is `CLS` and deliberately carries
+   no *schedule* data (it does carry the eleven `ILCR_REPORT_CATEGORY` rows every mill/year has),
+   because the mill-active guard refuses it before any schedule is read. `769`
+   repeats the happy path with **no** admin association, covering the legacy behaviour of writing
+   NULL into both auditor columns. `770` is the rollback arm: `S` and all-met, so the forced
+   persistence failure is reached after every guard has passed. Summaries take `1060–1077` and
+   cost details `2711–2912`.
+
+   Two facts about the band and the prefix are worth not undoing. The band moved from `757–763` to
+   `764–770` on 2026-09-18: Epic 21's `R__60` had already claimed `760–762`, and two repeatable
+   migrations inserting the same `THE.MILL` row fail the whole Flyway run. And the prefix is `55`
+   rather than anything above `70` so `R__70`'s set-based submitter association covers these mills,
+   which is what makes the submitter-refused arm fail for the right reason.
 
    **Data Extract CSV (`R__60`, UC-EXT-001)** — three mills whose two status tracks disagree in the
    three ways the "Data Verified" rule has to tell apart: `760` is `V`/`V`, `761` is `V`/`D` and

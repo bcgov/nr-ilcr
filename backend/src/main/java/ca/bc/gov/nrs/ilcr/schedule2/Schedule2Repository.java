@@ -209,7 +209,7 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
                  COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
                  UPDATE_USERID, UPDATE_TIMESTAMP)
          VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '2',
-                 :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+                 :comments, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   int mergeSummaryRow(
       @Param("millId") long millId,
@@ -246,7 +246,7 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          SET REVISION_COUNT = REVISION_COUNT + 1,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND REVISION_COUNT = :expectedRevision
       """)
@@ -263,7 +263,7 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          SET VOLUME = :volume,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :code
       """)
@@ -283,7 +283,7 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
            UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :code,
-           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   int insertDetail(
       @Param("summaryId") int summaryId,

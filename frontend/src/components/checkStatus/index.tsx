@@ -1,6 +1,6 @@
 import type { FC, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { Accordion, AccordionItem, Column, Grid, InlineNotification } from '@carbon/react'
+import { Accordion, AccordionItem, Column, Grid } from '@carbon/react'
 import useAuth from '@/context/auth/useAuth'
 import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -10,10 +10,12 @@ import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import renderScheduleLoadState from '@/components/core/ScheduleLoadState'
 import CheckStatusNotifications from '@/components/core/CheckStatusNotifications'
 import ConfirmActionModal from '@/components/core/ConfirmActionModal'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import type {
   MessageInfo,
   ScheduleCheckResult,
   TrackCheckResult,
+  VerifyReportResponse,
 } from '@/interfaces/CheckStatusSweep'
 import type { TrackAction } from './CheckStatusActions'
 import CheckStatusActions from './CheckStatusActions'
@@ -29,6 +31,12 @@ const VERIFIED = 'V'
 // Client-authored hints beside a greyed button (legacy greyed with no explanation). Chosen here, by
 // which half of the legacy rule failed, and passed down — the bar itself knows nothing about roles.
 export const HINT_NOT_SUBMITTER = "Submitting is the licensee's action"
+// Set to Draft / Set to Submit render by legacy's own `rendered=` rules and legacy had them working;
+// only the transition is deferred (Epic 18). Until it lands the button is GREYED with this hint
+// rather than left live and silently inert: Story 17.2 is what first makes Verified reachable from
+// inside the app, so `Set to Submit` is now on the screen an administrator lands on immediately
+// after a successful verify, where a dead control reads as a broken one.
+export const HINT_NOT_WIRED = 'This action is not available yet'
 export const HINT_NOT_DRAFT = 'Available while Schedules 1-10 are in Draft'
 export const HINT_NOT_DRAFT_11 = 'Available while Schedule 11 is in Draft'
 export const HINT_NOT_ADMIN = "Verifying is an administrator's action"
@@ -40,13 +48,53 @@ export const HINT_NOT_SUBMITTED_11 = 'Available once Schedule 11 is Submitted'
  * checkStatus.xhtml:197). The API never sends this text, so it is the page's literal to hold.
  */
 export const CONFIRM_SUBMIT_1_TO_10 = "Please confirm you'd like to SUBMIT Schedules 1-10?"
+/**
+ * Legacy's verify confirmation, verbatim (messages.properties:103, resolved in the view by
+ * checkStatus.xhtml:201). Client-owned for the same reason as the submit prompt — it is pre-request
+ * chrome that no response could carry — and pinned byte for byte against the backend bundle by
+ * `__tests__/confirmText.test.ts`, so the two cannot drift apart unnoticed.
+ */
+export const CONFIRM_VERIFY_1_TO_10 = "Please confirm you'd like to set Schedules 1-10 to VERIFIED?"
 /** Client fallback for a submit failure that carries no ProblemDetail `detail` (network, a 401). */
 export const SUBMIT_FAILED = 'Unable to submit Schedules 1-10.'
+/** The same, for verify: shown only when a failure carries no problem+json body of its own. */
+export const VERIFY_FAILED = 'The report could not be verified.'
 
 /** The submit endpoint's 200 body: the server's message and nothing else (MessageResponse.java). */
 type SubmitResponse = {
   readonly message: MessageInfo
 }
+
+/**
+ * The page's ONE settled outcome. A discriminated union rather than a success channel beside an
+ * error channel (Story 17.2, D5): legacy could render an error AND a success from the same click
+ * (CheckStatusMB.java:278-280 adds the error, then :284 adds the success anyway), and one slot makes
+ * that impossible instead of merely asserted against. It is shared by submit and verify because the
+ * two are reachable in sequence — a submit success leaves the track Submitted, which is exactly when
+ * an administrator's Verified lights up — so separate channels would let one action's banner sit
+ * under the other's. Text is always the server's; the title beside it is the shared vocabulary.
+ */
+type Outcome = {
+  readonly kind: 'success' | 'error'
+  readonly text: string
+}
+
+/**
+ * How a track's Verified button behaves. `busy` greys it from the click until the page is showing
+ * post-transition truth — the POST AND the refresh that follows it, not just the POST. Legacy needed
+ * no such flag: its one ajax round trip delivered the message and the re-rendered, re-gated button
+ * together, so there was never an instant where the screen said "verified" while the button still
+ * offered to verify. Ours reads the status from a SECOND request, and between the two the sweep
+ * still answers Submitted, so without this the button re-enables and a second POST is reachable —
+ * which the server then refuses with the support-escalation 409, painting over the success the user
+ * just earned. A track with no wiring keeps an inert click, which is Schedule 11's until Epic 26.
+ */
+type VerifyWiring = {
+  readonly onClick: () => void
+  readonly busy: boolean
+}
+
+const INERT: VerifyWiring = { onClick: () => undefined, busy: false }
 
 /** A 409 is the protocol's own "your view of the state is stale" — the one status that warrants a re-read. */
 const isConflict = (error: unknown): boolean =>
@@ -126,11 +174,14 @@ type SubmitGate = {
  * The legacy rules, exactly, evaluated on ONE track's own status code (UserSessionMB.java:502-570,
  * CheckStatusMB.java:162-192): Verified = that track Submitted AND the user is NOT the licensee
  * (ILCR_ADMIN); Set to Draft is RENDERED only for an admin while the track is Submitted, Set to
- * Submit only for an admin while it is Verified (both enabled whenever rendered — `canUserSetToDraft/
- * Submit` is the same admin test). Submit's gate is passed in (see `SubmitGate`). Validity is not part
- * of any of them — the ten-schedule gate fires on the click, server-side. Display state only; the
- * server is the authorization. The role/status expressions that remain here choose only the hint text
- * beside a greyed button — which half of the legacy rule the user fails — never whether it is offered.
+ * Submit only for an admin while it is Verified (legacy enabled both whenever rendered —
+ * `canUserSetToDraft/Submit` is the same admin test; ours greys them until Epic 18 supplies the
+ * transition, see `reversal`). Submit's gate is passed in (see `SubmitGate`), Verified's wiring too
+ * (see `VerifyWiring`). Validity is not part of any of them — the eleven-schedule gate fires on the
+ * click, server-side, and an administrator on a Submitted-but-failing report gets an enabled button
+ * and the server's verbatim refusal. Display state only; the server is the authorization. The
+ * role/status expressions that remain here choose only the hint text beside a greyed button — which
+ * half of the legacy rule the user fails — never whether it is offered.
  */
 const trackActions = (
   track: TrackCheckResult,
@@ -138,12 +189,17 @@ const trackActions = (
   isAdmin: boolean,
   hints: { readonly notDraft: string; readonly notSubmitted: string },
   submitGate: SubmitGate,
+  verifyWiring: VerifyWiring = INERT,
 ): TrackActions => {
   const canVerify = isAdmin && track.statusCode === SUBMITTED
+  // Legacy rendered these ENABLED for an admin and they worked. Ours has no transition behind it
+  // until Epic 18, so it ships greyed: `onClick` absent is exactly the "no handler ⇒ disabled"
+  // contract TrackAction documents, which means Epic 18 enables the button by supplying a handler
+  // and changes nothing here. `enabled` still carries legacy's own rule so that is a one-line move.
   const reversal: TrackAction = {
     enabled: isAdmin,
-    disabledReason: isAdmin ? undefined : HINT_NOT_ADMIN,
-    onClick: () => undefined,
+    disabledReason: isAdmin ? HINT_NOT_WIRED : HINT_NOT_ADMIN,
+    onClick: undefined,
   }
   return {
     setToDraft: isAdmin && track.statusCode === SUBMITTED ? reversal : undefined,
@@ -159,9 +215,9 @@ const trackActions = (
       onClick: submitGate.onClick ?? (() => undefined),
     },
     verify: {
-      enabled: canVerify,
+      enabled: canVerify && !verifyWiring.busy,
       disabledReason: canVerify ? undefined : isAdmin ? hints.notSubmitted : HINT_NOT_ADMIN,
-      onClick: () => undefined,
+      onClick: verifyWiring.onClick,
     },
   }
 }
@@ -173,7 +229,7 @@ const trackActions = (
  * were. Both track status lines come from the tombstone's /mill-context read; the sweep's status
  * codes drive only the action gates.
  *
- * Submit (Schedules 1–10) is the one live transition: it asks legacy's `Confirmation Required`
+ * Submit and Verified (Schedules 1–10) are the live transitions: each asks legacy's `Confirmation Required`
  * question first, POSTs once, and renders the server's answer as a banner where legacy's
  * `p:messages` sat — first in the panel, above the top button row (checkStatus.xhtml:31-33) — then
  * re-reads both the sweep and the working context so everything on the page is the server's new
@@ -187,24 +243,52 @@ const trackActions = (
 const CheckStatus: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const [reloadToken, setReloadToken] = useState(0)
-  const { data, isLoading, errorDetail } = useCheckStatusSweep(millId, year, reloadToken)
+  const { data, isLoading, errorDetail, isReloading } = useCheckStatusSweep(
+    millId,
+    year,
+    reloadToken,
+  )
   const { hasRole } = useAuth()
 
-  const [confirming, setConfirming] = useState(false)
+  // Which transition is awaiting its answer, if any — one mount serves both prompts, because only
+  // one can be pending and the page renders the 1–10 bar twice from the same action object.
+  const [confirming, setConfirming] = useState<'submit' | 'verify' | null>(null)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const [outcome, setOutcome] = useState<Outcome | null>(null)
 
+  // Every piece of action state above belongs to ONE working context. mill/year lives in a provider,
+  // so a context change does NOT remount this page — the sweep re-issues in place, which is what
+  // `useCheckStatusSweep` and the response guards are all built around — and nothing was resetting
+  // the settled outcome with it (Story 17.2 review, SScholefield). Left standing, the previous
+  // context's banner reappears the moment the new sweep lands, `busy` derived from a success greys
+  // that context's Submit against its own `canSubmit`, and a prompt still pending would answer for a
+  // report the user never confirmed. Adjusted DURING render, not in an effect, so no committed render
+  // ever reads the old context's outcome (React's "adjusting state when a prop changes").
+  const contextKey = `${millId}/${year}`
+  const [actionContext, setActionContext] = useState(contextKey)
+  if (actionContext !== contextKey) {
+    setActionContext(contextKey)
+    setConfirming(null)
+    setOutcome(null)
+  }
+
+  // Synchronous, unlike the state flag: two clicks inside one tick would both see `verifying` false.
+  const busyRef = useRef(false)
+  // Which button opened the prompt, so declining puts focus back where it was. The prompt is mounted
+  // only while pending, so there is no dialog left for Carbon to restore focus from on close.
+  const launcherRef = useRef<HTMLElement | null>(null)
   // Focus the outcome for THIS action only — a ref flag rather than state, so the effect sets nothing.
+  // Confirming unmounts the prompt and the launching button may now be greyed, so without this focus
+  // lands on <body>: the user is dropped to the top of the document and never told what happened.
   const focusOutcomeRef = useRef(false)
-  const messageRef = useRef<HTMLDivElement>(null)
-  const actionErrorRef = useRef<HTMLDivElement>(null)
+  const outcomeRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!focusOutcomeRef.current) return
-    if (message === null && actionError === null) return
+    if (outcome === null) return
     focusOutcomeRef.current = false
-    ;(messageRef.current ?? actionErrorRef.current)?.focus()
-  }, [message, actionError])
+    outcomeRef.current?.focus()
+  }, [outcome])
 
   const header = <ScheduleTombstone title={PAGE_TITLE} reloadToken={reloadToken} />
   const loadState = renderScheduleLoadState({
@@ -221,18 +305,35 @@ const CheckStatus: FC = () => {
     return null
   }
 
+  // Opening a prompt touches no server: legacy's buttons were `type="button"` whose whole behaviour
+  // was `confirmSubmit.show()` / `confirmVerify.show()` (checkStatus.xhtml:51-62). The launching
+  // button is recorded so declining can put focus back on it — either 1–10 bar can open either
+  // prompt, so the active element is the only honest source of "which button opened this".
+  const openPrompt = (which: 'submit' | 'verify') => {
+    launcherRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConfirming(which)
+  }
+
   const requestSubmit = () => {
     if (saving) return
-    setConfirming(true)
+    openPrompt('submit')
+  }
+
+  const requestVerify = () => {
+    setOutcome(null)
+    openPrompt('verify')
   }
 
   // Legacy's Cancel was `type="button"` with no action: close the dialog, touch nothing else.
-  const cancelSubmit = () => setConfirming(false)
+  const cancelConfirm = () => {
+    setConfirming(null)
+    launcherRef.current?.focus()
+  }
 
   const confirmSubmit = () => {
-    setConfirming(false)
-    setMessage(null)
-    setActionError(null)
+    setConfirming(null)
+    setOutcome(null)
     setSaving(true)
     focusOutcomeRef.current = true
     apiService
@@ -240,20 +341,59 @@ const CheckStatus: FC = () => {
       .post<SubmitResponse>(`/v1/check-status/submit?millId=${millId}&year=${year}`)
       .then((response) => {
         if (!isCurrent()) return
-        setMessage(response.data.message.text)
+        setOutcome({ kind: 'success', text: response.data.message.text })
         setReloadToken((token) => token + 1)
       })
       .catch((error: unknown) => {
         if (!isCurrent()) return
-        setActionError(extractDetail(error) || SUBMIT_FAILED)
+        setOutcome({ kind: 'error', text: extractDetail(error) || SUBMIT_FAILED })
         if (isConflict(error)) {
           setReloadToken((token) => token + 1)
         }
       })
       .finally(() => {
-        if (isCurrent()) {
-          setSaving(false)
+        // Released unconditionally, as verify's is: gated on `isCurrent()` it strands the lock when
+        // the context moved while the POST was in flight, and the new context's Submit pair stays
+        // greyed for the life of the mount. The two branches above are what must not write across a
+        // context change; the lock is the opposite — it must always come off.
+        setSaving(false)
+      })
+  }
+
+  // The verify transition, hung off the prompt's Yes exactly as legacy hung it (checkStatus.xhtml:202).
+  // The mill/year come from the sweep body, which the hook has already refused unless it echoes the
+  // request's own context. Every branch re-checks that the context has not moved underneath it before
+  // it writes to state, and the lock is released unconditionally — a conditional reset strands it.
+  const confirmVerify = () => {
+    if (busyRef.current) {
+      return
+    }
+    busyRef.current = true
+    focusOutcomeRef.current = true
+    setConfirming(null)
+    setVerifying(true)
+    apiService
+      .getAxiosInstance()
+      .post<VerifyReportResponse>(`/v1/check-status/verify?millId=${data.millId}&year=${data.year}`)
+      .then((response) => {
+        if (!isCurrent()) return
+        setOutcome({ kind: 'success', text: response.data.message.text })
+        setReloadToken((token) => token + 1)
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent()) return
+        setOutcome({ kind: 'error', text: extractDetail(error) || VERIFY_FAILED })
+        // A 409 means the verdict this button was offered on has gone stale underneath it — the
+        // gate now fails, the mill closed, or the status moved. Re-sweep so what is on screen
+        // agrees with the reason in the banner, exactly as confirmSubmit does; without this the
+        // user reads why it was refused while the table still shows the state that offered it.
+        if (isConflict(error)) {
+          setReloadToken((token) => token + 1)
         }
+      })
+      .finally(() => {
+        busyRef.current = false
+        setVerifying(false)
       })
   }
 
@@ -270,8 +410,9 @@ const CheckStatus: FC = () => {
       onClick: requestSubmit,
       // A 200 means this transition is complete. Keep the pair locked even if the re-sweep is still
       // in flight or fails and the hook deliberately preserves the last good (Draft) payload.
-      busy: saving || message !== null,
+      busy: saving || outcome?.kind === 'success',
     },
+    { onClick: requestVerify, busy: verifying || isReloading },
   )
   const actions11 = trackActions(
     data.schedule11,
@@ -286,21 +427,14 @@ const CheckStatus: FC = () => {
     <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        {message && (
-          // tabIndex={-1}: a programmatic focus target only — never in the tab order.
-          <Column sm={4} md={8} lg={16} ref={messageRef} tabIndex={-1}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
-          </Column>
-        )}
-        {actionError && (
-          <Column sm={4} md={8} lg={16} ref={actionErrorRef} tabIndex={-1}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={actionError}
-            />
-          </Column>
+        {outcome && (
+          // focusRef makes it a programmatic focus target only — never in the tab order.
+          <NotificationColumn
+            kind={outcome.kind}
+            title={outcome.kind === 'success' ? 'Success' : 'Action failed'}
+            subtitle={outcome.text}
+            focusRef={outcomeRef}
+          />
         )}
         <CheckStatusActions {...actions1To10} />
         <TrackRegion
@@ -320,11 +454,11 @@ const CheckStatus: FC = () => {
         <ConfirmActionModal
           open
           heading="Confirmation Required"
-          message={CONFIRM_SUBMIT_1_TO_10}
+          message={confirming === 'submit' ? CONFIRM_SUBMIT_1_TO_10 : CONFIRM_VERIFY_1_TO_10}
           confirmLabel="Yes"
           cancelLabel="Cancel"
-          onConfirm={confirmSubmit}
-          onCancel={cancelSubmit}
+          onConfirm={confirming === 'submit' ? confirmSubmit : confirmVerify}
+          onCancel={cancelConfirm}
         />
       )}
     </div>

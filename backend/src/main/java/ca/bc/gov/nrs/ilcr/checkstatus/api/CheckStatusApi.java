@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.checkstatus.api;
 
 import ca.bc.gov.nrs.ilcr.checkstatus.dto.CheckStatusSweepResponse;
+import ca.bc.gov.nrs.ilcr.checkstatus.dto.VerifyReportResponse;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -18,8 +19,10 @@ import org.springframework.web.bind.annotation.RequestParam;
  * per-schedule siblings are all {@code POST /check-status}: the sweep is a pure read with no body,
  * so the verb is right, but it departs from the "actions are POST sub-resources" convention. And
  * {@code /api/v1/check-status} is a new top-level resource rather than a schedule sub-resource —
- * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3, and {@code
- * /verify}, {@code /set-to-draft} and {@code /set-to-submit} follow (Stories 17, 18).
+ * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3 and {@code
+ * /verify} with Story 17.1; {@code /set-to-draft} and {@code /set-to-submit} follow (Story 18).
+ * Both sub-resources DO follow the POST-sub-resource convention; the GET's departure is the sweep's
+ * alone.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings on both endpoints, and this is
  * forced, not stylistic: the legacy ERR-001 text ("Please Select Mill and Reporting Year in the
@@ -84,6 +87,48 @@ public interface CheckStatusApi {
    */
   @PostMapping("/submit")
   ResponseEntity<MessageResponse> submit(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Verify a submitted Schedules 1&ndash;10 track — the Submitted&rarr;Verified transition that is
+   * the ministry's sign-off for rate setting (UC-CHK-007/012, FR5). Method authorization runs
+   * first: no {@code SET_REPORT_STATUS} → 403, which is every Licensee. For an authorized caller,
+   * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
+   * {@code checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002; one or
+   * more schedules failing validation → 409 {@code reportNotSubmittedErrorMsg}; a track that is not
+   * Submitted, which covers a no-op, both illegal Draft&harr;Verified jumps and a stored NULL
+   * status code → 409 {@code reportSubmissionErrorMsg}; a write that cannot be persisted → 500
+   * {@code reportSubmissionErrorMsg}, everything rolled back.
+   *
+   * <p><strong>A refused transition answers 409, and that IS legacy.</strong> The DAO returns
+   * {@code false} ({@code SubmitReportDAO.isMillReportStatusValid:448}), and {@code
+   * ILCRService.submitReport:718-723} — declared {@code void} — converts it into {@code
+   * ILCSException(SCHEDULE_NOT_SUBMITTED)}, mapped to {@code reportSubmissionErrorMsg} at {@code
+   * ILCSException:50}. The bean's {@code catch} at {@code CheckStatusMB.submitReport:289-292} then
+   * renders the error, skipping {@code sch1-10VerifiedMsg} at {@code :284}. {@code UC-CHK-007-S07}
+   * calls this a silent-success defect, but that record reads only the bean and the DAO — it never
+   * opens the service — and hedges itself as unconfirmed.
+   *
+   * <p>There is no revision-conflict outcome: the status row carries no optimistic guard, because
+   * legacy's {@code REVISION_COUNT} was a plain column rather than a {@code @Version} and no
+   * transition ever bumped it.
+   *
+   * <p>The 409 and the 500 that share {@code reportSubmissionErrorMsg} are distinguishable only by
+   * status code, never by response body — legacy reused one message for both conditions and AD-8
+   * keeps its text verbatim.
+   *
+   * <p>The Schedule 11 track is untouched: it has its own status and its own workflow.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying both the audit actor and the directory
+   *     GUID the auditor cross-reference is looked up by
+   * @return 200 with the new track status and the verbatim success message
+   */
+  @PostMapping("/verify")
+  ResponseEntity<VerifyReportResponse> verifySchedules1To10(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);
