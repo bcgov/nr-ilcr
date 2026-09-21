@@ -24,7 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Legacy had that same window and a wider one, since its verdict came from a {@code @ViewScoped}
  * in-memory snapshot rather than from the database.
  *
- * <p>{@link #write} is used by VERIFY only. Submit reaches the same {@link
+ * <p>{@link #write} is used by VERIFY only, and {@link #writeReversal} by the two Story 18.1
+ * reversals — same three steps in the same order, differing only in the status statement, because
+ * Set to Draft and Set to Submit write no identity pair at all (D1). Submit reaches the same {@link
  * ReportTrackTransitionRepository} from inside its own transaction, because 15.3 ruled the opposite
  * boundary for that transition &mdash; lock the status row first, then gate inside the write. Both
  * rulings stand; this class is where the legacy-faithful one is expressed, and the repository
@@ -146,6 +148,96 @@ public class ReportTransitionWriter {
       return targetStatus;
     } catch (DataAccessException persistence) {
       log.error("Transition failed to persist for millId={} year={}", millId, year, persistence);
+      throw new ReportSubmissionException();
+    }
+  }
+
+  /**
+   * Apply one of the two admin reversals — Submitted&rarr;Draft or Verified&rarr;Submitted (Story
+   * 18.1) — in the same three steps and the same order as {@link #write}, differing only in the
+   * status statement.
+   *
+   * <p>It takes no actor GUID, and that absence is the whole point. Legacy keyed the identity write
+   * on the TARGET status alone ({@code SubmitReportDAO.updateILCRMillReportStatus:401-412}): a
+   * {@code 'D'} target skips the association block entirely, and a {@code 'S'} target wrote the
+   * LICENSEE pair from the acting user's cross-reference — which for an ADMIN reversing a
+   * verification means overwriting the record of who actually submitted, with NULLs whenever that
+   * admin has no assignment for the mill. Story 18.1 D1(a) ratified writing neither pair for either
+   * reversal (deviation (S)), so there is no cross-reference to resolve and {@link
+   * ReportTrackTransitionRepository#updateTrackStatusWithoutIdentity} names no identity column.
+   *
+   * <p>A status write matching no row is a REFUSAL, not a failure. The statement carries {@code
+   * transition.from()} as its {@code expectedCode} (D2), so zero rows means the track moved between
+   * this request's unlocked read and its write — a lost update, whose loser has done nothing wrong
+   * and gets the transition's own "no longer in …" 409 rather than a 500 telling them to contact
+   * support (AC 9, deviation (U)). Nothing has been written at that point, and the surrounding
+   * transaction rolls back regardless.
+   *
+   * @param millId the mill
+   * @param year the reporting year
+   * @param transition the reversal to apply — {@link TrackTransition#SET_TO_DRAFT} or {@link
+   *     TrackTransition#SET_TO_SUBMIT}
+   * @param actingUser the value for the audit columns, at most 30 characters
+   * @return the track's status code after the transition
+   * @throws ReportTransitionRejectedException 409 — the track left {@code transition.from()}
+   *     between the caller's read and this write
+   * @throws ReportSubmissionException 500 — a write failed or left the report half-transitioned
+   */
+  @Transactional
+  public String writeReversal(
+      long millId, int year, TrackTransition transition, String actingUser) {
+    try {
+      int updated =
+          repository.updateTrackStatusWithoutIdentity(
+              millId, year, transition.to(), transition.from(), actingUser);
+      if (updated != 1) {
+        log.info(
+            "{} 409: the 1-10 track left {} for millId={} year={} before the write",
+            transition,
+            transition.from(),
+            millId,
+            year);
+        throw new ReportTransitionRejectedException(transition);
+      }
+
+      // ORDER IS LOAD-BEARING — see the note in write() above. Set to Submit's (V,S) pair maps to
+      // the 'A' snapshot only while the category row is still V, so advancing the category first
+      // would change what the delivery BEFORE-UPDATE trigger records. The test schema has no
+      // triggers, so ReportTransitionWriterTest's InOrder case is the only guard on this.
+      int stamped = stampAuditColumns(millId, year, actingUser);
+
+      int categories = 0;
+      for (String categoryId : ScheduleTrack.SCHEDULES_1_TO_10.categoryIds()) {
+        categories +=
+            repository.advanceCategoryState(
+                millId, year, categoryId, transition.categoryState(), actingUser);
+      }
+      if (categories != EXPECTED_CATEGORY_ROWS) {
+        log.error(
+            "{} failed for millId={} year={}: expected {} category rows to advance but {} were"
+                + " updated",
+            transition,
+            millId,
+            year,
+            EXPECTED_CATEGORY_ROWS,
+            categories);
+        throw new ReportSubmissionException();
+      }
+
+      log.info(
+          "Reversed millId={} year={} {}->{}: {} category rows -> {}, {} audit rows stamped, no"
+              + " identity pair written",
+          millId,
+          year,
+          transition.from(),
+          transition.to(),
+          categories,
+          transition.categoryState(),
+          stamped);
+
+      return transition.to();
+    } catch (DataAccessException persistence) {
+      log.error("Reversal failed to persist for millId={} year={}", millId, year, persistence);
       throw new ReportSubmissionException();
     }
   }

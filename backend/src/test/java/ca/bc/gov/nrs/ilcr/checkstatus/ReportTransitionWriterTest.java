@@ -214,4 +214,126 @@ class ReportTransitionWriterTest {
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
+
+  // -----------------------------------------------------------------------------------------------
+  // Story 18.1 — the two admin reversals. Same write half, one different status statement.
+  // -----------------------------------------------------------------------------------------------
+
+  private static final long REVERSAL_MILL = 790L;
+
+  private void givenTheReversalStatusRowMoves(TrackTransition transition) {
+    when(repository.updateTrackStatusWithoutIdentity(
+            REVERSAL_MILL, YEAR, transition.to(), transition.from(), USER))
+        .thenReturn(1);
+  }
+
+  private void givenTenCategoryRowsAdvanceTo(String categoryState) {
+    for (String categoryId : CATEGORIES) {
+      when(repository.advanceCategoryState(REVERSAL_MILL, YEAR, categoryId, categoryState, USER))
+          .thenReturn(1);
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+  @org.junit.jupiter.params.provider.EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("AC4: status write, then the audit stamps, then the category advance")
+  void reversalStatementOrderIsLoadBearing(TrackTransition transition) {
+    givenTheReversalStatusRowMoves(transition);
+    givenTenCategoryRowsAdvanceTo(transition.categoryState());
+
+    assertThat(writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
+        .isEqualTo(transition.to());
+
+    // THE ONLY GUARD against re-inverting this, and the reason Story 18.1 writes it first. The
+    // delivery BEFORE-UPDATE triggers derive ILCR_*_AUD.RECORD_STATE_CODE from the
+    // (CATEGORY_STATE_CODE, mill status) pair, and Set to Submit's (V,S) maps to 'A' only while the
+    // category is still V (V20260910__the_audit_shadow_tables…:18-32). Advance the category first
+    // and the pair seen is (A,S), a different snapshot. The IT schema carries no triggers at all,
+    // so no acceptance test in this repo can see the difference.
+    InOrder order = inOrder(repository);
+    order
+        .verify(repository)
+        .updateTrackStatusWithoutIdentity(
+            REVERSAL_MILL, YEAR, transition.to(), transition.from(), USER);
+    order.verify(repository).touchReportSummaries(REVERSAL_MILL, YEAR, USER);
+    order.verify(repository).touchRoadConstructionCostDetails(REVERSAL_MILL, YEAR, USER);
+    order
+        .verify(repository)
+        .advanceCategoryState(
+            REVERSAL_MILL, YEAR, CATEGORIES.get(0), transition.categoryState(), USER);
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+  @org.junit.jupiter.params.provider.EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("AC3: neither reversal reaches a statement that writes an identity pair")
+  void reversalsWriteNoIdentityColumn(TrackTransition transition) {
+    givenTheReversalStatusRowMoves(transition);
+    givenTenCategoryRowsAdvanceTo(transition.categoryState());
+
+    writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER);
+
+    // updateTrackStatusWithAuditor is the ONLY statement naming AUDITOR_*, updateTrackStatus the
+    // only one naming LICENSEE_*. Reaching neither is what "unchanged by value" means in SQL terms;
+    // SetToDraftIT/SetToSubmitIT assert the columns themselves against Oracle.
+    verify(repository, never())
+        .updateTrackStatusWithAuditor(anyLong(), anyInt(), anyString(), any(), any(), anyString());
+    verify(repository, never())
+        .updateTrackStatus(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());
+    // No directory lookup either: with no identity pair to write there is no xref to resolve.
+    verify(millUserXrefRepository, never()).findAssignment(anyLong(), any());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+  @org.junit.jupiter.params.provider.EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("AC9: a status write matching no row is a 409 refusal, not a 500")
+  void lostUpdateIsRefusedNotFailed(TrackTransition transition) {
+    // The expectedCode predicate matched nothing: another request moved the track between this
+    // one's unlocked read and its write. That user has done nothing wrong, so they get the
+    // transition's own "no longer in …" text rather than "contact ILCR application support".
+    when(repository.updateTrackStatusWithoutIdentity(
+            REVERSAL_MILL, YEAR, transition.to(), transition.from(), USER))
+        .thenReturn(0);
+
+    assertThatThrownBy(() -> writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
+        .isInstanceOf(ReportTransitionRejectedException.class)
+        .hasMessage(transition.rejectedKey());
+    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("a reversal advancing fewer than ten category rows fails rather than committing")
+  void reversalShortCategoryAdvanceFails() {
+    givenTheReversalStatusRowMoves(TrackTransition.SET_TO_DRAFT);
+    for (String categoryId : CATEGORIES) {
+      when(repository.advanceCategoryState(REVERSAL_MILL, YEAR, categoryId, "D", USER))
+          .thenReturn(CATEGORIES.get(0).equals(categoryId) ? 0 : 1);
+    }
+
+    assertThatThrownBy(
+            () -> writer.writeReversal(REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+  }
+
+  @Test
+  @DisplayName("a reversal persistence failure becomes a 500 and stops before the categories")
+  void reversalPersistenceFailure() {
+    givenTheReversalStatusRowMoves(TrackTransition.SET_TO_DRAFT);
+    when(repository.touchReportSummaries(REVERSAL_MILL, YEAR, USER))
+        .thenThrow(new DataIntegrityViolationException("sweep failed"));
+
+    assertThatThrownBy(
+            () -> writer.writeReversal(REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
 }

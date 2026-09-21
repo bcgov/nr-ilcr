@@ -18,28 +18,36 @@ import java.util.Optional;
  * rejections plus every pair the map does not name (the dead {@code O} status included). Same
  * observable outcome &mdash; an error and no transition &mdash; without the partial write.
  *
- * <p>Only {@link #SUBMIT} is exposed by an endpoint today (Story 15.3). The others are declared so
- * Verify (Story 17.1) and the two admin reversals (Story 18.1) add a controller method and a status
- * write, not a second guard. Schedule 11 (Story 26.1) reuses the same enum against {@code
- * MILL_SILVICULTUR_STATUS_CODE} with one category and one row family.
+ * <p>All four are exposed by an endpoint: Submit (Story 15.3), Verify (Story 17.1) and the two
+ * admin reversals (Story 18.1). Each added a controller method and a status write, not a second
+ * guard. Schedule 11 (Story 26.1) reuses the same enum against {@code MILL_SILVICULTUR_STATUS_CODE}
+ * with one category and one row family.
  */
 public enum TrackTransition {
-  /** Draft &rarr; Submitted: the Licensee hands the report to the ministry (this story). */
+  /** Draft &rarr; Submitted: the Licensee hands the report to the ministry (Story 15.3). */
   SUBMIT("D", "S", "A", Recorded.LICENSEE, "sch1-10SubmittedMsg", "submitNotDraftErrorMsg"),
   /** Submitted &rarr; Verified: the ministry signs the report off (Story 17.1). */
   VERIFY("S", "V", "V", Recorded.AUDITOR, "sch1-10VerifiedMsg", "verifyNotSubmittedErrorMsg"),
   /** Submitted &rarr; Draft: the ministry hands the report back (Story 18.1). */
-  SET_TO_DRAFT(
-      "S", "D", "D", Recorded.AUDITOR, "sch1-10DraftMsg", "setToDraftNotSubmittedErrorMsg"),
+  SET_TO_DRAFT("S", "D", "D", Recorded.NONE, "sch1-10DraftMsg", "setToDraftNotSubmittedErrorMsg"),
   /** Verified &rarr; Submitted: the ministry withdraws a verification (Story 18.1). */
   SET_TO_SUBMIT(
       "V", "S", "A", Recorded.NONE, "sch1-10SubmittedMsg", "setToSubmitNotVerifiedErrorMsg");
 
   /**
-   * Which status-row identity pair a transition records &mdash; legacy {@code
-   * updateILCRMillReportStatus():403-413} wrote the caller's {@code ILCR_MILL_USER_XREF} row into
-   * the {@code LICENSEE_*} columns on a Submit and into the {@code AUDITOR_*} columns on every
-   * other non-Draft transition, and nothing on Set to Draft.
+   * Which status-row identity pair a transition records. Legacy {@code
+   * updateILCRMillReportStatus():401-412} keyed this on the TARGET status code alone: a {@code 'D'}
+   * target skipped the association block entirely ({@code :401}), a {@code 'S'} target wrote the
+   * caller's {@code ILCR_MILL_USER_XREF} row into the {@code LICENSEE_*} columns ({@code
+   * :406-407}), and any other non-{@code D} target wrote it into the {@code AUDITOR_*} columns
+   * ({@code :409}).
+   *
+   * <p>So {@link #SET_TO_DRAFT} writes NEITHER pair, which is legacy exactly. {@link
+   * #SET_TO_SUBMIT} is the one deliberate departure: legacy wrote the LICENSEE pair there from the
+   * acting ADMIN's cross-reference, destroying the record of who actually submitted and storing
+   * NULL whenever that admin has no assignment for the mill — the normal case for a ministry user.
+   * Story 18.1 D1(a) ratified {@link Recorded#NONE} instead (recorded deviation (S)), which is what
+   * {@code epics.md:2110} and PRD FR5 already specified.
    */
   public enum Recorded {
     /** {@code LICENSEE_MILL_ID} / {@code LICENSEE_USER_GUID}. */
