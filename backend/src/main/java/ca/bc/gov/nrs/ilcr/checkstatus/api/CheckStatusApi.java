@@ -114,7 +114,17 @@ public interface CheckStatusApi {
    *
    * <p>There is no revision-conflict outcome: the status row carries no optimistic guard, because
    * legacy's {@code REVISION_COUNT} was a plain column rather than a {@code @Version} and no
-   * transition ever bumped it.
+   * transition ever bumped it. There IS a lost-update refusal since Story 18.1's code review: the
+   * status UPDATE carries an {@code expectedCode} predicate, so a track that left Submitted between
+   * this request's read and its write &mdash; a concurrent Set to Draft &mdash; answers 409 {@code
+   * reportSubmissionErrorMsg} rather than being overwritten to Verified. There IS a lost-update
+   * refusal since Story 18.1's code review: the status UPDATE carries an {@code expectedCode}
+   * predicate, so a track that left Submitted between this request's read and its write &mdash; a
+   * concurrent Set to Draft &mdash; answers 409 {@code reportSubmissionErrorMsg} rather than being
+   * overwritten to Verified. There IS a lost-update refusal since Story 18.1's code review: the
+   * status UPDATE carries an {@code expectedCode} predicate, so a track that left Submitted between
+   * this request's read and its write &mdash; a concurrent Set to Draft &mdash; answers 409 {@code
+   * reportSubmissionErrorMsg} rather than being overwritten to Verified.
    *
    * <p>The 409 and the 500 that share {@code reportSubmissionErrorMsg} are distinguishable only by
    * status code, never by response body — legacy reused one message for both conditions and AD-8
@@ -145,15 +155,18 @@ public interface CheckStatusApi {
    * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
    * {@code checkStatusScheduleNotFoundErrorMsg}; mill not {@code ACT} for the year → 409 ERR-002.
    * Then the gate, then legality: one or more of the eleven Schedule 1&ndash;10 checks failing →
-   * 409 {@code reportNotSubmittedErrorMsg}; a track that is not Submitted, which covers the {@code
-   * D}&rarr;{@code D} no-op, both {@code D}&harr;{@code V} jumps, Set to Draft at Verified and the
-   * dead {@code O} code → 409 {@code setToDraftNotSubmittedErrorMsg}; a write that cannot be
-   * persisted → 500 {@code reportSubmissionErrorMsg}, everything rolled back.
+   * 409 {@code setToDraftNotValidErrorMsg} (deviation (V), {@code TrackTransition#gateFailedKey()}
+   * &mdash; legacy's "cannot be submitted" text was wrong for this button); a track that is not
+   * Submitted, which covers the {@code D}&rarr;{@code D} no-op, both {@code D}&harr;{@code V}
+   * jumps, Set to Draft at Verified and the dead {@code O} code → 409 {@code
+   * setToDraftNotSubmittedErrorMsg}; a write that cannot be persisted → 500 {@code
+   * reportSubmissionErrorMsg}, everything rolled back.
    *
-   * <p><strong>The gate runs on the way back as well, and it has a known consequence</strong>
-   * (Story 18.1 D5): a Submitted report that fails validation cannot be sent back to Draft to be
-   * repaired. That is legacy &mdash; one {@code submitReport(String)} validated before every
-   * transition &mdash; and is raised with the business as its own question, not fixed here.
+   * <p><strong>The gate runs on the way back as well, and it stays</strong> (Story 18.1 D5,
+   * BA-ratified 2026-09-21): a Submitted report can only acquire errors because a ministry user
+   * introduced them, and ADMIN edit rights at Submitted ({@code ScheduleEditability.java:63-64})
+   * let that user correct them in place and retry, so nothing is stranded. Legacy validated before
+   * every transition too; only the refusal wording changed.
    *
    * <p>Success → 200 with the track at {@code D}, every Schedule 1&ndash;10 row's audit columns
    * touched, the ten category rows at {@code D}, and {@code sch1-10DraftMsg} issued only after
@@ -185,9 +198,10 @@ public interface CheckStatusApi {
    *
    * <p>The refusal for a track that is not Verified &mdash; the {@code S}&rarr;{@code S} no-op,
    * both {@code D}&harr;{@code V} jumps, Set to Submit at Submitted, the dead {@code O} code
-   * &mdash; is 409 {@code setToSubmitNotVerifiedErrorMsg}. Note that a track at Draft is refused
-   * here too: {@code D}&rarr;{@code S} is a legal pair, but it is a licensee's SUBMIT and belongs
-   * to {@code POST /submit}, not to this endpoint.
+   * &mdash; is 409 {@code setToSubmitNotVerifiedErrorMsg}; a failing gate is 409 {@code
+   * setToSubmitNotValidErrorMsg} (deviation (V)). Note that a track at Draft is refused here too:
+   * {@code D}&rarr;{@code S} is a legal pair, but it is a licensee's SUBMIT and belongs to {@code
+   * POST /submit}, not to this endpoint.
    *
    * <p>Success → 200 with the track at {@code S} and the ten category rows at {@code A} (legacy
    * mapped both {@code DS} and {@code VS} to {@code A}, so a reversed verification is

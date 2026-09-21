@@ -236,27 +236,6 @@ class CheckStatusControllerTest {
   }
 
   @Test
-  @DisplayName(
-      "D4: a bundle key resolving to itself would ship a silent 200 — the guard is the"
-          + " bundle test, and this pins the fallback shape it protects")
-  void reversalTextComesFromTheBundleNotTheKey() {
-    when(millContextService.validateMillYearActive("790", "2021"))
-        .thenReturn(new MillYearContext(790, 2021));
-    when(authentication.getName()).thenReturn("reversaladmin");
-    when(transitionService.reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
-        .thenReturn("D");
-    // getMessage(key, null, key, locale) supplies the KEY as its own default, so a missing entry
-    // is a 200 carrying the literal "sch1-10DraftMsg". Reproduced here so the shape of the defect
-    // is documented at the call site; TrackTransitionMessageBundleTest is what prevents it.
-    when(messageSource.getMessage(eq("sch1-10DraftMsg"), any(), any(), any()))
-        .thenReturn("sch1-10DraftMsg");
-
-    var response = controller.setSchedules1To10ToDraft("790", "2021", authentication);
-
-    assertThat(response.getBody().message().text()).isEqualTo("sch1-10DraftMsg");
-  }
-
-  @Test
   @DisplayName("both reversals: a closed mill stops at the guard — no transition is attempted")
   void reversals_closedMillNeverReachesTheTransition() {
     when(millContextService.validateMillYearActive("796", "2021"))

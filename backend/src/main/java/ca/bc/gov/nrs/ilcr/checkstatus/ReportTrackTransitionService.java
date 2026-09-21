@@ -32,9 +32,12 @@ import org.springframework.transaction.annotation.Transactional;
  * legacy the business ruled on 2026-09-17). Verify takes no lock and gates outside the write,
  * because that is where legacy put it, and answers a refusal with legacy's own verbatim {@code
  * reportSubmissionErrorMsg}; Epic 17's tie-breaker is legacy behaviour, and the resulting
- * gate&rarr;write race is legacy's too and is recorded open rather than closed. What they share is
- * everything below the boundary: one repository, one rule table, one exception family, one
- * identity-resolution rule. Do not "harmonise" the two boundaries without re-opening both rulings.
+ * gate&rarr;write race is legacy's too and is recorded open rather than closed &mdash; though since
+ * Story 18.1's review its LOSER is refused rather than allowed to overwrite (an {@code
+ * expectedCode} predicate on every status UPDATE), because 18.1 made {@code S} leave by a second
+ * door. What they share is everything below the boundary: one repository, one rule table, one
+ * exception family, one identity-resolution rule. Do not "harmonise" the two boundaries without
+ * re-opening both rulings.
  *
  * <h2>Submit</h2>
  *
@@ -231,9 +234,11 @@ public class ReportTrackTransitionService {
    *
    * <p>Not {@code @Transactional}: the gate runs HERE, outside the write, exactly where legacy ran
    * it ({@code CheckStatusMB.submitReport:247-261} gates, {@code :271} calls the DAO). {@link
-   * ReportTransitionWriter} owns the transaction. No row lock, and no {@code expectedCurrent}
-   * predicate on the status UPDATE &mdash; both are legacy's, and closing the race they leave open
-   * would itself be the divergence.
+   * ReportTransitionWriter} owns the transaction. No row lock &mdash; legacy's, and D2 keeps it.
+   * The status UPDATE does carry an {@code expectedCode} predicate since Story 18.1's code review:
+   * the gate&rarr;write window stays open, but its loser is now refused (409) instead of
+   * overwriting a concurrent Set to Draft with the illegal {@code D}&rarr;{@code V} jump. 17.1 left
+   * the predicate off because, before 18.1, nothing but another verify could move an {@code S} row.
    *
    * @param millId the mill, already validated as an active context by the caller (AD-4)
    * @param year the reporting year
@@ -277,7 +282,13 @@ public class ReportTrackTransitionService {
             .orElseThrow(() -> refusedVerify(current, millId, year));
 
     return writer.write(
-        millId, year, transition.to(), transition.categoryState(), actingUser, actorGuid);
+        millId,
+        year,
+        transition.from(),
+        transition.to(),
+        transition.categoryState(),
+        actingUser,
+        actorGuid);
   }
 
   /**
@@ -294,13 +305,14 @@ public class ReportTrackTransitionService {
    * UPDATE does carry an {@code expectedCode} predicate, so the gate&rarr;write race answers a 409
    * refusal instead of silently overwriting a concurrent transition (deviation (U)).
    *
-   * <p><strong>The gate runs on the way back too, and that is deliberate and
-   * consequential.</strong> {@code epics.md:2098}, CHK-016 BR-03, CHK-018 BR-03 and PRD FR5 all
-   * require it, and legacy's single {@code submitReport} validated before every transition. The
-   * consequence, recorded rather than fixed (D5): a Submitted report that FAILS validation cannot
-   * be sent back to Draft to be repaired, because the gate blocks the only action that would allow
-   * the repair &mdash; and the refusal text says the report "cannot be submitted", which is not
-   * what the admin tried to do. Faithful to legacy; raised with the BA as its own product question.
+   * <p><strong>The gate runs on the way back too, and it stays.</strong> {@code epics.md:2098},
+   * CHK-016 BR-03, CHK-018 BR-03 and PRD FR5 all require it, and legacy's single {@code
+   * submitReport} validated before every transition. D5, BA-ratified 2026-09-21: a Submitted report
+   * can only acquire errors because a ministry user introduced them, and ADMIN edit rights at
+   * Submitted ({@code ScheduleEditability.java:63-64}) let that user correct them in place and
+   * retry &mdash; the gate stops the LICENSEE doing the repair, not the repair. What legacy got
+   * wrong was the sentence: it reused the submit text here. See {@link
+   * TrackTransition#gateFailedKey()} (deviation (V)).
    *
    * <p>Neither reversal writes an identity pair (D1, AC 3), so no directory GUID is taken.
    *
@@ -318,6 +330,14 @@ public class ReportTrackTransitionService {
    * @throws ReportSubmissionException 500 &mdash; a write failed or affected no row; rolled back
    */
   public String reverse(long millId, int year, TrackTransition expected, String actingUser) {
+    // Only the two identity-free transitions come through here. SUBMIT and VERIFY each owe an
+    // identity pair that writeReversal never writes, so either routed this way would commit a
+    // submit with no licensee or a verify with no auditor — silently. One call site today; Story
+    // 26.1 reuses this enum, and the guard is cheaper than the incident.
+    if (expected.recorded() != TrackTransition.Recorded.NONE) {
+      throw new IllegalArgumentException(
+          expected + " records an identity pair and is not a reversal");
+    }
     TrackStatusCodes codes =
         millContextService
             .findTrackStatusCodes(millId, year)
@@ -339,8 +359,8 @@ public class ReportTrackTransitionService {
 
     // Gate BEFORE legality, as legacy did and as verify() does — CheckStatusMB.submitReport
     // evaluated all eleven validators before calling the service at all (:247-271). A report that
-    // fails validation is therefore refused with reportNotSubmittedErrorMsg even when the status
-    // transition it asked for was itself illegal. See D5 on the consequence for S->D.
+    // fails validation is therefore refused with the transition's own gate text (gateFailedKey,
+    // deviation (V)) even when the status transition it asked for was itself illegal.
     requireTrackPassesValidation(expected, millId, year);
 
     TrackTransition transition =

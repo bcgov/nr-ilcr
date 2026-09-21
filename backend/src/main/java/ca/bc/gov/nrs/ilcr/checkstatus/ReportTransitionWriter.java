@@ -58,11 +58,15 @@ public class ReportTransitionWriter {
    *
    * @param millId the mill
    * @param year the reporting year
+   * @param expectedStatus the status code the track must still hold when the write lands
    * @param targetStatus the status code to move the track to
    * @param categoryState the category state the pair table yields for this move
    * @param actingUser the value for the audit columns, at most 30 characters
    * @param actorGuid the acting user's directory GUID, or null to record no auditor
    * @return {@code targetStatus}, once persisted
+   * @throws ReportTransitionRejectedException 409 &mdash; the track left {@code expectedStatus}
+   *     between the caller's unlocked read and this write (Story 18.1's review; see {@link
+   *     ReportTrackTransitionRepository#updateTrackStatusWithAuditor})
    * @throws ReportSubmissionException the writes could not be persisted, or left the report
    *     half-transitioned
    */
@@ -70,6 +74,7 @@ public class ReportTransitionWriter {
   public String write(
       long millId,
       int year,
+      String expectedStatus,
       String targetStatus,
       String categoryState,
       String actingUser,
@@ -89,14 +94,17 @@ public class ReportTransitionWriter {
 
       int updated =
           repository.updateTrackStatusWithAuditor(
-              millId, year, targetStatus, auditorMillId, auditorGuid, actingUser);
+              millId, year, targetStatus, expectedStatus, auditorMillId, auditorGuid, actingUser);
       if (updated != 1) {
-        log.error(
-            "Verify failed for millId={} year={}: status row update affected {} rows",
+        // Zero rows is a REFUSAL, not a failure: the track left expectedStatus between the
+        // service's unlocked read and this write. Legacy's generic text, because VERIFY's other
+        // refusals carry it too (Epic 17's parity tie-breaker) — null selects it.
+        log.info(
+            "Verify 409: the 1-10 track left {} for millId={} year={} before the write",
+            expectedStatus,
             millId,
-            year,
-            updated);
-        throw new ReportSubmissionException();
+            year);
+        throw new ReportTransitionRejectedException(null);
       }
 
       // ORDER IS LOAD-BEARING — stamps first, category second, as legacy did.
@@ -186,6 +194,14 @@ public class ReportTransitionWriter {
   @Transactional
   public String writeReversal(
       long millId, int year, TrackTransition transition, String actingUser) {
+    // This method writes no identity pair, so it can only honour a transition that owes none.
+    // SUBMIT owes LICENSEE_* and VERIFY owes AUDITOR_*; routed here they would commit without
+    // them — a submit with no licensee, a verify with no auditor — and nothing downstream would
+    // notice. One caller today, but Story 26.1 reuses this enum.
+    if (transition.recorded() != TrackTransition.Recorded.NONE) {
+      throw new IllegalArgumentException(
+          transition + " records an identity pair and cannot be written as a reversal");
+    }
     try {
       int updated =
           repository.updateTrackStatusWithoutIdentity(

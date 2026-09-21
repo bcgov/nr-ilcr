@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -68,15 +69,24 @@ class ReversalRollbackIT extends AbstractOracleIT {
   @Autowired private JdbcTemplate jdbcTemplate;
   @MockitoSpyBean private ReportTrackTransitionRepository repository;
 
+  /**
+   * Built through the PRODUCTION converter, as {@code SetToDraftIT} does and for the reason it
+   * gives: {@code spring-security-test}'s bare {@code jwt()} never calls {@link
+   * CognitoGroupsJwtAuthenticationConverter}, so the principal name falls back to {@code sub}. This
+   * class first used that shortcut with {@code sub = ACTING_USER}, which made its stamped-row
+   * filter pass whichever claim the app read; the 18.1 code review pointed out the class beside it
+   * documents exactly that trap.
+   */
   private RequestPostProcessor admin() {
-    return jwt()
-        .jwt(
-            j ->
-                j.subject(ACTING_USER)
-                    .claim("custom:idp_user_id", ADMIN_GUID)
-                    .claim("custom:idp_username", ACTING_USER)
-                    .claim("cognito:groups", List.of("ILCR_ADMIN")))
-        .authorities(j -> CONVERTER.convert(j).getAuthorities());
+    Jwt token =
+        Jwt.withTokenValue("reversal-rollback-it-token")
+            .header("alg", "none")
+            .subject("99999999-8888-7777-6666-555555555555")
+            .claim("custom:idp_user_id", ADMIN_GUID)
+            .claim("custom:idp_username", ACTING_USER)
+            .claim("cognito:groups", List.of("ILCR_ADMIN"))
+            .build();
+    return authentication(CONVERTER.convert(token));
   }
 
   private String trackStatus(String mill) {

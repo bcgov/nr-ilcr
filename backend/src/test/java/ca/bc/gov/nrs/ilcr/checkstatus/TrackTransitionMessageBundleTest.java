@@ -70,7 +70,9 @@ class TrackTransitionMessageBundleTest {
   private static void assertResolves(String key) {
     String text = BUNDLE.getMessage(key, null, key, Locale.ENGLISH);
     assertThat(text)
-        .as("messages.properties must define %s; resolving to the key itself is the silent-200 bug")
+        .as(
+            "messages.properties must define %s; resolving to the key itself is the silent-200 bug",
+            key)
         .isNotBlank()
         .isNotEqualTo(key);
   }

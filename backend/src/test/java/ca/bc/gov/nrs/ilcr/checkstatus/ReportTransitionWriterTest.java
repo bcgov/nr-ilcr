@@ -54,7 +54,7 @@ class ReportTransitionWriterTest {
 
   private void givenTheStatusRowMoves() {
     when(repository.updateTrackStatusWithAuditor(
-            anyLong(), anyInt(), anyString(), any(), any(), anyString()))
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
         .thenReturn(1);
   }
 
@@ -92,7 +92,7 @@ class ReportTransitionWriterTest {
     givenTenCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    writer.write(MILL, YEAR, "V", "V", USER, GUID);
+    writer.write(MILL, YEAR, "S", "V", "V", USER, GUID);
 
     // The ONLY guard against re-inverting this. Delivery derives ILCR_*_AUD.RECORD_STATE_CODE in a
     // BEFORE-UPDATE trigger from the (CATEGORY_STATE_CODE, mill status) pair, and (D,S) is the only
@@ -100,7 +100,7 @@ class ReportTransitionWriterTest {
     // indifferent to the order, so no acceptance test can see it — the IT snapshot has no triggers
     // at all. D->S is NOT indifferent, and Story 15.3 / Epic 18 extend this component.
     InOrder order = inOrder(repository);
-    order.verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", MILL, GUID, USER);
+    order.verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", MILL, GUID, USER);
     order.verify(repository).touchReportSummaries(MILL, YEAR, USER);
     order.verify(repository).touchRoadConstructionCostDetails(MILL, YEAR, USER);
     order.verify(repository).advanceCategoryState(MILL, YEAR, CATEGORIES.get(0), "V", USER);
@@ -113,7 +113,7 @@ class ReportTransitionWriterTest {
     givenTenCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    writer.write(MILL, YEAR, "V", "V", USER, GUID);
+    writer.write(MILL, YEAR, "S", "V", "V", USER, GUID);
 
     verify(repository).touchReportSummaries(MILL, YEAR, USER);
     verify(repository).touchReportSummaryCostDetails(MILL, YEAR, USER);
@@ -148,7 +148,7 @@ class ReportTransitionWriterTest {
     givenOneCategoryRowIsMissing();
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
+    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
   }
 
@@ -159,20 +159,88 @@ class ReportTransitionWriterTest {
     givenNoCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
+    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "a verify whose status write matches no row is a 409 refusal, not a 500 — the track moved")
+  void verifyLostUpdateIsRefusedNotFailed() {
+    // Added by Story 18.1's code review. Before 18.1 the only other writer of an S row was another
+    // verify, so 17.1 left the UPDATE unconditional; 18.1's Set to Draft made S leave by a second
+    // door, and a verify landing after it would have committed the illegal D->V jump with a 200.
+    when(repository.updateTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(0);
+    givenTheAuditorIsAssigned();
+
+    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class)
+        .hasMessage(ReportTransitionRejectedException.GENERIC_KEY);
+    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+  @org.junit.jupiter.params.provider.EnumSource(
+      value = TrackTransition.class,
+      names = {"SUBMIT", "VERIFY"})
+  @DisplayName("a transition that owes an identity pair is refused by writeReversal before any SQL")
+  void writeReversalRefusesIdentityOwingTransitions(TrackTransition transition) {
+    assertThatThrownBy(() -> writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
+        .isInstanceOf(IllegalArgumentException.class);
+    org.mockito.Mockito.verifyNoInteractions(repository, millUserXrefRepository);
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+  @org.junit.jupiter.params.provider.EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("all twenty audit statements — thirteen tables — are invoked on the reversal path")
+  void reversalInvokesEveryAuditSweep(TrackTransition transition) {
+    // The twin of invokesEveryAuditSweep above, which exercises write() only. Without this, a
+    // narrowed reversal sweep (say, stamping Sch 1-3 alone) ships green: R__56 carries no Sch
+    // 4-10 rows, so the ITs cannot see those seventeen statements, and the InOrder case verifies
+    // just two. Found by the 18.1 code review's verification-gap layer.
+    givenTheReversalStatusRowMoves(transition);
+    givenTenCategoryRowsAdvanceTo(transition.categoryState());
+
+    writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER);
+
+    verify(repository).touchReportSummaries(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchReportSummaryCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchTransportationReports(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchTransportationCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchCamps(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchCampCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchRoadMaintenanceReports(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchRoadMaintenanceCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchBridges(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchBridgeCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchCulverts(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchCulvertCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchTreeToTruckReports(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchTreeToTruckDetailReports(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchTreeToTruckRateDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchContractualWorkReports(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchContractualWorkCostDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchRoadConstructionReports(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchRoadConstructionDetails(REVERSAL_MILL, YEAR, USER);
+    verify(repository).touchRoadConstructionCostDetails(REVERSAL_MILL, YEAR, USER);
   }
 
   @Test
   @DisplayName("a status write that moves no row fails before the sweep runs at all")
   void statusWriteMustMoveExactlyOneRow() {
     when(repository.updateTrackStatusWithAuditor(
-            anyLong(), anyInt(), anyString(), any(), any(), anyString()))
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
         .thenReturn(0);
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
-        .isInstanceOf(ReportSubmissionException.class);
+    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class);
     verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
@@ -181,24 +249,26 @@ class ReportTransitionWriterTest {
   @Test
   @DisplayName("no directory GUID records no auditor, and the transition still succeeds")
   void noDirectoryGuidRecordsNoAuditor() {
-    when(repository.updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER)).thenReturn(1);
+    when(repository.updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER))
+        .thenReturn(1);
     givenTenCategoryRowsAdvance();
 
-    assertThat(writer.write(MILL, YEAR, "V", "V", USER, null)).isEqualTo("V");
+    assertThat(writer.write(MILL, YEAR, "S", "V", "V", USER, null)).isEqualTo("V");
     // The cross-reference lookup is skipped entirely rather than run with a null key.
     verify(millUserXrefRepository, never()).findAssignment(anyLong(), any());
-    verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER);
+    verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER);
   }
 
   @Test
   @DisplayName("an admin with no cross-reference records NULL in both auditor columns")
   void noXrefRecordsNullAuditor() {
     when(millUserXrefRepository.findAssignment(MILL, GUID)).thenReturn(Optional.empty());
-    when(repository.updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER)).thenReturn(1);
+    when(repository.updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER))
+        .thenReturn(1);
     givenTenCategoryRowsAdvance();
 
-    assertThat(writer.write(MILL, YEAR, "V", "V", USER, GUID)).isEqualTo("V");
-    verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", null, null, USER);
+    assertThat(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+    verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER);
   }
 
   @Test
@@ -209,7 +279,7 @@ class ReportTransitionWriterTest {
     when(repository.touchReportSummaries(MILL, YEAR, USER))
         .thenThrow(new DataIntegrityViolationException("sweep failed"));
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "V", "V", USER, GUID))
+    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
@@ -280,7 +350,8 @@ class ReportTransitionWriterTest {
     // only one naming LICENSEE_*. Reaching neither is what "unchanged by value" means in SQL terms;
     // SetToDraftIT/SetToSubmitIT assert the columns themselves against Oracle.
     verify(repository, never())
-        .updateTrackStatusWithAuditor(anyLong(), anyInt(), anyString(), any(), any(), anyString());
+        .updateTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());
     verify(repository, never())
         .updateTrackStatus(
             anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());

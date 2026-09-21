@@ -73,7 +73,7 @@ class ReportTrackTransitionVerifyTest {
   void verifyDoesNotLockTheStatusRow() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.write(MILL, YEAR, "V", "V", USER, GUID)).thenReturn("V");
+    when(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
 
     service.verify(MILL, YEAR, USER, GUID);
 
@@ -178,9 +178,9 @@ class ReportTrackTransitionVerifyTest {
   void legalTransitionDelegatesToTheWriter() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.write(MILL, YEAR, "V", "V", USER, GUID)).thenReturn("V");
+    when(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
 
     assertThat(service.verify(MILL, YEAR, USER, GUID)).isEqualTo("V");
-    verify(writer).write(MILL, YEAR, "V", "V", USER, GUID);
+    verify(writer).write(MILL, YEAR, "S", "V", "V", USER, GUID);
   }
 }

@@ -76,12 +76,33 @@ class ReportTrackTransitionRepositoryIT extends AbstractOracleIT {
             REVERSAL_MILL,
             REVERSAL_YEAR);
 
+    java.sql.Timestamp stampBefore =
+        jdbc.queryForObject(
+            "SELECT UPDATE_TIMESTAMP FROM THE.ILCR_MILL_REPORT_STATUS"
+                + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+            java.sql.Timestamp.class,
+            REVERSAL_MILL,
+            REVERSAL_YEAR);
+
     int rows =
         repository.updateTrackStatusWithoutIdentity(
             REVERSAL_MILL, REVERSAL_YEAR, "D", "S", "reversaladmin");
 
     assertThat(rows).isOne();
     assertThat(reversalStatus()).isEqualTo("D");
+    // UPDATE_TIMESTAMP = SYSDATE is the one clause in the SET list nothing else in this story read
+    // back (18.1 code review, verification-gap). The seed leaves it NULL, so "moved" is "now set".
+    java.sql.Timestamp stampAfter =
+        jdbc.queryForObject(
+            "SELECT UPDATE_TIMESTAMP FROM THE.ILCR_MILL_REPORT_STATUS"
+                + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+            java.sql.Timestamp.class,
+            REVERSAL_MILL,
+            REVERSAL_YEAR);
+    assertThat(stampAfter).isNotNull();
+    if (stampBefore != null) {
+      assertThat(stampAfter).isAfterOrEqualTo(stampBefore);
+    }
     // Both pairs unchanged BY VALUE, and REVISION_COUNT not bumped — the three ways this SET list
     // differs from updateTrackStatus and updateTrackStatusWithAuditor, asserted in one string so a
     // future edit to the statement cannot quietly satisfy a narrower check.

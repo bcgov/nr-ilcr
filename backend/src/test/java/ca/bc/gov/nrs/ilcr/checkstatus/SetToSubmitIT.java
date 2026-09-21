@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -197,6 +198,50 @@ class SetToSubmitIT extends AbstractOracleIT {
         Integer.valueOf(mill));
   }
 
+  private int statusRevision(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT REVISION_COUNT FROM THE.ILCR_MILL_REPORT_STATUS"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        Integer.class,
+        Integer.valueOf(mill));
+  }
+
+  /** MIN, so one un-bumped row fails rather than being averaged away. */
+  private int minSummaryRevision(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT MIN(REVISION_COUNT) FROM THE.ILCR_REPORT_SUMMARY"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        Integer.class,
+        Integer.valueOf(mill));
+  }
+
+  /**
+   * Categories {@code '1'}–{@code '10'} only — {@code '11'} never advances and would pin the MIN.
+   */
+  private int minCategoryRevision(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT MIN(REVISION_COUNT) FROM THE.ILCR_REPORT_CATEGORY"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021"
+            + " AND ILCR_CATEGORY_ID IN ('1','2','3','4','5','6','7','8','9','10')",
+        Integer.class,
+        Integer.valueOf(mill));
+  }
+
+  private int auditRowCount(String auditTable) {
+    return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM THE." + auditTable, Integer.class);
+  }
+
+  /**
+   * The seeded {@code BASIC_SILVICULTURE_REPORT} row, as one string: location / actor / revision.
+   */
+  private String silvicultureRow(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT LOCATION || '/' || NVL(UPDATE_USERID,'-') || '/r' || TO_CHAR(REVISION_COUNT)"
+            + " FROM THE.BASIC_SILVICULTURE_REPORT WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        String.class,
+        Integer.valueOf(mill));
+  }
+
   private int unstampedSummaryCostDetails(String mill) {
     return jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL d"
@@ -209,6 +254,10 @@ class SetToSubmitIT extends AbstractOracleIT {
         ACTING_USER);
   }
 
+  /**
+   * Everything this mill's data can show about a refused reversal — see {@code
+   * SetToDraftIT#fingerprint} for what is and is not read, and why the cost-detail count suffices.
+   */
   private String fingerprint(String mill) {
     StringBuilder print = new StringBuilder();
     print
@@ -272,6 +321,11 @@ class SetToSubmitIT extends AbstractOracleIT {
   void withdrawsAVerification() throws Exception {
     assertThat(trackStatus(HAPPY_MILL)).isEqualTo("V");
     assertThat(categoryStates(HAPPY_MILL)).hasSize(10).containsOnly("V");
+    int statusRevisionBefore = statusRevision(HAPPY_MILL);
+    int summaryRevisionBefore = minSummaryRevision(HAPPY_MILL);
+    int categoryRevisionBefore = minCategoryRevision(HAPPY_MILL);
+    int summaryAuditBefore = auditRowCount("ILCR_REPORT_SUMMARY_AUDIT");
+    int costDetailAuditBefore = auditRowCount("ILCR_COST_REPORT_DETAIL_AUD");
 
     mockMvc
         .perform(post(ENDPOINT).param("millId", HAPPY_MILL).param("year", YEAR).with(admin()))
@@ -283,6 +337,52 @@ class SetToSubmitIT extends AbstractOracleIT {
     assertTransitionApplied();
     assertNeitherIdentityPairWritten();
     assertEveryRowStamped();
+    // The two phases SetToDraftIT ran and this class did not (18.1 code review): the two ITs must
+    // hold both reversals to the same bar, or the sibling's presence implies a proof it isn't
+    // giving.
+    assertRevisionsFollowLegacy(
+        statusRevisionBefore, summaryRevisionBefore, categoryRevisionBefore);
+    assertNoAuditRowsInserted(summaryAuditBefore, costDetailAuditBefore);
+    assertEditabilityFlipped();
+  }
+
+  /**
+   * {@code REVISION_COUNT} follows legacy entity by entity: the status row is NOT bumped by the
+   * reversal statement (legacy's column was plain, never a {@code @Version}); {@code
+   * ILCR_REPORT_SUMMARY} and {@code ILCR_REPORT_CATEGORY} ARE, because the sweep dirties rows
+   * Hibernate versioned.
+   */
+  private void assertRevisionsFollowLegacy(
+      int statusBefore, int summaryBefore, int categoryBefore) {
+    assertThat(statusRevision(HAPPY_MILL)).isEqualTo(statusBefore);
+    assertThat(minSummaryRevision(HAPPY_MILL)).isEqualTo(summaryBefore + 1);
+    assertThat(minCategoryRevision(HAPPY_MILL)).isEqualTo(categoryBefore + 1);
+  }
+
+  /** The application inserts no {@code _AUD} row — delivery triggers own those. */
+  private void assertNoAuditRowsInserted(int summaryAuditBefore, int costDetailAuditBefore) {
+    assertThat(auditRowCount("ILCR_REPORT_SUMMARY_AUDIT")).isEqualTo(summaryAuditBefore);
+    assertThat(auditRowCount("ILCR_COST_REPORT_DETAIL_AUD")).isEqualTo(costDetailAuditBefore);
+  }
+
+  /**
+   * AC 12 (CHK-018 BR-05): after V&rarr;S the ministry still edits and the Licensee does not —
+   * Story 16.1's matrix ({@code ScheduleEditability.java:63-64}), asserted as a consequence.
+   */
+  private void assertEditabilityFlipped() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/schedule1").param("millId", HAPPY_MILL).param("year", YEAR).with(admin()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.editable", is(true)));
+    mockMvc
+        .perform(
+            get("/api/v1/schedule1")
+                .param("millId", HAPPY_MILL)
+                .param("year", YEAR)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.editable", is(false)));
   }
 
   /**
@@ -298,6 +398,8 @@ class SetToSubmitIT extends AbstractOracleIT {
     assertThat(scalar("MILL_SILVICULTUR_STATUS_CODE", HAPPY_MILL)).isEqualTo("D");
     assertThat(categoryState(HAPPY_MILL, "11")).isEqualTo("S");
     assertThat(categoryUpdateUser(HAPPY_MILL, "11")).isEqualTo(SEED_USER);
+    // AC 11's third arm, by value — R__56 seeds this row so the assertion is not vacuous.
+    assertThat(silvicultureRow(HAPPY_MILL)).isEqualTo("Reversal Block 791/-/r0");
   }
 
   /**

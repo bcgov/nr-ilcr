@@ -92,6 +92,24 @@ class ReportTrackTransitionReversalTest {
   }
 
   // -----------------------------------------------------------------------------------------------
+  // The guard the code review asked for: only identity-free transitions may come through here
+  // -----------------------------------------------------------------------------------------------
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SUBMIT", "VERIFY"})
+  @DisplayName("a transition that owes an identity pair is refused before any read or write")
+  void identityOwingTransitionsAreRefused(TrackTransition transition) {
+    // SUBMIT owes LICENSEE_*, VERIFY owes AUDITOR_*; writeReversal writes neither. Routed here
+    // they would commit without their pair and nothing downstream would notice — the failure mode
+    // two independent review layers named. Refused before the status row is even read.
+    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+        .isInstanceOf(IllegalArgumentException.class);
+    verifyNoInteractions(millContextService, sweepService, writer);
+  }
+
+  // -----------------------------------------------------------------------------------------------
   // Happy paths
   // -----------------------------------------------------------------------------------------------
 
@@ -252,9 +270,9 @@ class ReportTrackTransitionReversalTest {
   void gatePrecedesLegality() {
     // Track at Draft, so S->D is illegal — AND the report fails validation. Legacy's single
     // submitReport evaluated all eleven validators in the bean before the DAO's guard ever ran
-    // (CheckStatusMB:247-271), so validation is what the user is told about. This ordering is also
-    // what makes D5's consequence real: a Submitted report that fails validation cannot be sent
-    // back to Draft to be repaired, because the gate blocks the repair.
+    // (CheckStatusMB:247-271), so validation is what the user is told about. D5 (BA 2026-09-21):
+    // the gate is correct — the ministry user who introduced the errors holds ADMIN edit rights at
+    // Submitted and fixes them in place before retrying; only the wording changed (deviation (V)).
     givenTrackAt("D");
     givenGateFails();
 

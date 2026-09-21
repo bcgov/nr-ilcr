@@ -174,8 +174,11 @@ sense against this directory, `mvn clean` before believing it.
    into that band. The result was **38 integration-test failures** — bare `500`s on the Schedule
    3/4/6/7A/10 cost-line write paths, none of them naming `R__56`, and **none reproducible in a
    single-class run**, because the sequence only gets that high once the whole suite has run. Keep
-   static cost-detail ids below `9000`; the same applies to `ILCR_REPORT_COMMON_SEQ` (9500),
-   `ROAD_CONSTRUCTION_REPORT_SEQ` (9600) and the three Schedule 8 sequences (9000).
+   static cost-detail ids below `9000`; the same applies to `ILCR_REPORT_COMMON_SEQ` (9500 — the
+   sequence that mints `ILCR_REPORT_SUMMARY_ID` and Schedule 11's `BASIC_SILVICULTURE_REPORT_ID`, so
+   `R__56`'s `1650–1699` band is safe by a wide margin), `ROAD_CONSTRUCTION_REPORT_SEQ` (9600) and
+   the three Schedule 8 sequences (9000). There is no sequence behind `ILCR_MILL_USER_XREF`; its key
+   is composite.
 
    **Reversal transitions (`R__56`, UC-CHK-016/018)** — Set to Draft (`S`→`D`) and Set to Submit
    (`V`→`S`) need ten mill/year shapes, all 2021. Four of them are mutated and six never are, and

@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -268,9 +269,12 @@ class SetToDraftIT extends AbstractOracleIT {
   }
 
   /**
-   * Everything a refused reversal must leave byte-identical: the status row including BOTH identity
-   * pairs, every one of the eleven category rows with its actor, the summaries' actors, and the
-   * count of stamped cost details.
+   * Everything this mill's data can show about a refused reversal: the status row including BOTH
+   * identity pairs, every one of the eleven category rows with its actor, the summaries' actors,
+   * and the count of stamped cost details. The Schedule 4&ndash;10 families are not read because
+   * these mills carry no rows in them, so a stray stamp there would affect zero rows regardless;
+   * the cost-detail count is sufficient because the seed leaves {@code UPDATE_USERID} NULL, so the
+   * first stamp on any row changes it.
    *
    * <p>Row counts alone cannot catch a stray audit stamp inside a refused request — a stamp changes
    * no count — so this reads the audit columns themselves. Carried over from {@code VerifyReportIT}
@@ -364,6 +368,30 @@ class SetToDraftIT extends AbstractOracleIT {
     assertRevisionsFollowLegacy(
         statusRevisionBefore, summaryRevisionBefore, categoryRevisionBefore);
     assertNoAuditRowsInserted(summaryAuditBefore, costDetailAuditBefore);
+    assertEditabilityFlipped();
+  }
+
+  /**
+   * AC 12 (CHK-016 BR-05): after S&rarr;D the assigned Licensee edits and the ministry does not.
+   * This falls out of Story 16.1's matrix ({@code ScheduleEditability.java:63-64} — SUBMITTER at
+   * {@code D}, ADMIN at {@code S}/{@code V}) and no matrix row was added; the consequence is what
+   * is asserted. The 18.1 code review found the Completion Notes claimed this arm and no test had
+   * it — the only AC with zero coverage.
+   */
+  private void assertEditabilityFlipped() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/schedule1")
+                .param("millId", HAPPY_MILL)
+                .param("year", YEAR)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.editable", is(true)));
+    mockMvc
+        .perform(
+            get("/api/v1/schedule1").param("millId", HAPPY_MILL).param("year", YEAR).with(admin()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.editable", is(false)));
   }
 
   /** AC1/AC11: the track moved, the ten categories with it, Schedule 11 did not. */
@@ -376,6 +404,20 @@ class SetToDraftIT extends AbstractOracleIT {
     assertThat(silvicultureStatus(HAPPY_MILL)).isEqualTo("V");
     assertThat(categoryState(HAPPY_MILL, "11")).isEqualTo("S");
     assertThat(categoryUpdateUser(HAPPY_MILL, "11")).isEqualTo(SEED_USER);
+    // AC 11's third arm: the Schedule 11 data row itself, by value. R__56 seeds one per happy mill
+    // precisely so this is not vacuous; the twenty audit statements name no Schedule 11 table.
+    assertThat(silvicultureRow(HAPPY_MILL)).isEqualTo("Reversal Block 790/-/r0");
+  }
+
+  /**
+   * The seeded {@code BASIC_SILVICULTURE_REPORT} row, as one string: location / actor / revision.
+   */
+  private String silvicultureRow(String mill) {
+    return jdbcTemplate.queryForObject(
+        "SELECT LOCATION || '/' || NVL(UPDATE_USERID,'-') || '/r' || TO_CHAR(REVISION_COUNT)"
+            + " FROM THE.BASIC_SILVICULTURE_REPORT WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        String.class,
+        Integer.valueOf(mill));
   }
 
   /**
