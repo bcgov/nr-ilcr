@@ -172,6 +172,43 @@ class ReportTrackTransitionReversalTest {
     verifyNoInteractions(writer);
   }
 
+  @ParameterizedTest(name = "{0} -> {1}")
+  @CsvSource({
+    "SET_TO_DRAFT, setToDraftNotValidErrorMsg",
+    "SET_TO_SUBMIT, setToSubmitNotValidErrorMsg",
+  })
+  @DisplayName("deviation (V): the gate refusal names the action the user took, not 'submitted'")
+  void gateRefusalCarriesTheReversalText(TrackTransition transition, String expectedKey) {
+    // Legacy reused reportNotSubmittedErrorMsg here ("The report cannot be submitted...") for every
+    // transition, so a ministry user clicking Set to Draft was told their SUBMISSION had failed.
+    // BA-ratified 2026-09-21: the gate is correct and unchanged — a Submitted report can only
+    // acquire errors because a ministry user introduced them, and ADMIN edit rights at Submitted
+    // (ScheduleEditability:63-64) let that user correct them in place and retry. Wording only.
+    givenTrackAt(transition.from());
+    givenGateFails();
+
+    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo(expectedKey));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("a short verdict list carries the reversal text too, not legacy's")
+  void shortVerdictListCarriesTheReversalText(TrackTransition transition) {
+    givenTrackAt(transition.from());
+    when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR))
+        .thenReturn(List.of(met("1")));
+
+    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo(transition.gateFailedKey()));
+  }
+
   @ParameterizedTest(name = "{0}")
   @EnumSource(
       value = TrackTransition.class,

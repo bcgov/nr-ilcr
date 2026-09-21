@@ -25,14 +25,56 @@ import java.util.Optional;
  */
 public enum TrackTransition {
   /** Draft &rarr; Submitted: the Licensee hands the report to the ministry (Story 15.3). */
-  SUBMIT("D", "S", "A", Recorded.LICENSEE, "sch1-10SubmittedMsg", "submitNotDraftErrorMsg"),
+  SUBMIT(
+      "D",
+      "S",
+      "A",
+      Recorded.LICENSEE,
+      "sch1-10SubmittedMsg",
+      "submitNotDraftErrorMsg",
+      GateKeys.GENERIC),
   /** Submitted &rarr; Verified: the ministry signs the report off (Story 17.1). */
-  VERIFY("S", "V", "V", Recorded.AUDITOR, "sch1-10VerifiedMsg", "verifyNotSubmittedErrorMsg"),
+  VERIFY(
+      "S",
+      "V",
+      "V",
+      Recorded.AUDITOR,
+      "sch1-10VerifiedMsg",
+      "verifyNotSubmittedErrorMsg",
+      GateKeys.GENERIC),
   /** Submitted &rarr; Draft: the ministry hands the report back (Story 18.1). */
-  SET_TO_DRAFT("S", "D", "D", Recorded.NONE, "sch1-10DraftMsg", "setToDraftNotSubmittedErrorMsg"),
+  SET_TO_DRAFT(
+      "S",
+      "D",
+      "D",
+      Recorded.NONE,
+      "sch1-10DraftMsg",
+      "setToDraftNotSubmittedErrorMsg",
+      "setToDraftNotValidErrorMsg"),
   /** Verified &rarr; Submitted: the ministry withdraws a verification (Story 18.1). */
   SET_TO_SUBMIT(
-      "V", "S", "A", Recorded.NONE, "sch1-10SubmittedMsg", "setToSubmitNotVerifiedErrorMsg");
+      "V",
+      "S",
+      "A",
+      Recorded.NONE,
+      "sch1-10SubmittedMsg",
+      "setToSubmitNotVerifiedErrorMsg",
+      "setToSubmitNotValidErrorMsg");
+
+  /**
+   * Legacy's one gate-failure text, kept by the two transitions for which it is accurate.
+   *
+   * <p>On a nested type rather than a field of this enum because a field declared after the
+   * constants is an <em>illegal forward reference</em> from their initializers (JLS 8.3.3), and a
+   * field cannot be declared before them. A nested class is initialized on first use, so the
+   * constants may read it.
+   */
+  private static final class GateKeys {
+    /** Legacy {@code messages.properties:119}, via {@code CheckStatusMB.submitReport():294}. */
+    static final String GENERIC = "reportNotSubmittedErrorMsg";
+
+    private GateKeys() {}
+  }
 
   /**
    * Which status-row identity pair a transition records. Legacy {@code
@@ -64,6 +106,7 @@ public enum TrackTransition {
   private final Recorded recorded;
   private final String successKey;
   private final String rejectedKey;
+  private final String gateFailedKey;
 
   TrackTransition(
       String from,
@@ -71,13 +114,15 @@ public enum TrackTransition {
       String categoryState,
       Recorded recorded,
       String successKey,
-      String rejectedKey) {
+      String rejectedKey,
+      String gateFailedKey) {
     this.from = from;
     this.to = to;
     this.categoryState = categoryState;
     this.recorded = recorded;
     this.successKey = successKey;
     this.rejectedKey = rejectedKey;
+    this.gateFailedKey = gateFailedKey;
   }
 
   /**
@@ -134,5 +179,27 @@ public enum TrackTransition {
    */
   public String rejectedKey() {
     return rejectedKey;
+  }
+
+  /**
+   * The bundle key of the message shown when the eleven-schedule VALIDATION gate refuses this
+   * transition &mdash; distinct from {@link #rejectedKey()}, which is about the track's STATUS.
+   *
+   * <p>{@link #SUBMIT} and {@link #VERIFY} keep legacy's one text, {@code
+   * reportNotSubmittedErrorMsg} ("The report cannot be submitted. One or more of the Schedules have
+   * not passed validation. Please review and correct any errors."). For submit that sentence is
+   * simply true, and Story 17.1 ruled verify back onto legacy parity.
+   *
+   * <p>The two reversals do not, and that is a deliberate improvement ratified by the BA 2026-09-21
+   * (deviation (V)). Legacy reused the same text there, so a ministry user clicking <em>Set to
+   * Draft</em> on a report with errors was told their <em>submission</em> had failed &mdash; naming
+   * neither the action they took nor the remedy. <strong>The gate itself is correct and
+   * unchanged:</strong> a Submitted report can only acquire errors because a ministry user
+   * introduced them, and ADMIN edit rights at Submitted ({@code ScheduleEditability.java:63-64})
+   * let that user correct them in place and retry, so nothing is stranded. Only the wording
+   * changes. Same split as deviation (T).
+   */
+  public String gateFailedKey() {
+    return gateFailedKey;
   }
 }

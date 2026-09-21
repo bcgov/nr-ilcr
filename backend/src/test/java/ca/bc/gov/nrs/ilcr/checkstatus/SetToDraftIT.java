@@ -73,9 +73,22 @@ class SetToDraftIT extends AbstractOracleIT {
   private static final String SEED_USER = "SEED";
 
   private static final String DRAFT_MSG = "Schedules 1-10 have been set back to draft.";
-  private static final String NOT_SUBMITTED_MSG =
+
+  /**
+   * Deviation (V), BA-ratified 2026-09-21. Legacy answered a failing gate on THIS button with the
+   * submit text — "The report cannot be submitted. One or more of the Schedules have not passed
+   * validation. Please review and correct any errors." — which names neither the action the admin
+   * took nor the remedy. The gate is unchanged; only the sentence is.
+   */
+  private static final String GATE_FAILED_MSG =
+      "Schedules 1-10 cannot be set to Draft while one or more Schedules have errors."
+          + " Please correct them and try again.";
+
+  /** Legacy's text, which this endpoint must NOT return any more. */
+  private static final String LEGACY_SUBMIT_GATE_MSG =
       "The report cannot be submitted. One or more of the Schedules have not passed validation."
           + " Please review and correct any errors.";
+
   private static final String NOT_SUBMITTED_STATUS_MSG =
       "Schedules 1-10 are no longer in Submitted and cannot be set to Draft.";
 
@@ -420,19 +433,24 @@ class SetToDraftIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
-      "AC5/AC10: a failing validation gate -> 409 reportNotSubmittedErrorMsg,"
+      "AC5/AC10 + deviation (V): a failing validation gate -> 409 naming THIS action,"
           + " nothing persisted")
   void refusesWhenTheGateFails() throws Exception {
-    // D5's consequence made concrete: this is a SUBMITTED report that fails validation, and the
-    // gate blocks the very action that would let a licensee repair it. Faithful to legacy (one
-    // submitReport validated before every transition); raised with the BA, not fixed here.
+    // D5, as the BA ruled it 2026-09-21. The GATE stays: a Submitted report can only acquire
+    // errors because a ministry user introduced them, and that user has ADMIN edit rights at
+    // Submitted (ScheduleEditability:63-64), so they correct the errors in place and retry —
+    // nothing is stranded. What changed is the sentence: legacy answered this button with the
+    // SUBMIT text, telling an admin who had clicked Set to Draft that their submission failed.
     String before = fingerprint(GATE_FAILS_MILL);
 
     mockMvc
         .perform(post(ENDPOINT).param("millId", GATE_FAILS_MILL).param("year", YEAR).with(admin()))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is(NOT_SUBMITTED_MSG)));
+        .andExpect(jsonPath("$.detail", is(GATE_FAILED_MSG)))
+        // The behaviour is unchanged, so the only way to prove the wording moved is to assert the
+        // old text is gone. Without this the arm passes against either message.
+        .andExpect(jsonPath("$.detail", org.hamcrest.Matchers.not(is(LEGACY_SUBMIT_GATE_MSG))));
 
     assertThat(trackStatus(GATE_FAILS_MILL)).isEqualTo("S");
     assertThat(fingerprint(GATE_FAILS_MILL)).isEqualTo(before);

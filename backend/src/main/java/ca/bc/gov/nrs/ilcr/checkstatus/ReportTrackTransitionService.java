@@ -269,7 +269,7 @@ public class ReportTrackTransitionService {
     // CheckStatusMB.submitReport evaluated all eleven validators in the bean and only then called
     // the service, which delegated to a DAO that opened its own transaction. Ratified 2026-09-16 as
     // legacy parity; a concurrent schedule save can invalidate the verdict between gate and write.
-    requireTrackPassesValidation("Verify", millId, year);
+    requireTrackPassesValidation(TrackTransition.VERIFY, millId, year);
 
     TrackTransition transition =
         TrackTransition.resolve(current, TrackTransition.VERIFY.to())
@@ -341,7 +341,7 @@ public class ReportTrackTransitionService {
     // evaluated all eleven validators before calling the service at all (:247-271). A report that
     // fails validation is therefore refused with reportNotSubmittedErrorMsg even when the status
     // transition it asked for was itself illegal. See D5 on the consequence for S->D.
-    requireTrackPassesValidation(expected.name(), millId, year);
+    requireTrackPassesValidation(expected, millId, year);
 
     TrackTransition transition =
         TrackTransition.resolve(current, expected.to())
@@ -406,24 +406,31 @@ public class ReportTrackTransitionService {
    *
    * <p>Shared by Verify and both Story 18.1 reversals, which is legacy: one {@code
    * submitReport(String)} ran the identical eleven-validator expression before every transition
-   * ({@code CheckStatusMB:247-261}), so the {@code label} is only for the log line.
+   * ({@code CheckStatusMB:247-261}). The {@code transition} names the log line AND the refusal text
+   * &mdash; verify keeps legacy's generic message, the reversals carry their own (deviation (V),
+   * {@link TrackTransition#gateFailedKey()}). The gate itself is identical for all three.
+   *
+   * <p>A short verdict list raises the same exception as a genuine failure. It is an internal
+   * integrity fault rather than a user error, but it is unreachable by construction and the log
+   * lines distinguish them; inventing a second user-facing text for a state nobody can reach would
+   * be worse than reusing this one.
    */
-  private void requireTrackPassesValidation(String label, long millId, int year) {
+  private void requireTrackPassesValidation(TrackTransition transition, long millId, int year) {
     List<ScheduleCheckResult> verdicts =
         sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, millId, year);
     if (verdicts.size() != EXPECTED_TRACK_VERDICTS) {
       log.warn(
           "{} 409: expected {} schedule verdicts for millId={} year={} but got {}",
-          label,
+          transition,
           EXPECTED_TRACK_VERDICTS,
           millId,
           year,
           verdicts.size());
-      throw new ReportNotSubmittedException();
+      throw new ReportNotSubmittedException(transition);
     }
     if (!TrackCheckResult.of(null, verdicts).requirementsMet()) {
-      log.info("{} 409: validation gate failed for millId={} year={}", label, millId, year);
-      throw new ReportNotSubmittedException();
+      log.info("{} 409: validation gate failed for millId={} year={}", transition, millId, year);
+      throw new ReportNotSubmittedException(transition);
     }
   }
 

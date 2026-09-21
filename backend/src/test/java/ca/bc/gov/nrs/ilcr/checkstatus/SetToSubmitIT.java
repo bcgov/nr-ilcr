@@ -68,9 +68,16 @@ class SetToSubmitIT extends AbstractOracleIT {
   /** Legacy reused the submit text — there is no "verification reversed" message to port. */
   private static final String SUBMITTED_MSG = "Schedules 1-10 are successfully submitted.";
 
-  private static final String NOT_SUBMITTED_MSG =
+  /** Deviation (V) — see {@code SetToDraftIT}. The gate is unchanged; only the sentence is. */
+  private static final String GATE_FAILED_MSG =
+      "Schedules 1-10 cannot be set to Submit while one or more Schedules have errors."
+          + " Please correct them and try again.";
+
+  /** Legacy's text, which this endpoint must NOT return any more. */
+  private static final String LEGACY_SUBMIT_GATE_MSG =
       "The report cannot be submitted. One or more of the Schedules have not passed validation."
           + " Please review and correct any errors.";
+
   private static final String NOT_VERIFIED_STATUS_MSG =
       "Schedules 1-10 are no longer in Verified and cannot be set to Submit.";
 
@@ -318,18 +325,21 @@ class SetToSubmitIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
-      "AC5/AC10: a failing validation gate -> 409 reportNotSubmittedErrorMsg,"
+      "AC5/AC10 + deviation (V): a failing validation gate -> 409 naming THIS action,"
           + " nothing persisted")
   void refusesWhenTheGateFails() throws Exception {
     // The gate runs before legality, so this Submitted mill is refused for VALIDATION even though
-    // S->S would also have been refused as illegal. Legacy's order (CheckStatusMB:247-271).
+    // S->S would also have been refused as illegal. Legacy's order (CheckStatusMB:247-271) — and
+    // the reason this arm is worth having twice: it proves the gate's message wins over the
+    // status-legality one, so the admin is told what is actually wrong with the report.
     String before = fingerprint(GATE_FAILS_MILL);
 
     mockMvc
         .perform(post(ENDPOINT).param("millId", GATE_FAILS_MILL).param("year", YEAR).with(admin()))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is(NOT_SUBMITTED_MSG)));
+        .andExpect(jsonPath("$.detail", is(GATE_FAILED_MSG)))
+        .andExpect(jsonPath("$.detail", org.hamcrest.Matchers.not(is(LEGACY_SUBMIT_GATE_MSG))));
 
     assertThat(trackStatus(GATE_FAILS_MILL)).isEqualTo("S");
     assertThat(fingerprint(GATE_FAILS_MILL)).isEqualTo(before);

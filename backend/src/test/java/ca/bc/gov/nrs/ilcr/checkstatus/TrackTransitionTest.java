@@ -94,6 +94,32 @@ class TrackTransitionTest {
   }
 
   @Test
+  @DisplayName(
+      "only the reversals get their own validation-gate text; submit and verify keep" + " legacy's")
+  void gateFailedKeys() {
+    // Deviation (V), BA-ratified 2026-09-21. The GATE is unchanged for all four — only the
+    // sentence differs, and only where legacy's was wrong about what the user had clicked.
+    assertThat(TrackTransition.SUBMIT.gateFailedKey()).isEqualTo("reportNotSubmittedErrorMsg");
+    assertThat(TrackTransition.VERIFY.gateFailedKey()).isEqualTo("reportNotSubmittedErrorMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.gateFailedKey())
+        .isEqualTo("setToDraftNotValidErrorMsg");
+    assertThat(TrackTransition.SET_TO_SUBMIT.gateFailedKey())
+        .isEqualTo("setToSubmitNotValidErrorMsg");
+  }
+
+  @Test
+  @DisplayName("the gate key and the status-legality key are never the same message")
+  void gateAndLegalityKeysAreDistinct() {
+    // The two refusals a user can actually hit on one button. Collapsing them would tell someone
+    // whose report has ERRORS that the track has moved on, or vice versa.
+    for (TrackTransition transition : TrackTransition.values()) {
+      assertThat(transition.gateFailedKey())
+          .as("%s", transition)
+          .isNotEqualTo(transition.rejectedKey());
+    }
+  }
+
+  @Test
   @DisplayName("each transition names the message for a track that has already left its start")
   void rejectedKeys() {
     assertThat(TrackTransition.SUBMIT.rejectedKey()).isEqualTo("submitNotDraftErrorMsg");

@@ -54,6 +54,13 @@ class TrackTransitionMessageBundleTest {
     assertResolves(transition.rejectedKey());
   }
 
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(TrackTransition.class)
+  @DisplayName("every validation-gate key carries its text")
+  void gateFailedKeysResolve(TrackTransition transition) {
+    assertResolves(transition.gateFailedKey());
+  }
+
   @org.junit.jupiter.api.Test
   @DisplayName("the generic fallback the refusals share also resolves")
   void genericFallbackResolves() {
