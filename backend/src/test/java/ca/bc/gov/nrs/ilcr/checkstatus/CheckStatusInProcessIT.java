@@ -81,7 +81,7 @@ class CheckStatusInProcessIT extends AbstractOracleIT {
     responses.put("schedule2", schedule2.checkStatus(621, 2021));
     responses.put("schedule3", schedule3Service.checkSchedule3Status(572, 2021));
     responses.put("schedule4", schedule4.checkStatus(514, 2021));
-    responses.put("schedule5", schedule5.checkStatus(673, 2021));
+    responses.put("schedule5", schedule5.checkStatusStored(673, 2021));
     responses.put("schedule6", schedule6.checkStatusStored(726, 2020));
     responses.put("schedule7a", schedule7aService.checkStatus(514, 2021));
     responses.put("schedule7b", schedule7bService.checkStatus(514, 2021));

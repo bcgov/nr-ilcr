@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule5;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import java.util.List;
 import java.util.Map;
@@ -68,8 +69,29 @@ public class Schedule5CheckStatusResolver {
    * @param year the reporting year
    * @return the verdict with every message's verbatim text populated
    */
-  public Schedule5CheckStatusResponse checkStatus(long millId, int year) {
-    return resolve(schedule5Service.checkStatus(millId, year));
+  public Schedule5CheckStatusResponse checkStatusStored(long millId, int year) {
+    return resolve(schedule5Service.checkStatusStored(millId, year));
+  }
+
+  /**
+   * Evaluate and resolve Schedule 5 against the SCREEN — the endpoint's entry point (#476).
+   *
+   * <p>Differs from {@link #checkStatusStored} only in its source: the body's camp panel is
+   * overlaid onto the stored camps before the identical rule runs. Named apart so a caller cannot
+   * reach for the wrong one by autocomplete; a sweep that read a screen, or an endpoint that
+   * ignored one, would both fail silently.
+   *
+   * <p>The same mill/year precondition applies as for {@link #checkStatusStored}: the CALLER must
+   * have validated the context first (AD-4).
+   *
+   * @param millId the mill id (context already validated by the caller)
+   * @param year the reporting year
+   * @param request the camp panel on screen, if any
+   * @return the verdict with every message's verbatim text populated
+   */
+  public Schedule5CheckStatusResponse checkStatus(
+      long millId, int year, Schedule5CheckRequest request) {
+    return resolve(schedule5Service.checkStatus(millId, year, request));
   }
 
   /**

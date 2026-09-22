@@ -1,45 +1,31 @@
 # UC-SCH5-001-S24 / S25 — BR-11: does Check Status judge the SCREEN or the last SAVED document?
 #
-# ⚠ THE TWO @discovered-divergence SCENARIOS BELOW ARE DELIBERATELY RED. They track DIV-1 in this
-# UC's defects.md, the Schedule 5 instance of the app-wide defect filed as bcgov/nr-ilcr#359. Do not
-# weaken them, skip them, or "fix" them by asserting today's behaviour — the failing state IS the
-# tracking signal. `npm run test:gate` filters them out of a fresh-failures run.
-#
 # ---------------------------------------------------------------------------------------------------
-# SCHEDULE 5'S INSTANCE PRESENTS DIFFERENTLY FROM EVERY OTHER SCHEDULE'S, AND THAT IS THE FINDING
+# FIXED 2026-09-22 (bcgov/nr-ilcr#476). These scenarios were RED from 2026-09-11 and are now GREEN.
 # ---------------------------------------------------------------------------------------------------
-# Schedules 1, 2, 4 and 11 all fail this pair the same way: Check Status answers, and its answer is
-# about the last SAVED document, so a reporter gets a confidently wrong verdict. Schedule 5 does NOT
-# give a wrong answer. It gives NO answer — the Check Status button is disabled the whole time an
-# unsaved edit could exist:
+# NOT ONE ASSERTION CHANGED when they went green, which was the acceptance criterion rather than a
+# nice-to-have: they always asserted the CORRECT (legacy) behaviour, so a fix that had needed them
+# edited would have been the wrong fix. Only the `@discovered-divergence` tags and the
+# `[DISCOVERED …]` title markers came off, and they came off TOGETHER — one alone would have meant
+# the fix was half-done (the two arms fail in opposite directions; see below).
 #
-#   * the button carries `disabled={!editable || saving || panelOpen}` (index.tsx:1419);
-#   * all four check-status descriptors (camp name, road distance, size of camp, associated camp
-#     volume) live INSIDE the camp panel, so editing one means the panel is open;
-#   * closing the panel to re-enable the button raises the discard confirm and throws the edit away.
+# What changed in the app: `POST /api/v1/schedule5/check-status` now carries a body — the camp panel
+# currently on screen (`Schedule5CheckRequest`) — which the service overlays onto the stored camps
+# before running the identical rule. That restores legacy, whose Check Status was a full JSF postback
+# (`ajax="false"`) sharing the panel's form via `ui:include`, so UPDATE_MODEL_VALUES applied every
+# on-screen value to the bean BEFORE the action ran (schedule5.xhtml:40,257; Schedule5MB.java:321).
+# The availability gate that used to stand in for this — `disabled={… || panelOpen}` — is gone with
+# it; there is nothing left for it to protect against.
 #
-# So "an unsaved edit plus a clickable Check Status" is not a reachable state in this UI. The
-# false-GREEN of #359 cannot be produced here at all.
+# ⚠ SCHEDULE 5 ONLY. The app-wide defect is bcgov/nr-ilcr#359 and Schedules 1, 2, 4 and 11 still
+# carry it — their own `check-status-unsaved.feature` arms remain deliberately red. Schedule 6 was
+# always correct and is the shape this fix followed.
 #
-# THAT IS STILL A DIVERGENCE FROM LEGACY, and it is why these stay red rather than being rewritten.
-# Legacy's Check Status was a full JSF postback (`ajax="false"`) and the panels shared its form via
-# `ui:include`, so UPDATE_MODEL_VALUES applied every on-screen value to the bean BEFORE the action
-# ran — legacy answered, and answered about the screen (schedule5.xhtml:40,257;
-# Schedule5MB.java:321). The rewrite's `POST /check-status` carries no request body at all, so the
-# endpoint cannot see the screen even in principle; disabling the button is what stops it giving a
-# wrong answer. The reporter's outcome has changed from "correct verdict including my edits" to
-# "cannot run the check until I save".
-#
-# WHICH DIRECTION THIS FAILS IN, stated plainly because it matters for triage: this is the SAFE
-# direction. An incomplete schedule can never look ready here, which is the harm #359 does elsewhere.
-# The cost is workflow, not correctness — a reporter must save before they can check. Whether that is
-# acceptable is a Ministry call, not the suite's; DIV-1 records it and does not adjudicate it.
-#
-# BOTH ARMS ARE STILL NEEDED. S24 is the false-GREEN arm (an unsaved violation goes unreported, so a
-# bad schedule looks submittable) and S25 the false-RED arm (a correction keeps being reported, so the
-# reporter is told to fix what they just fixed). They fail in opposite directions elsewhere, and if
-# #359 is ever fixed by giving the endpoint the screen's values, BOTH must go green — one alone would
-# mean the fix is half-done.
+# BOTH ARMS, AND WHY BOTH ARE STILL HERE. S24 is the false-GREEN arm (an unsaved violation goes
+# unreported, so a bad schedule looks submittable) and S25 the false-RED arm (a correction keeps
+# being reported, so the reporter is told to fix what they just fixed). A regression could
+# reintroduce either one alone — e.g. sending the panel only when it is dirty would redden S24's
+# sibling below while leaving S25 green — so neither arm is redundant.
 #
 # THE FIELD IS `Size of Camp`, AND NO OTHER WOULD DO. It is check-status-tested AND not required at
 # save, so a camp stores cleanly without it and only Check Status objects. The source Gherkin's own
@@ -47,11 +33,11 @@
 # expense amounts are not check-status conditions at all (`Schedule5Service.evaluateCamp` tests the
 # four descriptors and the four sub-list conditions, nothing else).
 #
-# ANCHORS: 10050/2023 (S24), 12050/2023 (S25) and 22051/2023 (the green companion below). All three
-# mutating — each seeds its own camp through the app's own POST and the cleanup registry deletes it
-# again. The third one was minted after the companion first SHARED S24's anchor and the two raced:
-# both seed a camp of the same name, so the loser's POST answered 409 and its cleanup then deleted
-# the WINNER's camp mid-run, leaving S24 asserting against an empty table while an empty schedule
+# ANCHORS: 10050/2023 (S24), 12050/2023 (S25) and 22051/2023 (the unsaved-new-camp scenario). All
+# three mutating — each seeds its own camp through the app's own POST and the cleanup registry
+# deletes it again. The third was minted after it first SHARED S24's anchor and the two raced: both
+# seed a camp of the same name, so the loser's POST answered 409 and its cleanup then deleted the
+# WINNER's camp mid-run, leaving S24 asserting against an empty table while an empty schedule
 # vacuously reported "requirements met". A textbook instance of the rule the fixture header states —
 # dedication is per SCENARIO, not per slice.
 
@@ -62,8 +48,8 @@ Feature: Report Camp and Access Expenses (Schedule 5) — Check Status and unsav
   So that I am not told the schedule is complete while a value in front of me is wrong
 
   # S24 — the false-GREEN arm. As stored the camp passes; cleared on screen it must not.
-  @discovered-divergence @p1 @S24 @BR-11
-  Scenario: Check Status reports the size of camp cleared on screen but not saved [DISCOVERED DIVERGENCE — Check Status cannot see the screen, and is disabled rather than answering; defects.md DIV-1 / issue #359]
+  @p1 @S24 @BR-11
+  Scenario: Check Status reports the size of camp cleared on screen but not saved
     Given the Schedule 5 anchor "check-unsaved-violation" is an editable Draft with no camps
     And a camp named "North Camp" already exists with stored descriptor and expense values
     And I have selected that mill and reporting year on the Home page
@@ -72,9 +58,9 @@ Feature: Report Camp and Access Expenses (Schedule 5) — Check Status and unsav
     And I run Schedule 5 Check Status
     Then I should see the message "All requirements for this schedule have been met"
 
-    # Clear it on screen and check again WITHOUT saving. Legacy reported the field; this app cannot
-    # even be asked — `I run Schedule 5 Check Status` fails on the disabled button, which is exactly
-    # the divergence and is reported with that wording by the page object.
+    # Clear it on screen and check again WITHOUT saving. The panel stays open throughout — that the
+    # button is still reachable here is itself the #476 fix, and `I run Schedule 5 Check Status`
+    # asserts the button is enabled before clicking, so this step fails if the gate ever returns.
     When I edit the "North Camp" camp
     And I enter "" in the "Size of Camp" field
     And I run Schedule 5 Check Status
@@ -84,8 +70,8 @@ Feature: Report Camp and Access Expenses (Schedule 5) — Check Status and unsav
     And "North Camp" still holds its stored size of camp
 
   # S25 — the false-RED arm. As stored the camp fails; supplied on screen it must pass.
-  @discovered-divergence @p1 @S25 @BR-11
-  Scenario: Check Status stops reporting the missing size of camp once it is supplied on screen [DISCOVERED DIVERGENCE — Check Status cannot see the screen, and is disabled rather than answering; defects.md DIV-1 / issue #359]
+  @p1 @S25 @BR-11
+  Scenario: Check Status stops reporting the missing size of camp once it is supplied on screen
     Given the Schedule 5 anchor "check-unsaved-fix" is an editable Draft with no camps
     And a camp named "North Camp" already exists with no size of camp
     And I have selected that mill and reporting year on the Home page
@@ -103,27 +89,36 @@ Feature: Report Camp and Access Expenses (Schedule 5) — Check Status and unsav
     And "North Camp" still has no stored size of camp
 
   # ---------------------------------------------------------------------------------------------------
-  # GREEN, and the reason the two above are red. This pins the actual mechanism so it cannot drift
-  # unnoticed: if a future change enables Check Status while a panel is open WITHOUT teaching the
-  # endpoint to read the screen, Schedule 5 would stop being the safe outlier and would start
-  # producing #359's confidently-wrong verdict instead. This scenario fails the moment that happens.
+  # The case S24 and S25 cannot reach, and the one an obvious implementation gets wrong.
+  #
+  # An untouched new camp panel is CLEAN — its form matches its empty baseline — so any send keyed on
+  # the panel being DIRTY rather than OPEN would omit it, and the verdict would read "requirements
+  # met" over a camp with four missing fields. That is the false-GREEN direction of #359, rebuilt by
+  # the fix for it. Legacy evaluated the new camp because it was on screen; so must this.
+  #
+  # Replaces the panel-gate scenario that stood here while the gate existed: its premise (Check Status
+  # is unavailable during an edit) is exactly what #476 removed, and S24 and S25 now assert the
+  # button's availability mid-edit as a side effect of using it there.
   # ---------------------------------------------------------------------------------------------------
   @p2 @S24 @BR-11
-  Scenario: Check Status cannot be run while a camp panel is open
-    Given the Schedule 5 anchor "check-panel-gate" is an editable Draft with no camps
+  Scenario: Check Status includes an unsaved NEW camp that has never been saved
+    Given the Schedule 5 anchor "check-unsaved-new-camp" is an editable Draft with no camps
     And a camp named "North Camp" already exists with stored descriptor and expense values
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 5
-    # Closed panel: available.
-    Then the Schedule 5 Check Status button is enabled
-    # Open panel — clean, so not even a pending edit — and it is already gone.
-    When I edit the "North Camp" camp
-    Then Schedule 5 Check Status is unavailable
-    # Still gone with a real unsaved edit, which is the state S24 and S25 need and cannot reach.
-    When I enter "" in the "Size of Camp" field
-    Then Schedule 5 Check Status is unavailable
-    # And the only way back to an enabled button discards the edit rather than checking it.
-    When I close the camp panel
-    And I confirm the "Close camp report" dialog
-    Then the Schedule 5 Check Status button is enabled
-    And "North Camp" still holds its stored size of camp
+    # The stored camp alone is complete.
+    And I run Schedule 5 Check Status
+    Then I should see the message "All requirements for this schedule have been met"
+
+    # Start a camp, name it, and check WITHOUT saving. Nothing else is filled in, so its three
+    # numeric descriptors must be reported under the name on screen.
+    When I start a new camp
+    And I enter "Unsaved Camp" in the "Camp Name" field
+    And I run Schedule 5 Check Status
+    Then I should see the message "Camp Report Name : Unsaved Camp - Road Distance to Operating Area: Value Required"
+    And I should see the message "Camp Report Name : Unsaved Camp - Size of Camp: Value Required"
+    And I should see the message "Camp Report Name : Unsaved Camp - Associated Camp Volume: Value Required"
+    And I should not see the message "All requirements for this schedule have been met"
+    # A check is a read. Asserted against the API, not the table: Check Status does not refetch the
+    # camps list, so a table assertion would pass even if the camp HAD been created.
+    And no camp named "Unsaved Camp" exists on the anchor

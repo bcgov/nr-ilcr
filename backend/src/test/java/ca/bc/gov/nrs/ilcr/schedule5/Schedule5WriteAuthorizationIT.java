@@ -118,6 +118,8 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"camp\":null}")
                 .with(csrf())
                 .param("millId", "672")
                 .param("year", "2021")
@@ -132,6 +134,8 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"camp\":null}")
                 .with(csrf())
                 .param("millId", "672")
                 .param("year", "2021")
@@ -148,6 +152,8 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"camp\":null}")
                 .with(csrf())
                 .param("millId", "676")
                 .param("year", "2021")

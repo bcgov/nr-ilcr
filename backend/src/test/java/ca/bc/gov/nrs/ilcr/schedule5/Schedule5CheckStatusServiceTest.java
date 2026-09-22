@@ -16,6 +16,8 @@ import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest.CampEntry;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
@@ -244,7 +246,7 @@ class Schedule5CheckStatusServiceTest {
     void zeroCampsIsVacuouslyMet() {
       millHolds(List.of(), List.of());
 
-      Schedule5CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+      Schedule5CheckStatusResponse result = service.checkStatusStored(MILL, YEAR);
 
       // isSchedule5Valid ANDs over the camps and returns true before its loop runs
       // (Schedule5CheckStatus.java:89-97).
@@ -259,7 +261,7 @@ class Schedule5CheckStatusServiceTest {
     void allMetEmitsTheBannerAlone() {
       millHolds(List.of(complete(8209, "Complete One"), complete(8210, "Complete Two")), List.of());
 
-      Schedule5CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+      Schedule5CheckStatusResponse result = service.checkStatusStored(MILL, YEAR);
 
       assertThat(result.outcome()).isEqualTo("MET");
       assertThat(result.messages()).extracting("key").containsExactly("scheduleRequirementsMetMsg");
@@ -280,7 +282,7 @@ class Schedule5CheckStatusServiceTest {
           List.of(complete(8211, "Passing Camp"), campRow(8212, "Failing Camp", null, 5, null)),
           List.of());
 
-      Schedule5CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+      Schedule5CheckStatusResponse result = service.checkStatusStored(MILL, YEAR);
 
       assertThat(result.outcome()).isEqualTo("ISSUES");
       assertThat(result.messages()).isEmpty();
@@ -316,7 +318,7 @@ class Schedule5CheckStatusServiceTest {
               campRow(8214, "Third By Id", null, null, null)),
           List.of());
 
-      assertThat(service.checkStatus(MILL, YEAR).camps())
+      assertThat(service.checkStatusStored(MILL, YEAR).camps())
           .extracting("campId")
           .containsExactly(8212, 8213, 8214);
     }
@@ -332,7 +334,7 @@ class Schedule5CheckStatusServiceTest {
       // behaviour change and not a bug fix.
       millHolds(List.of(complete(8209, "No Categories Camp")), List.of());
 
-      assertThat(service.checkStatus(MILL, YEAR).outcome()).isEqualTo("MET");
+      assertThat(service.checkStatusStored(MILL, YEAR).outcome()).isEqualTo("MET");
     }
 
     @Test
@@ -340,7 +342,7 @@ class Schedule5CheckStatusServiceTest {
     void mutatesNothingAndIgnoresTheTrack() {
       millHolds(List.of(complete(8209, "Complete One")), List.of());
 
-      service.checkStatus(MILL, YEAR);
+      service.checkStatusStored(MILL, YEAR);
 
       // No Draft gate: the endpoint is VIEW-gated (the 2.6 precedent, deferred-work.md:23), so a
       // Submitted mill can still be checked. Reading the track at all would be the first step
@@ -352,6 +354,177 @@ class Schedule5CheckStatusServiceTest {
       // Nothing else at all — no insert, no update, no delete, no sequence draw.
       verifyNoMoreInteractions(repository);
       verify(repository, never()).upsertCostDetail(anyInt(), anyInt(), any(), any(), anyString());
+    }
+  }
+
+  /**
+   * The payload path (#476, closing DIV-1 / the Schedule 5 slice of #359).
+   *
+   * <p>Legacy's Check Status was an {@code ajax="false"} full postback, so JSF applied the
+   * on-screen inputs to the bean before the check ran and the verdict described the SCREEN. The
+   * shipped endpoint read the database and compensated by disabling the button while a camp panel
+   * was open. It now takes the panel as a body and overlays it onto the stored camps.
+   *
+   * <p>Everything here is about SOURCE, never about the rule: the eight conditions are asserted
+   * once, above, against {@code evaluateCamp}, and both paths run that same static method. A test
+   * here that re-asserted a condition would be pinning the rule twice and would drift.
+   */
+  @Nested
+  @DisplayName("the on-screen overlay - same rule, different source")
+  class ScreenOverlay {
+
+    private void millHolds(List<CampRow> camps, List<DetailRow> details) {
+      when(repository.findCamps(MILL, YEAR)).thenReturn(camps);
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(details);
+    }
+
+    private static Schedule5CheckRequest panel(
+        Integer campId, String name, BigDecimal distance, Integer size, BigDecimal volume) {
+      return new Schedule5CheckRequest(new CampEntry(campId, name, distance, size, volume));
+    }
+
+    @Test
+    @DisplayName("a descriptor CLEARED on screen is reported though the stored row still holds it")
+    void clearedOnScreenIsReported() {
+      // Stored: complete. On screen: size of camp emptied and not saved. Legacy reported it.
+      millHolds(List.of(complete(8301, "Cedar Flats Camp")), List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(
+              MILL,
+              YEAR,
+              panel(
+                  8301,
+                  "Cedar Flats Camp",
+                  new BigDecimal("10.00"),
+                  null,
+                  new BigDecimal("50000")));
+
+      assertThat(result.outcome()).isEqualTo("ISSUES");
+      assertThat(result.camps())
+          .singleElement()
+          .satisfies(
+              camp -> {
+                assertThat(camp.campId()).isEqualTo(8301);
+                assertThat(camp.messages().stream().map(CampCheckMessage::field))
+                    .containsExactly(Schedule5Service.FIELD_SIZE_OF_CAMP);
+              });
+    }
+
+    @Test
+    @DisplayName("a descriptor SUPPLIED on screen clears the stored finding")
+    void suppliedOnScreenClearsTheFinding() {
+      // Stored: size of camp missing. On screen: supplied and not saved. The false-RED direction,
+      // which is the one a reporter meets most often.
+      millHolds(
+          List.of(
+              campRow(
+                  8302,
+                  "Cedar Flats Camp",
+                  new BigDecimal("10.00"),
+                  null,
+                  new BigDecimal("50000"))),
+          List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(
+              MILL,
+              YEAR,
+              panel(
+                  8302, "Cedar Flats Camp", new BigDecimal("10.00"), 40, new BigDecimal("50000")));
+
+      assertThat(result.outcome()).isEqualTo("MET");
+    }
+
+    @Test
+    @DisplayName("an UNSAVED camp (null id) is evaluated as an ADDITIONAL camp")
+    void unsavedCampIsAppended() {
+      // It is on screen, so legacy evaluated it. Omitting it reports "requirements met" over a
+      // camp with four missing fields - the false-GREEN this whole change exists to avoid.
+      millHolds(List.of(complete(8303, "Stored Camp")), List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(MILL, YEAR, panel(null, "", null, null, null));
+
+      assertThat(result.outcome()).isEqualTo("ISSUES");
+      assertThat(result.camps()).hasSize(2);
+      assertThat(result.camps().get(0).requirementsMet()).isTrue();
+      assertThat(result.camps().get(1).campId()).isEqualTo(Schedule5Service.UNSAVED_CAMP_ID);
+      assertThat(result.camps().get(1).messages().stream().map(CampCheckMessage::field))
+          .containsExactly(
+              Schedule5Service.FIELD_CAMP_NAME,
+              Schedule5Service.FIELD_ROAD_DISTANCE,
+              Schedule5Service.FIELD_SIZE_OF_CAMP,
+              Schedule5Service.FIELD_ASSOCIATED_CAMP_VOLUME);
+    }
+
+    @Test
+    @DisplayName("a panel whose camp no longer exists is evaluated, not silently dropped")
+    void panelForADeletedCampIsStillEvaluated() {
+      // Another session deleted it while the panel was open. Dropping it would answer about a
+      // schedule the reporter is not looking at.
+      millHolds(List.of(complete(8304, "Stored Camp")), List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(MILL, YEAR, panel(9999, "Ghost Camp", null, null, null));
+
+      assertThat(result.camps()).hasSize(2);
+      assertThat(result.camps().get(1).campName()).isEqualTo("Ghost Camp");
+    }
+
+    @Test
+    @DisplayName("the overlaid camp keeps its POSITION and its stored sub-list rows")
+    void overlayKeepsPositionAndSubListRows() {
+      // The sub-pages are a different screen, so their rows are never in the body. An overlay that
+      // replaced the candidate wholesale would lose them and the sub-list findings would vanish.
+      millHolds(
+          List.of(complete(8305, "First Camp"), complete(8306, "Second Camp")),
+          List.of(subRow(1, 8305, 62, null, "A description with no cost")));
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(
+              MILL,
+              YEAR,
+              panel(8305, "First Camp", new BigDecimal("10.00"), 40, new BigDecimal("50000")));
+
+      assertThat(result.camps()).hasSize(2);
+      assertThat(result.camps().get(0).campId()).isEqualTo(8305);
+      assertThat(result.camps().get(0).messages().stream().map(CampCheckMessage::field))
+          .containsExactly(Schedule5Service.FIELD_OTHER_CAMP_COST);
+      assertThat(result.camps().get(1).campId()).isEqualTo(8306);
+    }
+
+    @Test
+    @DisplayName("no panel open evaluates exactly the stored camps - identical to the stored path")
+    void noPanelMatchesTheStoredPath() {
+      millHolds(
+          List.of(complete(8307, "First Camp"), campRow(8308, "Second Camp", null, null, null)),
+          List.of());
+
+      assertThat(service.checkStatus(MILL, YEAR, new Schedule5CheckRequest(null)))
+          .isEqualTo(service.checkStatusStored(MILL, YEAR));
+    }
+
+    @Test
+    @DisplayName("a null BODY is treated as no panel rather than throwing")
+    void nullBodyIsNoPanel() {
+      millHolds(List.of(complete(8309, "Only Camp")), List.of());
+
+      assertThat(service.checkStatus(MILL, YEAR, null).outcome()).isEqualTo("MET");
+    }
+
+    @Test
+    @DisplayName("the overlay MUTATES NOTHING - it is the same read-only contract")
+    void overlayMutatesNothing() {
+      millHolds(List.of(complete(8310, "Only Camp")), List.of());
+
+      service.checkStatus(
+          MILL, YEAR, panel(8310, "Only Camp", new BigDecimal("1.00"), 1, BigDecimal.ONE));
+
+      verify(repository, never()).findTrackStatus(anyLong(), anyInt());
+      verify(repository).findCamps(MILL, YEAR);
+      verify(repository).findCostDetails(MILL, YEAR);
+      verifyNoMoreInteractions(repository);
     }
   }
 }
