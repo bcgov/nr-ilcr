@@ -89,6 +89,21 @@ const NAV_SAVE_FIRST =
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
 
+// NAV-001 (#324): the panel-leaving action held behind the "unsaved data will be lost" confirm while the
+// panel is dirty — Back/Close, Add New Location, and Edit/View/Copy of a (different) location. Legacy
+// attached `confirmNavigationMsg` to every one of these controls (schedule4.xhtml:74,130,160,189,213)
+// unconditionally; like Schedule 5's camp panel this fires only when there is something to lose.
+type PanelLeave =
+  | { kind: 'close' }
+  | { kind: 'new' }
+  | { kind: 'copy'; location: Location }
+  | { kind: 'open'; location: Location; mode: 'edit' | 'view' }
+
+// What the panel held when it was opened (or last saved) — the baseline the dirty check compares the
+// live entry against. Compared as the ENTERED TEXT, like Schedule 5: CommaNumberInput never rewrites
+// the raw string on blur, so merely tabbing through a field cannot fake a change.
+type PanelSnapshot = { name: string; categories: CategoryForm; comments: string }
+
 const emptyCategoryForm = (): CategoryForm => {
   const form: CategoryForm = {}
   for (const def of ALL_CATEGORIES) {
@@ -118,6 +133,23 @@ function seedCategoryForm(location: Location): {
 
 type CategoryDef = (typeof ALL_CATEGORIES)[number]
 type CategoryField = 'volume' | 'cost' | 'distance'
+
+const CATEGORY_FIELDS: CategoryField[] = ['volume', 'cost', 'distance']
+
+const emptySnapshot = (): PanelSnapshot => ({
+  name: '',
+  categories: emptyCategoryForm(),
+  comments: '',
+})
+
+// Field-by-field over the known category codes rather than a JSON comparison, so key order and a
+// missing (never-touched) code both compare as equal to their blank counterpart.
+const sameCategoryForm = (a: CategoryForm, b: CategoryForm): boolean =>
+  ALL_CATEGORIES.every((def) => {
+    const left = a[def.code] ?? { volume: '', cost: '', distance: '' }
+    const right = b[def.code] ?? { volume: '', cost: '', distance: '' }
+    return CATEGORY_FIELDS.every((field) => left[field] === right[field])
+  })
 
 // The category grid renders every transportation line in legacy code order (40–55): the 12 amount
 // categories interleaved with the 3 list sub-page group rows (43 Towing, 46 Truck Rehaul, 55 Other).
@@ -319,12 +351,19 @@ const Schedule4: FC = () => {
   const [panelEditId, setPanelEditId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
   const [panelComments, setPanelComments] = useState('')
+  // The NAV-001 baseline: set when the panel opens and again after each successful save, so "dirty"
+  // means "changed since the last save". `null` (no panel) cannot be compared and counts as clean.
+  const [panelBaseline, setPanelBaseline] = useState<PanelSnapshot | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Location | null>(null)
-  // Pending sub-page open awaiting a NAV-002 (existing) / NAV-003 (new, save-first) confirm.
-  const [navConfirm, setNavConfirm] = useState<{
-    kind: 'existing' | 'new'
-    def: SubPageDef
-  } | null>(null)
+  // The one navigation held behind the confirm modal: a sub-page open awaiting NAV-002 (existing) /
+  // NAV-003 (new, save-first), or a panel-leaving action awaiting NAV-001 (leave). One modal instance
+  // serves all three so a hidden duplicate never shadows the visible one.
+  const [navConfirm, setNavConfirm] = useState<
+    | { kind: 'existing'; def: SubPageDef }
+    | { kind: 'new'; def: SubPageDef }
+    | { kind: 'leave'; leave: PanelLeave }
+    | null
+  >(null)
 
   // Clear the transient mutation notifications + close the panel whenever a fresh document loads
   // (mill/year change), mirroring Schedule 9's resetTransient: resetBanners() drops the hook-owned
@@ -367,6 +406,7 @@ const Schedule4: FC = () => {
     setPanelEditId(null)
     setPanelRevision(null)
     setPanelComments('')
+    setPanelBaseline(emptySnapshot()) // an untouched New panel closes silently
   }
 
   const openEditOrView = (location: Location, mode: 'edit' | 'view') => {
@@ -380,6 +420,11 @@ const Schedule4: FC = () => {
     setPanelEditId(location.id)
     setPanelRevision(location.revisionCount)
     setPanelComments(location.comments ?? '')
+    setPanelBaseline({
+      name: location.name,
+      categories: seeded.form,
+      comments: location.comments ?? '',
+    })
   }
 
   const openCopy = (location: Location) => {
@@ -396,9 +441,52 @@ const Schedule4: FC = () => {
     setPanelRevision(null)
     setPanelComments(location.comments ?? '') // copy clones the comments (not the name)
     setWarnMessage(copyWarning(location.name))
+    // A copy is dirty from the moment it opens (Schedule 5 does the same): it carries the source's
+    // amounts against an empty baseline, and leaving it abandons the location the user asked to create.
+    setPanelBaseline(emptySnapshot())
   }
 
   const closePanel = () => setPanelMode('closed')
+
+  // ---- NAV-001 (#324): confirm before a dirty panel is discarded. ---------------------------------
+
+  // A `view` panel is excluded explicitly: there is no entry to lose, and it is the only mode reachable
+  // on a non-editable document. An unprovable baseline (open panel, no snapshot) is treated as dirty —
+  // a spurious confirm costs a click, a missing one costs the user's work.
+  const panelDirty =
+    panelMode !== 'closed' &&
+    panelMode !== 'view' &&
+    (panelBaseline === null ||
+      panelName !== panelBaseline.name ||
+      panelComments !== panelBaseline.comments ||
+      !sameCategoryForm(panelCategories, panelBaseline.categories))
+
+  const runLeave = (leave: PanelLeave) => {
+    switch (leave.kind) {
+      case 'close':
+        closePanel()
+        break
+      case 'new':
+        openNew()
+        break
+      case 'copy':
+        openCopy(leave.location)
+        break
+      case 'open':
+        openEditOrView(leave.location, leave.mode)
+        break
+    }
+  }
+
+  // Every panel-leaving control goes through here: straight through when nothing would be lost, else
+  // held behind the NAV-001 modal until the user continues (runs it) or cancels (stays put).
+  const requestLeave = (leave: PanelLeave) => {
+    if (panelDirty) {
+      setNavConfirm({ kind: 'leave', leave })
+    } else {
+      runLeave(leave)
+    }
+  }
 
   const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
     // value is already the raw digit string (CommaNumberInput strips its display grouping).
@@ -491,6 +579,10 @@ const Schedule4: FC = () => {
     const wasEdit = panelMode === 'edit'
     const editId = panelEditId
     const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
+    // What was SENT is the new baseline for name/comments (the echo is trimmed, the inputs are not);
+    // anything typed while the save was in flight therefore still counts as unsaved.
+    const sentName = panelName
+    const sentComments = panelComments
     putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
@@ -512,6 +604,8 @@ const Schedule4: FC = () => {
         setPanelCategories(echoed.form)
         setPanelCommitted(echoed.form)
         setPanelPerUnit(echoed.perUnit)
+        // The saved panel is clean again: Back/Edit/Add New close or switch it without NAV-001.
+        setPanelBaseline({ name: sentName, categories: echoed.form, comments: sentComments })
       } else {
         setPanelMode('closed')
       }
@@ -617,12 +711,14 @@ const Schedule4: FC = () => {
 
   const confirmNav = () => {
     if (!navConfirm) return
-    const { kind, def } = navConfirm
+    const pending = navConfirm
     setNavConfirm(null)
-    if (kind === 'existing' && panelEditId !== null) {
-      openSubPage(def, panelEditId) // discard panel edits, open the sub-page
+    if (pending.kind === 'leave') {
+      runLeave(pending.leave) // NAV-001: discard the panel entry, then do what was asked
+    } else if (pending.kind === 'existing' && panelEditId !== null) {
+      openSubPage(pending.def, panelEditId) // discard panel edits, open the sub-page
     } else {
-      saveLocationThenOpen(def)
+      saveLocationThenOpen(pending.def)
     }
   }
 
@@ -725,7 +821,9 @@ const Schedule4: FC = () => {
                       kind="ghost"
                       size="sm"
                       renderIcon={editable ? Edit : View}
-                      onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
+                      onClick={() =>
+                        requestLeave({ kind: 'open', location, mode: editable ? 'edit' : 'view' })
+                      }
                     >
                       {editable ? 'Edit' : 'View'}
                     </Button>
@@ -734,7 +832,7 @@ const Schedule4: FC = () => {
                       size="sm"
                       renderIcon={Copy}
                       disabled={!editable || saving}
-                      onClick={() => openCopy(location)}
+                      onClick={() => requestLeave({ kind: 'copy', location })}
                     >
                       Copy
                     </Button>
@@ -890,7 +988,7 @@ const Schedule4: FC = () => {
           // The icon tracks the label: this one button is Close on a view panel and Back on an
           // editable one, so a fixed glyph would contradict half of its own uses.
           renderIcon={readOnlyPanel ? Close : ArrowLeft}
-          onClick={closePanel}
+          onClick={() => requestLeave({ kind: 'close' })}
         >
           {readOnlyPanel ? 'Close' : 'Back'}
         </Button>
@@ -915,7 +1013,12 @@ const Schedule4: FC = () => {
       data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
     >
       {!bottom && (
-        <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
+        <Button
+          kind="primary"
+          renderIcon={Add}
+          disabled={!editable || saving}
+          onClick={() => requestLeave({ kind: 'new' })}
+        >
           Add New Location
         </Button>
       )}
@@ -1037,6 +1140,8 @@ const Schedule4: FC = () => {
         </Modal>
       )}
 
+      {/* NAV-002 / NAV-003 (sub-page open from the panel) and NAV-001 (leaving a dirty panel, #324)
+          share this one instance; NAV-001 and NAV-002 carry the same legacy `confirmNavigationMsg`. */}
       <ConfirmNavigationModal
         open={navConfirm !== null}
         heading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
