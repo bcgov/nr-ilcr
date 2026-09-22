@@ -1995,6 +1995,56 @@ describe('Schedule4 NAV-001 — confirm before discarding unsaved changes (#324)
     expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
   })
 
+  // PR #492 review: the inputs stay live while the PUT is pending, so a keystroke landing mid-request
+  // used to be wiped by the echo re-seed and then counted as clean. Post-dispatch entry must survive
+  // the save AND still be guarded; untouched fields still take the server's echo (AD-5).
+  test('typing while a Save is in flight survives the echo and is still guarded by NAV-001', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 1000009, distance: null, perUnit: 500.0045 },
+        harbour.categories[1],
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, async () => {
+        await gate
+        return HttpResponse.json(
+          doc({
+            locations: [saved, emptyLanding],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour() // Lakeside cost 1000009 — what the PUT carries
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    // Mid-flight entry: a different category cell and the name, neither of which the PUT carried.
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry volume'), '7')
+    await userEvent.type(screen.getByLabelText('Location Name'), 'X')
+    release()
+    await screen.findByText('Data saved successfully')
+
+    // The echo landed on the field that was sent; the mid-flight entry was NOT replaced by it.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour DumpX')
+
+    // And it is still unsaved: Back asks first.
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+  })
+
   test('the read-only View panel closes with no prompt (nothing to lose)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     renderSchedule4()

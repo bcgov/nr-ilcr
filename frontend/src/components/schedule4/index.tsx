@@ -142,14 +142,40 @@ const emptySnapshot = (): PanelSnapshot => ({
   comments: '',
 })
 
+const blankEntry = () => ({ volume: '', cost: '', distance: '' })
+
 // Field-by-field over the known category codes rather than a JSON comparison, so key order and a
 // missing (never-touched) code both compare as equal to their blank counterpart.
 const sameCategoryForm = (a: CategoryForm, b: CategoryForm): boolean =>
   ALL_CATEGORIES.every((def) => {
-    const left = a[def.code] ?? { volume: '', cost: '', distance: '' }
-    const right = b[def.code] ?? { volume: '', cost: '', distance: '' }
+    const left = a[def.code] ?? blankEntry()
+    const right = b[def.code] ?? blankEntry()
     return CATEGORY_FIELDS.every((field) => left[field] === right[field])
   })
+
+// The grid after a Save resolves. The inputs stay live while the PUT is in flight, so a plain re-seed
+// from the echo would wipe anything typed meanwhile AND (against an echo baseline) call it clean —
+// exactly the edit NAV-001 exists to protect (PR #492 review). So: a field the user has NOT touched
+// since dispatch takes the server's echo (AD-5 — the echo supersedes the mirror); a field typed into
+// during the request keeps its live value, which stays visible and, measured against the echo, dirty.
+const rebaseCategoryForm = (
+  live: CategoryForm,
+  sent: CategoryForm,
+  echo: CategoryForm,
+): CategoryForm => {
+  const merged: CategoryForm = {}
+  for (const def of ALL_CATEGORIES) {
+    const liveEntry = live[def.code] ?? blankEntry()
+    const sentEntry = sent[def.code] ?? blankEntry()
+    const echoEntry = echo[def.code] ?? blankEntry()
+    merged[def.code] = {
+      volume: liveEntry.volume !== sentEntry.volume ? liveEntry.volume : echoEntry.volume,
+      cost: liveEntry.cost !== sentEntry.cost ? liveEntry.cost : echoEntry.cost,
+      distance: liveEntry.distance !== sentEntry.distance ? liveEntry.distance : echoEntry.distance,
+    }
+  }
+  return merged
+}
 
 // The category grid renders every transportation line in legacy code order (40–55): the 12 amount
 // categories interleaved with the 3 list sub-page group rows (43 Towing, 46 Truck Rehaul, 55 Other).
@@ -579,10 +605,13 @@ const Schedule4: FC = () => {
     const wasEdit = panelMode === 'edit'
     const editId = panelEditId
     const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
-    // What was SENT is the new baseline for name/comments (the echo is trimmed, the inputs are not);
-    // anything typed while the save was in flight therefore still counts as unsaved.
+    // What was SENT: the new baseline for name/comments (the echo is trimmed, the inputs are not), and
+    // the reference that tells a category field typed into while the save was in flight from one that
+    // was not. The inputs stay live during the request, so post-dispatch entry must survive the echo
+    // re-seed AND still count as unsaved.
     const sentName = panelName
     const sentComments = panelComments
+    const sentCategories = panelCategories
     putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
@@ -599,12 +628,16 @@ const Schedule4: FC = () => {
         // to supersede the mirror on every Save; without this the panel kept rendering
         // `deriveCategoryPerUnits(panelCommitted)` for the rest of the session, so a category whose
         // rate the mirror rounded differently would show one figure in the panel and another in the
-        // list row beneath it (code review 2026-08-21).
+        // list row beneath it (code review 2026-08-21). Fields typed into since dispatch are the one
+        // exception: they keep the live value (see rebaseCategoryForm), so nothing entered during the
+        // request is silently replaced.
         const echoed = seedCategoryForm(saved)
-        setPanelCategories(echoed.form)
+        setPanelCategories((live) => rebaseCategoryForm(live, sentCategories, echoed.form))
         setPanelCommitted(echoed.form)
         setPanelPerUnit(echoed.perUnit)
-        // The saved panel is clean again: Back/Edit/Add New close or switch it without NAV-001.
+        // The baseline is what the server now holds. An untouched panel is clean again (Back/Edit/Add
+        // New close or switch it without NAV-001); anything typed while the PUT was pending differs
+        // from it and is still guarded.
         setPanelBaseline({ name: sentName, categories: echoed.form, comments: sentComments })
       } else {
         setPanelMode('closed')
