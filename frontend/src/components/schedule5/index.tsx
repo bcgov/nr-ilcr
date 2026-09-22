@@ -16,7 +16,7 @@ import type {
 } from '@/interfaces/Schedule5Request'
 import type { SubPageKind } from '@/interfaces/Schedule5SubPage'
 import type { CampErrors, CampFormValues, CategoryKey, DerivedKey, GridRow } from './validation'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { getRouteApi } from '@tanstack/react-router'
 import Schedule5SubPage from '@/components/schedule5SubPage'
 import {
@@ -661,6 +661,15 @@ const Schedule5: FC = () => {
   const [panelCampId, setPanelCampId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
 
+  // Check Status describes one exact screen snapshot. Incremented synchronously whenever that
+  // snapshot changes so an older response cannot repaint newer panel values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
   const [confirmDelete, setConfirmDelete] = useState<Camp | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null)
@@ -669,6 +678,7 @@ const Schedule5: FC = () => {
 
   // The hook's clearBanners covers message/actionError/checkResult; the page adds its own copyWarning.
   const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
     clearHookBanners()
     setCopyWarning(null)
   }
@@ -832,6 +842,7 @@ const Schedule5: FC = () => {
   }
 
   const closePanel = () => {
+    invalidateCheckResult()
     setPanelMode('closed')
     setForm(emptyForm())
     setCommitted(emptyForm())
@@ -883,6 +894,9 @@ const Schedule5: FC = () => {
   }
 
   const setField = (field: keyof CampFormValues, value: string) => {
+    if (field === 'campName' || field === 'roadDistanceToOperatingArea' || field === 'sizeOfCamp') {
+      invalidateCheckResult()
+    }
     setForm((prev) => ({ ...prev, [field]: value }))
     clearBlurred(field)
   }
@@ -912,6 +926,7 @@ const Schedule5: FC = () => {
    * blank DOES propagate: legacy converts an empty submit to null and clears all eleven.
    */
   const handleCampVolumeChange = (value: string) => {
+    invalidateCheckResult()
     // Computed OUT here, not inside the updater: the updater must stay pure, and the same condition
     // decides both whether the eleven volumes change and whether they should be un-reported.
     const propagates = value.trim() === '' || parseDecimalInput(value) !== null
@@ -1091,12 +1106,17 @@ const Schedule5: FC = () => {
       return
     }
     clearBanners()
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The hook's default `/check-status` suffix over the '/v1/schedule5' base reproduces the
     // check-status URL verbatim. The body carries the screen; nothing is persisted (AD-5).
     checkStatus<Schedule5CheckStatusResponse>(
       {
         fallback: 'Unable to check status.',
-        onSuccess: (result) => setCheckResult(result),
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
       },
       { camp: screenCamp() } satisfies Schedule5CheckRequest,
     )

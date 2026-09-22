@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -349,8 +351,11 @@ class Schedule5CheckStatusServiceTest {
       // toward
       // gating it.
       verify(repository, never()).findTrackStatus(anyLong(), anyInt());
-      verify(repository).findCamps(MILL, YEAR);
-      verify(repository).findCostDetails(MILL, YEAR);
+      // Preserve the pre-#476 statement order. With Oracle READ COMMITTED, reversing these reads
+      // can pair camps from a newer commit with detail rows from an older one.
+      InOrder readOrder = inOrder(repository);
+      readOrder.verify(repository).findCamps(MILL, YEAR);
+      readOrder.verify(repository).findCostDetails(MILL, YEAR);
       // Nothing else at all — no insert, no update, no delete, no sequence draw.
       verifyNoMoreInteractions(repository);
       verify(repository, never()).upsertCostDetail(anyInt(), anyInt(), any(), any(), anyString());

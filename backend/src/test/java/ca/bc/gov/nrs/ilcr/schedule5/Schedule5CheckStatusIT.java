@@ -91,6 +91,40 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("a non-null screen camp overlays Oracle data and persists nothing")
+  void screenCampOverlaysStoredCampWithoutWriting() throws Exception {
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    List<Map<String, Object>> before = fingerprint(jdbc);
+
+    // Camp 8209 stores Size of Camp = 30 and is otherwise complete. Clearing only that on screen
+    // must produce the finding even though Oracle still holds the value.
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "672")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"camp":{"campId":8209,"campName":"Complete Camp One",\
+                    "roadDistanceToOperatingArea":20.00,"sizeOfCamp":null,\
+                    "associatedCampVolume":70000}}
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("ISSUES")))
+        .andExpect(jsonPath("$.camps[0].campId", is(8209)))
+        .andExpect(jsonPath("$.camps[0].messages", hasSize(1)))
+        .andExpect(jsonPath("$.camps[0].messages[0].field", is("sizeOfCamp")))
+        .andExpect(
+            jsonPath(
+                "$.camps[0].messages[0].text",
+                is("Camp Report Name : Complete Camp One - Size of Camp: Value Required")));
+
+    assertEquals(before, fingerprint(jdbc));
+  }
+
+  @Test
   @DisplayName("674/2021 with ZERO camps -> vacuously MET, not ISSUES and not 404")
   void zeroCamps_isVacuouslyMet() throws Exception {
     // isSchedule5Valid ANDs over the camps and returns true before its loop runs

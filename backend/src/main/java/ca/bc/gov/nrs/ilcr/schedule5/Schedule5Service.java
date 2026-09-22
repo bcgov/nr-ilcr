@@ -999,9 +999,13 @@ public class Schedule5Service {
    * @return the stored camps as candidates
    */
   private List<CheckCandidate> storedCandidates(long millId, int year) {
+    // Preserve the original check-status read order. Under Oracle READ COMMITTED each statement can
+    // see a newer commit, so reading details first could pair a newly visible camp with an older,
+    // incomplete detail snapshot and change the stored-path verdict during a concurrent save.
+    List<CampRow> campRows = repository.findCamps(millId, year);
     Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
     List<CheckCandidate> candidates = new ArrayList<>();
-    for (CampRow row : repository.findCamps(millId, year)) {
+    for (CampRow row : campRows) {
       CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
       candidates.add(new CheckCandidate(row, details.otherCampRows(), details.otherAccessRows()));
     }

@@ -1163,6 +1163,17 @@ describe('Schedule 5 Check Status (AC12)', () => {
    */
   const checkStatusButton = () => screen.getByRole('button', { name: /check status/i })
 
+  const metCheckResponse = () => ({
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    camps: [],
+  })
+
   /** Capture the check-status request body, whatever it is, including its nulls. */
   const captureCheckBody = () => {
     const seen: { body: unknown } = { body: undefined }
@@ -1170,16 +1181,7 @@ describe('Schedule 5 Check Status (AC12)', () => {
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, async ({ request }) => {
         seen.body = await request.json()
-        return HttpResponse.json({
-          outcome: 'MET',
-          messages: [
-            {
-              key: 'scheduleRequirementsMetMsg',
-              text: 'All requirements for this schedule have been met',
-            },
-          ],
-          camps: [],
-        })
+        return HttpResponse.json(metCheckResponse())
       }),
     )
     return seen
@@ -1284,6 +1286,74 @@ describe('Schedule 5 Check Status (AC12)', () => {
 
     await waitFor(() => expect(seen.body).toBeDefined())
     expect(seen.body).toEqual({ camp: null })
+  })
+
+  test('editing a checked descriptor clears the verdict for the older screen snapshot', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(metCheckResponse())),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeVisible()
+
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metCheckResponse())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    await waitFor(() => expect(checkStatusButton()).toBeDisabled())
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+
+    releaseCheck()
+    await flushAsync()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('closing the evaluated panel clears its verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(metCheckResponse())),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeVisible()
+
+    await user.click(panelButton(/^close$/i))
+    expect(screen.queryByLabelText('Camp Name')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
   })
 })
 
