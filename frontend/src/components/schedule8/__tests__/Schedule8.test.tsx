@@ -374,6 +374,36 @@ describe('Schedule8 page level', () => {
     screen.getAllByRole('button', { name: /^delete$/i }).forEach((b) => expect(b).toBeDisabled())
   })
 
+  // DIV-1 / #322: legacy bound Check Status to disableReportEdits() (schedule8.xhtml:48), and this page
+  // shipped `disabled={saving}` without the `!editable` term every other schedule carried. The role
+  // matrix (Story 16.3) pins the actor-specific arms; this is the plain flag-level guard, the twin of
+  // Schedule 4's, so the term cannot be dropped again without a test named after the ticket failing.
+  test.each([
+    ['Submitted', 'S'],
+    ['Verified', 'V'],
+  ])(
+    'Check Status is DISABLED on a %s report the caller cannot edit (DIV-1 / #322)',
+    async (_label, track) => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc({ trackStatus: track, editable: false }))),
+      )
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+
+      expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
+      // Disabled follows `editable`, not the mere presence of the lock: nothing is in flight here.
+      expect(screen.getByRole('button', { name: /add new page/i })).toBeDisabled()
+    },
+  )
+
+  test('Check Status is ENABLED on an editable Draft (the discriminator for DIV-1 / #322)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
+  })
+
   test('guard: a failed load surfaces the API detail', async () => {
     server.use(
       http.get(URL, () =>

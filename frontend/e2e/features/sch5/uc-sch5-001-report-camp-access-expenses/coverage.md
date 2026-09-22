@@ -209,7 +209,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 - **S19 also pins that Check Status is disabled outside Draft, and that is deliberately defensive.**
   Schedule 5 includes the `!editable` term on both `Add New Camp` (index.tsx:1404) and `Check Status`
   (:1419). Schedule 4 and Schedule 8 each SHIPPED a defect by omitting exactly that term (#293 fixed,
-  #322 still open), so this is the one place in the codebase where the same one-line mistake has
+  #322 fixed 2026-09-14 and closed), so this is the one place in the codebase where the same one-line mistake has
   already been made twice. Asserting it here costs one line and stops Schedule 5 becoming the third.
 
 - **S15 does not exercise the WIDE cost band, and that is a real gap rather than an oversight.**

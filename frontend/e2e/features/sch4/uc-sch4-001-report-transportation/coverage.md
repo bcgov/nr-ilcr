@@ -134,7 +134,7 @@ See GAP-1.
 | STA-001 Copy/Delete disabled | S18, BR-03 | `disabled={!editable \|\| saving}` | render-states `@S18 @p0` outline | covered (mechanism re-grounded: disabled, not omitted) | — |
 | STA-001 the panel renders read-only (values as text, no inputs) | S18 | `readOnlyPanel` branches | render-states `@S18 @p0` outline | covered | — |
 | STA-001 the sub-page loses its add-row form and per-row Delete | S18 + Story 10.6 AC5 | `editable &&` guards in `SubPage.tsx` | render-states `@S18 @p0` outline | covered | — |
-| STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | disabled — `disabled={!editable \|\| saving}` (`index.tsx:879`), fixed 2026-08-24 | render-states `@S18` | covered | ex-DIV-1 — tag retired; #322 stays open for **Schedule 8** |
+| STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | disabled — `disabled={!editable \|\| saving}` (`index.tsx:879`), fixed 2026-08-24 | render-states `@S18` | covered | ex-DIV-1 — tag retired; Schedule 8's half fixed 2026-09-14 (#464), #322 closed |
 | The empty-list state | S01 precondition | `data.locations.length === 0` branch | render-states `@S01 @p2` | covered | — |
 | NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | DIV-6 (CLOSED, not a defect) |
 | NAV-005 row-delete confirm text | NAV-005 | `CONFIRM_DELETE_ROW` in `SubPage.tsx` | subpage-rows `@S11 @p0` | covered | — |
@@ -216,7 +216,7 @@ see where the four went:
 
 | Ex-red | Entry | Fixed |
 |---|---|---|
-| render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) — Schedule 4 half only; **#322 stays open for Schedule 8**, still `disabled={saving}` at `schedule8/index.tsx:792` |
+| render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) for Schedule 4; Schedule 8 followed 2026-09-14 (#464, `schedule8/index.tsx:837` + `SamplePage.tsx:670`), so #322 is closed |
 | nav-and-recompute `@S01 @S02` | DIV-4 | issue #291's fix (`6e86d7a`) — the panel shows the recomputed $/m³ without a reopen |
 | check-status `@S28` | DIV-2 | issue #326's fix (2026-09-18) named the field; the scenario was then REMOVED the same day when #465 (DIV-9) removed the cost finding it labelled — Vitest covers the labelling |
 | check-status-unsaved `@S33 @S34` | DIV-8 | REMOVED 2026-09-18, not fixed: #465 (DIV-9) left Schedule 4 with no saved state Check Status can flag, so neither arm is producible. #359 stays open on sch1/sch2/sch3/sch11 |
