@@ -134,8 +134,10 @@ export const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you 
  * at `components/schedule1/index.tsx:44`.
  *
  * Legacy gives Schedule 1 ONE such link and ONE string. Schedule 3 has two links and two DIFFERENT
- * strings, and the app collapsed them into one — that asymmetry is sch3's DIV-7, and it is why this
- * constant is asserted separately here rather than shared across the two suites.
+ * strings, and the app collapsed them into one — that asymmetry was sch3's DIV-7 ([#373](https://github.com/bcgov/nr-ilcr/issues/373)),
+ * FIXED 2026-09-18. Schedule 1 was never affected and its string is unchanged. This constant is still
+ * asserted separately here rather than shared across the two suites: sch3 needs two strings, only one of
+ * which equals this one, so a shared constant would be the same collapse that caused DIV-7.
  */
 export const MSG_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 
