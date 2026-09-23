@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.checkstatus.api;
 
 import ca.bc.gov.nrs.ilcr.checkstatus.dto.CheckStatusSweepResponse;
+import ca.bc.gov.nrs.ilcr.checkstatus.dto.SetTrackStatusResponse;
 import ca.bc.gov.nrs.ilcr.checkstatus.dto.VerifyReportResponse;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import org.springframework.http.ResponseEntity;
@@ -19,10 +20,10 @@ import org.springframework.web.bind.annotation.RequestParam;
  * per-schedule siblings are all {@code POST /check-status}: the sweep is a pure read with no body,
  * so the verb is right, but it departs from the "actions are POST sub-resources" convention. And
  * {@code /api/v1/check-status} is a new top-level resource rather than a schedule sub-resource —
- * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3 and {@code
- * /verify} with Story 17.1; {@code /set-to-draft} and {@code /set-to-submit} follow (Story 18).
- * Both sub-resources DO follow the POST-sub-resource convention; the GET's departure is the sweep's
- * alone.
+ * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3, {@code
+ * /verify} with Story 17.1, and {@code /set-to-draft} and {@code /set-to-submit} with Story 18.1.
+ * All four sub-resources DO follow the POST-sub-resource convention; the GET's departure is the
+ * sweep's alone.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings on both endpoints, and this is
  * forced, not stylistic: the legacy ERR-001 text ("Please Select Mill and Reporting Year in the
@@ -113,7 +114,10 @@ public interface CheckStatusApi {
    *
    * <p>There is no revision-conflict outcome: the status row carries no optimistic guard, because
    * legacy's {@code REVISION_COUNT} was a plain column rather than a {@code @Version} and no
-   * transition ever bumped it.
+   * transition ever bumped it. There IS a lost-update refusal since Story 18.1's code review: the
+   * status UPDATE carries an {@code expectedCode} predicate, so a track that left Submitted between
+   * this request's read and its write &mdash; a concurrent Set to Draft &mdash; answers 409 {@code
+   * reportSubmissionErrorMsg} rather than being overwritten to Verified.
    *
    * <p>The 409 and the 500 that share {@code reportSubmissionErrorMsg} are distinguishable only by
    * status code, never by response body — legacy reused one message for both conditions and AD-8
@@ -129,6 +133,88 @@ public interface CheckStatusApi {
    */
   @PostMapping("/verify")
   ResponseEntity<VerifyReportResponse> verifySchedules1To10(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Send a submitted Schedules 1&ndash;10 track back to the Licensee for rework &mdash;
+   * Submitted&rarr;Draft (UC-CHK-016, FR5, Story 18.1). No body: the client confirms in its own
+   * dialog and the server enforces everything that dialog protected, including for a forged request
+   * that never saw the button (UC-CHK-016 S07).
+   *
+   * <p>Method authorization runs FIRST, so a caller lacking {@code SET_REPORT_STATUS} &mdash; every
+   * Licensee &mdash; gets 403 ahead of any 400 for malformed parameters. Then, in the house order:
+   * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
+   * {@code checkStatusScheduleNotFoundErrorMsg}; mill not {@code ACT} for the year → 409 ERR-002.
+   * Then the gate, then legality: one or more of the eleven Schedule 1&ndash;10 checks failing →
+   * 409 {@code setToDraftNotValidErrorMsg} (deviation (V), {@code TrackTransition#gateFailedKey()}
+   * &mdash; legacy's "cannot be submitted" text was wrong for this button); a track that is not
+   * Submitted, which covers the {@code D}&rarr;{@code D} no-op, both {@code D}&harr;{@code V}
+   * jumps, Set to Draft at Verified and the dead {@code O} code → 409 {@code
+   * setToDraftNotSubmittedErrorMsg}; a write that cannot be persisted → 500 {@code
+   * reportSubmissionErrorMsg}, everything rolled back.
+   *
+   * <p><strong>The gate runs on the way back as well, and it stays</strong> (Story 18.1 D5,
+   * BA-ratified 2026-09-21): a Submitted report can only acquire errors because a ministry user
+   * introduced them, and ADMIN edit rights at Submitted ({@code ScheduleEditability.java:63-64})
+   * let that user correct them in place and retry, so nothing is stranded. Legacy validated before
+   * every transition too; only the refusal wording changed.
+   *
+   * <p>Success → 200 with the track at {@code D}, every Schedule 1&ndash;10 row's audit columns
+   * touched, the ten category rows at {@code D}, and {@code sch1-10DraftMsg} issued only after
+   * commit. <strong>Neither identity pair is written</strong>: legacy skipped the whole association
+   * block for a {@code 'D'} target ({@code SubmitReportDAO:401}), so {@code LICENSEE_*} and {@code
+   * AUDITOR_*} are left exactly as the submit and verify that preceded them set them. Schedule 11's
+   * track, its category row and {@code BASIC_SILVICULTURE_REPORT} are never touched (BR-07).
+   *
+   * <p>There is no revision-conflict outcome and no lost-update 500: the status UPDATE carries an
+   * {@code expectedCode} predicate, so a track that moved between this request's read and its write
+   * answers the same 409 {@code setToDraftNotSubmittedErrorMsg} as any other refusal.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying the audit name. No directory GUID is read
+   *     — this transition records no identity pair
+   * @return 200 with the new track status and the verbatim legacy success message
+   */
+  @PostMapping("/set-to-draft")
+  ResponseEntity<SetTrackStatusResponse> setSchedules1To10ToDraft(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Withdraw a verification so the report can be re-reviewed &mdash; Verified&rarr;Submitted
+   * (UC-CHK-018, FR5, Story 18.1). Identical in every respect to {@link #setSchedules1To10ToDraft}
+   * above except the three values that differ, so only those are restated here.
+   *
+   * <p>The refusal for a track that is not Verified &mdash; the {@code S}&rarr;{@code S} no-op,
+   * both {@code D}&harr;{@code V} jumps, Set to Submit at Submitted, the dead {@code O} code
+   * &mdash; is 409 {@code setToSubmitNotVerifiedErrorMsg}; a failing gate is 409 {@code
+   * setToSubmitNotValidErrorMsg} (deviation (V)). Note that a track at Draft is refused here too:
+   * {@code D}&rarr;{@code S} is a legal pair, but it is a licensee's SUBMIT and belongs to {@code
+   * POST /submit}, not to this endpoint.
+   *
+   * <p>Success → 200 with the track at {@code S} and the ten category rows at {@code A} (legacy
+   * mapped both {@code DS} and {@code VS} to {@code A}, so a reversed verification is
+   * indistinguishable from a fresh submission at the category level). The success message is {@code
+   * sch1-10SubmittedMsg} &mdash; legacy reused the submit text and minted no "verification
+   * reversed" message, so there is none to port.
+   *
+   * <p>Neither identity pair is written, and here that IS a recorded deviation (S). Legacy wrote
+   * the LICENSEE pair from the acting ADMIN's {@code ILCR_MILL_USER_XREF} row ({@code
+   * SubmitReportDAO:406-407}), which destroys the record of who actually submitted and stores NULL
+   * whenever that admin has no assignment for the mill — the normal case, since ministry users are
+   * not mill-assigned. Ratified 2026-09-21 (D1(a)); matches {@code epics.md:2110} and PRD FR5.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying the audit name
+   * @return 200 with the new track status and the verbatim legacy success message
+   */
+  @PostMapping("/set-to-submit")
+  ResponseEntity<SetTrackStatusResponse> setSchedules1To10ToSubmit(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);
