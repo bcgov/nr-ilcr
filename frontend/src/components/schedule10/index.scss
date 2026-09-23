@@ -297,14 +297,22 @@ h5.schedule-10__detail-heading {
 
 // A heading over a column of haul figures. Bottom-aligned in its row so it sits directly above the
 // first input rather than floating at the top of a taller cell.
+// A heading over a column of haul figures. Centred in its row rather than bottom-aligned above the
+// first input, so the three of them sit at the same height as `Includes Detailed Engineering Costs:`
+// and its Yes/No menu, which share that row. Stretch-and-centre for the same reason as the label
+// column below: it does not depend on knowing the menu's rendered height.
+//
+// SIZE comes from the `.schedule-page` rule in styles/index.scss, which names this class — the
+// `label-01` include here sets the other three properties only. See the note beside
+// `.schedule-10__field-label` above for why that split exists.
 .schedule-10__haul-column-head {
   @include type-style('label-01');
 
-  display: block;
-  align-self: end;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
   color: var(--cds-text-primary);
   line-height: 1rem;
-  margin-block-end: $spacing-03;
 }
 
 // Same release as the detail grid: with no room for the columns there is no row to align to.

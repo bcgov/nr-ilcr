@@ -124,6 +124,13 @@ body {
   // reported on Schedule 10's Road Group. Add new ones to this list.
   .schedule-2__comments-label,
   .schedule-10__field-label,
+  // Schedule 10's End Haul / Overland block prints two of its labels as plain spans rather than as
+  // controls' own labels: the `Distance (km)` / `Volume (m3)` / `$/m3/km` column headings, and the
+  // `End Haul Details:` / `Overland Details:` row headings. Neither is a `.cds--label`, so both
+  // rendered 12px beside the 14px labels around them — the same 2px mismatch #366 reported on Road
+  // Group, from the same cause.
+  .schedule-10__haul-column-head,
+  .schedule-10__haul-row-head,
   .#{$bcgov-prefix}--label {
     font-size: 0.875rem;
   }
