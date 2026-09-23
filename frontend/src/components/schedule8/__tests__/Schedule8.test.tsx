@@ -378,31 +378,65 @@ describe('Schedule8 page level', () => {
   // shipped `disabled={saving}` without the `!editable` term every other schedule carried. The role
   // matrix (Story 16.3) pins the actor-specific arms; this is the plain flag-level guard, the twin of
   // Schedule 4's, so the term cannot be dropped again without a test named after the ticket failing.
-  test.each([
-    ['Submitted', 'S'],
-    ['Verified', 'V'],
-  ])(
-    'Check Status is DISABLED on a %s report the caller cannot edit (DIV-1 / #322)',
-    async (_label, track) => {
+  //
+  // Schedule 8 renders Check Status at TWO control sites that never coexist — the main action bar, and
+  // SamplePage's own bar once the URL carries a pageId (index.tsx returns early there) — so each case
+  // opens one level by URL and asserts EVERY Check Status button rendered at that level (PR #493 review).
+  const CHECK_STATUS_SITES = [
+    {
+      level: 'main bar',
+      url: '/schedule-8',
+      // Proves the level actually mounted before any button is read.
+      mounted: () => screen.findByText(/Page # 1/),
+      writeControl: /add new page/i,
+    },
+    {
+      level: 'sample bar',
+      url: '/schedule-8?pageId=8001',
+      // Add New Sample is SamplePage's own, so its presence proves the sample level rendered.
+      mounted: () => screen.findByRole('button', { name: /add new sample/i }),
+      writeControl: /add new sample/i,
+    },
+  ] as const
+
+  // Every Check Status rendered at the open level — never just the first match.
+  const checkStatusButtons = () => {
+    const buttons = screen.getAllByRole('button', { name: /check status/i })
+    expect(buttons.length).toBeGreaterThan(0)
+    return buttons
+  }
+
+  test.each(
+    CHECK_STATUS_SITES.flatMap((site) => [
+      { ...site, label: 'Submitted', track: 'S' },
+      { ...site, label: 'Verified', track: 'V' },
+    ]),
+  )(
+    'Check Status is DISABLED on a $label report the caller cannot edit — $level (DIV-1 / #322)',
+    async ({ track, url, mounted, writeControl }) => {
       server.use(
         http.get(URL, () => HttpResponse.json(doc({ trackStatus: track, editable: false }))),
       )
-      renderSchedule8()
-      await screen.findByText(/Page # 1/)
+      renderSchedule8(url)
+      await mounted()
 
-      expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
-      // Disabled follows `editable`, not the mere presence of the lock: nothing is in flight here.
-      expect(screen.getByRole('button', { name: /add new page/i })).toBeDisabled()
+      checkStatusButtons().forEach((button) => expect(button).toBeDisabled())
+      // Disabled follows `editable`, not the mere presence of the lock: nothing is in flight here, and
+      // the bar's write control is withheld by the same term.
+      expect(screen.getByRole('button', { name: writeControl })).toBeDisabled()
     },
   )
 
-  test('Check Status is ENABLED on an editable Draft (the discriminator for DIV-1 / #322)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
-    renderSchedule8()
-    await screen.findByText(/Page # 1/)
+  test.each(CHECK_STATUS_SITES)(
+    'Check Status is ENABLED on an editable Draft — $level (the discriminator for DIV-1 / #322)',
+    async ({ url, mounted }) => {
+      server.use(http.get(URL, () => HttpResponse.json(doc())))
+      renderSchedule8(url)
+      await mounted()
 
-    expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
-  })
+      checkStatusButtons().forEach((button) => expect(button).toBeEnabled())
+    },
+  )
 
   test('guard: a failed load surfaces the API detail', async () => {
     server.use(
