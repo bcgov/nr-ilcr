@@ -20,6 +20,7 @@ import { Add, ArrowLeft, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import { extractDetail } from '@/utils/error'
 import {
   emptySubPageRowForm,
@@ -29,6 +30,9 @@ import {
 } from './subPageDefs'
 
 const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to continue?'
+// NAV-001 on the sub-page's Back button (#324) — legacy `confirmNavigationMsg`, attached to Back on
+// schedule4TowingTotal.xhtml:173-175 and its Truck Rehaul / Other Transportation twins.
+const NAV_UNSAVED_LOST = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 
 // The sortable row columns (everything except Actions).
 type SortKey = 'description' | 'distance' | 'volume' | 'cost' | 'cycle' | 'perUnit'
@@ -73,6 +77,7 @@ const SubPage: FC<SubPageProps> = ({
   const [addMessage, setAddMessage] = useState<string | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<SubPageRow | null>(null)
+  const [confirmBack, setConfirmBack] = useState(false)
   // In-place edits to existing rows, keyed by row id — only touched rows appear here. Edits persist
   // locally until the user hits Save (which PUTs each dirty row); Add/Delete refresh the doc but keep
   // these overrides (row ids are stable). showRowErrors gates per-cell validation display on Save.
@@ -178,6 +183,19 @@ const SubPage: FC<SubPageProps> = ({
     form.volume.trim() !== '' ||
     form.cost.trim() !== '' ||
     (def.hasCycle && form.cycle.trim() !== '')
+
+  // Back (NAV-001, #324): legacy raised the confirm on every press; here it fires only when leaving would
+  // actually drop something — a typed-but-not-Added row, or an in-place row edit not yet Saved. Rows
+  // persist on Add/Save, so a sub-page with nothing pending returns to the list silently, as does the
+  // read-only branch (legacy rendered a bare Back there). Schedule 8's rates page gates the same way.
+  const hasUnsavedInput = hasPendingRow() || rows.some(isRowDirty)
+  const requestBack = () => {
+    if (editable && hasUnsavedInput) {
+      setConfirmBack(true)
+    } else {
+      onBack()
+    }
+  }
 
   // PUT one edited existing row. Resolves true on success; the recomputed doc is lifted up.
   const putRow = (row: SubPageRow): Promise<boolean> => {
@@ -468,7 +486,7 @@ const SubPage: FC<SubPageProps> = ({
             <Button kind="primary" disabled={busy} renderIcon={Save} onClick={handleSave}>
               Save
             </Button>
-            <Button kind="secondary" disabled={busy} renderIcon={ArrowLeft} onClick={onBack}>
+            <Button kind="secondary" disabled={busy} renderIcon={ArrowLeft} onClick={requestBack}>
               Back
             </Button>
           </>
@@ -480,17 +498,32 @@ const SubPage: FC<SubPageProps> = ({
       </div>
 
       {editable && (
-        <Modal
-          open={confirmDeleteRow !== null}
-          danger
-          modalHeading="Delete row"
-          primaryButtonText="Delete"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setConfirmDeleteRow(null)}
-          onRequestSubmit={handleDeleteRow}
-        >
-          <p>{CONFIRM_DELETE_ROW}</p>
-        </Modal>
+        <>
+          <Modal
+            open={confirmDeleteRow !== null}
+            danger
+            modalHeading="Delete row"
+            primaryButtonText="Delete"
+            secondaryButtonText="Cancel"
+            onRequestClose={() => setConfirmDeleteRow(null)}
+            onRequestSubmit={handleDeleteRow}
+          >
+            <p>{CONFIRM_DELETE_ROW}</p>
+          </Modal>
+          {/* NAV-001 — Back over unsaved row input. Same heading as the panel's own unsaved-changes
+              confirm so the two read as one prompt to the user (and to the e2e locator). */}
+          <ConfirmNavigationModal
+            open={confirmBack}
+            heading="Unsaved changes"
+            onCancel={() => setConfirmBack(false)}
+            onContinue={() => {
+              setConfirmBack(false)
+              onBack()
+            }}
+          >
+            {NAV_UNSAVED_LOST}
+          </ConfirmNavigationModal>
+        </>
       )}
     </div>
   )
