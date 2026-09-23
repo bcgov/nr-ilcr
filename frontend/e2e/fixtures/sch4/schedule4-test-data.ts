@@ -176,13 +176,14 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
   // (`real-test-data-patches/sch4/unsaved-check-anchors.sql`); its teardown may now be applied.
 
   // --- the unsaved-change / recompute divergences ---------------------------------------------------
-  'nav-dirty-panel': at(MILL_9171, 25050, 2016, 'S12 / Divergence #3 — closing a dirty panel must warn'),
-  'nav-dirty-switch': at(MILL_20171, 22050, 2020, 'S12 / Divergence #3 — opening a new location over a dirty panel'),
+  // DIV-3 (#324) is FIXED (2026-09-22); these three are ordinary NAV-001 regression guards now.
+  'nav-dirty-panel': at(MILL_9171, 25050, 2016, 'S12 / NAV-001 — closing a dirty panel warns; Cancel keeps it'),
+  'nav-dirty-switch': at(MILL_20171, 22050, 2020, 'S12 / NAV-001 — Edit-another / Add New over a dirty panel warn'),
   'nav-subpage-back': at(
     MILL_987,
     12050,
     2015,
-    'S12 / DIV-3 — Back on a sub-page must warn before discarding typed row input',
+    'S12 / NAV-001 — Back on a sub-page warns before discarding typed row input',
   ),
   'discard-safe': at(MILL_20173, 23050, 2020, 'S12 — a discarded panel edit is never written (green)'),
   'per-unit-after-save': at(MILL_20171, 22050, 2019, 'Divergence #4 — $/m³ on the panel that saved it'),

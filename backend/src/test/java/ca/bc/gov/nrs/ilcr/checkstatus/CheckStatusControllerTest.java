@@ -179,6 +179,127 @@ class CheckStatusControllerTest {
     verifyNoInteractions(transitionService);
   }
 
+  // -----------------------------------------------------------------------------------------------
+  // Story 18.1 — the two admin reversals
+  // -----------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("set-to-draft: the guard runs BEFORE the transition, on the raw params")
+  void setToDraft_guardRunsBeforeTheTransition() {
+    when(millContextService.validateMillYearActive("790", "2021"))
+        .thenReturn(new MillYearContext(790, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
+        .thenReturn("D");
+    when(messageSource.getMessage(eq("sch1-10DraftMsg"), any(), any(), any()))
+        .thenReturn("Schedules 1-10 have been set back to draft.");
+
+    var response = controller.setSchedules1To10ToDraft("790", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().trackStatus()).isEqualTo("D");
+    assertThat(response.getBody().message().key()).isEqualTo("sch1-10DraftMsg");
+    assertThat(response.getBody().message().text())
+        .isEqualTo("Schedules 1-10 have been set back to draft.");
+
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("790", "2021");
+    order
+        .verify(transitionService)
+        .reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin");
+  }
+
+  @Test
+  @DisplayName("set-to-submit: the guard runs first and legacy's submit text is reused")
+  void setToSubmit_guardRunsBeforeTheTransition() {
+    when(millContextService.validateMillYearActive("791", "2021"))
+        .thenReturn(new MillYearContext(791, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(791, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin"))
+        .thenReturn("S");
+    // Legacy minted no "verification reversed" message — CheckStatusMB.submitReport:281-283
+    // branches on the TARGET code, so V->S lands on the same key a fresh submit does.
+    when(messageSource.getMessage(eq("sch1-10SubmittedMsg"), any(), any(), any()))
+        .thenReturn("Schedules 1-10 are successfully submitted.");
+
+    var response = controller.setSchedules1To10ToSubmit("791", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().trackStatus()).isEqualTo("S");
+    assertThat(response.getBody().message().key()).isEqualTo("sch1-10SubmittedMsg");
+
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("791", "2021");
+    order
+        .verify(transitionService)
+        .reverse(791, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin");
+  }
+
+  @Test
+  @DisplayName("both reversals: a closed mill stops at the guard — no transition is attempted")
+  void reversals_closedMillNeverReachesTheTransition() {
+    when(millContextService.validateMillYearActive("796", "2021"))
+        .thenThrow(new MillClosedException());
+
+    assertThatThrownBy(() -> controller.setSchedules1To10ToDraft("796", "2021", authentication))
+        .isInstanceOf(MillClosedException.class);
+    assertThatThrownBy(() -> controller.setSchedules1To10ToSubmit("796", "2021", authentication))
+        .isInstanceOf(MillClosedException.class);
+    verifyNoInteractions(transitionService);
+  }
+
+  @Test
+  @DisplayName("both reversals: missing mill/year is the guard's ERR-001, untranslated")
+  void reversals_missingParamsPassThrough() {
+    when(millContextService.validateMillYearActive(null, "2021"))
+        .thenThrow(new MillYearNotSelectedException());
+
+    assertThatThrownBy(() -> controller.setSchedules1To10ToDraft(null, "2021", authentication))
+        .isInstanceOf(MillYearNotSelectedException.class);
+    assertThatThrownBy(() -> controller.setSchedules1To10ToSubmit(null, "2021", authentication))
+        .isInstanceOf(MillYearNotSelectedException.class);
+    verifyNoInteractions(transitionService);
+  }
+
+  @Test
+  @DisplayName("both reversals: the guard's 404 is re-keyed to the page's own not-found text")
+  void reversals_scheduleNotFoundIsReKeyed() {
+    when(millContextService.validateMillYearActive("790", "2021"))
+        .thenReturn(new MillYearContext(790, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(
+            eq(790L), eq(2021), any(TrackTransition.class), eq("reversaladmin")))
+        .thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> controller.setSchedules1To10ToDraft("790", "2021", authentication))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
+    assertThatThrownBy(() -> controller.setSchedules1To10ToSubmit("790", "2021", authentication))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("AC3/AC6: a reversal resolves no submitter scope and no directory GUID")
+  void reversals_takeNoScopeCheckAndNoGuid() {
+    when(millContextService.validateMillYearActive("790", "2021"))
+        .thenReturn(new MillYearContext(790, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
+        .thenReturn("D");
+    when(messageSource.getMessage(eq("sch1-10DraftMsg"), any(), any(), any()))
+        .thenReturn("Schedules 1-10 have been set back to draft.");
+
+    controller.setSchedules1To10ToDraft("790", "2021", authentication);
+
+    // validateSubmitterMillAccess is submit's alone: it stops a dual-role ADMIN+SUBMITTER using
+    // ADMIN's browsing scope to submit outside their assignment. Reversing is an ADMIN capability
+    // and ADMIN is all-mills, so applying it here would refuse a ministry user acting in their own
+    // authority (CheckStatusController:94, MillContextService:81-83).
+    verifyNoInteractions(reportSubmission);
+    // No getPrincipal() call either — with Recorded.NONE on both reversals there is no identity
+    // pair to write and therefore no GUID to resolve.
+    verify(authentication, never()).getPrincipal();
+  }
+
   @Test
   @DisplayName(
       "15.3 AC 9: canSubmit is the offer rule's answer for the 1-10 status; Schedule 11 carries none")
