@@ -124,3 +124,20 @@ export interface VerifyReportResponse {
   readonly trackStatus: string
   readonly message: { readonly key: string; readonly text: string }
 }
+
+/**
+ * The reply to `POST /api/v1/check-status/set-to-draft` and to `.../set-to-submit` — the two admin
+ * reversals share one shape because they differ only in the values it carries (`SetTrackStatusResponse.java`).
+ * A third interface beside `VerifyReportResponse` rather than a reuse of it: the two are structurally
+ * identical, but that name would lie about which transition produced the body, and its `trackStatus`
+ * is documented as always `V`.
+ *
+ * `trackStatus` is the Schedules 1–10 code after the transition — `D` for Set to Draft, `S` for Set to
+ * Submit — and is only ever present on a 200, since a refusal answers 409. The page renders `message.text`
+ * and nothing else: the status line, the category states and the per-schedule verdicts all need a re-read,
+ * which is what the `reloadToken` bump is for.
+ */
+export interface SetTrackStatusResponse {
+  readonly trackStatus: string
+  readonly message: MessageInfo
+}
