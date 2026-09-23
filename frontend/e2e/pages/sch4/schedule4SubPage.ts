@@ -73,11 +73,11 @@ export class Schedule4SubPage {
   /**
    * ANY confirmation dialog raised from the sub-page, matched by the message it carries.
    *
-   * Deliberately NOT pinned to a specific modal the way the panel's NAV-002/NAV-003 accessors are: the
+   * Deliberately NOT pinned to a specific modal the way the panel's NAV-002/NAV-003 accessors are. The
    * dialog this asserts (legacy NAV-001 on the sub-page's Back button, `schedule4TowingTotal.xhtml:173-175`)
-   * DOES NOT EXIST in the app yet — see DIV-3. Pinning a test id or heading would be inventing an
-   * implementation detail for something unbuilt, and would keep failing after a correct fix that happened to
-   * name things differently. Matching on the required message is the part the spec actually fixes.
+   * was written before it existed (DIV-3, fixed by #324 — it is now a `ConfirmNavigationModal` headed
+   * "Unsaved changes", the same as the panel's). Matching on the required message stays: it is the part the
+   * spec actually fixes, and it survives a heading rename.
    */
   confirmDialogAsking(message: string): Locator {
     return this.page.getByRole('dialog').filter({ hasText: message });

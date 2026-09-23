@@ -81,8 +81,8 @@ Then(
 
 /**
  * The confirmation legacy raised from the SUB-PAGE's Back button (NAV-001) — a different control from the
- * two above, which guard the location PANEL. Asserted by message rather than by a named modal because the
- * app has no such dialog yet (DIV-3); see `schedule4SubPage.confirmDialogAsking`.
+ * two above, which guard the location PANEL. Asserted by message rather than by a named modal (it predates
+ * the dialog — DIV-3, fixed by #324); see `schedule4SubPage.confirmDialogAsking`.
  */
 Then(
   'the Schedule 4 sub-page unsaved-changes confirmation asks {string}',

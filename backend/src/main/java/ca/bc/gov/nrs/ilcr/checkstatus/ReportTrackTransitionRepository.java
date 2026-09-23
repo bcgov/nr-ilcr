@@ -88,10 +88,15 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
    *       column, not a {@code @Version}, and no transition ever incremented it; Story 17.1's
    *       parity ledger keeps that. Submit's own statement diverges deliberately, which is 15.3's
    *       ruling and is left alone.
-   *   <li>It carries NO {@code expectedCode} predicate. Legacy's UPDATE was unconditional &mdash;
-   *       it had already decided legality in the bean &mdash; and Story 17.1 keeps the resulting
-   *       gate&rarr;write race on purpose (recorded open in {@code deferred-work.md}). Submit
-   *       closes it with a row lock plus the predicate, which is again 15.3's ruling.
+   *   <li>It carries an {@code expectedCode} predicate &mdash; added by Story 18.1's code review,
+   *       having shipped without one. Story 17.1 kept legacy's unconditional UPDATE on purpose: the
+   *       only other writer of an {@code S} row was another verify, so losing that race was a
+   *       harmless collision. 18.1 gave {@code S} a second exit (Set to Draft), and a verify that
+   *       read {@code S} and wrote after a concurrent {@code S}&rarr;{@code D} would have committed
+   *       the illegal {@code D}&rarr;{@code V} jump with a 200 to an admin whose reversal no longer
+   *       existed. Zero rows now means the track moved, and the caller refuses with 409 exactly as
+   *       {@link #updateTrackStatusWithoutIdentity}'s caller does. Submit closes the same race with
+   *       a row lock plus the predicate (15.3's ruling, unchanged).
    * </ul>
    *
    * <p>&#9888; <strong>Correct for {@code S&rarr;V} only &mdash; do NOT reuse this method for the
@@ -109,8 +114,10 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
    * @param statusCode the status code to write
    * @param auditorMillId the auditor cross-reference mill id, or null when the caller has none
    * @param auditorUserGuid the auditor directory GUID, or null when the caller has none
+   * @param expectedCode the status code the row must still hold
    * @param user the audit name
-   * @return rows updated; anything but 1 is a failure the caller rolls back on
+   * @return rows affected &mdash; 1 on success, 0 when the row is absent or has left {@code
+   *     expectedCode} (a 409 refusal, not a 500)
    */
   @Modifying
   @Query(
@@ -123,13 +130,70 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
              UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+         AND ILCR_MILL_REPORT_STATUS_CODE = :expectedCode
       """)
   int updateTrackStatusWithAuditor(
       @Param("millId") long millId,
       @Param("year") int year,
       @Param("statusCode") String statusCode,
+      @Param("expectedCode") String expectedCode,
       @Param("auditorMillId") Long auditorMillId,
       @Param("auditorUserGuid") String auditorUserGuid,
+      @Param("user") String user);
+
+  /**
+   * The reversal status write &mdash; {@code S}&rarr;{@code D} (Set to Draft) and {@code
+   * V}&rarr;{@code S} (Set to Submit), Story 18.1. A third statement beside the two above because
+   * it is the only one naming <strong>no identity column at all</strong>, and that is legacy, not
+   * an omission.
+   *
+   * <p>Legacy {@code SubmitReportDAO.updateILCRMillReportStatus():401-412} keyed the identity write
+   * on the TARGET status code alone. The whole association block is skipped when the target is
+   * {@code 'D'} ({@code :401}), so Set to Draft writes neither pair; a {@code 'S'} target writes
+   * the <em>licensee</em> pair ({@code :406-407}), and only some other non-{@code D} target writes
+   * the auditor pair ({@code :409}). Set to Submit therefore wrote the LICENSEE pair from the
+   * acting ADMIN's {@code ILCR_MILL_USER_XREF} row, which destroys the record of who actually
+   * submitted and stores NULL whenever that admin has no assignment for the mill &mdash; the normal
+   * case for a ministry user. Story 18.1 D1(a) ratified leaving both pairs untouched instead,
+   * matching what {@code epics.md:2110} and PRD FR5 already specified (recorded deviation (S)). So
+   * both reversals share this one SET list and both carry {@link TrackTransition.Recorded#NONE}.
+   *
+   * <p>It carries an {@code expectedCode} predicate (Story 18.1 D2): the reversals mirror VERIFY's
+   * unlocked boundary, and the predicate buys back the lost-update refusal a row lock would have
+   * bought. {@link #updateTrackStatusWithAuditor} shipped without one and gained it in this story's
+   * code review &mdash; see its javadoc for why 18.1, not 17.1, made that necessary. Zero rows
+   * affected means the track has left the status the caller read, and the caller answers 409 with
+   * the transition's own rejection text rather than a 500 (recorded deviation (U)).
+   *
+   * <p>{@code REVISION_COUNT} is not bumped, matching {@link #updateTrackStatusWithAuditor}:
+   * legacy's column was plain rather than a {@code @Version} and no transition incremented it.
+   * {@code MILL_SILVICULTUR_STATUS_CODE}, {@code REPORT_COMPLETED_IND} and {@code COMMENTS} are
+   * never named (BR-07).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param statusCode the status code to write
+   * @param expectedCode the status code the row must still hold
+   * @param user the audit name
+   * @return rows affected &mdash; 1 on success, 0 when the row is absent or has left {@code
+   *     expectedCode}
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_REPORT_STATUS
+         SET ILCR_MILL_REPORT_STATUS_CODE = :statusCode,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_MILL_REPORT_STATUS_CODE = :expectedCode
+      """)
+  int updateTrackStatusWithoutIdentity(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("statusCode") String statusCode,
+      @Param("expectedCode") String expectedCode,
       @Param("user") String user);
 
   // -----------------------------------------------------------------------------------------------
