@@ -199,12 +199,12 @@ const openPagePanel = async () => {
 }
 
 const fillMinimalRoad = async () => {
-  await userEvent.type(await screen.findByLabelText('Road Name'), 'Mainline C')
-  await userEvent.click(screen.getByRole('combobox', { name: 'Road Type' }))
+  await userEvent.type(await screen.findByLabelText('Road Name:'), 'Mainline C')
+  await userEvent.click(screen.getByRole('combobox', { name: 'Road Type:' }))
   await userEvent.click(await screen.findByRole('option', { name: 'Permanent' }))
-  await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone:' }))
   await userEvent.click(await screen.findByRole('option', { name: 'ICHdw1' }))
-  await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class:' }))
   await userEvent.click(await screen.findByRole('option', { name: '1 - Very Dry' }))
   await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
   await userEvent.click(await screen.findByRole('option', { name: 'None' }))
@@ -342,10 +342,10 @@ describe('the page panel', () => {
     // who opens the page, which is how this was found and how the fix was signed off. What no eye
     // catches is a rename here, silently detaching the span from both rules — so that is what this
     // pins, and it is the half of the contract jsdom can actually see.
-    expect(await screen.findByText('Road Group')).toHaveClass('schedule-10__field-label')
+    expect(await screen.findByText('Road Group:')).toHaveClass('schedule-10__field-label')
     expect(screen.getByText('11')).toBeInTheDocument()
     // Derived values render as TEXT so a screen reader announces a value, not a dead control.
-    expect(screen.queryByLabelText('Road Group')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Road Group:')).not.toBeInTheDocument()
   })
 
   test('renders an absent road group as blank, never as an error', async () => {
@@ -353,7 +353,7 @@ describe('the page panel', () => {
     renderSchedule10()
     await openPagePanel()
     // An unmapped location is a saved state, not a failure: the em dash placeholder, no value.
-    expect(await screen.findByText('Road Group')).toBeInTheDocument()
+    expect(await screen.findByText('Road Group:')).toBeInTheDocument()
     expect(screen.queryByText('11')).not.toBeInTheDocument()
   })
 
@@ -364,13 +364,13 @@ describe('the page panel', () => {
     await openPagePanel()
     expect(await screen.findByText('11')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Lakes TSA' }))
 
     await waitFor(() => {
       expect(screen.queryByText('11')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('Road Group')).toBeInTheDocument()
+    expect(screen.getByText('Road Group:')).toBeInTheDocument()
   })
 
   test('creates a page and sends the body with mill and year', async () => {
@@ -389,10 +389,10 @@ describe('the page panel', () => {
     renderSchedule10()
     await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
 
-    await userEvent.type(await screen.findByLabelText('Division'), 'New Division')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Region' }))
+    await userEvent.type(await screen.findByLabelText('Division:'), 'New Division')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Arrow TSA' }))
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
@@ -494,13 +494,13 @@ describe('the TSA and TFL branches', () => {
     await openPagePanel()
     await screen.findByDisplayValue('North Division')
 
-    expect(screen.getByLabelText('TFL')).toBeDisabled()
+    expect(screen.getByLabelText('TFL:')).toBeDisabled()
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'TFL' }))
 
-    expect(screen.getByLabelText('TFL')).toBeEnabled()
-    expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeDisabled()
+    expect(screen.getByLabelText('TFL:')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Supply Block:' })).toBeDisabled()
   })
 
   test('sends only the branch in use', async () => {
@@ -515,9 +515,9 @@ describe('the TSA and TFL branches', () => {
     await openPagePanel()
     await screen.findByDisplayValue('North Division')
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'TFL' }))
-    await userEvent.type(screen.getByLabelText('TFL'), '08')
+    await userEvent.type(screen.getByLabelText('TFL:'), '08')
     await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
 
     await waitFor(() => {
@@ -538,7 +538,7 @@ describe('the TSA and TFL branches', () => {
     renderSchedule10()
     await openPagePanel()
     await screen.findByDisplayValue('North Division')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Supply Block' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Supply Block:' }))
     expect(await screen.findByRole('option', { name: 'Arrow TSA Block A' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Lakes TSA Block G' })).not.toBeInTheDocument()
   })
@@ -639,12 +639,12 @@ describe('the road level', () => {
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
 
-    await userEvent.type(await screen.findByLabelText('Road Name'), 'New Road')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Road Type' }))
+    await userEvent.type(await screen.findByLabelText('Road Name:'), 'New Road')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Road Type:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Permanent' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'ICHdw1' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class:' }))
     await userEvent.click(await screen.findByRole('option', { name: '1 - Very Dry' }))
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'None' }))
@@ -849,7 +849,7 @@ describe('read-only rendering outside Draft', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'View' }))
 
     expect(await screen.findByText('North Division')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Division')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Division:')).not.toBeInTheDocument()
     // AC11 and deviation 7: DISABLED, never removed. Removing it left a screen reader with no
     // evidence the action exists, and contradicted the AC this page inherited from Story 12.3.
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
@@ -907,9 +907,9 @@ describe('every endpoint carries the working context (guardrail R12)', () => {
     )
     renderSchedule10()
     await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'Region' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Arrow TSA' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => {
@@ -1075,7 +1075,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     await openPagePanel()
     await screen.findByDisplayValue('Arrow TSA Block A')
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Lakes TSA' }))
     expect(screen.getByDisplayValue('Arrow TSA Block A')).toBeInTheDocument()
 
@@ -1095,7 +1095,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     // Carbon's own clear affordance, which is the real path to `onSelect('')`; clearing the text
     // alone leaves the selection intact and fires no change. Scoped to THIS combo — Region and
     // Supply Block render an identical button.
-    const tsaCombo = screen.getByRole('combobox', { name: 'TSA or TFL' })
+    const tsaCombo = screen.getByRole('combobox', { name: 'TSA or TFL:' })
     const clear = within(tsaCombo.closest('.cds--list-box__wrapper') as HTMLElement).getByRole(
       'button',
       { name: /clear selected item/i },
@@ -1306,7 +1306,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     )
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
-    const bec = await screen.findByRole('combobox', { name: 'BEC Zone' })
+    const bec = await screen.findByRole('combobox', { name: 'BEC Zone:' })
     await userEvent.clear(bec)
     await userEvent.type(bec, 'ICH')
 
@@ -1329,7 +1329,7 @@ describe('regressions from the 2026-08-19 code review', () => {
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'None' }))
-    expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Type:' })).toBeDisabled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => {
@@ -1362,10 +1362,12 @@ describe('regressions from the 2026-08-19 code review', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'None' }))
 
     for (const label of [
+      // The prefixed names are `aria-label`s standing in for an ambiguous printed label, so they
+      // carry no colon; `Depth` and `Distance to Source` are printed in full and do.
       'Additional Stabilizing Length (km)',
       'Additional Stabilizing Surface Width (m)',
-      'Depth (m)',
-      'Distance to Source (km)',
+      'Depth (m):',
+      'Distance to Source (km):',
       'Additional Stabilizing Actual Costs ($)',
       'Additional Stabilizing Other Transfer ($)',
     ]) {
@@ -1397,7 +1399,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Dirt' }))
 
-    expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Type:' })).toBeDisabled()
     // D stores its figures as submitted, so they must stay editable.
     expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toBeEnabled()
     expect(screen.getByLabelText('Additional Stabilizing Actual Costs ($)')).toBeEnabled()
@@ -1427,18 +1429,157 @@ describe('regressions from the 2026-08-19 code review', () => {
     expect(screen.queryByText('150,000.00')).not.toBeInTheDocument()
   })
 
-  test('L5 — the material hint stays quiet until a ballast method is chosen', async () => {
-    const hint = 'A material Type is required for this Additional Stabilizing code.'
+  test('L5 — the material requirement is reported ON the Type field, not as a standing line (#440 item 8)', async () => {
+    const oldHint = 'A material Type is required for this Additional Stabilizing code.'
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
     await screen.findByRole('combobox', { name: 'Ballast Method Code' })
-    // A BLANK code lands in the `C` branch server-side, so the predicate is true for it — but the
-    // reporter has chosen nothing yet and has nothing to correct.
-    expect(screen.queryByText(hint)).not.toBeInTheDocument()
 
+    // The standing advance warning above Save is gone: legacy prints nothing in advance either,
+    // and choosing a `C` method is not yet a mistake to correct.
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Crushed' }))
-    expect(await screen.findByText(hint)).toBeInTheDocument()
+    expect(screen.queryByText(oldHint)).not.toBeInTheDocument()
+
+    // Pressing Save is what reports it, and it is reported against the field the reporter must fix
+    // — inside the Type combo's own wrapper, where the issue asks for it, not above the buttons.
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const message = await screen.findByText('Material Code Type: Value is required.')
+    const field = message.closest('.schedule-10__field')
+    expect(field).not.toBeNull()
+    expect(
+      within(field as HTMLElement).getByRole('combobox', { name: 'Type:' }),
+    ).toBeInTheDocument()
+  })
+
+  test('L5 — the road form reproduces the legacy row grid (#440 items 1-3)', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    // Item 3: the VISIBLE label is legacy's short one — colon and all — and it is only unique
+    // within its column.
+    const visible = (name: string) => screen.getAllByText(name, { selector: 'label' })
+    expect(visible('Length (km):')).toHaveLength(2)
+    expect(visible('Surface Width (m):')).toHaveLength(2)
+    expect(visible('TtT Transfer ($):')).toHaveLength(2)
+    expect(visible('Other Transfer ($):')).toHaveLength(2)
+    expect(visible('Actual Cost ($):')).toHaveLength(1)
+    expect(visible('Actual Costs ($):')).toHaveLength(1)
+    expect(visible('Code:')).toHaveLength(1)
+    expect(screen.queryByText('Sub-Grade Length (km):', { selector: 'label' })).toBeNull()
+
+    // ...and the ACCESSIBLE name still carries the column, so no two controls answer to one name.
+    expect(screen.getByLabelText('Sub-Grade Length (km)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Ballast Method Code' })).toBeInTheDocument()
+
+    // Items 1-2: the three alignments the issue names, as legacy rows 5, 11 and 14. Row 7, 9 and 12
+    // are vacant in column 1 (LD-1/2/3), which is exactly why the row has to be declared rather
+    // than fall out of the order fields happen to be listed in.
+    const rowOf = (element: Element) =>
+      element
+        .closest<HTMLElement>('.schedule-10__detail-cell')
+        ?.style.getPropertyValue('--cell-row')
+    const sameRow = (...elements: Element[]) => {
+      const rows = elements.map(rowOf)
+      expect(rows[0]).toBeTruthy()
+      for (const row of rows) expect(row).toBe(rows[0])
+    }
+    sameRow(
+      screen.getByRole('combobox', { name: 'BEC Zone:' }),
+      screen.getByLabelText('Sub-Grade Actual Cost ($)'),
+      screen.getByLabelText('Additional Stabilizing Surface Width (m)'),
+    )
+    sameRow(
+      screen.getByLabelText('Side Slope (%):'),
+      screen.getByLabelText('Distance to Source (km):'),
+    )
+    sameRow(
+      screen.getByLabelText('Solid (Hard) Rock (%):'),
+      screen.getByLabelText('Less Landings ($):'),
+      screen.getByLabelText('Additional Stabilizing Other Transfer ($)'),
+    )
+  })
+
+  test('L5 — every printed label carries legacy’s colon as real text, no heading does', async () => {
+    // Legacy punctuates every field label with `:`. It has to be part of the label's own TEXT, not
+    // drawn with a CSS `::after`: generated content cannot be selected or copied, which is a
+    // problem the moment anyone wants to quote a field name out of the screen. So this asserts the
+    // text, and there is no stylesheet rule left to assert.
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    const panel = document.querySelector('.schedule-10__panel')
+    // PRINTED labels only: a hidden one has no text on screen to punctuate. Carbon hides the haul
+    // figures' labels with its own class; the Yes/No combo's is hidden by ours.
+    const labels = [
+      ...(panel?.querySelectorAll(
+        '.cds--label:not(.cds--visually-hidden):not(.schedule-10__haul-eng-combo .cds--label),' +
+          ' .schedule-10__field-label',
+      ) ?? []),
+    ].map((node) => node.textContent ?? '')
+    expect(labels.length).toBeGreaterThan(20)
+    for (const label of labels) {
+      expect(label, label).toMatch(/:$/)
+    }
+
+    // A section heading takes none — legacy prints `Road Information` and `Material Type` bare —
+    // and neither does a column heading over the haul figures.
+    const bare = [
+      ...(panel?.querySelectorAll('.schedule-10__detail-heading, .schedule-10__haul-column-head') ??
+        []),
+    ].map((node) => node.textContent ?? '')
+    expect(bare).toHaveLength(10)
+    for (const heading of bare) {
+      expect(heading, heading).not.toMatch(/:$/)
+    }
+  })
+
+  test('L5 — the closing block matches legacy’s layout (#440 items 4-7)', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    // Item 4: the Yes/No menu is the SAME combo box as every other dropdown on this screen — a
+    // Carbon `Select` could not be made to show the field fill the way its neighbours do — its own
+    // label is hidden, and the printed one sits beside it, so the two are on one line.
+    const engCosts = screen.getByRole('combobox', { name: 'Includes Detailed Engineering Costs' })
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+    expect(engCosts.className).toBe(roadType.className)
+    expect(engCosts.closest('.schedule-10__haul-eng-combo')).not.toBeNull()
+    expect(document.querySelector('.schedule-10__haul-inline-label')?.textContent).toBe(
+      'Includes Detailed Engineering Costs:',
+    )
+
+    // Item 5: Distance / Volume / $-per-unit are printed ONCE as column headings over the two haul
+    // rows, which are labelled `… Details` as in legacy — not repeated on each of the six controls.
+    const heads = [...document.querySelectorAll('.schedule-10__haul-column-head')].map(
+      (node) => node.textContent,
+    )
+    expect(heads).toEqual(['Distance (km)', 'Volume (m3)', '$/m3/km'])
+    expect(screen.getByText('End Haul Details:')).toBeInTheDocument()
+    expect(screen.getByText('Overland Details:')).toBeInTheDocument()
+    // The figures keep the names they have always answered to, hidden rather than dropped.
+    expect(screen.getByLabelText('End Haul Distance (km)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Overland Volume (m3)')).toBeInTheDocument()
+
+    // Items 6 and 7: all seven road-detail headings take ONE class, so none of them can be a size
+    // or a rule apart from the others.
+    const headings = [...document.querySelectorAll('.schedule-10__detail-heading')].map(
+      (node) => node.textContent,
+    )
+    expect(headings).toEqual([
+      'Road Information',
+      'Moisture',
+      'Shoulder',
+      'Material Type',
+      'Sub-Grade',
+      'Costs',
+      'Additional Stabilizing',
+    ])
+    expect(document.querySelector('.schedule-10__detail-subheading')).toBeNull()
   })
 
   test('L9 — the road form meets the accessibility floor (AC15)', async () => {
@@ -1447,14 +1588,14 @@ describe('regressions from the 2026-08-19 code review', () => {
     await screen.findByDisplayValue('Mainline A')
 
     // Every input is reachable by its programmatic label, never by placeholder or position.
-    expect(screen.getByLabelText('Road Name')).toBeInTheDocument()
+    expect(screen.getByLabelText('Road Name:')).toBeInTheDocument()
     expect(screen.getByLabelText('Sub-Grade Length (km)')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'BEC Zone' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'BEC Zone:' })).toBeInTheDocument()
     // Both tables carry real header cells so a screen reader can navigate them.
     expect(screen.getByRole('columnheader', { name: 'Roads' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument()
     // Derived totals are text, not disabled inputs, so they are announced as values.
-    expect(screen.queryByLabelText('Total ($)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Total ($):')).not.toBeInTheDocument()
   })
 
   test('L9 — an advisory error is bound to its field and clears as it is fixed', async () => {
@@ -1462,7 +1603,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    const roadName = await screen.findByLabelText('Road Name')
+    const roadName = await screen.findByLabelText('Road Name:')
     expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
     expect(roadName).toHaveAttribute('aria-invalid', 'true')
 
@@ -1599,7 +1740,7 @@ describe('the road detail comments original-value indicator', () => {
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
 
-    await screen.findByLabelText('Road Name')
+    await screen.findByLabelText('Road Name:')
     expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
   })
 
@@ -1780,10 +1921,10 @@ describe('Schedule 10 ministry correction at Submitted (Story 16.3)', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeEnabled()
 
     await openPagePanel()
-    const division = await screen.findByLabelText('Division')
+    const division = await screen.findByLabelText('Division:')
     expect(division).toBeEnabled()
-    expect(screen.getByLabelText('Period Surveyed')).toBeEnabled()
-    expect(screen.getByRole('combobox', { name: 'Region' })).toBeEnabled()
+    expect(screen.getByLabelText('Period Surveyed:')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Region:' })).toBeEnabled()
     expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled()
 
     // click + clear + paste, never a per-character `type`: this panel re-renders its whole field set
@@ -1870,7 +2011,7 @@ describe('Schedule 10 ministry correction at Submitted (Story 16.3)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'View' }))
     // Read-only means the values RENDER as text — a locked screen, not a suppressed one.
     expect(await screen.findByText('North Division')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Division')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Division:')).not.toBeInTheDocument()
     // Deviation 7 (ratified in defect #292): the write controls stay RENDERED and disabled, never
     // removed from the DOM. Pressing Save writes nothing — `savePage` refuses a `view` panel too.
     const save = screen.getByRole('button', { name: 'Save' })
@@ -1914,7 +2055,7 @@ describe('Schedule 10 ministry correction at Submitted (Story 16.3)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'View' }))
     expect(await screen.findByText('North Division')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Division')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Division:')).not.toBeInTheDocument()
     const save = screen.getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled()
     await userEvent.click(save)
@@ -1936,7 +2077,7 @@ describe('Schedule 10 ministry correction at Submitted (Story 16.3)', () => {
     expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled()
     await openPagePanel()
-    expect(await screen.findByLabelText('Division')).toBeEnabled()
+    expect(await screen.findByLabelText('Division:')).toBeEnabled()
   })
 
   // The rest of the admin row, and the cells 16.1 pinned to fail CLOSED. `'V'` is served nowhere in
