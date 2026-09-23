@@ -5,12 +5,19 @@ import java.math.BigDecimal;
 /**
  * The Check Status body: the camp panel currently ON SCREEN, if one is open.
  *
- * <p>Legacy's Check Status was an {@code ajax="false"} full postback, so JSF applied the on-screen
- * inputs to the managed bean BEFORE {@code checkStatus()} evaluated it ({@code
- * Schedule5MB.checkStatus} :321) — the verdict always described the screen, and nothing was
- * persisted. The shipped implementation read the database instead and compensated by DISABLING the
- * button whenever a camp panel was open, which is what bcgov/nr-ilcr#476 reported. This DTO is the
- * fix: the verdict is computed from the stored camps with {@code camp} overlaid onto them.
+ * <p><strong>This is a sanctioned divergence from the legacy Schedule 5 screen, not a reproduction
+ * of it.</strong> Legacy evaluates the screen on its other schedules, but legacy Schedule 5 judges
+ * the LAST SAVED record — an inconsistency in the legacy application, confirmed by manual
+ * comparison. The business area ruled in September 2026 that Schedule 5 should behave like the
+ * others, so the rebuild evaluates the screen here too (bcgov/nr-ilcr#476).
+ *
+ * <p>Do not re-derive a mechanism for the legacy difference from the button markup: the obvious
+ * lifecycle reading predicts the opposite of what both screens actually do. The behaviour above is
+ * established by observation and that is where it should be left.
+ *
+ * <p>The shipped implementation read the database and compensated by DISABLING the button whenever
+ * a camp panel was open, which is what #476 reported. This DTO is the fix: the verdict is computed
+ * from the stored camps with {@code camp} overlaid onto them, and nothing is persisted.
  *
  * <p><strong>Why one camp and not every camp, unlike {@code Schedule6CheckRequest}.</strong>
  * Schedule 6 sends all its records because all of them are on screen and independently editable.

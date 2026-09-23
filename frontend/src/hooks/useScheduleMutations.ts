@@ -77,9 +77,10 @@ export function useScheduleMutations<TCheckResult>({
    * POST the check-status endpoint (default suffix {@code '/check-status'}).
    *
    * <p>{@code body} carries the ON-SCREEN values where the endpoint accepts them (Schedules 5 and
-   * 6): legacy's Check Status was an {@code ajax="false"} full postback, so the verdict described
-   * the screen rather than the saved record. Omitting it posts no payload, which is still correct
-   * for the endpoints that have not been converted yet (issue #359).
+   * 6): legacy's Check Status describes the screen rather than the saved record. Omitting it posts
+   * no payload, which is still correct for the endpoints that have not been converted yet (issue
+   * #359). Schedule 5 is a special case — legacy's own Schedule 5 screen judges the saved record,
+   * and it sends a body only because the business area ruled it should match the others (#476).
    */
   const checkStatus = <T>(
     { onSuccess, fallback, suffix = '/check-status' }: MutationOptions<T>,

@@ -1152,10 +1152,11 @@ describe('Schedule 5 Check Status (AC12)', () => {
   /**
    * The screen-aware check (#476, closing DIV-1 / the Schedule 5 slice of #359).
    *
-   * Legacy's Check Status was an `ajax="false"` full postback, so JSF applied the on-screen inputs
-   * to the bean BEFORE the check ran — the verdict described the SCREEN. The app read the database
-   * instead and compensated by disabling the button whenever a camp panel was open, which is the
-   * symptom #476 reported. The request now carries the open panel and the gate is gone.
+   * Evaluating the screen is a sanctioned divergence from the legacy Schedule 5 screen, which
+   * judges the last SAVED record unlike legacy's other schedules — a legacy inconsistency the
+   * business area ruled out in September 2026. The app read the database and compensated by
+   * disabling the button whenever a camp panel was open, which is the symptom #476 reported. The
+   * request now carries the open panel and the gate is gone.
    *
    * These cases assert the two halves that can each fail silently: the button is OFFERED, and the
    * body actually CARRIES the screen. A test for the first alone would pass over an endpoint still

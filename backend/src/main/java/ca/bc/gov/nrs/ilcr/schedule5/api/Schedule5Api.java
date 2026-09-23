@@ -145,12 +145,13 @@ public interface Schedule5Api {
    * NOT editability-gated: {@code VIEW_SCHEDULE} only, the 2.6 precedent, so a Submitted mill can
    * still be checked.
    *
-   * <p>{@code request} carries the camp panel currently ON SCREEN (#476): legacy's {@code
-   * ajax="false"} postback applied the screen to the model before evaluating ({@code
-   * Schedule5MB.checkStatus} :321), so the verdict must describe the screen, not the database. The
-   * body overlays the stored camps — see {@link Schedule5CheckRequest} for why it carries one camp
-   * rather than all of them, unlike Schedule 6's equivalent. {@code camp} is null when no panel is
-   * open, which evaluates the stored camps alone.
+   * <p>{@code request} carries the camp panel currently ON SCREEN (#476). This is a sanctioned
+   * divergence from the legacy Schedule 5 screen, which judges the last SAVED record while legacy's
+   * other schedules judge the screen — a legacy inconsistency the business area ruled out in
+   * September 2026, directing that Schedule 5 match the others. The body overlays the stored camps
+   * — see {@link Schedule5CheckRequest} for why it carries one camp rather than all of them, unlike
+   * Schedule 6's equivalent. {@code camp} is null when no panel is open, which evaluates the stored
+   * camps alone.
    *
    * <p>Returns either {@code MET} with the single schedule banner and NO per-camp results
    * (deviation (C) — legacy's all-met branch emits {@code scheduleRequirementsMetMsg} alone,

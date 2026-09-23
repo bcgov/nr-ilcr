@@ -67,8 +67,9 @@ a test — something the two red scenarios cannot detect, being already red.
 
 **FIXED 2026-09-22 (#476) — and the fix was the endpoint, not the button.** `POST /check-status` now
 carries the camp panel on screen (`Schedule5CheckRequest`), which the service overlays onto the
-stored camps before running the identical rule, so the verdict describes the screen exactly as
-legacy's postback did. The availability gate went with it: there is nothing left for it to protect
+stored camps before running the identical rule, so the verdict describes the screen. **Not a
+restoration of legacy Schedule 5** — legacy Schedule 5 judges the last saved record while its other
+schedules judge the screen, and the business area ruled in September 2026 that it should match them. The availability gate went with it: there is nothing left for it to protect
 against. S24 and S25 went green **with not one assertion, step or fixture edited** — only their
 `@discovered-divergence` tags and `[DISCOVERED …]` markers came off, both together. The `@p2`
 companion was **replaced, not retired**: its old premise (the button is unavailable mid-edit) is what

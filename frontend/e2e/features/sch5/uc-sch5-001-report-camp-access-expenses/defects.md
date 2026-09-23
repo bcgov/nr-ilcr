@@ -18,9 +18,9 @@ entries, and no open entries of any kind.
 
 **UPDATED 2026-09-22 — DIV-1 IS CLOSED. #476 shipped the full fix and the UC has no open entries
 left.** Check Status now posts the camp panel on screen and the service overlays it onto the stored
-camps before running the same rule, so the verdict describes what the reporter is looking at — which
-is what legacy's `ajax="false"` postback did. The availability gate that stood in for this is gone
-with it. **`@S24` and `@S25` went green with NOT ONE assertion edited** — only their
+camps before running the same rule, so the verdict describes what the reporter is looking at. The
+availability gate that stood in for this is gone with it. **This does NOT restore legacy Schedule 5**
+— see the correction below. **`@S24` and `@S25` went green with NOT ONE assertion edited** — only their
 `@discovered-divergence` tags and `[DISCOVERED …]` markers came off, both together. The green
 companion was replaced rather than retired: it used to pin the gate, and now pins the unsaved-NEW-camp
 case, which is the one an obvious implementation of this fix gets wrong. Details under DIV-1.
@@ -101,13 +101,20 @@ the unsafe one.**
     So "an unsaved edit plus a clickable Check Status" is not a reachable screen state.
   - **Expected vs actual.** Expected (legacy, and BR-11): the check includes what is on screen.
     Actual: the check cannot be run at all until the camp is saved.
-  - **It IS a divergence from legacy, which is why the tests stayed red.** Legacy's Check Status was a
-    full JSF postback (`ajax="false"`) and the camp panels shared its form via `ui:include`, so
-    `UPDATE_MODEL_VALUES` applied every on-screen value to the managed bean BEFORE the action ran
-    (`schedule5.xhtml:40,257`; `Schedule5MB.java:321`). Legacy answered, and answered about the
-    screen. The rewrite's `POST /api/v1/schedule5/check-status` carries **no request body at all**,
-    so the endpoint cannot see the screen even in principle; disabling the button is what stops it
-    answering wrongly.
+  - **It IS a divergence from the app's other schedules, which is why the tests stayed red.**
+    ⚠ **CORRECTED 2026-09-23 — the original wording of this bullet was wrong and is replaced.** It
+    said legacy's `ajax="false"` postback applied every on-screen value to the bean, so legacy
+    Schedule 5 "answered about the screen". **Legacy Schedule 5 does not.** It judges the last SAVED
+    record, confirmed by manual comparison against Schedule 8 (BA and dev, 2026-09-22). Legacy's
+    OTHER schedules do evaluate the screen — the inconsistency is legacy's own, not a mistake in the
+    recovered requirements. The rewrite's `POST /api/v1/schedule5/check-status` carried **no request
+    body at all**, so the endpoint could not see the screen even in principle; disabling the button
+    is what stopped it answering wrongly.
+  - **Do not re-derive a mechanism for the legacy difference.** The obvious lifecycle reading
+    predicts the opposite of what both screens do: Schedule 5's button is `ajax="false"` (a full
+    submit, which should update the model) and Schedule 8's is `process="@this"` (which should not),
+    yet Schedule 8 is the one that evaluates the screen. The behaviour is established by observation
+    and deliberately left unexplained.
   - **Which direction it fails in, because this matters for triage: the SAFE one.** An incomplete
     Schedule 5 can never be made to look ready, which is the actual harm #359 does elsewhere. What is
     lost is workflow, not correctness — the reporter must save before they can check, and legacy did
@@ -142,7 +149,10 @@ the unsafe one.**
     the intended alarm, not a regression in the test. *(What shipped did change the endpoint, so the
     companion was replaced rather than tripped — see the **Test** bullet.)*
   - **HOW IT WAS FIXED (2026-09-22, #476), and it took the whole fix, not the symptom.** The warning
-    above was heeded. `POST /api/v1/schedule5/check-status` now carries a body — the camp panel
+    above was heeded. ⚠ **Why, matters as much as what:** this is a **sanctioned divergence from the
+    legacy Schedule 5 screen**, decided by the business area in September 2026 on the BA's report
+    that Schedule 5 alone judges the saved record. It is *alignment with legacy's other schedules*,
+    not a restoration of this one. Review it against that decision, not against `schedule5.xhtml`. `POST /api/v1/schedule5/check-status` now carries a body — the camp panel
     currently on screen (`Schedule5CheckRequest`) — which `Schedule5Service` overlays onto the stored
     camps before running the *identical* rule (`evaluateCamp` is untouched; the payload path and the
     stored path route through one private `evaluate(...)`, Schedule 6's arrangement). With the verdict

@@ -920,12 +920,12 @@ public class Schedule5Service {
    * <p>The service emits bundle KEYS with null text; {@link Schedule5CheckStatusResolver} resolves
    * and composes (AD-8).
    *
-   * <p>{@code request} carries the camp panel currently ON SCREEN (#476, {@code
-   * Schedule5MB.checkStatus} :321 — legacy's {@code ajax="false"} postback applied the screen to
-   * the model before evaluating, so the verdict always described the screen). It OVERLAYS the
-   * stored camps; see {@link Schedule5CheckRequest} for why it carries one camp rather than all of
-   * them. The itemized sub-list rows are never on this screen and are read from the database on
-   * both paths.
+   * <p>{@code request} carries the camp panel currently ON SCREEN (#476) — a sanctioned divergence
+   * from the legacy Schedule 5 screen, which judges the last SAVED record unlike legacy's other
+   * schedules; the business area ruled in September 2026 that Schedule 5 match the others. It
+   * OVERLAYS the stored camps; see {@link Schedule5CheckRequest} for why it carries one camp rather
+   * than all of them. The itemized sub-list rows are never on this screen and are read from the
+   * database on both paths.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year

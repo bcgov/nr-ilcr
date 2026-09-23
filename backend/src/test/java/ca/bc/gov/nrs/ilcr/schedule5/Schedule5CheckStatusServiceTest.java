@@ -365,10 +365,11 @@ class Schedule5CheckStatusServiceTest {
   /**
    * The payload path (#476, closing DIV-1 / the Schedule 5 slice of #359).
    *
-   * <p>Legacy's Check Status was an {@code ajax="false"} full postback, so JSF applied the
-   * on-screen inputs to the bean before the check ran and the verdict described the SCREEN. The
-   * shipped endpoint read the database and compensated by disabling the button while a camp panel
-   * was open. It now takes the panel as a body and overlays it onto the stored camps.
+   * <p>Evaluating the screen is a sanctioned divergence from the legacy Schedule 5 screen, which
+   * judges the last SAVED record unlike legacy's other schedules; the business area ruled in
+   * September 2026 that Schedule 5 match the others. The shipped endpoint read the database and
+   * compensated by disabling the button while a camp panel was open. It now takes the panel as a
+   * body and overlays it onto the stored camps.
    *
    * <p>Everything here is about SOURCE, never about the rule: the eight conditions are asserted
    * once, above, against {@code evaluateCamp}, and both paths run that same static method. A test

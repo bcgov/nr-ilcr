@@ -11,11 +11,16 @@
 #
 # What changed in the app: `POST /api/v1/schedule5/check-status` now carries a body — the camp panel
 # currently on screen (`Schedule5CheckRequest`) — which the service overlays onto the stored camps
-# before running the identical rule. That restores legacy, whose Check Status was a full JSF postback
-# (`ajax="false"`) sharing the panel's form via `ui:include`, so UPDATE_MODEL_VALUES applied every
-# on-screen value to the bean BEFORE the action ran (schedule5.xhtml:40,257; Schedule5MB.java:321).
-# The availability gate that used to stand in for this — `disabled={… || panelOpen}` — is gone with
-# it; there is nothing left for it to protect against.
+# before running the identical rule. The availability gate that used to stand in for this —
+# `disabled={… || panelOpen}` — is gone with it; there is nothing left for it to protect against.
+#
+# ⚠ THIS DOES NOT RESTORE LEGACY SCHEDULE 5, AND SAYING SO WOULD MISLEAD A REVIEWER. Legacy judges
+# the screen on its OTHER schedules; legacy Schedule 5 judges the last SAVED record. That
+# inconsistency is legacy's own, confirmed by manual comparison of the two screens. The business area
+# ruled in September 2026 that Schedule 5 should match the others, so this is a sanctioned
+# divergence from the legacy Schedule 5 screen — checked against that decision, not against
+# `schedule5.xhtml`. Do not re-derive a mechanism for the legacy difference from the button markup:
+# the obvious lifecycle reading predicts the opposite of what both screens actually do.
 #
 # ⚠ SCHEDULE 5 ONLY. The app-wide defect is bcgov/nr-ilcr#359 and Schedules 1, 2, 4 and 11 still
 # carry it — their own `check-status-unsaved.feature` arms remain deliberately red. Schedule 6 was
