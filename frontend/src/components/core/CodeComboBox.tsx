@@ -20,6 +20,13 @@ export type ComboMatchMode = 'substring' | 'prefix'
 interface CodeComboBoxProps {
   id: string
   titleText: string
+  /**
+   * An accessible name to use INSTEAD of `titleText`, for a control whose visible label is only
+   * unambiguous in the context of the column it is printed under — Schedule 10's Additional
+   * Stabilizing `Code`, whose legacy label is that one word (#440 item 3). Omit it and the visible
+   * label names the control, which is the right answer everywhere else.
+   */
+  accessibleName?: string
   /** The full option list (code + description). */
   items: ComboOption[]
   /** The currently selected code ('' when none). */
@@ -43,6 +50,7 @@ interface CodeComboBoxProps {
 const CodeComboBox: FC<CodeComboBoxProps> = ({
   id,
   titleText,
+  accessibleName,
   items,
   selectedCode,
   onSelect,
@@ -63,6 +71,16 @@ const CodeComboBox: FC<CodeComboBoxProps> = ({
       id={id}
       className={className}
       titleText={titleText}
+      // Carbon only sets `aria-label` on the input when there is NO `titleText`, and downshift
+      // labels the input with `aria-labelledby` pointing at that title — which wins over any
+      // `aria-label`. Overriding both through `inputProps` (they are spread last into
+      // `getInputProps`) is what actually renames the control for a screen reader; the visible
+      // title is untouched.
+      inputProps={
+        accessibleName === undefined
+          ? undefined
+          : { 'aria-label': accessibleName, 'aria-labelledby': undefined }
+      }
       placeholder="Select"
       items={items}
       itemToString={(item) => item?.description ?? ''}
