@@ -1501,12 +1501,12 @@ describe('regressions from the 2026-08-19 code review', () => {
       screen.getByLabelText('Additional Stabilizing Other Transfer ($)'),
     )
 
-    // Exactly ONE row is empty in all three columns, and it is row 8 — legacy's own blank spacer
-    // above `Shoulder`. A row a reserved LD field left empty in one column only (7 and 11 here)
-    // still has row-mates and must stay; a row left empty in EVERY column is dead and shows up as
-    // an extra row-gap, which is what legacy row 9 became once LD-2 took its only occupant. This
-    // pins the distinction, which the alignment checks above cannot see — they would all still
-    // agree with any number of dead rows between them.
+    // NO row is empty in all three columns. A row a reserved LD field left empty in one column
+    // only (7 and 10 here) still has row-mates and must stay; a row left empty in EVERY column is
+    // dead, and in a CSS grid — unlike legacy's table — it costs a full row-gap. Both of legacy's
+    // (its blank row 8, and row 9 once LD-2 took its only occupant) are closed up. This pins the
+    // distinction, which the alignment checks above cannot see: they compare rows to each other
+    // and would agree with any number of dead rows in between.
     const occupied = new Set(
       [...document.querySelectorAll<HTMLElement>('.schedule-10__detail-cell')].map((cell) =>
         Number(cell.style.getPropertyValue('--cell-row')),
@@ -1514,7 +1514,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     )
     const last = Math.max(...occupied)
     const empty = [...Array(last).keys()].map((i) => i + 1).filter((row) => !occupied.has(row))
-    expect(empty).toEqual([8])
+    expect(empty).toEqual([])
   })
 
   test('L5 — every printed label carries legacy’s colon as real text, no heading does', async () => {
