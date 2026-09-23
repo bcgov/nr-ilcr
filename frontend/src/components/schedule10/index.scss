@@ -295,10 +295,16 @@ h5.schedule-10__detail-heading {
   align-items: center;
 }
 
-// A heading over a column of haul figures. Centred in its row rather than bottom-aligned above the
-// first input, so the three of them sit at the same height as `Includes Detailed Engineering Costs:`
-// and its Yes/No menu, which share that row. Stretch-and-centre for the same reason as the label
-// column below: it does not depend on knowing the menu's rendered height.
+// A heading over a column of haul figures. VERTICALLY centred in its row rather than bottom-aligned
+// above the first input, so the three of them sit at the same height as `Includes Detailed
+// Engineering Costs:` and its Yes/No menu, which share that row. Stretch-and-centre for the same
+// reason as the label column below: it does not depend on knowing the menu's rendered height.
+//
+// HORIZONTALLY it stays at the start of its cell, and that is legacy's, not an omission: each of
+// the three sits in a `<p:column styleClass="left">` (`schedule10.xhtml:1521-1530`) and `main.css`
+// defines `.left { text-align: left }` (`:68`). Legacy declares a `.center` class too (`:71`) and
+// does not use it here — so adding `justify-content`/`text-align: center` would centre these over
+// their columns and diverge from the screen this page is reproducing. Asked once in review already.
 //
 // SIZE comes from the `.schedule-page` rule in styles/index.scss, which names this class — the
 // `label-01` include here sets the other three properties only. See the note beside
