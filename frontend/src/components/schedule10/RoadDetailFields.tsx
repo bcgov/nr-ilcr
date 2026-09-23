@@ -329,11 +329,21 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
    * happen to be the same length. Stacking each column independently (the shape this replaces) put
    * every field at whatever height its own column reached, which is #440 item 1.
    *
-   * So each cell declares the LEGACY ROW it sits in and the grid places it there. Rows 7, 9 and 12
-   * are deliberately vacant in the Road Information column: they held `ASM Code`, `Soil Moisture
-   * Code (ILCR)` and `Boulder Area (%)`, which LD-1/LD-2/LD-3 removed. Reserving the rows rather
-   * than closing the gap is what keeps every remaining field with its legacy row-mates — closing it
-   * would slide `Side Slope` up beside `Less Bridges($)`. Row 8 is blank in legacy too.
+   * So each cell declares the LEGACY ROW it sits in and the grid places it there — with ONE
+   * renumbering, and the rule behind it is worth stating because it decides the vertical rhythm:
+   *
+   * - A row whose Road Information cell is empty but whose OTHER columns are occupied stays
+   *   reserved. Rows 7 and 11 here held `ASM Code` and `Boulder Area (%)` (LD-1/LD-3) and still
+   *   carry `Other Transfer($)`/`Depth:` and `Less Bridges($)`/`Actual Costs($)`. Closing them
+   *   would slide `Side Slope` up beside `Less Bridges($)` and break the alignment this grid
+   *   exists for.
+   * - A row left empty in EVERY column closes up. Legacy's row 9 held `Soil Moisture Code (ILCR)`
+   *   and nothing else (`schedule10.xhtml:927-960`; columns 2-6 are blank cells), so LD-2 emptied
+   *   it outright — it contributed only a second row-gap above `Shoulder`. Legacy rows 10-19 are
+   *   therefore rows 9-18 here. Every column moves by the same one row, so no alignment shifts.
+   *
+   * Row 8 is NOT that case and is kept: legacy leaves it blank in all six cells on purpose
+   * (`:915-925`), and it is the gap that separates the Moisture/Costs block from Shoulder.
    *
    * DOM order stays column-major, which is the tab order legacy's own `tabindex` scheme asks for:
    * 100s down Road Information, 200s down Sub-Grade, 300s down Additional Stabilizing.
@@ -349,17 +359,20 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       node: combo('becbiogeoCatalogueId', 'BEC Zone', becOptions, { matchMode: 'prefix' }),
     },
     { row: 6, node: combo('relSoilMoistRgmClsCode', 'RSMR Class', codeLists.rsmrClasses) },
-    // Row 7 — `ASM Code` (LD-1). Row 8 — blank in legacy. Row 9 — `Soil Moisture Code (ILCR)` (LD-2).
-    { row: 10, node: <SubHeading>Shoulder</SubHeading> },
-    { row: 11, node: numeric('sideSlopePct', 'Side Slope', '%') },
-    // Row 12 — `Boulder Area (%)` (LD-3).
-    { row: 13, node: <SubHeading>Material Type</SubHeading> },
-    { row: 14, node: numeric('solidRockPct', 'Solid (Hard) Rock', '%') },
-    { row: 15, node: numeric('rippableRockPct', 'Rippable Rock', '%') },
-    { row: 16, node: numeric('coarsePct', 'Coarse', '%') },
-    { row: 17, node: numeric('finePct', 'Fine', '%') },
-    { row: 18, node: numeric('organicPct', 'Organic', '%') },
-    { row: 19, node: <Derived label="Total (%)" value={String(previewMaterialTotal(form))} /> },
+    // Row 7 — `ASM Code` (LD-1), reserved: the other two columns still occupy it.
+    // Row 8 — blank in legacy, kept: it is the gap above `Shoulder`.
+    // Legacy's row 9 held `Soil Moisture Code (ILCR)` (LD-2) and nothing else, so it is gone and
+    // everything below has moved up one — legacy 10-19 are 9-18 here.
+    { row: 9, node: <SubHeading>Shoulder</SubHeading> },
+    { row: 10, node: numeric('sideSlopePct', 'Side Slope', '%') },
+    // Row 11 — `Boulder Area (%)` (LD-3), reserved for the same reason as row 7.
+    { row: 12, node: <SubHeading>Material Type</SubHeading> },
+    { row: 13, node: numeric('solidRockPct', 'Solid (Hard) Rock', '%') },
+    { row: 14, node: numeric('rippableRockPct', 'Rippable Rock', '%') },
+    { row: 15, node: numeric('coarsePct', 'Coarse', '%') },
+    { row: 16, node: numeric('finePct', 'Fine', '%') },
+    { row: 17, node: numeric('organicPct', 'Organic', '%') },
+    { row: 18, node: <Derived label="Total (%)" value={String(previewMaterialTotal(form))} /> },
   ]
 
   const subGrade: readonly Cell[] = [
@@ -377,23 +390,23 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       node: numeric('sgOtherTransfer', 'Other Transfer', '$', 'Sub-Grade Other Transfer ($)'),
     },
     {
-      row: 11,
+      row: 10,
       node: (
         <Derived label="Total Costs ($)" value={fmtWholeCost(previewSubGradeTotalCosts(form))} />
       ),
     },
-    { row: 12, node: numeric('lessBridges', 'Less Bridges', '$') },
-    { row: 13, node: numeric('lessCulverts', 'Less Culverts', '$') },
-    { row: 14, node: numeric('lessLandings', 'Less Landings', '$') },
-    { row: 15, node: numeric('lessEndHaul', 'Less End Haul', '$') },
-    { row: 16, node: numeric('lessOverland', 'Less Overland', '$') },
-    { row: 17, node: numeric('lessOtherEng', 'Less OtherEng', '$') },
+    { row: 11, node: numeric('lessBridges', 'Less Bridges', '$') },
+    { row: 12, node: numeric('lessCulverts', 'Less Culverts', '$') },
+    { row: 13, node: numeric('lessLandings', 'Less Landings', '$') },
+    { row: 14, node: numeric('lessEndHaul', 'Less End Haul', '$') },
+    { row: 15, node: numeric('lessOverland', 'Less Overland', '$') },
+    { row: 16, node: numeric('lessOtherEng', 'Less OtherEng', '$') },
     {
-      row: 18,
+      row: 17,
       node: <Derived label="Total ($)" value={fmtWholeCost(previewSubGradeTotal(form))} />,
     },
     {
-      row: 19,
+      row: 18,
       node: <Derived label="$/km" value={fmtCurrency(previewSubGradeCostPerLength(form))} />,
     },
   ]
@@ -425,17 +438,17 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       }),
     },
     { row: 7, node: numeric('stDepth', 'Depth', 'm') },
-    { row: 11, node: numeric('stDistanceToSource', 'Distance to Source', 'km') },
+    { row: 10, node: numeric('stDistanceToSource', 'Distance to Source', 'km') },
     {
-      row: 12,
+      row: 11,
       node: numeric('stActualCost', 'Actual Costs', '$', 'Additional Stabilizing Actual Costs ($)'),
     },
     {
-      row: 13,
+      row: 12,
       node: numeric('stTtTransfer', 'TtT Transfer', '$', 'Additional Stabilizing TtT Transfer ($)'),
     },
     {
-      row: 14,
+      row: 13,
       node: numeric(
         'stOtherTransfer',
         'Other Transfer',
@@ -444,11 +457,11 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       ),
     },
     {
-      row: 15,
+      row: 14,
       node: <Derived label="Total ($)" value={fmtWholeCost(previewStabilizingTotal(form))} />,
     },
     {
-      row: 16,
+      row: 15,
       node: <Derived label="$/km" value={fmtCurrency(previewStabilizingCostPerLength(form))} />,
     },
   ]
