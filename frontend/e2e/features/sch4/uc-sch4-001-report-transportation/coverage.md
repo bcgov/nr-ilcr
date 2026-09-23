@@ -63,8 +63,9 @@ See GAP-1.
 | Running totals across several rows incl. Cycle | S05, legacy footer | `SubPage.tsx` totals row | subpage-rows `@S05 @p1` | covered | — |
 | The group's grid row shows the rolled-up totals | CNT-001 + legacy rollup inputs | `panelSubTotals` + `renderSubPageRow` | subpages `@S03 @S05 @p0/@p1` | covered | — |
 | Sub-page link labels carry the live row count | CNT-001 | `` `${def.label} (${totals.count}):` `` | update/subpages/subpage-rows `@p0…@p2` | covered | — |
-| Warn before discarding unsaved input (panel Close / Edit / Add New, and each sub-page's Back) | S12, NAV-001, epics.md Story 10.5 AC | NOT IMPLEMENTED (`closePanel`, `openNew`, `openEditOrView` switch unconditionally; `SubPage.tsx` has no confirm at all) | nav-and-recompute `@S12 @discovered-divergence` ×3 | divergence | DIV-3 |
-| A discarded panel edit is never written | S12 consequence | no write path on close | nav-and-recompute `@S12 @p1` | covered | — |
+| Warn before discarding unsaved input (panel Back/Close / Edit / Copy / Add New, and each sub-page's Back) — dirty-gated | S12, NAV-001, epics.md Story 10.5 AC | `index.tsx` `requestLeave` + `panelDirty` → the shared `ConfirmNavigationModal`; `SubPage.tsx` `requestBack` + `hasUnsavedInput` | nav-and-recompute `@S12` ×3 (fixed by #324, 2026-09-22) | covered | DIV-3 (fixed) |
+| Cancelling the NAV-001 prompt keeps the dirty panel and its entry | NAV-001 dialog semantics | `setNavConfirm(null)` | nav-and-recompute `@S12 @p1` (Cancel arm) and `@S12 @p2` (Edit-another arm) | covered | — |
+| A discarded panel edit is never written | S12 consequence | no write path on close — nor on the prompt's Continue | nav-and-recompute `@S12 @p1` | covered | — |
 | Cancelling NAV-002 stays on the panel with the edit intact | NAV-002 dialog semantics | `setNavConfirm(null)` | subpages `@S04 @p2` | covered | — |
 | Column sort on a sub-page (3-state) | none — app-only affordance | `SubPage.tsx` `toggleSort` | subpage-rows `@p2` | covered | — |
 | Cancelling NAV-003 stays on the New panel with the typed name, nothing saved | NAV-003 dialog semantics (the mirror of the NAV-002 cancel arm) | `setNavConfirm(null)` | subpages `@S03 @p2` | covered | — |
@@ -199,20 +200,23 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 > tags had already been retired in the feature files, so the tables disagreed with the suite they described.
 > Re-measure with `npx playwright test --list --project=chromium` and edit **this block only**.
 
-The 8 deliberate reds (5 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
-`defects.md` entry each is named in. Four rows, because some entries are red in more than one scenario —
-the inline `×n` is a scenario count (absent means ×1), and those counts sum to 8. All 8 are plain
-`Scenario`s; none expands through `Examples`:
+The 5 deliberate reds (2 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
+`defects.md` entry each is named in. Three rows, because some entries are red in more than one scenario —
+the inline `×n` is a scenario count (absent means ×1), and those counts sum to 5. All 5 are plain
+`Scenario`s; none expands through `Examples`. (Was 8 until DIV-3's three went green with #324 on
+2026-09-22 — the Suite-state block above is the dated record and was NOT re-measured; re-measure with the
+`--list` command there before quoting a total.)
 
 | Red | Entry | What it tracks |
 |---|---|---|
-| nav-and-recompute `@S12` ×3 | DIV-3 | NAV-001 confirm is not implemented — panel Back, Add New Location, and sub-page Back |
 | update `@S02` ×2 | BUG-4 | a category cleared to fully-empty is silently discarded (data loss) |
 | accessibility ×2 | DIV-7 | the editing-row highlight should not exist (legacy had none); it also fails contrast at 3.81:1, Draft and View |
 | accessibility ×1 | BUG-1 | app-wide: a hovered table row fails contrast (3.79:1) |
 
 **Retired, no longer reds** — kept here so a reader comparing against an older copy of this file can
-see where the four went:
+see where they went:
+- nav-and-recompute `@S12` ×3 (DIV-3, NAV-001 confirm) — fixed by #324 on 2026-09-22; tags retired, no
+  assertion edited (the Cancel and Edit-another arms were folded in).
 
 | Ex-red | Entry | Fixed |
 |---|---|---|
