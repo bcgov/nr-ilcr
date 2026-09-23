@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -492,7 +493,7 @@ class SetToDraftIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.detail", is(GATE_FAILED_MSG)))
         // The behaviour is unchanged, so the only way to prove the wording moved is to assert the
         // old text is gone. Without this the arm passes against either message.
-        .andExpect(jsonPath("$.detail", org.hamcrest.Matchers.not(is(LEGACY_SUBMIT_GATE_MSG))));
+        .andExpect(jsonPath("$.detail", not(is(LEGACY_SUBMIT_GATE_MSG))));
 
     assertThat(trackStatus(GATE_FAILS_MILL)).isEqualTo("S");
     assertThat(fingerprint(GATE_FAILS_MILL)).isEqualTo(before);

@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.sql.Timestamp;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,11 +77,11 @@ class ReportTrackTransitionRepositoryIT extends AbstractOracleIT {
             REVERSAL_MILL,
             REVERSAL_YEAR);
 
-    java.sql.Timestamp stampBefore =
+    Timestamp stampBefore =
         jdbc.queryForObject(
             "SELECT UPDATE_TIMESTAMP FROM THE.ILCR_MILL_REPORT_STATUS"
                 + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
-            java.sql.Timestamp.class,
+            Timestamp.class,
             REVERSAL_MILL,
             REVERSAL_YEAR);
 
@@ -92,11 +93,11 @@ class ReportTrackTransitionRepositoryIT extends AbstractOracleIT {
     assertThat(reversalStatus()).isEqualTo("D");
     // UPDATE_TIMESTAMP = SYSDATE is the one clause in the SET list nothing else in this story read
     // back (18.1 code review, verification-gap). The seed leaves it NULL, so "moved" is "now set".
-    java.sql.Timestamp stampAfter =
+    Timestamp stampAfter =
         jdbc.queryForObject(
             "SELECT UPDATE_TIMESTAMP FROM THE.ILCR_MILL_REPORT_STATUS"
                 + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
-            java.sql.Timestamp.class,
+            Timestamp.class,
             REVERSAL_MILL,
             REVERSAL_YEAR);
     assertThat(stampAfter).isNotNull();

@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefEntity;
@@ -17,6 +18,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -165,7 +168,7 @@ class ReportTransitionWriterTest {
 
   @Test
   @DisplayName(
-      "a verify whose status write matches no row is a 409 refusal, not a 500 — the track moved")
+      "a verify whose status write matches no row is a 409 refusal, not a 500, and the sweep never runs")
   void verifyLostUpdateIsRefusedNotFailed() {
     // Added by Story 18.1's code review. Before 18.1 the only other writer of an S row was another
     // verify, so 17.1 left the UPDATE unconditional; 18.1's Set to Draft made S leave by a second
@@ -183,19 +186,19 @@ class ReportTransitionWriterTest {
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
-  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
-  @org.junit.jupiter.params.provider.EnumSource(
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
       value = TrackTransition.class,
       names = {"SUBMIT", "VERIFY"})
   @DisplayName("a transition that owes an identity pair is refused by writeReversal before any SQL")
   void writeReversalRefusesIdentityOwingTransitions(TrackTransition transition) {
     assertThatThrownBy(() -> writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
         .isInstanceOf(IllegalArgumentException.class);
-    org.mockito.Mockito.verifyNoInteractions(repository, millUserXrefRepository);
+    verifyNoInteractions(repository, millUserXrefRepository);
   }
 
-  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
-  @org.junit.jupiter.params.provider.EnumSource(
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
       value = TrackTransition.class,
       names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
   @DisplayName("all twenty audit statements — thirteen tables — are invoked on the reversal path")
@@ -229,21 +232,6 @@ class ReportTransitionWriterTest {
     verify(repository).touchRoadConstructionReports(REVERSAL_MILL, YEAR, USER);
     verify(repository).touchRoadConstructionDetails(REVERSAL_MILL, YEAR, USER);
     verify(repository).touchRoadConstructionCostDetails(REVERSAL_MILL, YEAR, USER);
-  }
-
-  @Test
-  @DisplayName("a status write that moves no row fails before the sweep runs at all")
-  void statusWriteMustMoveExactlyOneRow() {
-    when(repository.updateTrackStatusWithAuditor(
-            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
-        .thenReturn(0);
-    givenTheAuditorIsAssigned();
-
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
-        .isInstanceOf(ReportTransitionRejectedException.class);
-    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
-    verify(repository, never())
-        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -304,8 +292,8 @@ class ReportTransitionWriterTest {
     }
   }
 
-  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
-  @org.junit.jupiter.params.provider.EnumSource(
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
       value = TrackTransition.class,
       names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
   @DisplayName("AC4: status write, then the audit stamps, then the category advance")
@@ -335,8 +323,8 @@ class ReportTransitionWriterTest {
             REVERSAL_MILL, YEAR, CATEGORIES.get(0), transition.categoryState(), USER);
   }
 
-  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
-  @org.junit.jupiter.params.provider.EnumSource(
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
       value = TrackTransition.class,
       names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
   @DisplayName("AC3: neither reversal reaches a statement that writes an identity pair")
@@ -359,8 +347,8 @@ class ReportTransitionWriterTest {
     verify(millUserXrefRepository, never()).findAssignment(anyLong(), any());
   }
 
-  @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
-  @org.junit.jupiter.params.provider.EnumSource(
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
       value = TrackTransition.class,
       names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
   @DisplayName("AC9: a status write matching no row is a 409 refusal, not a 500")

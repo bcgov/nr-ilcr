@@ -117,13 +117,6 @@ public interface CheckStatusApi {
    * transition ever bumped it. There IS a lost-update refusal since Story 18.1's code review: the
    * status UPDATE carries an {@code expectedCode} predicate, so a track that left Submitted between
    * this request's read and its write &mdash; a concurrent Set to Draft &mdash; answers 409 {@code
-   * reportSubmissionErrorMsg} rather than being overwritten to Verified. There IS a lost-update
-   * refusal since Story 18.1's code review: the status UPDATE carries an {@code expectedCode}
-   * predicate, so a track that left Submitted between this request's read and its write &mdash; a
-   * concurrent Set to Draft &mdash; answers 409 {@code reportSubmissionErrorMsg} rather than being
-   * overwritten to Verified. There IS a lost-update refusal since Story 18.1's code review: the
-   * status UPDATE carries an {@code expectedCode} predicate, so a track that left Submitted between
-   * this request's read and its write &mdash; a concurrent Set to Draft &mdash; answers 409 {@code
    * reportSubmissionErrorMsg} rather than being overwritten to Verified.
    *
    * <p>The 409 and the 500 that share {@code reportSubmissionErrorMsg} are distinguishable only by
