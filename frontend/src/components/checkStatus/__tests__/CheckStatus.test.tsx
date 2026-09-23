@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw'
 import { getDefaultNormalizer } from '@testing-library/react'
 import {
   declaredRole,
+  fireEvent,
   render,
   renderAsAdmin,
   renderAsSubmitter,
@@ -18,6 +19,8 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { ILCR_ROLES, MOCK_USER_STORAGE_KEY } from '@/context/auth/mockUsers'
 import { ERR_MILL_YEAR_NOT_SELECTED } from '@/components/core/ScheduleLoadState'
 import CheckStatus, {
+  CONFIRM_SET_TO_DRAFT_1_TO_10,
+  CONFIRM_SET_TO_SUBMIT_1_TO_10,
   CONFIRM_SUBMIT_1_TO_10,
   HINT_NOT_ADMIN,
   HINT_NOT_DRAFT,
@@ -26,6 +29,8 @@ import CheckStatus, {
   HINT_NOT_SUBMITTED_11,
   HINT_NOT_SUBMITTER,
   HINT_NOT_WIRED,
+  SET_TO_DRAFT_FAILED,
+  SET_TO_SUBMIT_FAILED,
   SUBMIT_FAILED,
   VERIFY_FAILED,
 } from '../index'
@@ -819,22 +824,25 @@ describe('Check Status page (Story 15.2)', () => {
         HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'V' })),
       ),
     )
-    render(<CheckStatus />)
+    // Declared, not inherited. The default mock user IS the admin, so a bare `render()` would pass
+    // this arm whether or not the admin half of the gate works — and since Story 18.2 the arm
+    // asserts a LIVE admin-only control, which is the polarity that trap hides best.
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
     await screen.findAllByText(MET_TEXT)
 
     // 1–10 Submitted → both 1–10 bars: Set to Draft, Submit (greyed), Verified (enabled).
-    // The reversal is RENDERED by legacy's rule but greyed until Epic 18 wires it (17.2 review):
-    // legacy's was enabled and worked, and a live control that silently does nothing is worse than
-    // a greyed one that says why.
+    // AMENDED by Story 18.2, which supplied the transition: the 1–10 reversal is now LIVE, as
+    // legacy's was, and carries no hint. Schedule 11's stays greyed — Epic 26 owns that track.
     const setToDraft = screen.getAllByRole('button', { name: 'Set to Draft' })
     expect(setToDraft).toHaveLength(2)
     for (const button of setToDraft) {
-      expect(button).toBeDisabled()
-      expect(hintFor(button)).toHaveTextContent(HINT_NOT_WIRED)
+      expect(button).toBeEnabled()
+      expect(button).not.toHaveAttribute('aria-describedby')
       expect(region11().contains(button)).toBe(false)
     }
     expect(within(region1To10()).queryByRole('button', { name: 'Set to Submit' })).toBeNull()
-    // Schedule 11 Verified → its bar: Set to Submit (greyed, same reason), Submit and Verified greyed.
+    // Schedule 11 Verified → its bar: Set to Submit (greyed, still unwired), Submit and Verified greyed.
     const bar11 = item(SCHEDULE_TITLES['11'])
     const setToSubmit = within(bar11).getByRole('button', { name: 'Set to Submit' })
     expect(setToSubmit).toBeDisabled()
@@ -2252,31 +2260,1050 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
     expect(getSpy).toHaveBeenCalled() // the spies see this instance's traffic (positive control)
 
-    // AMENDED when Story 17.2 merged. Two of the three have moved on: the 1–10 Verified pair is now
-    // a live transition (its own suite covers it), and the reversals no longer render enabled — they
-    // are greyed until Epic 18 supplies their transition, because a live control that silently does
-    // nothing reads as a broken one. What this regression still owns is that everything WITHOUT a
-    // transition behind it stays unclickable and sends nothing.
+    // AMENDED TWICE. Story 17.2 made the 1–10 Verified pair a live transition; Story 18.2 made the
+    // 1–10 reversals live too. What is left without a transition behind it is Schedule 11's bar, and
+    // that is now all this regression owns: everything unwired stays unclickable and sends nothing.
+    const bar11 = within(item(SCHEDULE_TITLES['11']))
     const inert = [
-      within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Verified' }),
-      ...screen.getAllByRole('button', { name: 'Set to Draft' }),
-      ...screen.getAllByRole('button', { name: 'Set to Submit' }),
+      bar11.getByRole('button', { name: 'Verified' }),
+      bar11.getByRole('button', { name: 'Set to Submit' }),
     ]
-    // 1 Schedule 11 Verified (its track is at V, so not Submitted) + 2 Set to Draft + 1 Set to Submit.
-    expect(inert).toHaveLength(4)
     for (const button of inert) {
       expect(button).toBeDisabled()
       await user.click(button)
     }
-    // Positive control: the pair that IS wired is enabled, so "disabled" above is not vacuous.
-    const live = verifiedButtons1To10()
-    expect(live).toHaveLength(2)
+    // Positive control: every pair that IS wired is enabled, so "disabled" above is not vacuous —
+    // and all four live buttons sit outside the Schedule 11 bar.
+    const live = [
+      ...verifiedButtons1To10(),
+      ...screen.getAllByRole('button', { name: 'Set to Draft' }),
+    ]
+    expect(live).toHaveLength(4)
     for (const button of live) {
       expect(button).toBeEnabled()
+      expect(region11().contains(button)).toBe(false)
     }
     expect(openDialog()).toBeNull()
     expect(postSpy).not.toHaveBeenCalled()
     expect(screen.queryByText('Success')).not.toBeInTheDocument()
     expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+  })
+})
+
+// ================================================================================================
+// Reversal actions on the Schedules 1–10 track (Story 18.2 / UC-CHK-016, UC-CHK-018)
+//
+// Legacy put both buttons in all three action rows but `rendered=` them by track status, and hung the
+// transition on the confirm dialog's Yes, never on the button itself (checkStatus.xhtml:37-50 and
+// :189-196; CheckStatusMB.java:162-176). These arms hold that shape: the control is ABSENT outside its
+// one legal state rather than greyed, and Cancel cannot reach the server because nothing is wired to it.
+//
+// Every arm declares its role. The default mock user IS the administrator (`findMockUser(null)` falls
+// back to `MOCK_USERS[0]`), so an admin arm that does not say so passes whether or not the gate works —
+// and this is an admin-only story, which is exactly where that trap costs the most.
+// ================================================================================================
+
+const SET_TO_DRAFT_URL = `${API}/v1/check-status/set-to-draft`
+const SET_TO_SUBMIT_URL = `${API}/v1/check-status/set-to-submit`
+
+const DRAFT_MSG = 'Schedules 1-10 have been set back to draft.'
+/**
+ * A successful Set to Submit renders legacy's SUBMIT success text. Legacy reused that key and minted
+ * no "verification reversed" message of its own (UC-CHK-018.md:135), so this is parity, not a slip.
+ */
+const RESUBMITTED_MSG = 'Schedules 1-10 are successfully submitted.'
+
+const GATE_DRAFT_MSG =
+  'Schedules 1-10 cannot be set to Draft while one or more Schedules have errors. Please correct them and try again.'
+const GATE_SUBMIT_MSG =
+  'Schedules 1-10 cannot be set to Submit while one or more Schedules have errors. Please correct them and try again.'
+const NOT_SUBMITTED_ANYMORE_MSG =
+  'Schedules 1-10 are no longer in Submitted and cannot be set to Draft.'
+const NOT_VERIFIED_ANYMORE_MSG =
+  'Schedules 1-10 are no longer in Verified and cannot be set to Submit.'
+const REVERSAL_ERR_001 = 'Please Select Mill and Reporting Year in the Home Page. '
+const PERSISTENCE_MSG =
+  'An error has been found submitting schedules. The error details have been logged. Please contact ILCR application support.'
+
+/**
+ * The two reversals as one table. The arms that could plausibly differ per label run against BOTH:
+ * the render gates, the prompt, Cancel, the transition itself, the gate/wrong-status refusals, the
+ * missing-`detail` fallback and the in-flight lock. The arms that hard-code Set to Draft — the
+ * 400/403/404/409/500 status table, retry-after-failure, the 409 refresh window, the stale-response
+ * guard and the context switch — exercise ONE code path each: both labels run through the same
+ * `confirmReversal` factory, and the only per-label values it reads (`path`, `fallback`) are pinned
+ * by the arms above. Running them twice would buy duplicate coverage, not a second risk.
+ */
+const REVERSALS = [
+  {
+    label: 'Set to Draft',
+    url: SET_TO_DRAFT_URL,
+    otherUrl: SET_TO_SUBMIT_URL,
+    other: 'Set to Submit',
+    from: 'S',
+    to: 'D',
+    prompt: CONFIRM_SET_TO_DRAFT_1_TO_10,
+    success: DRAFT_MSG,
+    successKey: 'sch1-10DraftMsg',
+    fallback: SET_TO_DRAFT_FAILED,
+    gate: GATE_DRAFT_MSG,
+    stale: NOT_SUBMITTED_ANYMORE_MSG,
+    /** What the bar offers once the transition lands — the visible consequence of the re-sweep. */
+    becomes: null,
+  },
+  {
+    label: 'Set to Submit',
+    url: SET_TO_SUBMIT_URL,
+    otherUrl: SET_TO_DRAFT_URL,
+    other: 'Set to Draft',
+    from: 'V',
+    to: 'S',
+    prompt: CONFIRM_SET_TO_SUBMIT_1_TO_10,
+    success: RESUBMITTED_MSG,
+    successKey: 'sch1-10SubmittedMsg',
+    fallback: SET_TO_SUBMIT_FAILED,
+    gate: GATE_SUBMIT_MSG,
+    stale: NOT_VERIFIED_ANYMORE_MSG,
+    becomes: 'Set to Draft',
+  },
+] as const
+
+/** How `millContextWithBothTracks` words each code, so a status line can be asserted from a code. */
+const STATUS_WORD: Record<string, string> = { D: 'Draft', S: 'Submitted', V: 'Verified' }
+
+/** The 1–10 bars' copies of one reversal; Schedule 11's own button is never in this list. */
+const reversalButtons = (label: string) =>
+  screen.queryAllByRole('button', { name: label }).filter((b) => !region11().contains(b))
+
+/** A sweep fixed at one 1–10 status, Schedule 11 left in Draft so its own bar offers no reversal. */
+const reversalSweep = (code1To10: string | null) => {
+  const contextCode = code1To10 === 'S' || code1To10 === 'V' ? code1To10 : 'D'
+  server.use(
+    millContextWithBothTracks(contextCode, 'D'),
+    http.get(SWEEP_URL, () =>
+      HttpResponse.json(sweep({ statusCode1To10: code1To10, statusCode11: 'D' })),
+    ),
+  )
+}
+
+const mountAsAdmin = async (code1To10: string | null) => {
+  reversalSweep(code1To10)
+  renderAsAdmin(<CheckStatus />)
+  expect(declaredRole()).toBe(ILCR_ROLES.admin)
+  expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+}
+
+/** Press one of the two 1–10 copies of a reversal (0 = above the region, 1 = below) and open its prompt. */
+const pressReversal = async (
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  index: 0 | 1 = 0,
+) => {
+  await user.click(reversalButtons(label)[index])
+  return within(await dialog())
+}
+
+const confirmReversal = async (
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  index: 0 | 1 = 0,
+) => {
+  const prompt = await pressReversal(user, label, index)
+  await user.click(prompt.getByRole('button', { name: 'Yes' }))
+}
+
+/** A 200 body for one reversal, shaped as `SetTrackStatusResponse`. */
+const reversalOk = (to: string, key: string, text: string) =>
+  HttpResponse.json({ trackStatus: to, message: { key, text } })
+
+describe('Reversal actions on the Schedules 1–10 track (Story 18.2)', () => {
+  // ---- AC 1 / AC 2: the render gates -----------------------------------------------------------
+
+  test.each(REVERSALS)(
+    'CHK-016/018 S07: at $from an admin gets $label live in BOTH 1–10 bars, and never the other one',
+    async ({ label, from, other }) => {
+      await mountAsAdmin(from)
+
+      const buttons = reversalButtons(label)
+      expect(buttons).toHaveLength(2)
+      for (const button of buttons) {
+        // Live, with no hint: a wired reversal is an ordinary enabled control, as legacy's was.
+        expect(button).toBeEnabled()
+        expect(button).not.toHaveAttribute('aria-describedby')
+      }
+      expect(reversalButtons(other)).toHaveLength(0)
+    },
+  )
+
+  test.each([
+    ['D', 'the track is in Draft'],
+    ['O', 'the track carries the dead O code'],
+    [null, 'the wire omits statusCode entirely'],
+  ])(
+    'CHK-016/018 S07: neither reversal is in the DOM when %s (%s) — ABSENT, not disabled',
+    async (code) => {
+      await mountAsAdmin(code)
+
+      for (const label of ['Set to Draft', 'Set to Submit']) {
+        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+      }
+      // Positive control: the bars themselves are on the page, so "absent" is not "nothing rendered".
+      expect(submitButtons()).toHaveLength(3)
+      expect(verifiedButtons1To10()).toHaveLength(2)
+    },
+  )
+
+  test.each(REVERSALS)(
+    'CHK-016/018 S08: at $from the licensee gets no $label at all — admin-only, and hidden rather than greyed',
+    async ({ from, label }) => {
+      reversalSweep(from)
+      renderAsSubmitter(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.submitter)
+      expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+      expect(submitButtons()).toHaveLength(3)
+    },
+  )
+
+  test.each(REVERSALS)(
+    'CHK-016/018 S07 (control): the SAME fixture that hides $label from the licensee shows it to an admin',
+    async ({ from, label }) => {
+      await mountAsAdmin(from)
+      expect(reversalButtons(label)).toHaveLength(2)
+    },
+  )
+
+  // ---- AC 3: the confirmation, verbatim --------------------------------------------------------
+
+  test.each(REVERSALS)(
+    'CHK-016/018 BR-06: $label opens its own prompt with legacy’s four literals and sends nothing yet',
+    async ({ from, label, prompt, url, otherUrl }) => {
+      const posted = vi.fn()
+      await mountAsAdmin(from)
+      server.use(
+        http.post(url, () => {
+          posted()
+          return reversalOk('X', 'k', 'unused')
+        }),
+        http.post(otherUrl, () => {
+          posted()
+          return reversalOk('X', 'k', 'unused')
+        }),
+      )
+      const user = userEvent.setup()
+
+      const shown = await pressReversal(user, label)
+
+      // The apostrophe is ASCII and undoubled, and Set to Submit says SUBMIT, not SUBMITTED.
+      expect(shown.getByText(prompt, verbatim)).toBeInTheDocument()
+      expect(shown.getByText('Confirmation Required')).toBeInTheDocument()
+      expect(shown.getByRole('button', { name: 'Yes' })).toBeInTheDocument()
+      expect(shown.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+      // Opening asks the server nothing: legacy's button was type="button" whose whole behaviour was
+      // `confirmBackToDraft.show()`, and the action hung off the dialog's Yes.
+      expect(posted).not.toHaveBeenCalled()
+    },
+  )
+
+  test.each(REVERSALS)(
+    'AC 3: the other transitions’ prompts are never the one $label shows',
+    async ({ from, label, prompt }) => {
+      await mountAsAdmin(from)
+      const user = userEvent.setup()
+
+      const shown = await pressReversal(user, label)
+
+      const wrong = [
+        CONFIRM_SUBMIT_1_TO_10,
+        CONFIRM_SET_TO_DRAFT_1_TO_10,
+        CONFIRM_SET_TO_SUBMIT_1_TO_10,
+      ].filter((text) => text !== prompt)
+      for (const text of wrong) {
+        expect(shown.queryByText(text, verbatim)).toBeNull()
+      }
+      // Positive control: the right one IS there, so the absences are not a dead query.
+      expect(shown.getByText(prompt, verbatim)).toBeInTheDocument()
+    },
+  )
+
+  // ---- AC 4: Cancel ----------------------------------------------------------------------------
+
+  test.each(REVERSALS)(
+    'CHK-016/018 S02: Cancel, the close control and Escape each dismiss $label with NO request, and focus returns to the button',
+    async ({ from, label, url }) => {
+      const posted = vi.fn()
+      await mountAsAdmin(from)
+      server.use(
+        http.post(url, () => {
+          posted()
+          return reversalOk('X', 'k', 'unused')
+        }),
+      )
+      const user = userEvent.setup()
+
+      const trigger = () => reversalButtons(label)[0]
+
+      // All FOUR dismissals AC 4 names, and each one puts focus back on the button that opened the
+      // prompt — the modal is unmounted on close, so without that the user lands on <body>.
+      await user.click(trigger())
+      await user.click(within(await dialog()).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialog()).toBeNull())
+      expect(trigger()).toHaveFocus()
+
+      await user.click(trigger())
+      await user.click(within(await dialog()).getByRole('button', { name: 'Close' }))
+      await waitFor(() => expect(openDialog()).toBeNull())
+      expect(trigger()).toHaveFocus()
+
+      await user.click(trigger())
+      within(await dialog())
+        .getByRole('button', { name: 'Yes' })
+        .focus()
+      await user.keyboard('{Escape}')
+      await waitFor(() => expect(openDialog()).toBeNull())
+      expect(trigger()).toHaveFocus()
+
+      // ⚠️ The backdrop does NOT dismiss, and that is correct. AC 4 lists it with the other three,
+      // but Carbon refuses outside-click on a TRANSACTIONAL modal — one with a `ModalFooter` — and
+      // warns if you force it (`ComposedModal.js:173` gates on `isPassive`; `:219` warns that
+      // `preventCloseOnClickOutside` "should not be `false` when `<ModalFooter>` is present.
+      // Transactional, non-passive Modals should not be dissmissable by clicking outside"). A
+      // confirmation whose answer commits a status change is exactly that. Pinned as a refusal so a
+      // future reading of AC 4 does not "fix" it into an accidental dismissal.
+      await user.click(trigger())
+      await dialog()
+      fireEvent.click(screen.getByRole('presentation'))
+      await drainEventLoop()
+      expect(openDialog()).not.toBeNull()
+      await user.click(within(await dialog()).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialog()).toBeNull())
+      expect(trigger()).toHaveFocus()
+
+      // Proved by the absence of the POST, never by the prompt text disappearing: Carbon keeps a
+      // closed Modal's content mounted, so a text assertion would pass whatever Cancel did.
+      await drainEventLoop()
+      expect(posted).not.toHaveBeenCalled()
+      expect(screen.queryByText('Success')).not.toBeInTheDocument()
+      expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+      // Nothing moved: the reversal is still offered at its own status.
+      expect(reversalButtons(label)).toHaveLength(2)
+      expect(trigger()).toBeEnabled()
+
+      // Positive control: the same handler DOES fire on Yes.
+      await confirmReversal(user, label)
+      await waitFor(() => expect(posted).toHaveBeenCalledTimes(1))
+    },
+  )
+
+  // ---- AC 5: the transition --------------------------------------------------------------------
+
+  test.each(REVERSALS)(
+    'CHK-016/018 S01: Yes issues ONE POST to the right path with no body, renders the server’s own text, and the bar swaps over',
+    async ({ from, to, label, url, otherUrl, success, successKey, becomes }) => {
+      const seen: string[] = []
+      const bodies: string[] = []
+      const wrongPath = vi.fn()
+      let moved = false
+      let sweeps = 0
+      server.use(
+        // STATEFUL, both reads. A static `/mill-context` would leave the tombstone saying "Submitted"
+        // after a Set to Draft and no assertion here would notice — which is exactly what Task 9's
+        // warning is about.
+        http.get(MILL_CONTEXT, ({ request }) => {
+          const params = new URL(request.url).searchParams
+          const code = moved ? to : from
+          return HttpResponse.json({
+            millId: Number(params.get('millId')),
+            millNumber: String(params.get('millId')),
+            millName: 'Test Mill',
+            reportYear: Number(params.get('year')),
+            schedules1To10Status: { code, description: STATUS_WORD[code], date: '2017-01-01' },
+            schedule11Status: { code: 'D', description: 'Draft', date: '2017-02-02' },
+            millViewable: true,
+          })
+        }),
+        http.get(SWEEP_URL, () => {
+          sweeps += 1
+          return HttpResponse.json(sweep({ statusCode1To10: moved ? to : from, statusCode11: 'D' }))
+        }),
+        http.post(otherUrl, () => {
+          wrongPath()
+          return reversalOk('X', 'k', 'wrong path')
+        }),
+        http.post(url, async ({ request }) => {
+          const params = new URL(request.url).searchParams
+          seen.push(`${params.get('millId')}/${params.get('year')}`)
+          bodies.push(await request.text())
+          moved = true
+          return reversalOk(to, successKey, success)
+        }),
+      )
+      renderAsAdmin(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.admin)
+      expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+      expect(
+        await screen.findByText(`Sch 1-10 - Status: ${STATUS_WORD[from]} - Date: 2017-01-01`),
+      ).toBeInTheDocument()
+      const settled = sweeps
+      const user = userEvent.setup()
+
+      await confirmReversal(user, label, 1) // the BOTTOM bar — legacy's scroll anchor existed for it
+
+      // The server's words, verbatim — including Set to Submit's reuse of the SUBMIT success text.
+      expect(await screen.findByText(success, verbatim)).toBeInTheDocument()
+      expect(screen.getByText('Success')).toBeInTheDocument()
+      // Exactly one call, to THIS path, carrying the working context as query params and no body.
+      expect(seen).toEqual(['13050/2017'])
+      expect(bodies).toEqual([''])
+      expect(wrongPath).not.toHaveBeenCalled()
+      // Focus moved to the banner, which is a programmatic target only.
+      const column = bannerColumn(success)
+      expect(column).not.toBeNull()
+      await waitFor(() => expect(column).toHaveFocus())
+      expect(column).toHaveAttribute('tabindex', '-1')
+
+      // The tombstone's own line moved — the visible half of the transition, and the one a
+      // button-only assertion cannot see.
+      expect(
+        await screen.findByText(`Sch 1-10 - Status: ${STATUS_WORD[to]} - Date: 2017-01-01`),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(`Sch 1-10 - Status: ${STATUS_WORD[from]} - Date: 2017-01-01`),
+      ).toBeNull()
+
+      // The re-sweep landed and the gates re-evaluated against the SERVER's new status, not a local
+      // copy of it: the button that was pressed is gone, and the one the new status offers is there.
+      await waitFor(() => expect(reversalButtons(label)).toHaveLength(0))
+      // EXACTLY one re-read (AC 5 says "bumps `reloadToken` once"). A double bump also swaps the
+      // buttons over, so counting is the only thing that tells the two apart.
+      await drainEventLoop()
+      expect(sweeps - settled).toBe(1)
+      if (becomes) {
+        await waitFor(() => expect(reversalButtons(becomes)).toHaveLength(2))
+      } else {
+        expect(reversalButtons('Set to Draft')).toHaveLength(0)
+        expect(reversalButtons('Set to Submit')).toHaveLength(0)
+      }
+    },
+  )
+
+  // ---- AC 6 / AC 7 / AC 8: refusals ------------------------------------------------------------
+
+  test.each([
+    [400, REVERSAL_ERR_001, false],
+    [403, FORBIDDEN, false],
+    [404, NOT_FOUND, false],
+    [409, NOT_ACTIVE, true],
+    [500, PERSISTENCE_MSG, false],
+  ] as const)(
+    'CHK-016/018 S03: a %s renders the server’s detail verbatim in the banner, leaves the verdicts standing, and re-sweeps only on a conflict',
+    async (status, detail, resyncs) => {
+      let sweeps = 0
+      server.use(
+        millContextWithBothTracks('S', 'D'),
+        http.get(SWEEP_URL, () => {
+          sweeps += 1
+          return HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' }))
+        }),
+        http.post(SET_TO_DRAFT_URL, () => problem(status, detail)),
+      )
+      renderAsAdmin(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.admin)
+      expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+      const settled = sweeps
+      const user = userEvent.setup()
+
+      await confirmReversal(user, 'Set to Draft')
+
+      // ERR-001's trailing space is real and must survive to the screen, so this one is untrimmed.
+      expect(await screen.findByText(detail, verbatimUntrimmed)).toBeInTheDocument()
+      expect(screen.getByText('Action failed')).toBeInTheDocument()
+      // A refusal is a BANNER. The page is not blanked and the good sweep result is still on screen.
+      expect(screen.getAllByText(MET_TEXT)).toHaveLength(12)
+      expect(screen.queryByText(LOAD_FAILED)).not.toBeInTheDocument()
+      expect(region1To10()).toBeInTheDocument()
+      // Exactly once, in the banner. `renderScheduleLoadState` owns the no-context page and shows
+      // this very ERR-001 text, so a second copy would mean the load state had taken the page over
+      // — which is the failure this arm exists to catch, and the reason it counts rather than
+      // asserting the text is absent.
+      expect(screen.getAllByText(detail, verbatimUntrimmed)).toHaveLength(1)
+
+      // Only a 409 says "your picture of the state is stale", so only a 409 re-reads.
+      await drainEventLoop()
+      expect(sweeps - settled).toBe(resyncs ? 1 : 0)
+    },
+  )
+
+  test.each(REVERSALS)(
+    'CHK-016/018 S03: $label renders its own gate refusal and its own wrong-status refusal, each verbatim',
+    async ({ from, label, url, gate, stale }) => {
+      for (const detail of [gate, stale]) {
+        reversalSweep(from)
+        server.use(http.post(url, () => problem(409, detail)))
+        const view = renderAsAdmin(<CheckStatus />)
+        expect(declaredRole()).toBe(ILCR_ROLES.admin)
+        expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+        const user = userEvent.setup()
+
+        await confirmReversal(user, label)
+
+        expect(await screen.findByText(detail, verbatim)).toBeInTheDocument()
+        // NOTE: deviation (V) — that the refusal does not reuse legacy's "The report cannot be
+        // submitted." wording — is pinned on the SERVER, at `SetToDraftIT.java:496` /
+        // `SetToSubmitIT.java:447`. It cannot be pinned here: this page renders whatever `detail`
+        // the fixture sends, so an assertion about the wording would only be testing the mock.
+        view.unmount()
+      }
+    },
+  )
+
+  test.each(REVERSALS)(
+    'AC 7: a failure carrying no ProblemDetail detail falls back to $label’s own client string',
+    async ({ from, label, url, fallback }) => {
+      await mountAsAdmin(from)
+      // Boot's own 401 body — a JSON error with everything EXCEPT `detail`. Keying the fallback on
+      // "was this a network error?" instead of on the missing field renders the literal `undefined`.
+      server.use(
+        http.post(url, () =>
+          HttpResponse.json(
+            { timestamp: '2026-09-23T00:00:00Z', status: 401, error: 'Unauthorized', path: '/x' },
+            { status: 401 },
+          ),
+        ),
+      )
+      const user = userEvent.setup()
+
+      await confirmReversal(user, label)
+
+      expect(await screen.findByText(fallback, verbatim)).toBeInTheDocument()
+      expect(screen.getByText('Action failed')).toBeInTheDocument()
+      expect(screen.queryByText('undefined')).not.toBeInTheDocument()
+    },
+  )
+
+  // ---- AC 9: the in-flight lock ----------------------------------------------------------------
+
+  test.each(REVERSALS)(
+    'AC 9: while $label is in flight BOTH 1–10 copies are greyed, a second click issues nothing, and the lock always comes off',
+    async ({ from, to, label, url, success, successKey }) => {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const posted = vi.fn()
+      let moved = false
+      server.use(
+        millContextWithBothTracks(from, 'D'),
+        http.get(SWEEP_URL, () =>
+          HttpResponse.json(sweep({ statusCode1To10: moved ? to : from, statusCode11: 'D' })),
+        ),
+        http.post(url, async () => {
+          posted()
+          await held
+          moved = true
+          return reversalOk(to, successKey, success)
+        }),
+      )
+      renderAsAdmin(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.admin)
+      expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+      const user = userEvent.setup()
+
+      await confirmReversal(user, label)
+
+      // Both bars grey together: they render from one action object, so one lock covers the pair.
+      await waitFor(() => {
+        const buttons = reversalButtons(label)
+        expect(buttons).toHaveLength(2)
+        for (const button of buttons) {
+          expect(button).toBeDisabled()
+        }
+      })
+      // Pressing either copy now does nothing at all: a disabled Carbon button swallows the click,
+      // so no prompt opens. (`busyRef` guards the prompt's Yes, not the button — a live button would
+      // have opened the prompt, not POSTed. The same-tick double-Yes arm below is what exercises it.)
+      for (const button of reversalButtons(label)) {
+        await user.click(button)
+      }
+      expect(openDialog()).toBeNull()
+      expect(posted).toHaveBeenCalledTimes(1)
+
+      release()
+      expect(await screen.findByText(success, verbatim)).toBeInTheDocument()
+      await waitFor(() => expect(reversalButtons(label)).toHaveLength(0))
+      await drainEventLoop()
+      expect(posted).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  test('AC 9: the lock is released even when the POST fails, so the reversal can be retried', async () => {
+    let attempts = 0
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+      ),
+      http.post(SET_TO_DRAFT_URL, () => {
+        attempts += 1
+        return problem(500, PERSISTENCE_MSG)
+      }),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    await confirmReversal(user, 'Set to Draft')
+    expect(await screen.findByText(PERSISTENCE_MSG, verbatim)).toBeInTheDocument()
+
+    await waitFor(() => {
+      for (const button of reversalButtons('Set to Draft')) {
+        expect(button).toBeEnabled()
+      }
+    })
+    await confirmReversal(user, 'Set to Draft')
+    await waitFor(() => expect(attempts).toBe(2))
+  })
+
+  // ---- AC 10 / AC 11: the working context ------------------------------------------------------
+
+  test('AC 9 / AC 10: a reversal that lands after the mill/year flips writes nothing AND leaves the new context able to act', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const seen: string[] = []
+    let first = true
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, ({ request }) => {
+        // Echo BOTH halves of the working context: the hook refuses a body that does not match the
+        // request it answers, and a sweep echoing only the mill fails the new context's read.
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+          }),
+        )
+      }),
+      http.post(SET_TO_DRAFT_URL, async ({ request }) => {
+        seen.push(String(new URL(request.url).searchParams.get('millId')))
+        if (first) {
+          first = false
+          await held
+        }
+        return reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG)
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmReversal(user, 'Set to Draft')
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    // Let the NEW context's sweep settle BEFORE the old response lands. Without this wait the page is
+    // still on its loading state when the stale `.then` fires, and "no banner is on screen" would be
+    // true whether or not the guard ran — the arm would pass against a page that had no banner
+    // anywhere to show.
+    await waitFor(() => expect(screen.getAllByText(MET_TEXT)).toHaveLength(12))
+
+    // The new context's buttons stay GREYED while the old request is unresolved. `busyRef` is what
+    // the confirm handler checks and no context change clears it, so a button re-enabled here would
+    // be live with a Yes that silently does nothing — worse than the greying it replaced.
+    expect(reversalButtons('Set to Draft')).toHaveLength(2)
+    for (const button of reversalButtons('Set to Draft')) {
+      expect(button).toBeDisabled()
+    }
+
+    release()
+    await drainEventLoop()
+
+    // The old context's success never reaches the new report's screen.
+    expect(screen.queryByText(DRAFT_MSG, verbatim)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+
+    // And the lock came off — the buttons are live again, and, the half no greying can prove, the
+    // ref is clear too: gate the release on `isCurrent()` and this second POST is never sent.
+    await waitFor(() => {
+      for (const button of reversalButtons('Set to Draft')) {
+        expect(button).toBeEnabled()
+      }
+    })
+    await confirmReversal(user, 'Set to Draft')
+    await waitFor(() => expect(seen).toEqual(['13050', '999']))
+    expect(await screen.findByText(DRAFT_MSG, verbatim)).toBeInTheDocument()
+  })
+
+  test('AC 9: the reversal stays greyed through the 409 re-sweep, not merely until the POST answers', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let sweeps = 0
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, async () => {
+        sweeps += 1
+        // The re-sweep the 409 triggers is held open; the first (mount) sweep answers at once.
+        if (sweeps > 1) {
+          await held
+        }
+        return HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' }))
+      }),
+      http.post(SET_TO_DRAFT_URL, () => problem(409, NOT_ACTIVE)),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    await confirmReversal(user, 'Set to Draft')
+
+    // The POST has answered — its refusal is already on screen — but the re-read it triggered has
+    // not. Through that window the status on screen is the one that has just been contradicted, so
+    // the button must stay out of action: `busy` is `reversing || isReloading`, not `reversing`.
+    expect(await screen.findByText(NOT_ACTIVE, verbatim)).toBeInTheDocument()
+    await waitFor(() => expect(sweeps).toBe(2))
+    for (const button of reversalButtons('Set to Draft')) {
+      expect(button).toBeDisabled()
+    }
+
+    release()
+
+    // Positive control: once the re-sweep lands the same button comes back, so "disabled" above was
+    // the refresh window and not a lock that never releases.
+    await waitFor(() => {
+      const buttons = reversalButtons('Set to Draft')
+      expect(buttons).toHaveLength(2)
+      for (const button of buttons) {
+        expect(button).toBeEnabled()
+      }
+    })
+  })
+
+  test('AC 11: switching mill/year abandons a pending reversal prompt and clears a settled outcome', async () => {
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+      ),
+      http.post(SET_TO_DRAFT_URL, () => problem(409, NOT_ACTIVE)),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    // A settled outcome first, then a prompt left open over it.
+    await confirmReversal(user, 'Set to Draft')
+    expect(await screen.findByText(NOT_ACTIVE, verbatim)).toBeInTheDocument()
+    await pressReversal(user, 'Set to Draft')
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+
+    await waitFor(() => expect(screen.queryByText(NOT_ACTIVE, verbatim)).not.toBeInTheDocument())
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+    // The prompt is gone rather than re-shown over a report the user never asked about. Carbon keeps
+    // a closed Modal mounted, so this asserts the DIALOG ROLE is absent, not that the text is.
+    await waitFor(() => expect(openDialog()).toBeNull())
+  })
+
+  test('AC 9: two Yes presses in ONE tick issue a single POST — the synchronous busyRef, not the disabled button', async () => {
+    const posted = vi.fn()
+    let moved = false
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: moved ? 'D' : 'S', statusCode11: 'D' })),
+      ),
+      http.post(SET_TO_DRAFT_URL, () => {
+        posted()
+        moved = true
+        return reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG)
+      }),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    const prompt = await pressReversal(user, 'Set to Draft')
+    const yes = prompt.getByRole('button', { name: 'Yes' })
+
+    // Both clicks land before React re-renders, so the modal is still mounted for the second and
+    // `reversing` is still false when it runs — a state flag would let both through. `fireEvent`
+    // rather than `userEvent` precisely because it does NOT await between the two.
+    fireEvent.click(yes)
+    fireEvent.click(yes)
+
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(DRAFT_MSG, verbatim)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(posted).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByText(DRAFT_MSG, verbatim)).toHaveLength(1)
+  })
+
+  test('AC 9: a Yes refused by the in-flight lock still CLOSES its prompt rather than leaving a dead button', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const verified = vi.fn()
+    const reversed = vi.fn()
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+      ),
+      http.post(`${API}/v1/check-status/verify`, async () => {
+        verified()
+        await held
+        return HttpResponse.json({
+          trackStatus: 'V',
+          message: {
+            key: 'sch1-10VerifiedMsg',
+            text: 'Schedules 1-10 status has been updated to verified.',
+          },
+        })
+      }),
+      http.post(SET_TO_DRAFT_URL, () => {
+        reversed()
+        return reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG)
+      }),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    // At Submitted an admin is offered BOTH Verified and Set to Draft — the state Story 18.2 created.
+    expect(reversalButtons('Set to Draft')).toHaveLength(2)
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await dialog()).getByRole('button', { name: 'Yes' }))
+    await waitFor(() => expect(verified).toHaveBeenCalledTimes(1))
+
+    // One in-flight term covers all three wired transitions, so the reversal greys with Verified
+    // rather than sitting live over a transition that is about to move the track underneath it.
+    await waitFor(() => {
+      for (const button of reversalButtons('Set to Draft')) {
+        expect(button).toBeDisabled()
+      }
+    })
+
+    release()
+    expect(
+      await screen.findByText('Schedules 1-10 status has been updated to verified.', verbatim),
+    ).toBeInTheDocument()
+    // The reversal never fired: not silently swallowed at the busyRef guard, never offered at all.
+    expect(reversed).not.toHaveBeenCalled()
+  })
+
+  test('AC 9 (mirror): while a reversal is in flight the Verified pair greys too — one lock, both directions', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const verified = vi.fn()
+    let moved = false
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: moved ? 'D' : 'S', statusCode11: 'D' })),
+      ),
+      http.post(`${API}/v1/check-status/verify`, () => {
+        verified()
+        return HttpResponse.json({
+          trackStatus: 'V',
+          message: { key: 'sch1-10VerifiedMsg', text: 'unused' },
+        })
+      }),
+      http.post(SET_TO_DRAFT_URL, async () => {
+        await held
+        moved = true
+        return reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG)
+      }),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    // Both are live at Submitted (positive control for the greying that follows).
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeEnabled()
+    }
+
+    await confirmReversal(user, 'Set to Draft')
+
+    // Verified greys on the REVERSAL's flight. Without the shared term its Yes would reach the
+    // busyRef guard and do nothing, and then — once the track had moved to Draft — send a verify the
+    // server can only refuse, painting over the reversal's success.
+    await waitFor(() => {
+      const buttons = verifiedButtons1To10()
+      expect(buttons).toHaveLength(2)
+      for (const button of buttons) {
+        expect(button).toBeDisabled()
+      }
+    })
+    for (const button of verifiedButtons1To10()) {
+      await user.click(button)
+    }
+    expect(openDialog()).toBeNull()
+    expect(verified).not.toHaveBeenCalled()
+
+    release()
+    expect(await screen.findByText(DRAFT_MSG, verbatim)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(verified).not.toHaveBeenCalled()
+  })
+
+  test('AC 6 / AC 10: a reversal REFUSAL that lands after the mill/year flips paints nothing and re-sweeps nothing', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let sweeps = 0
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, ({ request }) => {
+        sweeps += 1
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+          }),
+        )
+      }),
+      http.post(SET_TO_DRAFT_URL, async () => {
+        await held
+        return problem(409, NOT_ACTIVE)
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmReversal(user, 'Set to Draft')
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await waitFor(() => expect(screen.getAllByText(MET_TEXT)).toHaveLength(12))
+    const settled = sweeps
+
+    release()
+    await drainEventLoop()
+
+    // The `.catch` is guarded too, not just the `.then`: the old context's refusal never reaches the
+    // new report's banner, and its 409 never triggers a re-sweep against a context it knows nothing
+    // about. Every previous flip arm released a SUCCESS, so this path had no observer.
+    expect(screen.queryByText(NOT_ACTIVE, verbatim)).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+    expect(sweeps).toBe(settled)
+  })
+
+  test('AC 5 / D3: opening a reversal prompt clears the standing banner, and Cancel leaves it cleared', async () => {
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+      ),
+      http.post(SET_TO_DRAFT_URL, () => problem(409, GATE_DRAFT_MSG)),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    await confirmReversal(user, 'Set to Draft')
+    expect(await screen.findByText(GATE_DRAFT_MSG, verbatim)).toBeInTheDocument()
+
+    // `requestReversal` follows verify, not submit: the outcome clears when the prompt OPENS, so a
+    // settled banner never sits under a fresh question looking like its answer. Asserted while the
+    // dialog is still open — after a Cancel the render-phase reset would confound it.
+    await pressReversal(user, 'Set to Draft')
+    expect(openDialog()).not.toBeNull()
+    expect(screen.queryByText(GATE_DRAFT_MSG, verbatim)).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+
+    // ⚠️ And it stays cleared on Cancel — legacy's `p:messages` survived a cancelled dialog, ours
+    // does not. Ratified as D3 (follow verify's shape); recorded here so the trade is visible: the
+    // gate refusal naming what to fix is the one most worth keeping, and it is the one lost.
+    await user.click(within(await dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
+    expect(screen.queryByText(GATE_DRAFT_MSG, verbatim)).not.toBeInTheDocument()
+  })
+
+  test('D8 / BR-07: Schedule 11 at Submitted gets its own greyed Set to Draft, and it sends nothing', async () => {
+    const postSpy = vi.spyOn(apiService.getAxiosInstance(), 'post')
+    server.use(
+      millContextWithBothTracks('D', 'S'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'D', statusCode11: 'S' })),
+      ),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    // The OTHER half of D8 — every other HINT_NOT_WIRED arm is Schedule 11 at Verified, so the
+    // `setToDraft` branch of the 11 track had no observer at all.
+    const sch11 = within(item(SCHEDULE_TITLES['11']))
+    const button = sch11.getByRole('button', { name: 'Set to Draft' })
+    expect(button).toBeDisabled()
+    expect(hintFor(button)).toHaveTextContent(HINT_NOT_WIRED)
+    expect(sch11.queryByRole('button', { name: 'Set to Submit' })).toBeNull()
+
+    await user.click(button)
+    expect(openDialog()).toBeNull()
+    expect(postSpy).not.toHaveBeenCalled()
+
+    // Positive control: the 1–10 track is at Draft, so its bars offer no reversal to confuse this.
+    expect(reversalButtons('Set to Draft')).toHaveLength(0)
+  })
+
+  // ---- AC 12: Schedule 11 ----------------------------------------------------------------------
+
+  test('CHK-016/018 BR-07: a 1–10 reversal leaves Schedule 11’s bar and status line untouched', async () => {
+    let moved = false
+    server.use(
+      millContextWithBothTracks('S', 'V'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: moved ? 'D' : 'S', statusCode11: 'V' })),
+      ),
+      http.post(SET_TO_DRAFT_URL, () => {
+        moved = true
+        return reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG)
+      }),
+    )
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    const user = userEvent.setup()
+
+    // Schedule 11 is at Verified, so legacy renders ITS Set to Submit inside the tab — greyed, since
+    // Epic 26 owns that track's transition. It must not go live because the 1–10 pair did.
+    const sch11SetToSubmit = () =>
+      within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Set to Submit' })
+    expect(sch11SetToSubmit()).toBeDisabled()
+    expect(hintFor(sch11SetToSubmit())).toHaveTextContent(HINT_NOT_WIRED)
+
+    await confirmReversal(user, 'Set to Draft')
+    expect(await screen.findByText(DRAFT_MSG, verbatim)).toBeInTheDocument()
+    await waitFor(() => expect(reversalButtons('Set to Draft')).toHaveLength(0))
+
+    // Schedule 11's own bar and status line are exactly as they were.
+    expect(sch11SetToSubmit()).toBeDisabled()
+    expect(
+      within(item(SCHEDULE_TITLES['11'])).queryByRole('button', { name: 'Set to Draft' }),
+    ).toBeNull()
+    expect(screen.getByText('Sch 11 - Status: Verified - Date: 2017-02-02')).toBeInTheDocument()
   })
 })

@@ -326,14 +326,25 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     requires it verbatim, and every other page already implements it. This is behaviour lost in the rebuild.
   - **Ticket:** [bcgov/nr-ilcr#324](https://github.com/bcgov/nr-ilcr/issues/324).
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the confirm on the four navigation paths when capacity
-    allows; QA re-verifies and closes this entry then. All three `@discovered-divergence` tests assert the
-    CORRECT behaviour (the prompt appears), so they are RED today and go green on their own when the fix lands,
-    at which point their tags come off. No test change is needed.
-  - **Test:** `features/sch4/uc-sch4-001-report-transportation/nav-and-recompute.feature` (S12,
-    `@discovered-divergence` ×3 — panel Back, Add New Location, and sub-page Back). A fourth, passing scenario
-    asserts the compensating guarantee: whatever is decided about the prompt, a discarded edit is never written
-    to the database.
+  - **Status:** **FIXED 2026-09-22 by the PR closing #324 — awaiting QA re-verification against the running
+    app, then CLOSE.** The fix routes every panel-leaving control (Back/Close, Add New Location, Edit, Copy)
+    through one dirty check and the same "Unsaved changes" modal NAV-002 already used, and gives the
+    sub-page's Back its own instance of that modal. Two decisions to know when re-verifying:
+      - **Dirty-gated, not unconditional** (deviation from legacy, same as Schedule 5's camp panel and
+        Schedule 8's rates page): an untouched panel closes silently; a Copy counts as unsaved from the moment
+        it opens; a saved panel is clean again until the next keystroke. On the sub-page, "unsaved" means a
+        typed-but-not-Added row or an in-place row edit not yet Saved — rows persist on Add/Save, so a
+        sub-page with nothing pending returns to the list silently.
+      - **Copy is guarded too**, though the ticket's table listed only Back / Edit / Add New: it replaces the
+        dirty panel by exactly the same path as Edit, and legacy's five `p:confirm`s cover the row controls.
+    The three `@discovered-divergence` tags came off with NO assertion edited; the Cancel arm and the
+    Edit-another-location path were folded into two of them (no new anchors), and the "never written"
+    scenario now confirms the prompt before asserting the discard. 13 unit tests pin both arms in
+    `schedule4/__tests__/Schedule4.test.tsx` ("NAV-001"). Found 2026-08-17; fourth path found 2026-08-19.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/nav-and-recompute.feature` (S12 ×3 — panel
+    Back + Cancel, Edit-another + Add New Location, and sub-page Back; all green by design once the fix is
+    deployed). A fourth scenario asserts the compensating guarantee: a discarded edit — now the prompt's
+    Continue — is never written to the database.
 
 - **DIV-4 — After saving, the cost-per-cubic-metre column still shows the OLD value until you reopen the location.**
   - **What's wrong:** `$/m³` is calculated by the system from the Cost and Volume entered. Save a location and

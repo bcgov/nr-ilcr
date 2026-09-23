@@ -89,6 +89,21 @@ const NAV_SAVE_FIRST =
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
 
+// NAV-001 (#324): the panel-leaving action held behind the "unsaved data will be lost" confirm while the
+// panel is dirty — Back/Close, Add New Location, and Edit/View/Copy of a (different) location. Legacy
+// attached `confirmNavigationMsg` to every one of these controls (schedule4.xhtml:74,130,160,189,213)
+// unconditionally; like Schedule 5's camp panel this fires only when there is something to lose.
+type PanelLeave =
+  | { kind: 'close' }
+  | { kind: 'new' }
+  | { kind: 'copy'; location: Location }
+  | { kind: 'open'; location: Location; mode: 'edit' | 'view' }
+
+// What the panel held when it was opened (or last saved) — the baseline the dirty check compares the
+// live entry against. Compared as the ENTERED TEXT, like Schedule 5: CommaNumberInput never rewrites
+// the raw string on blur, so merely tabbing through a field cannot fake a change.
+type PanelSnapshot = { name: string; categories: CategoryForm; comments: string }
+
 const emptyCategoryForm = (): CategoryForm => {
   const form: CategoryForm = {}
   for (const def of ALL_CATEGORIES) {
@@ -118,6 +133,49 @@ function seedCategoryForm(location: Location): {
 
 type CategoryDef = (typeof ALL_CATEGORIES)[number]
 type CategoryField = 'volume' | 'cost' | 'distance'
+
+const CATEGORY_FIELDS: CategoryField[] = ['volume', 'cost', 'distance']
+
+const emptySnapshot = (): PanelSnapshot => ({
+  name: '',
+  categories: emptyCategoryForm(),
+  comments: '',
+})
+
+const blankEntry = () => ({ volume: '', cost: '', distance: '' })
+
+// Field-by-field over the known category codes rather than a JSON comparison, so key order and a
+// missing (never-touched) code both compare as equal to their blank counterpart.
+const sameCategoryForm = (a: CategoryForm, b: CategoryForm): boolean =>
+  ALL_CATEGORIES.every((def) => {
+    const left = a[def.code] ?? blankEntry()
+    const right = b[def.code] ?? blankEntry()
+    return CATEGORY_FIELDS.every((field) => left[field] === right[field])
+  })
+
+// The grid after a Save resolves. The inputs stay live while the PUT is in flight, so a plain re-seed
+// from the echo would wipe anything typed meanwhile AND (against an echo baseline) call it clean —
+// exactly the edit NAV-001 exists to protect (PR #492 review). So: a field the user has NOT touched
+// since dispatch takes the server's echo (AD-5 — the echo supersedes the mirror); a field typed into
+// during the request keeps its live value, which stays visible and, measured against the echo, dirty.
+const rebaseCategoryForm = (
+  live: CategoryForm,
+  sent: CategoryForm,
+  echo: CategoryForm,
+): CategoryForm => {
+  const merged: CategoryForm = {}
+  for (const def of ALL_CATEGORIES) {
+    const liveEntry = live[def.code] ?? blankEntry()
+    const sentEntry = sent[def.code] ?? blankEntry()
+    const echoEntry = echo[def.code] ?? blankEntry()
+    merged[def.code] = {
+      volume: liveEntry.volume !== sentEntry.volume ? liveEntry.volume : echoEntry.volume,
+      cost: liveEntry.cost !== sentEntry.cost ? liveEntry.cost : echoEntry.cost,
+      distance: liveEntry.distance !== sentEntry.distance ? liveEntry.distance : echoEntry.distance,
+    }
+  }
+  return merged
+}
 
 // The category grid renders every transportation line in legacy code order (40–55): the 12 amount
 // categories interleaved with the 3 list sub-page group rows (43 Towing, 46 Truck Rehaul, 55 Other).
@@ -319,12 +377,19 @@ const Schedule4: FC = () => {
   const [panelEditId, setPanelEditId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
   const [panelComments, setPanelComments] = useState('')
+  // The NAV-001 baseline: set when the panel opens and again after each successful save, so "dirty"
+  // means "changed since the last save". `null` (no panel) cannot be compared and counts as clean.
+  const [panelBaseline, setPanelBaseline] = useState<PanelSnapshot | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Location | null>(null)
-  // Pending sub-page open awaiting a NAV-002 (existing) / NAV-003 (new, save-first) confirm.
-  const [navConfirm, setNavConfirm] = useState<{
-    kind: 'existing' | 'new'
-    def: SubPageDef
-  } | null>(null)
+  // The one navigation held behind the confirm modal: a sub-page open awaiting NAV-002 (existing) /
+  // NAV-003 (new, save-first), or a panel-leaving action awaiting NAV-001 (leave). One modal instance
+  // serves all three so a hidden duplicate never shadows the visible one.
+  const [navConfirm, setNavConfirm] = useState<
+    | { kind: 'existing'; def: SubPageDef }
+    | { kind: 'new'; def: SubPageDef }
+    | { kind: 'leave'; leave: PanelLeave }
+    | null
+  >(null)
 
   // Clear the transient mutation notifications + close the panel whenever a fresh document loads
   // (mill/year change), mirroring Schedule 9's resetTransient: resetBanners() drops the hook-owned
@@ -367,6 +432,7 @@ const Schedule4: FC = () => {
     setPanelEditId(null)
     setPanelRevision(null)
     setPanelComments('')
+    setPanelBaseline(emptySnapshot()) // an untouched New panel closes silently
   }
 
   const openEditOrView = (location: Location, mode: 'edit' | 'view') => {
@@ -380,6 +446,11 @@ const Schedule4: FC = () => {
     setPanelEditId(location.id)
     setPanelRevision(location.revisionCount)
     setPanelComments(location.comments ?? '')
+    setPanelBaseline({
+      name: location.name,
+      categories: seeded.form,
+      comments: location.comments ?? '',
+    })
   }
 
   const openCopy = (location: Location) => {
@@ -396,9 +467,52 @@ const Schedule4: FC = () => {
     setPanelRevision(null)
     setPanelComments(location.comments ?? '') // copy clones the comments (not the name)
     setWarnMessage(copyWarning(location.name))
+    // A copy is dirty from the moment it opens (Schedule 5 does the same): it carries the source's
+    // amounts against an empty baseline, and leaving it abandons the location the user asked to create.
+    setPanelBaseline(emptySnapshot())
   }
 
   const closePanel = () => setPanelMode('closed')
+
+  // ---- NAV-001 (#324): confirm before a dirty panel is discarded. ---------------------------------
+
+  // A `view` panel is excluded explicitly: there is no entry to lose, and it is the only mode reachable
+  // on a non-editable document. An unprovable baseline (open panel, no snapshot) is treated as dirty —
+  // a spurious confirm costs a click, a missing one costs the user's work.
+  const panelDirty =
+    panelMode !== 'closed' &&
+    panelMode !== 'view' &&
+    (panelBaseline === null ||
+      panelName !== panelBaseline.name ||
+      panelComments !== panelBaseline.comments ||
+      !sameCategoryForm(panelCategories, panelBaseline.categories))
+
+  const runLeave = (leave: PanelLeave) => {
+    switch (leave.kind) {
+      case 'close':
+        closePanel()
+        break
+      case 'new':
+        openNew()
+        break
+      case 'copy':
+        openCopy(leave.location)
+        break
+      case 'open':
+        openEditOrView(leave.location, leave.mode)
+        break
+    }
+  }
+
+  // Every panel-leaving control goes through here: straight through when nothing would be lost, else
+  // held behind the NAV-001 modal until the user continues (runs it) or cancels (stays put).
+  const requestLeave = (leave: PanelLeave) => {
+    if (panelDirty) {
+      setNavConfirm({ kind: 'leave', leave })
+    } else {
+      runLeave(leave)
+    }
+  }
 
   const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
     // value is already the raw digit string (CommaNumberInput strips its display grouping).
@@ -491,6 +605,13 @@ const Schedule4: FC = () => {
     const wasEdit = panelMode === 'edit'
     const editId = panelEditId
     const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
+    // What was SENT: the new baseline for name/comments (the echo is trimmed, the inputs are not), and
+    // the reference that tells a category field typed into while the save was in flight from one that
+    // was not. The inputs stay live during the request, so post-dispatch entry must survive the echo
+    // re-seed AND still count as unsaved.
+    const sentName = panelName
+    const sentComments = panelComments
+    const sentCategories = panelCategories
     putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
@@ -507,11 +628,17 @@ const Schedule4: FC = () => {
         // to supersede the mirror on every Save; without this the panel kept rendering
         // `deriveCategoryPerUnits(panelCommitted)` for the rest of the session, so a category whose
         // rate the mirror rounded differently would show one figure in the panel and another in the
-        // list row beneath it (code review 2026-08-21).
+        // list row beneath it (code review 2026-08-21). Fields typed into since dispatch are the one
+        // exception: they keep the live value (see rebaseCategoryForm), so nothing entered during the
+        // request is silently replaced.
         const echoed = seedCategoryForm(saved)
-        setPanelCategories(echoed.form)
+        setPanelCategories((live) => rebaseCategoryForm(live, sentCategories, echoed.form))
         setPanelCommitted(echoed.form)
         setPanelPerUnit(echoed.perUnit)
+        // The baseline is what the server now holds. An untouched panel is clean again (Back/Edit/Add
+        // New close or switch it without NAV-001); anything typed while the PUT was pending differs
+        // from it and is still guarded.
+        setPanelBaseline({ name: sentName, categories: echoed.form, comments: sentComments })
       } else {
         setPanelMode('closed')
       }
@@ -617,12 +744,14 @@ const Schedule4: FC = () => {
 
   const confirmNav = () => {
     if (!navConfirm) return
-    const { kind, def } = navConfirm
+    const pending = navConfirm
     setNavConfirm(null)
-    if (kind === 'existing' && panelEditId !== null) {
-      openSubPage(def, panelEditId) // discard panel edits, open the sub-page
+    if (pending.kind === 'leave') {
+      runLeave(pending.leave) // NAV-001: discard the panel entry, then do what was asked
+    } else if (pending.kind === 'existing' && panelEditId !== null) {
+      openSubPage(pending.def, panelEditId) // discard panel edits, open the sub-page
     } else {
-      saveLocationThenOpen(def)
+      saveLocationThenOpen(pending.def)
     }
   }
 
@@ -725,7 +854,9 @@ const Schedule4: FC = () => {
                       kind="ghost"
                       size="sm"
                       renderIcon={editable ? Edit : View}
-                      onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
+                      onClick={() =>
+                        requestLeave({ kind: 'open', location, mode: editable ? 'edit' : 'view' })
+                      }
                     >
                       {editable ? 'Edit' : 'View'}
                     </Button>
@@ -734,7 +865,7 @@ const Schedule4: FC = () => {
                       size="sm"
                       renderIcon={Copy}
                       disabled={!editable || saving}
-                      onClick={() => openCopy(location)}
+                      onClick={() => requestLeave({ kind: 'copy', location })}
                     >
                       Copy
                     </Button>
@@ -890,7 +1021,7 @@ const Schedule4: FC = () => {
           // The icon tracks the label: this one button is Close on a view panel and Back on an
           // editable one, so a fixed glyph would contradict half of its own uses.
           renderIcon={readOnlyPanel ? Close : ArrowLeft}
-          onClick={closePanel}
+          onClick={() => requestLeave({ kind: 'close' })}
         >
           {readOnlyPanel ? 'Close' : 'Back'}
         </Button>
@@ -915,7 +1046,12 @@ const Schedule4: FC = () => {
       data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
     >
       {!bottom && (
-        <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
+        <Button
+          kind="primary"
+          renderIcon={Add}
+          disabled={!editable || saving}
+          onClick={() => requestLeave({ kind: 'new' })}
+        >
           Add New Location
         </Button>
       )}
@@ -1037,6 +1173,8 @@ const Schedule4: FC = () => {
         </Modal>
       )}
 
+      {/* NAV-002 / NAV-003 (sub-page open from the panel) and NAV-001 (leaving a dirty panel, #324)
+          share this one instance; NAV-001 and NAV-002 carry the same legacy `confirmNavigationMsg`. */}
       <ConfirmNavigationModal
         open={navConfirm !== null}
         heading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
