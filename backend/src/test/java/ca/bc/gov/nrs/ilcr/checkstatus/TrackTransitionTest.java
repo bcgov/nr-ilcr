@@ -69,16 +69,54 @@ class TrackTransitionTest {
   }
 
   @Test
-  @DisplayName(
-      "Submit records the licensee and reuses legacy's success key; the others are declared")
-  void submitIsTheOnlyLicenseeTransition() {
+  @DisplayName("each transition records the identity pair legacy keyed off its TARGET status")
+  void recordedIdentityPairs() {
+    // Legacy SubmitReportDAO.updateILCRMillReportStatus:401-412 branches on the target code alone:
+    // 'D' skips the block, 'S' writes LICENSEE_*, anything else non-'D' writes AUDITOR_*.
     assertThat(TrackTransition.SUBMIT.recorded()).isEqualTo(TrackTransition.Recorded.LICENSEE);
-    assertThat(TrackTransition.SUBMIT.successKey()).isEqualTo("sch1-10SubmittedMsg");
     assertThat(TrackTransition.VERIFY.recorded()).isEqualTo(TrackTransition.Recorded.AUDITOR);
-    assertThat(TrackTransition.SET_TO_DRAFT.recorded()).isEqualTo(TrackTransition.Recorded.AUDITOR);
+    // Set to Draft targets 'D', so legacy wrote neither pair — exact parity.
+    assertThat(TrackTransition.SET_TO_DRAFT.recorded()).isEqualTo(TrackTransition.Recorded.NONE);
+    // Set to Submit targets 'S', so legacy wrote the LICENSEE pair from the acting ADMIN's xref.
+    // Story 18.1 D1(a) writes neither instead — recorded deviation (S), matching epics.md:2110.
     assertThat(TrackTransition.SET_TO_SUBMIT.recorded()).isEqualTo(TrackTransition.Recorded.NONE);
-    // Legacy reused sch1-10SubmittedMsg for Set to Submit (CheckStatusMB.submitReport():283-284).
+  }
+
+  @Test
+  @DisplayName("both submit-target transitions reuse legacy's one success key")
+  void successKeys() {
+    assertThat(TrackTransition.SUBMIT.successKey()).isEqualTo("sch1-10SubmittedMsg");
+    assertThat(TrackTransition.VERIFY.successKey()).isEqualTo("sch1-10VerifiedMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.successKey()).isEqualTo("sch1-10DraftMsg");
+    // Legacy reused sch1-10SubmittedMsg for Set to Submit (CheckStatusMB.submitReport():281-283):
+    // there is no distinct "verification reversed" text to port.
     assertThat(TrackTransition.SET_TO_SUBMIT.successKey()).isEqualTo("sch1-10SubmittedMsg");
+  }
+
+  @Test
+  @DisplayName(
+      "only the reversals get their own validation-gate text; submit and verify keep" + " legacy's")
+  void gateFailedKeys() {
+    // Deviation (V), BA-ratified 2026-09-21. The GATE is unchanged for all four — only the
+    // sentence differs, and only where legacy's was wrong about what the user had clicked.
+    assertThat(TrackTransition.SUBMIT.gateFailedKey()).isEqualTo("reportNotSubmittedErrorMsg");
+    assertThat(TrackTransition.VERIFY.gateFailedKey()).isEqualTo("reportNotSubmittedErrorMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.gateFailedKey())
+        .isEqualTo("setToDraftNotValidErrorMsg");
+    assertThat(TrackTransition.SET_TO_SUBMIT.gateFailedKey())
+        .isEqualTo("setToSubmitNotValidErrorMsg");
+  }
+
+  @Test
+  @DisplayName("the gate key and the status-legality key are never the same message")
+  void gateAndLegalityKeysAreDistinct() {
+    // The two refusals a user can actually hit on one button. Collapsing them would tell someone
+    // whose report has ERRORS that the track has moved on, or vice versa.
+    for (TrackTransition transition : TrackTransition.values()) {
+      assertThat(transition.gateFailedKey())
+          .as("%s", transition)
+          .isNotEqualTo(transition.rejectedKey());
+    }
   }
 
   @Test
