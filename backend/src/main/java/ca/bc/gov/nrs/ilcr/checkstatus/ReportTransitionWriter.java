@@ -104,7 +104,7 @@ public class ReportTransitionWriter {
             expectedStatus,
             millId,
             year);
-        throw new ReportTransitionRejectedException(null);
+        throw new ReportTransitionRejectedException();
       }
 
       // ORDER IS LOAD-BEARING — stamps first, category second, as legacy did.
@@ -197,7 +197,7 @@ public class ReportTransitionWriter {
     // This method writes no identity pair, so it can only honour a transition that owes none.
     // SUBMIT owes LICENSEE_* and VERIFY owes AUDITOR_*; routed here they would commit without
     // them — a submit with no licensee, a verify with no auditor — and nothing downstream would
-    // notice. One caller today, but Story 26.1 reuses this enum.
+    // notice. One caller today, but both tracks share the enum.
     if (transition.recorded() != TrackTransition.Recorded.NONE) {
       throw new IllegalArgumentException(
           transition + " records an identity pair and cannot be written as a reversal");
@@ -213,7 +213,7 @@ public class ReportTransitionWriter {
             transition.from(),
             millId,
             year);
-        throw new ReportTransitionRejectedException(transition);
+        throw new ReportTransitionRejectedException(transition, ScheduleTrack.SCHEDULES_1_TO_10);
       }
 
       // ORDER IS LOAD-BEARING — see the note in write() above. Set to Submit's (V,S) pair maps to
@@ -294,5 +294,19 @@ public class ReportTransitionWriter {
     rows += repository.touchRoadConstructionDetails(millId, year, user);
     rows += repository.touchRoadConstructionCostDetails(millId, year, user);
     return rows;
+  }
+
+  /**
+   * Stamp the actor and timestamp on Schedule 11's one row family &mdash; every location row and
+   * every cost detail under it, as legacy {@code updateBasicSilvicultureReport():328-337} did. The
+   * Schedule 11 counterpart of {@link #stampAuditColumns}, which names no Schedule 11 table; same
+   * contract: no {@code @Transactional}, joins the caller's, zero rows is normal (a mill/year with
+   * no locations is vacuously met).
+   *
+   * @return the total rows stamped, for the audit log line
+   */
+  int stampSchedule11AuditColumns(long millId, int year, String user) {
+    return repository.touchBasicSilvicultureReports(millId, year, user)
+        + repository.touchBasicSilvicultureCostDetails(millId, year, user);
   }
 }

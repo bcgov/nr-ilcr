@@ -194,6 +194,11 @@ export const schedule11Met: Schedule11CheckStatusResponse = {
 
 export const SCH11_ERROR_TEXT = 'location  : Missing Actual - Actual cost: Value Required'
 
+/** The Schedule 11 submit's 200 text (`sch11SubmittedMsg`), pinned to the bundle by `confirmText.test.ts`. */
+export const SCH11_SUBMITTED_TEXT = 'Schedule 11 has been successfully submitted.'
+/** Its not-Draft 409 text (`sch11SubmitNotDraftErrorMsg`, deviation (AB)), pinned the same way. */
+export const SCH11_NOT_DRAFT_TEXT = 'Schedule 11 is no longer in Draft and cannot be submitted.'
+
 /** schedule11-617-2021.json */
 export const schedule11Fail: Schedule11CheckStatusResponse = {
   requirementsMet: false,
@@ -603,6 +608,8 @@ type SweepOptions = {
    * Draft default would enable the admin-at-Draft arm and invite the wrong fix. Set it per arm.
    */
   readonly canSubmit1To10?: boolean | null
+  /** The same for Schedule 11, and just as deliberately not derived from `statusCode11`. */
+  readonly canSubmit11?: boolean | null
   /** Replace individual verdicts; anything not named stays met. */
   readonly overrides?: readonly ScheduleCheckResult[]
 }
@@ -617,6 +624,7 @@ export const sweep = ({
   statusCode1To10 = 'D',
   statusCode11 = null,
   canSubmit1To10 = null,
+  canSubmit11 = null,
   overrides = [],
 }: SweepOptions = {}): CheckStatusSweepResponse => {
   const byCode = new Map<ScheduleCode, ScheduleCheckResult>(
@@ -641,6 +649,7 @@ export const sweep = ({
       ...(statusCode11 === null ? {} : { statusCode: statusCode11 }),
       requirementsMet: eleven.every((entry) => entry.requirementsMet),
       schedules: eleven,
+      ...(canSubmit11 === null ? {} : { canSubmit: canSubmit11 }),
     },
   }
 }
