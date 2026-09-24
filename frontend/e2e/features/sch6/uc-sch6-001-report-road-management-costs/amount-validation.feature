@@ -56,8 +56,9 @@
 # the spec. Legacy DID clear it as you left the field, but that follows from its per-field ajax
 # validation, and choosing submit-time validation instead is the deliberate design already accepted as
 # not-a-defect in defects.md VER-3 — with no moment at which the app re-judges a field, there is nothing
-# to clear the message. Recorded as **defects.md VER-5** with the UX consequence flagged for BA/QA
-# awareness; making it clear on edit would be a new requirement, not a bug fix.
+# to clear the message. Recorded as **defects.md VER-5**, whose UX consequence BA/QA SETTLED on
+# 2026-09-23: the lingering message is accepted and no enhancement is being raised. Making it clear on
+# edit would be a new requirement, not a bug fix.
 #
 # It is asserted rather than ignored so the suite states what the app actually does: if anyone later
 # makes the error clear on edit, that step fails and puts the change in front of a human.

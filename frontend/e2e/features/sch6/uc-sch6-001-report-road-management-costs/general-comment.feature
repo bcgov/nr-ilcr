@@ -41,7 +41,8 @@
 # entering it through the UI would re-test S04 and then assert S18 on a page that had never reloaded.
 #
 # TWO RE-GROUNDINGS, both verified against the running app on this slice's own anchor and both
-# recorded as defects.md VER-7.
+# recorded as defects.md VER-7 — whose business question BA/QA SETTLED on 2026-09-23: a comment-only
+# schedule DOES count as having met Schedule 6's requirements, and parity deviation (d) stands.
 #
 #  1. THE THIRD TOTAL IS BLANK, NOT ZERO. The Gherkin says `totalVol`, `totalCos` and `totalCal` all
 #     "show zero". Probed: totalVolume 0, totalCost 0, totalCostPerVolume **null**. Volume and cost are

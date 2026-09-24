@@ -33,20 +33,23 @@ encountered there turned out to be the test being wrong, and each is recorded wh
 (issue #476 / app-wide #359), are **green here**. Schedule 6 already judges what is on screen rather
 than what is in the database. They stand as a regression guard — see section 1.
 
-**Four things need a human, all on this page.** None blocks the gate:
+**One thing needs a human, and it is the only code change on this page.** It does not block the gate:
 
 1. **BUG-2** — hide the character counter on the disabled General Comments field (recommended), or
-   accept the contrast as WCAG-exempt and record a node exclusion. Either closes it. *This is the only
-   one of the four that is a code change.*
-2. **SPEC-2** — please accept the wording *"TSA or TFL: Value is required."* for a blank TSA/TFL
-   submission. It cannot be checked against legacy (the old message came from a framework that is
-   gone), so it is a decision rather than a lookup.
-3. **VER-5** — a corrected field keeps showing its old error until Add Report is pressed again. Not a
-   fault, and nothing is mis-stored; the question is whether you want it to clear as you type, which
-   would be an enhancement.
-4. **VER-7** — should a mill that saved only a general comment and no road records count as having met
-   Schedule 6's requirements? The app says yes; legacy said no (recorded deviation (d)). A business
-   rule question, not a defect.
+   accept the contrast as WCAG-exempt and record a node exclusion. Either closes it.
+
+**Everything else that was awaiting a decision has been settled by BA/QA on 2026-09-23**, all three in
+favour of the app as built, and none of them needing a code or test change:
+
+- **SPEC-2** — the required-field wording *"TSA or TFL: Value is required."* is **accepted** as the
+  ILCR text. CLOSED; see section 4.
+- **VER-5** — the lingering validation message (a corrected field keeps its old error until the next
+  **Add Report**) is **accepted**; no enhancement is being raised. See section 5.
+- **VER-7** — a mill that saved only a general comment and no road records **does** count as having met
+  Schedule 6's requirements; parity deviation **(d)** stands. See section 5.
+
+The VER entries stay on this page permanently — that is what the register is for (`defects-guide.md`:
+*"Verified-not-a-defect: permanent"*) — so what closed is the question each one carried, not the record.
 
 ---
 
@@ -175,8 +178,9 @@ render path. The context-suppressed one is used because it needs no anchor at al
 `npm run test:gate`, so neither blocks the gate while it is open. Stability: `--repeat-each=5` over the
 five green sweeps → 25/25.
 
-**Disposition.** Closed. Board item **#101** — the remaining open items on this page are BUG-2 (new,
-needs a BA/QA choice), BUG-1 (app-wide, not this story's), and the three judgement items in the header.
+**Disposition.** Closed. Board item **#101** — as of 2026-09-23 the only remaining open items on this
+page are **BUG-2** (new, needs a BA/QA choice) and **BUG-1** (app-wide, not this story's). Every
+judgement item is settled: SPEC-2, VER-5 and VER-7 all closed 2026-09-23.
 
 ### GAP-2 — one scenario in the source cannot happen on this screen — OPEN (informational)
 
@@ -231,7 +235,7 @@ SPEC-3 is the reason to sweep the Gherkin *and* the sidecars together: three of 
 had already been fixed a month earlier and the error survived only in the Gherkin, so the same defect
 was diagnosed twice.
 
-### SPEC-2 — S12's required-field message text was `[UNKNOWN]` in the source — TEXT RECOVERED 2026-09-18, awaiting BA/QA acceptance
+### SPEC-2 — S12's required-field message text was `[UNKNOWN]` in the source — CLOSED 2026-09-23
 
 **What was missing.** The S01–S23 Gherkin's own "Open Items Carried Forward" records that the exact
 JSF required-field validation message for a blank "TSA or TFL" submission could not be recovered — no
@@ -256,14 +260,20 @@ That module's header states its literals are transcribed *"verbatim from the bac
 field"* — so this is the app's own wording, client and server alike, taken from the running app exactly
 as this entry said it would have to be. S12 asserts it byte-for-byte.
 
-**What is being asked of BA/QA — the one open question.** Please accept
-**"TSA or TFL: Value is required."** as the ILCR wording for this case. It **cannot** be confirmed
-against legacy by anyone: the legacy string was produced by a framework that is gone, and no artifact
-records what it rendered. So this is a decision, not a lookup. If you want different wording, it is a
-one-line change in the bundle and a one-line change in the test.
+**What was asked of BA/QA, and the answer.** BA/QA were asked to accept
+**"TSA or TFL: Value is required."** as the ILCR wording for this case, because it **cannot** be
+confirmed against legacy by anyone: the legacy string was produced by a framework that is gone, and no
+artifact records what it rendered. So it was a decision, not a lookup.
 
-**Disposition.** Text recovered and under test; the entry stays OPEN until BA/QA accept the wording.
-Board item **#101**.
+**Accepted by BA/QA 2026-09-23.** The wording stands as the ILCR text for a blank TSA/TFL submission,
+client and server alike, and S12 continues to assert it byte-for-byte. Nothing changed in the app or
+in the test — the acceptance is the whole of what this entry was waiting on, and the assertion that
+was already passing is now a ratified one rather than a provisional one.
+
+**Disposition.** CLOSED 2026-09-23. Board item **#101**. If the Ministry later wants different
+wording, that is a change request rather than a reopening of this entry: a one-line change in the
+backend bundle and `src/components/schedule6/validation.ts:61`, and a one-line change in
+`required-field.feature`.
 
 ### SPEC-3 — pagination scope of the running totals is unresolved — OPEN
 
@@ -372,7 +382,7 @@ was weakened: the message is still matched exactly, just the correct one of the 
 **For BA/QA.** No action. A reporter sees the same sentence; the difference is one invisible character
 at the end, and only in the case where no request is sent.
 
-### VER-5 — the Add panel's field errors appear on "Add Report", and stay until the next one — 2026-09-18
+### VER-5 — the Add panel's field errors appear on "Add Report", and stay until the next one — 2026-09-18 (BA/QA question SETTLED 2026-09-23)
 
 **What changed for the user.** In the legacy screen, typing a bad volume or cost and leaving the field
 produced the error straight away, and correcting the field made it disappear again — both from
@@ -414,9 +424,15 @@ until the next submit`). That is not a weakened assertion: it states what the ap
 anyone later makes the error clear on edit, that step fails and puts the change in front of a human
 instead of letting it pass unnoticed.
 
-**For BA/QA.** One decision, and it is a preference rather than a fault: is the lingering message
-acceptable, or should correcting a field clear it? If the latter, raise it as an enhancement and these
-assertions flip with it. Nothing is blocked either way.
+**For BA/QA — SETTLED 2026-09-23.** The lingering message is **accepted as the ILCR behaviour**. No
+enhancement is being raised: validate-on-submit stands, and a corrected field will continue to show its
+previous message until the next **Add Report**.
+
+Nothing changes in the app or in the tests. The assertions stay exactly as written, which means they
+keep their second job: they state what the app does today, so if anyone later makes the error clear on
+edit, the step fails and puts that change in front of a human instead of letting it pass unnoticed.
+Should the Ministry want live re-validation after all, it is a **new requirement** (the conclusion
+VER-3 already reached about the TFL number) and these assertions flip with it.
 
 ### VER-6 — on a locked schedule the "Add" form is gone, not greyed out — 2026-09-18
 
@@ -447,7 +463,7 @@ is no greyed-out add form on screen — the Add button is simply unavailable. Re
 VER-1 (where the derived RMG figure moved from the add panel onto the saved row), this is a case where
 comparing the old script to the new test otherwise looks like a dropped assertion.
 
-### VER-7 — a comment-only schedule: the "$ / m³" total is blank, and Check Status passes — 2026-09-18
+### VER-7 — a comment-only schedule: the "$ / m³" total is blank, and Check Status passes — 2026-09-18 (BA/QA question SETTLED 2026-09-23)
 
 Two findings about the same situation: a mill/year where a reporter has saved a **general comment** and
 never added a road record. Both were confirmed against the running app.
@@ -483,8 +499,16 @@ though the original scenario never mentions Check Status — it is the check tha
 stays hidden from end to end. If that ever broke, a reporter would see a phantom failing row appear out
 of nowhere, and this is the assertion that would catch it.
 
-**For BA/QA.** One thing worth confirming, and it is a business question rather than a defect: **should
-a mill that has saved only a comment and no road records count as having met Schedule 6's
-requirements?** The app says yes; legacy said no. If the Ministry expects "no records" to block
-submission, that is a rule change rather than a bug fix — and it would belong with the submit gate, not
-with this screen. Nothing is blocked either way.
+**For BA/QA — SETTLED 2026-09-23.** Confirmed: **a mill that has saved only a general comment and no
+road records counts as having met Schedule 6's requirements.** Parity deviation **(d)** stands as
+decided when the backend was built. The hidden placeholder is not a road record, so Check Status does
+not judge it, and legacy's contrary behaviour is deliberately not restored — judging the placeholder
+would raise three complaints about a row the reporter can neither see nor fix.
+
+Both findings are asserted as the app behaves and need no change.
+
+**What this does NOT decide — flagged for whoever builds the submit gate.** This settles what the
+*Schedule 6 screen* reports. Whether an otherwise-empty report should be allowed to be **submitted** is
+a separate question, and it belongs with Epic 15's submit gate (Story 15.3 — Submit Schedules 1–10),
+where the all-schedule rule lives. If the Ministry ever wants "no records" to block submission, that is
+a new rule there; it does not reopen this entry.

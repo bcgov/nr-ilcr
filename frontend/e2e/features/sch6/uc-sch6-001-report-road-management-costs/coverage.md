@@ -426,7 +426,8 @@ is the only scenario in the whole S12-S16 block that SAVES).
 **This slice closes SPEC-2.** The source Gherkin carries `[UNKNOWN]` for the message; the running app
 declares it as `areaTypeRequired` = `"TSA or TFL: Value is required."`
 (`src/components/schedule6/validation.ts:61`). Taken from the app exactly as SPEC-2 said it would have
-to be. **Still needs BA/QA acceptance** - see `defects.md` SPEC-2.
+to be, and **accepted by BA/QA 2026-09-23** - see `defects.md` SPEC-2 (CLOSED). The wording is now
+ratified, not provisional.
 
 | # | Source item (S12 Gherkin) | App enforcement | Scenario step | Status |
 |---|---|---|---|---|
@@ -862,9 +863,11 @@ the correct trade.
   merit, but **a clean single-pass 522/522 has not yet been observed** - the crash is an environment
   flake on this box (see the fourth trap above), and it is worth one more run on CI, where `workers: 1`
   makes it far less likely.
-- Four items await a human, all on `defects.md`: **BUG-2** (the only one that is a code change),
-  **SPEC-2** (accept the required-field wording), **VER-5** (the lingering error), **VER-7** (should a
-  comment-only schedule count as met). None blocks the gate.
+- One item awaits a human, on `defects.md`: **BUG-2**, the disabled-field character counter — and it
+  is the only code change left on this UC. It does not block the gate. The three judgement items were
+  all settled by BA/QA on 2026-09-23, each in favour of the app as built and none needing a change:
+  **SPEC-2** (the required-field wording accepted), **VER-5** (the lingering error accepted),
+  **VER-7** (a comment-only schedule counts as met; deviation (d) stands).
 
 S20/S21 need states no current anchor holds: the per-record "met" line is emitted only
 when the SCHEDULE fails while some individual record passes, which takes two records on one anchor -
