@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { delay, http, HttpResponse } from 'msw'
+import { http, HttpResponse } from 'msw'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -1275,12 +1275,20 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
   })
 
   test('the bottom Check Status is locked while a check is in flight — one POST per click (#293)', async () => {
+    // The response is HELD open by the test, not delayed by a timer. The first version used a fixed
+    // 50 ms msw delay, so under full-suite load the second click landed after the first response and
+    // the test failed for reasons unrelated to the lock — green in isolation, red in CI (#332 review).
+    // Same shape as CheckStatus.test.tsx's "a verify in flight cannot be sent twice".
     let posts = 0
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, async () => {
         posts += 1
-        await delay(50)
+        await held
         return HttpResponse.json({ outcome: 'MET', messages: [], locations: [] })
       }),
     )
@@ -1289,11 +1297,14 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
     const button = bottomCheckStatus()
     await userEvent.click(button)
+    // While the request is open the button is out of action, so a second click cannot post.
+    await waitFor(() => expect(posts).toBe(1))
+    expect(button).toBeDisabled()
     await userEvent.click(button)
+    expect(posts).toBe(1)
 
-    await waitFor(() => {
-      expect(button).toBeEnabled()
-    })
+    release()
+    await waitFor(() => expect(button).toBeEnabled())
     expect(posts).toBe(1)
   })
 
