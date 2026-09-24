@@ -193,7 +193,7 @@ class CheckStatusSweepServiceTest {
       case SCHEDULE_3 ->
           when(schedule3Service.checkSchedule3Status(MILL, YEAR)).thenReturn(schedule3(met));
       case SCHEDULE_4 -> when(schedule4.checkStatus(MILL, YEAR)).thenReturn(schedule4(met));
-      case SCHEDULE_5 -> when(schedule5.checkStatus(MILL, YEAR)).thenReturn(schedule5(met));
+      case SCHEDULE_5 -> when(schedule5.checkStatusStored(MILL, YEAR)).thenReturn(schedule5(met));
       case SCHEDULE_6 -> when(schedule6.checkStatusStored(MILL, YEAR)).thenReturn(schedule6(met));
       case SCHEDULE_7A ->
           when(schedule7aService.checkStatus(MILL, YEAR)).thenReturn(schedule7a(met));
@@ -275,7 +275,7 @@ class CheckStatusSweepServiceTest {
   void verdict_isTheSchedulesOwnResponse() {
     allMet();
     Schedule5CheckStatusResponse schedule5Issues = schedule5(false);
-    when(schedule5.checkStatus(MILL, YEAR)).thenReturn(schedule5Issues);
+    when(schedule5.checkStatusStored(MILL, YEAR)).thenReturn(schedule5Issues);
     Schedule9CheckStatusResponse schedule9Issues = schedule9(false);
     when(schedule9Service.checkStatus(MILL, YEAR)).thenReturn(schedule9Issues);
 
@@ -433,7 +433,7 @@ class CheckStatusSweepServiceTest {
     stub(CheckedSchedule.SCHEDULE_2, true);
     stub(CheckedSchedule.SCHEDULE_3, true);
     stub(CheckedSchedule.SCHEDULE_4, true);
-    when(schedule5.checkStatus(MILL, YEAR))
+    when(schedule5.checkStatusStored(MILL, YEAR))
         .thenThrow(new NoSuchMessageException("missingRequiredFieldMsg"));
 
     assertThatThrownBy(() -> service.sweep(MILL, YEAR)).isInstanceOf(NoSuchMessageException.class);

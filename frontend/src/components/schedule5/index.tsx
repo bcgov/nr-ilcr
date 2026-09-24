@@ -9,10 +9,14 @@ import type {
   Schedule5CheckStatusResponse,
 } from '@/interfaces/Schedule5Response'
 import type CampRequest from '@/interfaces/Schedule5Request'
-import type { CategoryEntry } from '@/interfaces/Schedule5Request'
+import type {
+  CampCheckEntry,
+  CategoryEntry,
+  Schedule5CheckRequest,
+} from '@/interfaces/Schedule5Request'
 import type { SubPageKind } from '@/interfaces/Schedule5SubPage'
 import type { CampErrors, CampFormValues, CategoryKey, DerivedKey, GridRow } from './validation'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { getRouteApi } from '@tanstack/react-router'
 import Schedule5SubPage from '@/components/schedule5SubPage'
 import {
@@ -657,6 +661,15 @@ const Schedule5: FC = () => {
   const [panelCampId, setPanelCampId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
 
+  // Check Status describes one exact screen snapshot. Incremented synchronously whenever that
+  // snapshot changes so an older response cannot repaint newer panel values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
   const [confirmDelete, setConfirmDelete] = useState<Camp | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null)
@@ -665,6 +678,7 @@ const Schedule5: FC = () => {
 
   // The hook's clearBanners covers message/actionError/checkResult; the page adds its own copyWarning.
   const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
     clearHookBanners()
     setCopyWarning(null)
   }
@@ -828,6 +842,7 @@ const Schedule5: FC = () => {
   }
 
   const closePanel = () => {
+    invalidateCheckResult()
     setPanelMode('closed')
     setForm(emptyForm())
     setCommitted(emptyForm())
@@ -879,6 +894,9 @@ const Schedule5: FC = () => {
   }
 
   const setField = (field: keyof CampFormValues, value: string) => {
+    if (field === 'campName' || field === 'roadDistanceToOperatingArea' || field === 'sizeOfCamp') {
+      invalidateCheckResult()
+    }
     setForm((prev) => ({ ...prev, [field]: value }))
     clearBlurred(field)
   }
@@ -908,6 +926,7 @@ const Schedule5: FC = () => {
    * blank DOES propagate: legacy converts an empty submit to null and clears all eleven.
    */
   const handleCampVolumeChange = (value: string) => {
+    invalidateCheckResult()
     // Computed OUT here, not inside the updater: the updater must stay pure, and the same condition
     // decides both whether the eleven volumes change and whether they should be un-reported.
     const propagates = value.trim() === '' || parseDecimalInput(value) !== null
@@ -1059,17 +1078,48 @@ const Schedule5: FC = () => {
     })
   }
 
+  /**
+   * The camp panel as the server must see it (#476), or null when no panel is open.
+   *
+   * Keyed on the panel being OPEN, never on it being dirty: an untouched NEW camp matches its empty
+   * baseline and is therefore clean, and skipping it would answer "requirements met" over a camp
+   * with four missing fields — legacy evaluated it, because it is on screen.
+   *
+   * `parseDecimalInput` returns null for a blank or unparseable field, and that null is carried
+   * through deliberately. The server's check is a pure null test (a stored `0` PASSES), so a `?? 0`
+   * anywhere on this path would turn every missing descriptor into a pass. "No usable value on
+   * screen" and "value required" are the same statement.
+   */
+  const screenCamp = (): CampCheckEntry | null =>
+    panelMode === 'closed'
+      ? null
+      : {
+          campId: panelCampId,
+          campName: form.campName,
+          roadDistanceToOperatingArea: parseDecimalInput(form.roadDistanceToOperatingArea),
+          sizeOfCamp: parseDecimalInput(form.sizeOfCamp),
+          associatedCampVolume: parseDecimalInput(form.associatedCampVolume),
+        }
+
   const handleCheckStatus = () => {
     if (saving) {
       return
     }
     clearBanners()
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The hook's default `/check-status` suffix over the '/v1/schedule5' base reproduces the
-    // check-status URL verbatim.
-    checkStatus<Schedule5CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: (result) => setCheckResult(result),
-    })
+    // check-status URL verbatim. The body carries the screen; nothing is persisted (AD-5).
+    checkStatus<Schedule5CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
+      },
+      { camp: screenCamp() } satisfies Schedule5CheckRequest,
+    )
   }
 
   /**
@@ -1453,7 +1503,7 @@ const Schedule5: FC = () => {
             {checkResult.camps.map((camp) =>
               camp.messages.map((message) => (
                 <NotificationColumn
-                  key={`camp-${String(camp.campId)}-${message.key}-${message.field ?? ''}`}
+                  key={`camp-${camp.campId ?? 'unsaved'}-${message.key}-${message.field ?? ''}`}
                   kind={camp.requirementsMet ? 'success' : 'warning'}
                   title={
                     camp.requirementsMet
@@ -1478,15 +1528,20 @@ const Schedule5: FC = () => {
           >
             Add New Camp
           </Button>
-          {/* Disabled when the schedule is not editable (legacy gates both Check Status buttons on
-              disableReportEdits(), :44 and :257) and while a panel is open: legacy's button was a
-              full postback, so JSF applied the entered values to the model BEFORE the check ran and
-              the verdict always reflected the screen. The modern check reads only the database, so
-              a verdict must never be shown that contradicts visible unsaved input. */}
+          {/* Disabled only when the schedule is not editable, which is legacy exactly: it gates
+              both its Check Status buttons on disableReportEdits() and nothing else
+              (schedule5.xhtml:44, :257), and the second of those is rendered ONLY while a camp
+              panel is open — so the check was always meant to be reachable mid-edit.
+
+              There WAS a panel gate here until #476. It existed because the endpoint read the
+              database and could therefore contradict unsaved input; now that the request carries
+              the screen (handleCheckStatus above), there is nothing left for it to protect
+              against, and it retired with the defect. Do not reinstate it without first taking the
+              body away again. */}
           <Button
             kind="tertiary"
             renderIcon={CheckmarkOutline}
-            disabled={!editable || saving || panelOpen}
+            disabled={!editable || saving}
             onClick={handleCheckStatus}
           >
             Check Status
