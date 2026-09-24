@@ -616,9 +616,9 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Test:** none today, by environment limitation rather than by choice.
 
 - **GAP-2 — CLOSED 2026-09-24: Schedule 4's five error-fallback messages are now unit-tested (#332).**
-  - **What's missing:** each of these is the string Schedule 4 shows when a request fails *and* the response
-    carries no `ProblemDetail.detail` — a gateway error, a dropped connection, an empty-bodied 500. None is
-    asserted at any level:
+  - **What was missing:** each of these is the string Schedule 4 shows when a request fails *and* the response
+    carries no `ProblemDetail.detail` — a gateway error, a dropped connection, an empty-bodied 500. When this
+    entry was raised, none was asserted at any level:
 
     | site | string |
     | --- | --- |
@@ -631,8 +631,8 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Not dead code, and for the save one it is one untested ARM, not an untested branch.** The save handler is
     `setSaveError(extractDetail(error) || 'Schedule could not be saved.')`, and its `detail` arm is covered at
     BOTH levels: `duplicate-name.feature` `@S14` (409 ERR-002) and
-    `components/schedule4/__tests__/Schedule4.test.tsx:605`. Only the detail-less arm is unexercised. The other
-    four sites have no coverage on either arm.
+    `components/schedule4/__tests__/Schedule4.test.tsx:605`. Only the detail-less arm was unexercised. The other
+    four sites had no coverage on either arm.
   - **The expected text is known, and ERR-003's is legacy's own.** Legacy rendered whatever key the exception
     carried (`Schedule4MB.save()` → `catch (ILCSException e) { FacesUtil.addErrorMessage(e.getErrorCode()); }`),
     which is why the source docs record ERR-003 as `[UNKNOWN]`. The app's fallback is `scheduleNotSavedErrorMsg`

@@ -451,7 +451,31 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
       expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
     })
 
-    test('a detail-less Remove failure falls back to the delete message, not the save one', async () => {
+    test('a detail-less Save failure falls back to the generic save message and keeps the edit', async () => {
+      // The verbatim case above sends the fallback wording AS the server detail; this empty body is
+      // what reaches the right-hand side of `extractDetail(error) || saveError`.
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc)),
+        http.put(URL, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<OtherAcceptableCostsPage />)
+      const user = userEvent.setup()
+
+      await screen.findByDisplayValue('Consulting')
+      const total = within(rowOf('Consulting')).getByLabelText('Edit total')
+      await user.clear(total)
+      await user.type(total, '900')
+      await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+      expect(await screen.findByText('Action failed')).toBeInTheDocument()
+      expect(screen.getByText('Other cost could not be saved.')).toBeInTheDocument()
+      // The edit survives for a retry and Save is live again.
+      expect(within(rowOf('Consulting')).getByLabelText('Edit total')).toHaveValue('900')
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Remove failure falls back to the delete message, not the save one, and puts the row back', async () => {
       // Remove and Save share one whole-set PUT in `useEditableCostRows`, and until #332 the page's
       // `deleteError` never reached the hook — a failed Remove read as a failed save.
       server.use(
@@ -467,6 +491,10 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
       expect(await screen.findByText('Unable to delete other cost.')).toBeInTheDocument()
       expect(screen.queryByText('Other cost could not be saved.')).not.toBeInTheDocument()
       expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+      // Nothing was deleted, so the row comes back to retry against — `removeRow` drops it before
+      // the PUT and the failure path restores it. Without the restore the next Save would send the
+      // set without this row and quietly finish the delete the user was just told had failed.
+      expect(within(rowOf('Consulting')).getByRole('button', { name: /^remove$/i })).toBeEnabled()
     })
   })
 })

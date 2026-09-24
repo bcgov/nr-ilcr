@@ -42,6 +42,10 @@ const read = (relative: string) => readFileSync(resolve(__dirname, relative), 'u
 
 const LOAD_FALLBACK = 'Unable to load Schedule 2.'
 const DELETE_FALLBACK = 'Unable to delete Schedule 2.'
+// The page's other two owned fallbacks, covered by #332 (the app-wide sweep) on 2026-09-24 and
+// recorded as `covered (unit)` in the sch2 coverage record — so they need the same guard.
+const SAVE_FALLBACK = 'Schedule could not be saved.'
+const CHECK_FALLBACK = 'Unable to check status.'
 
 /** The string as a source literal, in any quote style: 'x' | "x" | `x`. */
 const asLiteral = (text: string) =>
@@ -49,19 +53,23 @@ const asLiteral = (text: string) =>
 
 describe('Schedule 2 error-fallback tripwire (defect #298)', () => {
   // (a) The strings still exist at their sites in the page.
-  test('index.tsx still carries both page-owned fallback strings', () => {
+  test('index.tsx still carries all four page-owned fallback strings', () => {
     const source = read('../index.tsx')
     // Quote-agnostic: the assertion is about the string being there, not how it is delimited.
     expect(source).toMatch(asLiteral(LOAD_FALLBACK))
     expect(source).toMatch(asLiteral(DELETE_FALLBACK))
+    expect(source).toMatch(asLiteral(SAVE_FALLBACK))
+    expect(source).toMatch(asLiteral(CHECK_FALLBACK))
   })
 
   // (b) The suite still exercises them. This is the half that guards the coverage record: deleting
   // the cases in Schedule2.test.tsx leaves (a) green and CI silent.
-  test('Schedule2.test.tsx still exercises both fallbacks and the blank-detail shape', () => {
+  test('Schedule2.test.tsx still exercises all four fallbacks and the blank-detail shape', () => {
     const spec = read('./Schedule2.test.tsx')
     expect(spec).toContain(LOAD_FALLBACK)
     expect(spec).toContain(DELETE_FALLBACK)
+    expect(spec).toContain(SAVE_FALLBACK)
+    expect(spec).toContain(CHECK_FALLBACK)
     // The shape that pins `||` rather than `??`. See the note in that file's helper block.
     expect(spec).toContain('BLANK_DETAIL')
     // Whitespace-tolerant, so a line wrap cannot fail this: problemBody(500, '') across any breaks.

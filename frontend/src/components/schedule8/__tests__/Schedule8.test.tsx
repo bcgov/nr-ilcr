@@ -699,6 +699,8 @@ describe('Schedule8 page level', () => {
   test('a detail-less reference-options load error falls back to the generic options message (#332)', async () => {
     // The option lists are reference data fetched apart from the document (index.tsx: GET
     // /v1/schedule8/options); a failure there carries its own banner and never blocks the page list.
+    // `{}` rather than an empty body is this file's detail-less idiom (the load/delete/Check Status
+    // cases above); `extractDetail` yields undefined for either.
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.get(`${URL}/options`, () => HttpResponse.json({}, { status: 500 })),

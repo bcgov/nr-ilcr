@@ -272,7 +272,31 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
       expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     })
 
-    test('a detail-less Remove failure falls back to the delete message, not the save one', async () => {
+    test('a detail-less Add failure falls back to the generic save message and keeps the new row in the grid for a Save retry', async () => {
+      // Add moves the entry INTO the grid before persisting (legacy addOtherCost → save), so on a
+      // failure the entry is not lost and not left in the add form: it sits in the grid as an
+      // unsaved (null-id) row that the next Save re-sends. Pinned so the shape is deliberate, not
+      // accidental (#332 review) — it is the opposite of Schedule 5's sub-page, whose add form is
+      // cleared only by a successful echo.
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc)),
+        http.put(URL, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<UnacceptableCostsPage />)
+      const user = userEvent.setup()
+
+      await user.type(await screen.findByLabelText('Description'), 'Fine')
+      await user.type(screen.getByLabelText('Total $'), '500')
+      await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+      expect(await screen.findByText('Unacceptable cost could not be saved.')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('Fine')).toBeInTheDocument()
+      expect(screen.getByLabelText('Description')).toHaveValue('')
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Remove failure falls back to the delete message, not the save one, and puts the row back', async () => {
       // Remove and Save share one whole-set PUT in `useEditableCostRows`, and until #332 the page's
       // `deleteError` never reached the hook — a failed Remove read as a failed save.
       server.use(
@@ -288,6 +312,10 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
       expect(await screen.findByText('Unable to delete unacceptable cost.')).toBeInTheDocument()
       expect(screen.queryByText('Unacceptable cost could not be saved.')).not.toBeInTheDocument()
       expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+      // Nothing was deleted, so the row comes back to retry against — `removeRow` drops it before
+      // the PUT and the failure path restores it. Without the restore the next Save would send the
+      // set without this row and quietly finish the delete the user was just told had failed.
+      expect(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i })).toBeEnabled()
     })
   })
 })

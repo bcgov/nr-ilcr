@@ -266,7 +266,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                   // 999,999,999 in Total $ moved the footer to a figure the server can never produce.
                   //
                   // Validate HERE rather than reading `rowErrors`: that map is populated only by
-                  // `persist` (useEditableCostRows.ts:204), i.e. on a Save attempt, so it is still
+                  // `persist` in useEditableCostRows.ts, i.e. on a Save attempt, so it is still
                   // empty during the entry this gate has to catch. `errs` below is right for the
                   // field's `invalid` styling and wrong as a commit gate.
                   const next = { ...row.values, [field.key]: grouped }

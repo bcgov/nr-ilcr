@@ -254,6 +254,15 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
         // page supplies one, `saveError` otherwise (#332).
         const fallback = intent === 'delete' && deleteError ? deleteError : saveError
         setActionError(extractDetail(error) || fallback)
+        // A failed Remove puts the row back. `removeRow` drops it from local state BEFORE the PUT
+        // (so the grid answers the click at once), and without this the user is told the delete
+        // failed while looking at a grid without the row — and the next Save would then send the
+        // set without it, completing the very delete that just failed (#332 review). `rows` here is
+        // the pre-removal set: this closure was created by the render `removeRow` ran in. A failed
+        // Save/Add keeps the entered values on screen for retry, so nothing to roll back there.
+        if (intent === 'delete') {
+          setRows(rows)
+        }
       })
       .finally(() => setSaving(false))
   }
