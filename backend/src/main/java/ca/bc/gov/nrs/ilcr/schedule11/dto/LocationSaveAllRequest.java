@@ -9,16 +9,18 @@ import java.util.List;
  * Schedule11DAO.saveSchedule11}, which in ONE transaction deleted every row flagged for deletion
  * and updated every other row ({@code Schedule11DAO.java:135-147}, commit {@code :150}).
  *
- * <p>{@code locations} carries every row still on the page, each with its {@code revisionCount}
- * (validated with the {@link OnUpdate} group — a save is a set of corrections to rows already
- * served, never an insert; Add stays its own immediate POST). {@code deletedIds} carries the rows
- * the user flagged with Delete since the last save. Either list may be empty, not both.
+ * <p>{@code locations} carries the rows the user EDITED, each with the {@code revisionCount} it was
+ * edited against (validated with the {@link OnUpdate} group — a save is a set of corrections to
+ * rows already served, never an insert; Add stays its own immediate POST). Legacy re-stamped every
+ * row, but it had no optimistic lock: with ours, an untouched row another session changed would
+ * refuse the whole save (Story 26.2 review D-R1, deviation (E)). {@code deletedIds} carries the
+ * rows the user flagged with Delete since the last save. Either list may be empty, not both.
  *
- * @param locations the rows to update (possibly empty when the save only deletes)
+ * @param locations the edited rows to update (possibly empty when the save only deletes)
  * @param deletedIds the location ids flagged for deletion (possibly empty)
  */
 public record LocationSaveAllRequest(
-    @NotNull(message = "{missingRequiredFieldMsg}") @Valid List<Item> locations,
+    @NotNull(message = "{missingRequiredFieldMsg}") List<@NotNull(message = "{missingRequiredFieldMsg}") @Valid Item> locations,
     @NotNull(message = "{missingRequiredFieldMsg}") List<@NotNull(message = "{missingRequiredFieldMsg}") Long> deletedIds) {
 
   /**

@@ -774,13 +774,7 @@ public class Schedule11Service {
         .put(
             "biogeoclimaticCatalogueId",
             location == null ? null : location.biogeoclimaticCatalogueId(),
-            location == null
-                ? null
-                : becLabel(
-                    location.becZoneCode(),
-                    location.subzone(),
-                    location.variant(),
-                    location.phase()),
+            location == null ? null : submittedBecShown(location),
             OriginalValueFormat.TEXT)
         .put(
             "netArea",
@@ -789,5 +783,17 @@ public class Schedule11Service {
         .put("actualCost", submittedCosts.get(CODE_ACTUAL), OriginalValueFormat.WHOLE)
         .put("plannedCost", submittedCosts.get(CODE_PLANNED), OriginalValueFormat.WHOLE)
         .build();
+  }
+
+  /**
+   * What the BEC tooltip shows for a submitted catalogue id: its label, or the id itself when the
+   * catalogue row is gone (no FK in delivery; the snapshot query LEFT JOINs the catalogue). Legacy
+   * would have thrown here; an indicator whose tooltip names nothing would be worse than the
+   * number.
+   */
+  private static Object submittedBecShown(Schedule11Repository.LocationSnapshotRow location) {
+    String label =
+        becLabel(location.becZoneCode(), location.subzone(), location.variant(), location.phase());
+    return label != null ? label : location.biogeoclimaticCatalogueId();
   }
 }

@@ -686,6 +686,28 @@ class Schedule11ServiceTest {
   }
 
   @Test
+  void saveAll_refusesTheAdminAtTheDeadOAndAtANullStatus_beforeAnyWrite() {
+    // AC 8: 'O' is the dead legacy status (A-8) and a null status row is "Not Initiated"; the admin
+    // writes at S and V only, so both fail closed. No fixture mill carries 'O'.
+    for (String code : java.util.Arrays.asList("O", null)) {
+      org.mockito.Mockito.clearInvocations(repository);
+      stubTrack(code);
+      assertThrows(
+          ScheduleNotEditableException.class,
+          () ->
+              service.saveAllLocations(
+                  MILL,
+                  YEAR,
+                  save(List.of(item(9201L, 0)), List.of(9202L)),
+                  CallerRights.ADMIN,
+                  "admin"),
+          String.valueOf(code));
+      verify(repository, never()).deleteLocation(anyLong(), anyLong(), anyInt());
+      verify(repository, never()).countBiogeo(anyLong());
+    }
+  }
+
+  @Test
   void saveAll_bothListsEmpty_isRefused_beforeAnyWrite() {
     stubTrack("D");
     assertThrows(
@@ -946,6 +968,62 @@ class Schedule11ServiceTest {
       // legacy schedule11.xhtml:251 printed getBiogeoSubZoneVariantPase(), never the number.
       assertThat(bec.value()).isEqualTo("8802");
       assertThat(bec.tooltip()).isEqualTo("Original Submission Value: CWHvm");
+    }
+
+    @Test
+    @DisplayName("a submitted BEC whose catalogue row is gone is shown by its id, never by nothing")
+    void becOriginalWithNoCatalogueRowShowsTheId() {
+      stubTrack("S");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
+      // The snapshot query LEFT JOINs the catalogue: a dangling id arrives with no label parts.
+      when(repository.findLocationSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule11Repository.LocationSnapshotRow(
+                      9101L, "Submitted", 8899L, new BigDecimal("100.0"), null, null, null, null)));
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101L))).thenReturn(List.of());
+
+      OriginalValue bec =
+          service
+              .getSchedule11(MILL, YEAR, CallerRights.ADMIN)
+              .locations()
+              .get(0)
+              .originalValues()
+              .get("biogeoclimaticCatalogueId");
+
+      assertThat(bec.value()).isEqualTo("8899");
+      assertThat(bec.tooltip()).isEqualTo("Original Submission Value: 8899");
+    }
+
+    @Test
+    @DisplayName(
+        "two current rows for one cost item: the served value and its original come from ONE row")
+    void twoCurrentRowsForOneItem_pairEachValueWithItsOwnSnapshot() {
+      // No constraint forbids a duplicate (location, item) row in delivery. The value served and
+      // the
+      // detail id whose snapshot is looked up must be the same row, or a figure is paired with
+      // another row's original.
+      stubTrack("S");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL))
+          .thenReturn(List.of(cost(7L, 9101L, 24, 25000), cost(9L, 9101L, 24, 26000)));
+      when(repository.findLocationSnapshots(MILL, YEAR)).thenReturn(List.of());
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(7, 9101L, 24, null, 20000, null, null),
+                  new CostDetailSnapshotRepository.Row(9, 9101L, 24, null, 21000, null, null)));
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.ADMIN).locations().get(0);
+
+      Map<Integer, String> pairs =
+          Map.of(25000, "20000", 26000, "21000"); // each current row's own snapshot
+      assertThat(served.originalValues().get("actualCost").value())
+          .isEqualTo(pairs.get(served.actualCost()));
     }
 
     @Test

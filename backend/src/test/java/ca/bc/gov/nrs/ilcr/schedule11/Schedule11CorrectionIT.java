@@ -17,6 +17,7 @@ import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -224,10 +225,14 @@ class Schedule11CorrectionIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.text", is(SAVED)));
 
+    // 9423 takes over 9424's biogeo+location ('Delete Me', 8802) in the SAME save that deletes
+    // 9424.
+    // Valid as a whole; it passes only because the deletes run first, against the live
+    // BSRPT_BSRPT_UK_UK (the clash arm below proves the constraint is enforced here).
     int rev = revision(9423);
     mockMvc
         .perform(
-            save(802, saveBody(item(9423, fields("First Fix", 8801, "21", "1100", rev)), "9424"))
+            save(802, saveBody(item(9423, fields("Delete Me", 8802, "21", "1100", rev)), "9424"))
                 .with(admin()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
@@ -238,9 +243,10 @@ class Schedule11CorrectionIT extends AbstractOracleIT {
 
     Map<String, Object> row =
         jdbc.queryForMap(
-            "SELECT LOCATION, REVISION_COUNT, UPDATE_USERID FROM THE.BASIC_SILVICULTURE_REPORT"
-                + " WHERE BASIC_SILVICULTURE_REPORT_ID = 9423");
-    assertThat(row.get("LOCATION")).isEqualTo("First Fix");
+            "SELECT LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID, REVISION_COUNT, UPDATE_USERID"
+                + " FROM THE.BASIC_SILVICULTURE_REPORT WHERE BASIC_SILVICULTURE_REPORT_ID = 9423");
+    assertThat(row.get("LOCATION")).isEqualTo("Delete Me");
+    assertThat(((Number) row.get("BECBIOGEOCLIMATIC_CATALOGUE_ID")).longValue()).isEqualTo(8802L);
     assertThat(((Number) row.get("REVISION_COUNT")).intValue()).isEqualTo(rev + 1);
     assertThat(row.get("UPDATE_USERID")).isEqualTo(ADMIN_NAME);
     assertThat(
@@ -328,73 +334,85 @@ class Schedule11CorrectionIT extends AbstractOracleIT {
     assertThat(footprint(805)).isEqualTo(before);
   }
 
-  static List<Object[]> refusals() {
+  /**
+   * The field rules, as the entered-fields JSON of a location (with {@code revisionCount} 0) and
+   * the verbatim refusal. One source for both the bulk save and Add, so AC 6's "on the bulk save
+   * and on Add" cannot drift apart.
+   */
+  static List<Object[]> fieldRefusals() {
     String ok = fields("Refusal Block", 8801, "9", "100", 0);
     return List.<Object[]>of(
         new Object[] {
-          "blank location",
-          item(9427, ok.replace("\"Refusal Block\"", "\"\"")),
-          "Location: Value is required."
+          "blank location", ok.replace("\"Refusal Block\"", "\"\""), "Location: Value is required."
         },
         new Object[] {
           "location over 30",
-          item(9427, ok.replace("Refusal Block", "x".repeat(31))),
+          ok.replace("Refusal Block", "x".repeat(31)),
           "Location must be 30 characters or fewer."
         },
         new Object[] {
           "missing enhanced",
-          item(9427, ok.replace("\"enhancedIndicator\":false,", "")),
+          ok.replace("\"enhancedIndicator\":false,", ""),
           "Enhanced: Value is required."
         },
         new Object[] {
           "missing BEC",
-          item(9427, ok.replace("\"biogeoclimaticCatalogueId\":8801,", "")),
+          ok.replace("\"biogeoclimaticCatalogueId\":8801,", ""),
           "Biogeo/Subzone/Variant: Value is required."
         },
         new Object[] {
           "unresolvable BEC",
-          item(9427, fields("Refusal Block", 999999, "9", "100", 0)),
+          fields("Refusal Block", 999999, "9", "100", 0),
           "Biogeo/Subzone/Variant code is invalid. The code must be corrected before the schedule"
               + " can be saved."
         },
         new Object[] {
-          "missing NAR", item(9427, ok.replace("\"netArea\":9,", "")), "NAR(ha): Value is required."
+          "missing NAR", ok.replace("\"netArea\":9,", ""), "NAR(ha): Value is required."
         },
         new Object[] {
           "NAR over range",
-          item(9427, fields("Refusal Block", 8801, "1000000", "100", 0)),
+          fields("Refusal Block", 8801, "1000000", "100", 0),
           "Entered NAR (ha) must be between 0 and 999,999.9."
         },
         new Object[] {
           "NAR below range",
-          item(9427, fields("Refusal Block", 8801, "-1", "100", 0)),
+          fields("Refusal Block", 8801, "-1", "100", 0),
           "Entered NAR (ha) must be between 0 and 999,999.9."
         },
         new Object[] {
           "cost over range",
-          item(9427, fields("Refusal Block", 8801, "9", "100000000", 0)),
+          fields("Refusal Block", 8801, "9", "100000000", 0),
           "Entered cost must be between -99,999,999 and 99,999,999."
         },
         new Object[] {
           "comments over 3500",
-          item(
-              9427,
-              ok.replace(
-                  "\"revisionCount\":0",
-                  "\"comments\":\"" + "c".repeat(3501) + "\",\"revisionCount\":0")),
+          ok.replace(
+              "\"revisionCount\":0",
+              "\"comments\":\"" + "c".repeat(3501) + "\",\"revisionCount\":0"),
           "Comments must be 3500 characters or fewer."
-        },
+        });
+  }
+
+  static List<Object[]> refusals() {
+    String ok = fields("Refusal Block", 8801, "9", "100", 0);
+    List<Object[]> rows = new ArrayList<>();
+    for (Object[] field : fieldRefusals()) {
+      rows.add(new Object[] {field[0], item(9427, (String) field[1]), field[2]});
+    }
+    rows.add(
         new Object[] {
           "missing revisionCount",
           item(9427, ok.replace(",\"revisionCount\":0", "")),
           "Revision count is required for an update."
-        },
+        });
+    rows.add(
         new Object[] {
           "the same location twice",
           item(9427, ok) + "," + item(9427, ok),
           "The same location was submitted more than once."
-        },
-        new Object[] {"nothing to save", "", "There are no changes to save."});
+        });
+    rows.add(new Object[] {"nothing to save", "", "There are no changes to save."});
+    return rows;
   }
 
   @ParameterizedTest(name = "{0}")
@@ -410,6 +428,101 @@ class Schedule11CorrectionIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.detail", containsString(detail)));
 
     assertThat(footprint(804)).as(label).isEqualTo(before);
+  }
+
+  static List<Object[]> addRefusals() {
+    List<Object[]> rows = new ArrayList<>();
+    for (Object[] field : fieldRefusals()) {
+      // An Add carries no revisionCount: create has no token to echo.
+      String location = ((String) field[1]).replace(",\"revisionCount\":0", "");
+      rows.add(new Object[] {field[0], location, field[2]});
+    }
+    return rows;
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("addRefusals")
+  @DisplayName("AC 6: the same field refusals hold on Add for the admin at S — nothing written")
+  void addRefusalTable_asAdminAtSubmitted(String label, String location, String detail)
+      throws Exception {
+    String before = footprint(804);
+
+    mockMvc
+        .perform(
+            post(LOCATIONS)
+                .with(csrf())
+                .param("millId", "804")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(location)
+                .with(admin()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail", containsString(detail)));
+
+    assertThat(footprint(804)).as(label).isEqualTo(before);
+  }
+
+  static List<Object[]> malformedBodies() {
+    String loc = fields("Refusal Block", 8801, "9", "100", 0);
+    return List.<Object[]>of(
+        new Object[] {"no locations list", "{\"deletedIds\":[]}"},
+        new Object[] {"no deletedIds list", "{\"locations\":[]}"},
+        new Object[] {"a null location item", "{\"locations\":[null],\"deletedIds\":[]}"},
+        new Object[] {"a null deleted id", "{\"locations\":[],\"deletedIds\":[null]}"},
+        new Object[] {
+          "an item with no id", "{\"locations\":[{\"location\":" + loc + "}],\"deletedIds\":[]}"
+        },
+        new Object[] {
+          "an item with no fields",
+          "{\"locations\":[{\"basicSilvicultureReportId\":9427}],\"deletedIds\":[]}"
+        });
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("malformedBodies")
+  @DisplayName("AC 2: a malformed save body is a 400 naming the missing value, never a 500")
+  void malformedBody_400_writesNothing(String label, String body) throws Exception {
+    String before = footprint(804);
+
+    mockMvc
+        .perform(save(804, body).with(admin()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail", containsString("Value Required")));
+
+    assertThat(footprint(804)).as(label).isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName(
+      "AC 2: another mill's location id, to update or to delete, is a 404 — neither mill written")
+  void otherMillsId_404_writesNeitherMill() throws Exception {
+    String ownerBefore = footprint(804);
+    String callerBefore = footprint(805);
+
+    // 9427 is 804's row; the request is made against 805.
+    mockMvc
+        .perform(save(805, saveBody("", "9427")).with(admin()))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail", is(NOT_FOUND)));
+    mockMvc
+        .perform(
+            save(805, saveBody(item(9427, fields("Taken", 8801, "9", "100", 0)), "")).with(admin()))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail", is(NOT_FOUND)));
+
+    assertThat(footprint(804)).as("the owner's rows").isEqualTo(ownerBefore);
+    assertThat(footprint(805)).as("the caller's rows").isEqualTo(callerBefore);
+  }
+
+  @Test
+  @DisplayName("AC 8: the admin at a NULL silviculture status (\"Not Initiated\") is refused 409")
+  void adminAtNullStatus_refused() throws Exception {
+    // 514/2021 has a status row with no silviculture code (V2; read elsewhere, never written here —
+    // the gate refuses before the unknown id is ever looked up).
+    mockMvc
+        .perform(save(514, saveBody("", "999999")).with(admin()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is(NOT_EDITABLE)));
   }
 
   @Test

@@ -95,6 +95,19 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
+      "a submitted BEC with no catalogue row still serves the snapshot, the BEC shown by its id")
+  void danglingSubmittedBec_keepsTheSnapshot_andShowsTheId() throws Exception {
+    // The snapshot query LEFT JOINs the catalogue. Under an inner join 9430's snapshot row would
+    // vanish and every field would read "added since submission" on a row the Licensee filed.
+    JsonNode loc = location(801, 9430);
+
+    assertOriginal(loc, "location", "Dangling Submitted", "Dangling Submitted");
+    assertOriginal(loc, "biogeoclimaticCatalogueId", "8899", "8899");
+    assertOriginal(loc, "netArea", "6", "6.0");
+  }
+
+  @Test
+  @DisplayName(
       "a cost's original is the snapshot of its OWN detail id — not an older row's for the same item")
   void costOriginalIsKeyedByTheCurrentDetailId() throws Exception {
     // 9423's Actual cost is detail 5833 ('S' snapshot 900). An OLDER detail 5899 for the same

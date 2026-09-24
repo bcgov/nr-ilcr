@@ -26,9 +26,10 @@ export type Sch11Fixtures = {
    */
   schedule11Cleanup: Sch11Cleanup[];
   /**
-   * Location-mutation spy. Counts ONLY the mutating calls on the locations sub-resource — POST
-   * /locations, PUT /locations/{id}, DELETE /locations/{id} — so a client-rejected Add or inline edit
-   * can PROVE no write was attempted rather than merely observing that the page did not move.
+   * Location-mutation spy. Counts ONLY the mutating calls on the locations sub-resource — the Add
+   * POST /locations and the page-level Save PUT /locations — so a client-rejected Add or Save, or a
+   * Delete that only flags, can PROVE no write was attempted rather than merely observing that the page
+   * did not move.
    *
    * Deliberately EXCLUDES the check-status POST (`/check-status` mutates nothing by contract) and every
    * GET, including the BEC catalogue lookups the type-ahead fires.

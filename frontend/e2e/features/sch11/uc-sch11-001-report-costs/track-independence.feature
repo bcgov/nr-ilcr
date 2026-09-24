@@ -24,7 +24,7 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — editability independe
     When I open Schedule 11
     # The editing surface is fully live even though the 1-10 track has moved on.
     Then the Add New Location panel is rendered
-    And the Check Status button is enabled
+    And both Check Status buttons are enabled
     When I fill the Add New Location panel:
       | field        | value          |
       | Location     | E2E S10 indep  |

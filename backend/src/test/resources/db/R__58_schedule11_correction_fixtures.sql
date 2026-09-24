@@ -13,8 +13,10 @@
 -- the repo; V20260910:4-5 names an R__60_original_value_snapshots.sql that was never written.
 --
 --   801  Schedule11OriginalValuesIT  -- read-only indicator anchor (NEVER written): 9421 has a snapshot that differs
---                                       on all five tracked fields; 9422 has none (every non-empty field flags)
---   802  Schedule11CorrectionIT      -- Add + bulk save (edit 9423, delete 9424) + two successive corrections (S07);
+--                                       on all five tracked fields; 9422 has none (every non-empty field flags);
+--                                       9430's submitted BEC (8899) has no catalogue row
+--   802  Schedule11CorrectionIT      -- Add + bulk save (delete 9424, and 9423 takes over 9424's biogeo+location in the
+--                                       same save) + two successive corrections (S07);
 --                                       9423's Actual cost ALSO has an 'S' row under an OLDER detail id (5899, no
 --                                       longer in the base table) with a HIGHER audit id — the per-detail-id key test
 --   803  Schedule11CorrectionIT      -- Check Status (NEVER written): 9425 lacks a Planned cost, 9426 is complete
@@ -25,9 +27,9 @@
 -- Prefix 58 is BELOW 70 so R__70's set-based insert associates the canonical submitter to all six mills.
 --
 -- Claims (bare-id grep over db/, db-e2e/ and backend/src/test/java on 2026-09-24): MILL / ILCR_MILL_STATUS_XREF
--- 801-806 (MILL_NUMBER 1801-1806), BASIC_SILVICULTURE_REPORT 9421-9429 (below ILCR_REPORT_COMMON_SEQ's 9500 start),
+-- 801-806 (MILL_NUMBER 1801-1806), BASIC_SILVICULTURE_REPORT 9421-9430 (below ILCR_REPORT_COMMON_SEQ's 9500 start),
 -- ILCR_COST_REPORT_DETAIL 5830-5845 (below the 9000 floor kept clear of ILCR_COST_REPORT_DETAIL_SEQ; 5899 appears
--- ONLY as an audit row's detail id), BASIC_SILVICULTURE_RPRT_AUD_ID 1001-1009, ILCR_COST_REPORT_DETAIL_AUD_ID
+-- ONLY as an audit row's detail id), BASIC_SILVICULTURE_RPRT_AUD_ID 1001-1010, ILCR_COST_REPORT_DETAIL_AUD_ID
 -- 2001-2012 (no sequence backs either audit id). Every INSERT is the single-row
 -- `(cols) SELECT ... FROM DUAL WHERE NOT EXISTS` form guarded on its key (README convention 1b).
 -- ================================================================================================
@@ -85,6 +87,14 @@ INSERT INTO THE.BASIC_SILVICULTURE_REPORT (BASIC_SILVICULTURE_REPORT_ID, REPORT_
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, BASIC_SILVICULTURE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
   SELECT 5832, NULL, 9422, 24, NULL, 3000, NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE FROM DUAL
    WHERE NOT EXISTS (SELECT 1 FROM THE.ILCR_COST_REPORT_DETAIL WHERE ILCR_COST_REPORT_DETAIL_ID = 5832);
+-- 9430: the Licensee submitted BEC 8899, whose catalogue row is gone (V21's known-absent id; no FK in delivery). The
+-- snapshot query LEFT JOINs the catalogue, so the location's snapshot must still be served, the BEC shown by its id.
+INSERT INTO THE.BASIC_SILVICULTURE_REPORT (BASIC_SILVICULTURE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID, REFORESTED_NET_AREA, ENHANCED_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID)
+  SELECT 9430, 2021, 801, '11', 'Dangling Current', 8801, 6, 'N', NULL, 1, 'SEED' FROM DUAL
+   WHERE NOT EXISTS (SELECT 1 FROM THE.BASIC_SILVICULTURE_REPORT WHERE BASIC_SILVICULTURE_REPORT_ID = 9430);
+INSERT INTO THE.BASIC_SILVICULTURE_RPRT_AUD (BASIC_SILVICULTURE_RPRT_AUD_ID, BASIC_SILVICULTURE_REPORT_ID, AUDIT_ACTION_CODE, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID, REFORESTED_NET_AREA, RECORD_STATE_CODE, ENHANCED_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  SELECT 1010, 9430, 'UPDATE', 2021, 801, '11', 'Dangling Submitted', 8899, 6, 'S', 'N', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE FROM DUAL
+   WHERE NOT EXISTS (SELECT 1 FROM THE.BASIC_SILVICULTURE_RPRT_AUD WHERE BASIC_SILVICULTURE_RPRT_AUD_ID = 1010);
 -- ================================================================================================
 -- Mill 802 -- Sch11 Correction Happy Milling (MILL_NUMBER 1802). 1-10 at D, silviculture at S.
 -- ================================================================================================

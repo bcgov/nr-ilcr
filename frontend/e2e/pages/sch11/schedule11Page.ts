@@ -1,6 +1,7 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { navigateViaSideNav } from '../common/authNav';
 import {
+  ALL_FLAGGED_TEXT,
   CONFIRM_DELETE,
   EMPTY_TABLE_TEXT,
   MILL_YEAR_STORAGE_KEY,
@@ -13,19 +14,21 @@ import {
  *
  * RE-GROUNDING NOTE — the legacy Gherkin's locators do not survive the rewrite, so none are used:
  *   - route `/schedule-11` reached via Home + side-nav, not `/ext/ilcr/schedule11.xhtml`
- *   - stable Carbon ids (`#add-location`, `#edit-actual-cost-<locationId>`), not PrimeFaces
- *     naming-container ids (`addLocationForm:addDescription`)
- *   - there is NO page-level Save button at all. Legacy had `btnSaveTop`/`btnSave`; the React app is
- *     three independent mutations — Add = immediate POST, per-row inline edit = its own PUT behind an
- *     Edit/Save/Cancel row mode, Delete = immediate DELETE. See defects.md Divergence #1.
- *   - ONE Check Status button, not legacy's top+bottom pair.
+ *   - stable Carbon ids (`#add-location`), not PrimeFaces naming-container ids
+ *     (`addLocationForm:addDescription`)
+ *   - since Story 26.2 the page is legacy's model again: EVERY row is a live input while the page is
+ *     editable, Delete only FLAGS a row, and one page-level Save — above AND below the table, as legacy's
+ *     `btnSaveTop`/`btnSave` — sends the edits and flags in one PUT. Add is still its own immediate POST.
+ *     (defects.md DIV-1 / DIV-3, closed.)
+ *   - TWO Check Status buttons (top and bottom), disabled while a change is unsaved (26.2 D7(a)).
  *   - the delete confirm is a Carbon Modal ("Delete"/"Cancel"), not PrimeFaces
  *     `.ui-confirmdialog-yes`/`-no`, and not a native browser dialog.
  *
  * Carbon specifics: `Dropdown` and `ComboBox` both expose `role="combobox"` named by their
  * titleText/aria-label; options are `role="option"` once open. Inputs keep their `labelText` as the
- * accessible name even under `hideLabel`, which is why the inline-edit controls are addressable by
- * name ("Edit Location", …) — only one row is ever in edit mode, so those names stay unambiguous.
+ * accessible name even under `hideLabel`, which is why each row's controls are addressable by name:
+ * the page names them after the row's SERVED location ("Actual Cost ($) for E2E S03 edit"), so they
+ * stay unambiguous with many rows on screen and do not change while the Location is being retyped.
  */
 export class Schedule11Page {
   constructor(private readonly page: Page) {}
@@ -105,8 +108,29 @@ export class Schedule11Page {
     return this.page.getByRole('heading', { name: 'Add New Location' });
   }
 
-  get checkStatusButton(): Locator {
+  /** Both Check Status buttons — above and below the table. */
+  get checkStatusButtons(): Locator {
     return this.page.getByRole('button', { name: 'Check Status', exact: true });
+  }
+
+  /** The TOP Check Status button, the one a user reaches first. */
+  get checkStatusButton(): Locator {
+    return this.checkStatusButtons.first();
+  }
+
+  /** Both page-level Save buttons — above and below the table. */
+  get saveButtons(): Locator {
+    return this.page.getByRole('button', { name: 'Save', exact: true });
+  }
+
+  /** Save from the top bar. */
+  async save(): Promise<void> {
+    await this.saveButtons.first().click();
+  }
+
+  /** Save from the bottom bar — legacy's `btnSave` under the table. */
+  async saveFromBottom(): Promise<void> {
+    await this.saveButtons.last().click();
   }
 
   /** The Enhanced Yes/No Dropdown in the Add panel (titleText "Enhanced"). */
@@ -217,24 +241,34 @@ export class Schedule11Page {
   // ---- rows ---------------------------------------------------------------------------------------
 
   /**
-   * The data row whose Location cell holds `location`. Scoped to the table body and matched on the
-   * FIRST cell so a value that also appears in Comments cannot select the wrong row; the footer
-   * "Totals" row and the empty-state row are excluded by construction (neither carries this text).
+   * The data row for the location SERVED as `location`. An editable row holds its name in an input
+   * named "Location for <served name>"; a read-only row renders it as the first cell's text. Matched
+   * either way, scoped to the table body and to the FIRST cell, so a value that also appears in Comments
+   * cannot select the wrong row; the footer "Totals" row and the placeholder row are excluded by
+   * construction.
    */
   row(location: string): Locator {
     return this.table.locator('tbody tr').filter({
-      has: this.page.locator('td').first().getByText(location, { exact: true }),
+      has: this.page
+        .locator('td')
+        .first()
+        .getByText(location, { exact: true })
+        .or(this.page.getByRole('textbox', { name: `Location for ${location}`, exact: true })),
     });
   }
 
-  /** Every Location value currently listed, in render order (display rows only). */
+  /** Every Location value currently listed, in render order — the input's value on an editable row. */
   async listedLocations(): Promise<string[]> {
     const cells = this.table.locator('tbody tr:not(.schedule-11__totals) td:first-child');
-    const texts = await cells.allInnerTexts();
-    // Drop the empty-state placeholder row, which occupies the same first-cell position. Matched against
-    // the pinned EMPTY_TABLE_TEXT rather than a hand-typed prefix: with a local literal, a change to the
-    // placeholder copy would silently make rowCount() return 1 for an empty table.
-    return texts.map((t) => t.trim()).filter((t) => t !== '' && t !== EMPTY_TABLE_TEXT);
+    const texts = await cells.evaluateAll((tds) =>
+      tds.map((td) => (td.querySelector('input') as HTMLInputElement | null)?.value ?? td.textContent ?? ''),
+    );
+    // Drop the placeholder row, which occupies the same first-cell position — both texts it can carry.
+    // Matched against the pinned constants rather than a hand-typed prefix: with a local literal, a change
+    // to the placeholder copy would silently make rowCount() return 1 for an empty table.
+    return texts
+      .map((t) => t.trim())
+      .filter((t) => t !== '' && t !== EMPTY_TABLE_TEXT && t !== ALL_FLAGGED_TEXT);
   }
 
   /** Count of real data rows (excludes the footer Totals row and the empty-state placeholder). */
@@ -242,80 +276,63 @@ export class Schedule11Page {
     return (await this.listedLocations()).length;
   }
 
-  /** Read one display row's cells by column label, using the formatted text the page renders. */
+  /**
+   * Read one row's cell by column label, as the user sees it: an input's (or textarea's) VALUE on an
+   * editable row — the raw number the user types over, "5500", not a mask — the Dropdown's selected
+   * label for Enhanced, and otherwise the cell's OWN text: the formatted server figure ("10,000"). Own
+   * text only, so an original-value indicator's tooltip inside the cell can never leak into the value.
+   */
   async cell(location: string, column: Sch11Column): Promise<string> {
     const index = SCH11_COLUMN_INDEX[column];
-    return (await this.row(location).locator('td').nth(index).innerText()).trim();
+    return this.row(location)
+      .locator('td')
+      .nth(index)
+      .evaluate((td) => {
+        const field = td.querySelector('input, textarea') as HTMLInputElement | HTMLTextAreaElement | null;
+        if (field) {
+          return field.value.trim();
+        }
+        const selected = td.querySelector('.cds--list-box__label');
+        if (selected) {
+          return (selected.textContent ?? '').trim();
+        }
+        return Array.from(td.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent ?? '')
+          .join('')
+          .trim();
+      });
   }
 
-  // ---- inline edit (S03) --------------------------------------------------------------------------
+  // ---- row editing (S03) — every row is live; nothing is written until Save ------------------------
 
-  /** Enter inline-edit mode on a row via its per-row Edit button. */
-  async startEdit(location: string): Promise<void> {
-    await this.row(location).getByRole('button', { name: 'Edit', exact: true }).click();
-    // The row swaps to EditRow; its Location input proves the mode flipped before we type.
-    await expect(this.editLocation).toBeVisible();
+  /** A row's text control, by its per-row accessible name ("NAR(ha) for <served location>"). */
+  rowField(location: string, field: Sch11RowField): Locator {
+    return this.page.getByRole('textbox', { name: `${field} for ${location}`, exact: true });
   }
 
-  // Inline-edit controls. Only ONE row is in edit mode at a time (a single `editingId`), so the
-  // hidden-label accessible names below are unambiguous without a per-row scope.
-  get editLocation(): Locator {
-    return this.page.getByRole('textbox', { name: 'Edit Location', exact: true });
+  rowEnhanced(location: string): Locator {
+    return this.page.getByRole('combobox', { name: `Enhanced for ${location}`, exact: true });
   }
 
-  get editNetArea(): Locator {
-    return this.page.getByRole('textbox', { name: 'Edit NAR(ha)', exact: true });
+  rowBec(location: string): Locator {
+    return this.page.getByRole('combobox', {
+      name: `Biogeo/Subzone/Variant for ${location}`,
+      exact: true,
+    });
   }
 
-  get editActualCost(): Locator {
-    return this.page.getByRole('textbox', { name: 'Edit Actual Cost ($)', exact: true });
+  async setRowEnhanced(location: string, value: 'Yes' | 'No'): Promise<void> {
+    await this.pickEnhanced(this.rowEnhanced(location), value);
   }
 
-  get editPlannedCost(): Locator {
-    return this.page.getByRole('textbox', { name: 'Edit Planned Cost ($)', exact: true });
-  }
-
-  get editComments(): Locator {
-    return this.page.getByRole('textbox', { name: 'Edit Comments', exact: true });
-  }
-
-  get editEnhanced(): Locator {
-    return this.page.getByRole('combobox', { name: 'Edit Enhanced', exact: true });
-  }
-
-  get editBec(): Locator {
-    return this.page.getByRole('combobox', { name: 'Edit Biogeo/Subzone/Variant', exact: true });
-  }
-
-  async setEditEnhanced(value: 'Yes' | 'No'): Promise<void> {
-    await this.pickEnhanced(this.editEnhanced, value);
-  }
-
-  async setEditBec(option: BecOption): Promise<void> {
-    await this.pickBec(this.editBec, option);
-  }
-
-  /** The inline editor's own Save. Scoped to the row in edit mode so it cannot hit another control. */
-  async saveEdit(): Promise<void> {
-    await this.page
-      .locator('tbody tr')
-      .filter({ has: this.editLocation })
-      .getByRole('button', { name: 'Save', exact: true })
-      .click();
-  }
-
-  /** The inline editor's Cancel — discards the edit without a request. */
-  async cancelEdit(): Promise<void> {
-    await this.page
-      .locator('tbody tr')
-      .filter({ has: this.editLocation })
-      .getByRole('button', { name: 'Cancel', exact: true })
-      .click();
+  async setRowBec(location: string, option: BecOption): Promise<void> {
+    await this.pickBec(this.rowBec(location), option);
   }
 
   // ---- delete (S07 / S08) -------------------------------------------------------------------------
 
-  /** Open the delete confirm modal for a row. */
+  /** Open the delete confirm modal for a row. Confirming it only FLAGS the row until Save. */
   async clickDelete(location: string): Promise<void> {
     await this.row(location).getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(this.confirmModal).toBeVisible();
@@ -396,6 +413,14 @@ export class Schedule11Page {
 }
 
 /** The Locations table's columns, in render order (COLUMNS in components/schedule11/index.tsx). */
+/** The text controls of a live row, named as the page labels them. */
+export type Sch11RowField =
+  | 'Location'
+  | 'NAR(ha)'
+  | 'Actual Cost ($)'
+  | 'Planned Cost ($)'
+  | 'Comments';
+
 export type Sch11Column =
   | 'Location'
   | 'Biogeo/Subzone/Variant'

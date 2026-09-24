@@ -201,7 +201,8 @@ export async function locationByMarker(
 /**
  * Delete every location carrying `marker` in one page-level save, then PROVE none remain (fail loud).
  * Only rows still served are sent, so a row the UI already deleted — the S07 happy path — is simply not
- * in the list; a 404 means one vanished between the read and the save, which counts as already-gone.
+ * in the list. The save is ATOMIC: a 404 means NOTHING was deleted (one id vanished between the read and
+ * the save and the whole request rolled back), so it is a failure here, not "already gone".
  */
 export async function deleteLocationsByMarker(
   request: APIRequestContext,
@@ -212,9 +213,9 @@ export async function deleteLocationsByMarker(
   if (ids.length > 0) {
     const res = await saveAll(request, key, [], ids);
     expect(
-      [200, 404].includes(res.status()),
-      `delete-save of locations ${ids.join(', ')} ("${marker}") returned HTTP ${res.status()}`,
-    ).toBeTruthy();
+      res.status(),
+      `delete-save of locations ${ids.join(', ')} ("${marker}") returned HTTP ${res.status()}: ${await res.text()}`,
+    ).toBe(200);
   }
   const remaining = await locationsByMarker(request, key, marker);
   expect(

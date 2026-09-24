@@ -5,7 +5,6 @@ import {
   declaredRole,
   fireEvent,
   getDefaultNormalizer,
-  render,
   renderAsAdmin,
   renderAsSubmitter,
   screen,
@@ -235,7 +234,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
 
   test('zero locations render an empty table + blank (not 0) footer totals, no error (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))))
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
 
     expect(
       await screen.findByText(/no silviculture locations have been added/i),
@@ -256,7 +255,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc({ message: SAVED }))
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -290,7 +289,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -315,7 +314,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /^add$/i }))
@@ -337,7 +336,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -363,7 +362,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -390,7 +389,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc({ message: SAVED }))
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -571,29 +570,36 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(put).not.toHaveBeenCalled()
   })
 
-  test('a row whose catalogue id has no label must be re-picked before any Save (BR-09)', async () => {
-    // A dangling id (no FK in delivery) seeds no phantom selection, and Save re-sends every row — so
-    // the row blocks the save until the user chooses a real catalogue entry.
-    const put = vi.fn()
+  test('a row whose catalogue id has no label blocks only a Save that edits it (BR-09, review D-R1)', async () => {
+    // A dangling id (no FK in delivery) seeds no phantom selection. Untouched, the row is not sent,
+    // so it cannot block another row's save; once edited, it must be re-picked before it can go.
+    const bodies: LocationSaveAllRequest[] = []
     server.use(
       http.get(URL, () =>
-        HttpResponse.json(doc({ locations: [{ ...northRidge, becLabel: null }] })),
+        HttpResponse.json(doc({ locations: [{ ...northRidge, becLabel: null }, midSlope] })),
       ),
-      http.put(LOCATIONS_URL, () => {
-        put()
-        return HttpResponse.json(doc())
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        bodies.push((await request.json()) as LocationSaveAllRequest)
+        return HttpResponse.json(
+          doc({ locations: [{ ...northRidge, becLabel: null }, midSlope], message: SAVED }),
+        )
       }),
     )
     renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
-    await findRow('North Ridge')
+    await findRow('Mid Slope')
+    changeRowField('Comments', 'Mid Slope', 'the other row')
+    await user.click(saveButtons()[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(bodies[0].locations.map((item) => item.basicSilvicultureReportId)).toEqual([9002])
+
     changeRowField('Comments', 'North Ridge', 'a note')
     await user.click(saveButtons()[0])
 
     expect(screen.getByText(SAVE_BLOCKED)).toBeInTheDocument()
     expect(screen.getByText('Biogeo/Subzone/Variant: Value is required.')).toBeInTheDocument()
-    expect(put).not.toHaveBeenCalled()
+    expect(bodies).toHaveLength(1)
   })
 
   test('an edit stays on the page until Save — typing sends nothing (replaces edit Cancel, AC3)', async () => {
@@ -649,7 +655,10 @@ describe('Schedule 11 page (Story 25.3)', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => expect(queryRow('North Ridge')).toBeNull())
-    expect(screen.getByText(/no silviculture locations have been added/i)).toBeInTheDocument()
+    // The report still holds the row until Save, so the table does not claim none were added (P7).
+    expect(
+      screen.getByText('Every location is marked for deletion. Save to remove them.'),
+    ).toBeInTheDocument()
     expect(put).not.toHaveBeenCalled()
     expect(screen.queryByText(/successfully/i)).not.toBeInTheDocument()
 
@@ -695,7 +704,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json([{ id: 321, label: 'ICHdw1' }])
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(
@@ -717,7 +726,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -745,7 +754,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -771,7 +780,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json([])
       }),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     const combo = await screen.findByRole('combobox', { name: /^Biogeo\/Subzone\/Variant$/i })
@@ -784,7 +793,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
 
   test('Comments is a TextArea with a 3500 characters-remaining counter (AC11 / BR-10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))))
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     const comments = await screen.findByLabelText('Comments')
@@ -901,7 +910,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
     'guard state %i renders the verbatim detail under its own title and suppresses content (AC8)',
     async (status, detail, title) => {
       server.use(http.get(URL, () => problemBody(status, detail)))
-      render(<Schedule11 />)
+      renderAsSubmitter(<Schedule11 />)
 
       expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
       expect(screen.getByText(title)).toBeInTheDocument()
@@ -916,7 +925,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         throw new Error('GET must not fire when mill/year context is null')
       }),
     )
-    render(
+    renderAsSubmitter(
       <MillYearProvider initial={{ millId: null, year: null }}>
         <Schedule11 />
       </MillYearProvider>,
@@ -964,7 +973,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         ),
       ),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -992,7 +1001,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
 
   test('a load failure carrying no detail falls back to the generic load message (#332)', async () => {
     server.use(http.get(URL, detailLess500))
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
 
     // Exact match on purpose: the panel's TITLE is the same words without the full stop.
     expect(await screen.findByText('Unable to load Schedule 11.')).toBeInTheDocument()
@@ -1005,7 +1014,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
       http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
       http.post(LOCATIONS_URL, detailLess500),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Location'), 'North Ridge')
@@ -1022,42 +1031,43 @@ describe('Schedule 11 page (Story 25.3)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /^add$/i })).toBeEnabled())
   })
 
-  test('a detail-less edit failure falls back to the generic Save message and keeps the row in edit (#332)', async () => {
+  test('a detail-less Save failure falls back to the generic Save message and keeps the edit (#332)', async () => {
+    // Migrated from the per-row edit PUT (Story 26.2): the edit goes out on the page-level Save.
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${LOCATIONS_URL}/9001`, detailLess500),
+      http.put(LOCATIONS_URL, detailLess500),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
-    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
-    const location = screen.getByLabelText('Edit Location')
-    await user.clear(location)
-    await user.type(location, 'North Ridge Revised')
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    await findRow('North Ridge')
+    changeRowField('Location', 'North Ridge', 'North Ridge Revised')
+    await user.click(saveButtons()[0])
 
     expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
-    // `cancelEdit` runs only on success: the row stays in edit with the typed value for a retry.
-    expect(screen.getByLabelText('Edit Location')).toHaveValue('North Ridge Revised')
+    // Pending work is kept on every refusal: the typed value stays, and Save is live for a retry.
+    expect(screen.getByLabelText('Location for North Ridge')).toHaveValue('North Ridge Revised')
+    await waitFor(() => expect(saveButtons()[0]).toBeEnabled())
   })
 
-  test('a detail-less delete failure falls back to the generic delete message and keeps the row (#332)', async () => {
+  test('a detail-less Save of a flagged delete falls back to the generic Save message and keeps the flag (#332)', async () => {
+    // Migrated from the immediate DELETE (Story 26.2): Delete only flags, and the Save writes it.
+    // Its old fallback, "Unable to delete location.", went with the per-row DELETE.
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.delete(`${LOCATIONS_URL}/9001`, detailLess500),
+      http.put(LOCATIONS_URL, detailLess500),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
-    await screen.findByText('North Ridge')
-    await user.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+    await flagDelete(user, 'North Ridge')
+    await user.click(saveButtons()[0])
 
-    expect(await screen.findByText('Unable to delete location.')).toBeInTheDocument()
-    // `applyDocument` never ran: the row is still there and no success banner appears.
-    expect(screen.getByText('North Ridge')).toBeInTheDocument()
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // Nothing was applied: the row stays flagged (off the table) and no success banner appears.
+    expect(queryRow('North Ridge')).toBeNull()
     expect(screen.queryByText(/successfully/i)).not.toBeInTheDocument()
+    await waitFor(() => expect(saveButtons()[0]).toBeEnabled())
   })
 
   test('a detail-less Check Status failure falls back to the generic check message (#332)', async () => {
@@ -1065,16 +1075,16 @@ describe('Schedule 11 page (Story 25.3)', () => {
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, detailLess500),
     )
-    render(<Schedule11 />)
+    renderAsSubmitter(<Schedule11 />)
     const user = userEvent.setup()
 
-    await screen.findByText('North Ridge')
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await findRow('North Ridge')
+    await user.click(checkButtons()[0])
 
     expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
     // No check result renders beside the error, and the in-flight lock releases for a retry.
     expect(screen.queryByText('Status checked')).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled())
+    await waitFor(() => expect(checkButtons()[0]).toBeEnabled())
   })
 
   test('a stale GET (mill/year changed mid-flight) is ignored (useScheduleDocument active flag)', async () => {
@@ -1092,7 +1102,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
       }),
     )
 
-    render(<StaleRaceHarness />)
+    renderAsSubmitter(<StaleRaceHarness />)
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: /change/i }))
@@ -1120,7 +1130,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
     )
     // Explicit initial context: the sibling stale-GET test persists 999/2020 to localStorage, and a
     // no-op "change" to the same context would defeat the race this test exists to exercise.
-    render(
+    renderAsSubmitter(
       <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
         <StaleRaceHarness />
       </MillYearProvider>,
@@ -1157,7 +1167,7 @@ describe('Schedule 11 page (Story 25.3)', () => {
         return HttpResponse.json(doc({ message: SAVED }))
       }),
     )
-    render(
+    renderAsSubmitter(
       <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
         <StaleRaceHarness />
       </MillYearProvider>,
@@ -1194,10 +1204,10 @@ describe('Schedule 11 page-level Save (Story 26.2)', () => {
     revisionCount: 1,
   }
 
-  test('Save sends ONE PUT: every row still on the page, as edited or as served, plus the flagged ids (AC1)', async () => {
-    // Every kept row, not only the edited ones — the 7A precedent (schedule7a/index.tsx) and legacy's
-    // save, which walked the whole list (Schedule11DAO:143-147). The untouched row goes as served,
-    // with its own revision; the flagged row appears ONLY in deletedIds.
+  test('Save sends ONE PUT: the edited rows, with their revisions, plus the flagged ids — nothing untouched (AC1)', async () => {
+    // Review D-R1 (ruled 1b, deviation (E)): only edited rows are sent. Legacy re-stamped every row,
+    // but it had no optimistic lock; with ours an untouched row another session changed would refuse
+    // the whole save. The flagged row appears ONLY in deletedIds.
     const bodies: LocationSaveAllRequest[] = []
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ locations: [northRidge, midSlope, alderFlat] }))),
@@ -1219,17 +1229,17 @@ describe('Schedule 11 page-level Save (Story 26.2)', () => {
     const [body] = bodies
     expect(Object.keys(body).sort()).toEqual(['deletedIds', 'locations'])
     expect(body.deletedIds).toEqual([9002])
-    expect(body.locations.map((item) => item.basicSilvicultureReportId)).toEqual([9001, 9003])
-    expect(body.locations[0].location).toMatchObject({ netArea: 130, revisionCount: 4 })
-    expect(body.locations[1].location).toEqual({
-      location: 'Alder Flat',
+    // Alder Flat was never touched: it is not sent.
+    expect(body.locations.map((item) => item.basicSilvicultureReportId)).toEqual([9001])
+    expect(body.locations[0].location).toEqual({
+      location: 'North Ridge',
       enhancedIndicator: false,
-      biogeoclimaticCatalogueId: 323,
-      netArea: 9,
-      actualCost: null,
-      plannedCost: 2000,
-      comments: 'third',
-      revisionCount: 1,
+      biogeoclimaticCatalogueId: 321,
+      netArea: 130,
+      actualCost: 25000,
+      plannedCost: 10000,
+      comments: null,
+      revisionCount: 4,
     })
   })
 
@@ -1281,12 +1291,9 @@ describe('Schedule 11 page-level Save (Story 26.2)', () => {
 
     await waitFor(() => expect(bodies).toHaveLength(1))
     expect(bodies[0].deletedIds).toEqual([9002])
-    expect(bodies[0].locations.map((item) => item.basicSilvicultureReportId)).toEqual([9001, 9004])
+    // The added row was never edited, so it is not sent (review D-R1).
+    expect(bodies[0].locations.map((item) => item.basicSilvicultureReportId)).toEqual([9001])
     expect(bodies[0].locations[0].location).toMatchObject({ netArea: 130, revisionCount: 4 })
-    expect(bodies[0].locations[1].location).toMatchObject({
-      location: 'South Bench',
-      revisionCount: 1,
-    })
   })
 
   test('a refused Save keeps every pending edit and flag, and the same Save can be retried', async () => {
@@ -1425,6 +1432,171 @@ describe('Schedule 11 page-level Save (Story 26.2)', () => {
       }
     },
   )
+
+  test('a check verdict is cleared by flagging a row, too (the other direction)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [northRidge, midSlope] }))),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+          message: { key: 'checkStatusMessage', text: 'Status has been checked' },
+        }),
+      ),
+    )
+    renderAsSubmitter(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await findRow('Mid Slope')
+    await user.click(checkButtons()[0])
+    expect(await screen.findByText('Status has been checked')).toBeInTheDocument()
+
+    await flagDelete(user, 'Mid Slope')
+
+    // The verdict described a table that still held Mid Slope.
+    expect(screen.queryByText('Status has been checked')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('typing a value back to what was served is not a change: Save greys, Check Status returns', async () => {
+    // A row is pending only while its form DIFFERS from the served row (review P6).
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderAsSubmitter(<Schedule11 />)
+
+    await findRow('North Ridge')
+    changeRowField('NAR(ha)', 'North Ridge', '120.55')
+    for (const button of saveButtons()) {
+      expect(button).toBeEnabled()
+    }
+    changeRowField('NAR(ha)', 'North Ridge', '120.5')
+
+    for (const button of saveButtons()) {
+      expect(button).toBeDisabled()
+    }
+    for (const button of checkButtons()) {
+      expect(button).toBeEnabled()
+      expect(button).not.toHaveAttribute('aria-describedby')
+    }
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  test('a row edited and typed back is not sent with a real edit elsewhere', async () => {
+    const bodies: LocationSaveAllRequest[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [northRidge, midSlope] }))),
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        bodies.push((await request.json()) as LocationSaveAllRequest)
+        return HttpResponse.json(doc({ locations: [northRidge, midSlope], message: SAVED }))
+      }),
+    )
+    renderAsSubmitter(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await findRow('Mid Slope')
+    changeRowField('Comments', 'North Ridge', 'typed')
+    changeRowField('Comments', 'North Ridge', '')
+    changeRowField('Comments', 'Mid Slope', 'kept')
+    await user.click(saveButtons()[0])
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(bodies[0].locations.map((item) => item.basicSilvicultureReportId)).toEqual([9002])
+  })
+
+  test('a flag or an edit on a row that leaves the document is dropped, never sent to a 404 (P1)', async () => {
+    // Another session deleted Mid Slope and Alder Flat; the Add echo no longer serves them. The flag
+    // on one and the edit on the other must not ride along on every later Save — the atomic save
+    // would answer "Location not found." forever, with no control left to clear them.
+    const bodies: LocationSaveAllRequest[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [northRidge, midSlope, alderFlat] }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({
+            locations: [northRidge, { ...northRidge, locationId: 9004, location: 'South Bench' }],
+            message: SAVED,
+          }),
+        ),
+      ),
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        bodies.push((await request.json()) as LocationSaveAllRequest)
+        return HttpResponse.json(doc({ message: SAVED }))
+      }),
+    )
+    renderAsSubmitter(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await findRow('Alder Flat')
+    await flagDelete(user, 'Mid Slope')
+    changeRowField('Comments', 'Alder Flat', 'about to vanish')
+
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'South Bench' } })
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'No' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    fireEvent.change(screen.getByLabelText('NAR(ha)'), { target: { value: '12.5' } })
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+    await findRow('South Bench')
+
+    // Nothing that is still served is pending: Save greys and Check Status comes back.
+    for (const button of saveButtons()) {
+      expect(button).toBeDisabled()
+    }
+    for (const button of checkButtons()) {
+      expect(button).toBeEnabled()
+    }
+
+    // A real edit afterwards goes out alone.
+    changeRowField('Comments', 'North Ridge', 'real edit')
+    await user.click(saveButtons()[0])
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0].deletedIds).toEqual([])
+    expect(bodies[0].locations.map((item) => item.basicSilvicultureReportId)).toEqual([9001])
+  })
+
+  test('flagging every row does not claim none were ever added (P7)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ locations: [northRidge, midSlope] }))))
+    renderAsSubmitter(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await findRow('Mid Slope')
+    await flagDelete(user, 'North Ridge')
+    await flagDelete(user, 'Mid Slope')
+
+    expect(
+      screen.getByText('Every location is marked for deletion. Save to remove them.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/no silviculture locations have been added/i)).not.toBeInTheDocument()
+  })
+
+  test('two rows sharing a location name get distinct control names, told apart by BEC (P8)', async () => {
+    // The unique key is biogeo + location, so a name may repeat.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ locations: [northRidge, { ...midSlope, location: 'North Ridge' }] }),
+        ),
+      ),
+    )
+    renderAsSubmitter(<Schedule11 />)
+
+    expect(await screen.findByLabelText('NAR(ha) for North Ridge (ICHdw1)')).toHaveValue('120.5')
+    expect(screen.getByLabelText('NAR(ha) for North Ridge (MSdm2)')).toHaveValue('60')
+    expect(screen.queryByLabelText('NAR(ha) for North Ridge')).not.toBeInTheDocument()
+  })
 
   test('a check verdict is cleared by the first change after it', async () => {
     // A verdict names fields by their value at the time; once the user edits, it describes a report
@@ -1760,6 +1932,39 @@ describe('Schedule 11 original-value indicators', () => {
       'the ministry corrected this',
     )
     expect(within(row).queryByTestId('original-value-comments')).not.toBeInTheDocument()
+  })
+
+  test('a read-only row whose catalogue label is missing compares its served id — no false flag (P5)', async () => {
+    // The live row forces a re-pick (BR-09); a read-only row cannot re-pick, and still holds the id
+    // it was saved with. Comparing '' against the submission would flag a field nobody changed.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            trackStatus: 'S',
+            editable: false,
+            locations: [
+              {
+                ...northRidge,
+                becLabel: null,
+                originalValues: {
+                  biogeoclimaticCatalogueId: {
+                    value: '321',
+                    tooltip: 'Original Submission Value: ICHdw1',
+                  },
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    renderAsSubmitter(<Schedule11 />)
+
+    const row = await findRow('North Ridge')
+    expect(
+      within(row).queryByTestId('original-value-biogeoclimaticCatalogueId'),
+    ).not.toBeInTheDocument()
   })
 
   test('no indicator anywhere at Draft', async () => {

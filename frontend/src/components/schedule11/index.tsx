@@ -341,6 +341,9 @@ const SAVE_BLOCKED = 'Please correct the highlighted fields before saving.'
 // Why Check Status is greyed while changes are pending (Story 26.2 D7(a), deviation (C)): the check
 // reads what is STORED, so running it over unsaved edits would describe a report nobody saved.
 export const CHECK_NEEDS_SAVE = 'Save your changes before checking status'
+// Client chrome for a table whose every row is flagged: the report still holds them until Save, so
+// "none have been added" would be untrue (legacy's table showed PrimeFaces' generic default either way).
+const ALL_FLAGGED = 'Every location is marked for deletion. Save to remove them.'
 
 const formFromRow = (row: SilvicultureLocation): LocationFormValues => ({
   location: row.location,
@@ -353,6 +356,39 @@ const formFromRow = (row: SilvicultureLocation): LocationFormValues => ({
   plannedCost: numStr(row.plannedCost),
   comments: row.comments ?? '',
 })
+
+// Whether a row's form still says what the row was served with. A row typed into and typed back is
+// not an edit: it is not sent, and it neither enables Save nor greys Check Status.
+const sameForm = (a: LocationFormValues, b: LocationFormValues): boolean =>
+  a.location === b.location &&
+  a.enhanced === b.enhanced &&
+  (a.bec?.id ?? null) === (b.bec?.id ?? null) &&
+  a.netArea === b.netArea &&
+  a.actualCost === b.actualCost &&
+  a.plannedCost === b.plannedCost &&
+  a.comments === b.comments
+
+// The work a Save would send, derived from the served document every render: the rows whose form
+// differs from what was served (review D-R1: only edited rows are sent) and the flagged ids still on
+// the document. Deriving it — rather than trusting the pending maps — means a row another session
+// deleted, or one dropped from an Add echo, can never strand a flag or an edit that every later Save
+// would carry to a 404 (review P1).
+const pendingWork = (
+  locations: readonly SilvicultureLocation[],
+  rowForms: Readonly<Record<number, LocationFormValues>>,
+  pendingDeletes: ReadonlySet<number>,
+) => {
+  const edited = locations.filter((row) => {
+    const form = rowForms[row.locationId]
+    return (
+      !pendingDeletes.has(row.locationId) && form !== undefined && !sameForm(form, formFromRow(row))
+    )
+  })
+  const flagged = locations
+    .filter((row) => pendingDeletes.has(row.locationId))
+    .map((row) => row.locationId)
+  return { edited, flagged }
+}
 
 // The value of each tracked field as the indicator compares it: the form's string for a live row,
 // the served value for a read-only one.
@@ -384,12 +420,28 @@ const Indicator: FC<{
 // server-derived cells (Total Cost, $/NAR) are display-only and refresh on the next save (AD-5).
 // Each row's hidden labels name the row they sit in ("NAR(ha) for North Ridge"): unique on the page,
 // where the Add panel carries the bare names, and a screen-reader user hears which row they are in.
-// Keyed to the SERVED name so the label does not change under the user while they retype it.
-const rowLabel = (label: string, row: SilvicultureLocation): string =>
-  `${label} for ${row.location}`
+// Keyed to the SERVED name so the label does not change under the user while they retype it. The
+// unique key is biogeo + location, so two rows may share a name: those carry their BEC as well.
+const rowLabel = (label: string, name: string): string => `${label} for ${name}`
+
+const rowNames = (locations: readonly SilvicultureLocation[]): ReadonlyMap<number, string> => {
+  const counts = new Map<string, number>()
+  for (const row of locations) {
+    counts.set(row.location, (counts.get(row.location) ?? 0) + 1)
+  }
+  return new Map(
+    locations.map((row) => [
+      row.locationId,
+      (counts.get(row.location) ?? 0) > 1
+        ? `${row.location} (${row.becLabel ?? String(row.biogeoclimaticCatalogueId)})`
+        : row.location,
+    ]),
+  )
+}
 
 type LocationRowProps = {
   readonly row: SilvicultureLocation
+  readonly name: string
   readonly form: LocationFormValues
   readonly errors: SilvicultureErrors
   readonly saving: boolean
@@ -402,6 +454,7 @@ type LocationRowProps = {
 
 const LocationRow: FC<LocationRowProps> = ({
   row,
+  name,
   form,
   errors,
   saving,
@@ -412,7 +465,7 @@ const LocationRow: FC<LocationRowProps> = ({
     <TableCell>
       <TextInput
         id={`edit-location-${row.locationId}`}
-        labelText={rowLabel('Location', row)}
+        labelText={rowLabel('Location', name)}
         hideLabel
         size="sm"
         maxLength={LOCATION_MAX_LENGTH}
@@ -427,7 +480,7 @@ const LocationRow: FC<LocationRowProps> = ({
     <TableCell>
       <BiogeoComboBox
         id={`edit-bec-${row.locationId}`}
-        label={rowLabel('Biogeo/Subzone/Variant', row)}
+        label={rowLabel('Biogeo/Subzone/Variant', name)}
         hideLabel
         selected={form.bec}
         disabled={saving}
@@ -449,7 +502,7 @@ const LocationRow: FC<LocationRowProps> = ({
           of every submitted report. */}
       <EnhancedDropdown
         id={`edit-enhanced-${row.locationId}`}
-        label={rowLabel('Enhanced', row)}
+        label={rowLabel('Enhanced', name)}
         hideLabel
         value={form.enhanced}
         disabled={saving}
@@ -460,7 +513,7 @@ const LocationRow: FC<LocationRowProps> = ({
     <TableCell className="schedule-11__num">
       <TextInput
         id={`edit-net-area-${row.locationId}`}
-        labelText={rowLabel('NAR(ha)', row)}
+        labelText={rowLabel('NAR(ha)', name)}
         hideLabel
         size="sm"
         inputMode="decimal"
@@ -475,7 +528,7 @@ const LocationRow: FC<LocationRowProps> = ({
     <TableCell className="schedule-11__num">
       <TextInput
         id={`edit-actual-cost-${row.locationId}`}
-        labelText={rowLabel('Actual Cost ($)', row)}
+        labelText={rowLabel('Actual Cost ($)', name)}
         hideLabel
         size="sm"
         inputMode="numeric"
@@ -490,7 +543,7 @@ const LocationRow: FC<LocationRowProps> = ({
     <TableCell className="schedule-11__num">
       <TextInput
         id={`edit-planned-cost-${row.locationId}`}
-        labelText={rowLabel('Planned Cost ($)', row)}
+        labelText={rowLabel('Planned Cost ($)', name)}
         hideLabel
         size="sm"
         inputMode="numeric"
@@ -509,7 +562,7 @@ const LocationRow: FC<LocationRowProps> = ({
           matching legacy). No indicator: legacy declared none for Schedule 11 comments. */}
       <TextArea
         id={`edit-comments-${row.locationId}`}
-        labelText={rowLabel('Comments', row)}
+        labelText={rowLabel('Comments', name)}
         hideLabel
         rows={3}
         maxLength={COMMENTS_MAX_LENGTH}
@@ -536,7 +589,13 @@ const LocationRow: FC<LocationRowProps> = ({
 // original-value indicators render here too — legacy's were icons beside always-present, merely
 // disabled inputs, so a read-only viewer saw them as well (Story 26.2 D2, schedule11.xhtml:214-325).
 const DisplayRow: FC<{ readonly row: SilvicultureLocation }> = ({ row }) => {
-  const form = formFromRow(row)
+  // The served id, not formFromRow's forced re-pick: a read-only row whose catalogue label is missing
+  // still holds the id it was saved with, and comparing '' against the submission would flag a field
+  // nobody changed.
+  const form = {
+    ...formFromRow(row),
+    bec: { id: row.biogeoclimaticCatalogueId, label: row.becLabel ?? '' },
+  }
   return (
     <>
       <TableCell>
@@ -763,13 +822,13 @@ const Schedule11: FC = () => {
       return
     }
     clearBanners()
-    const kept = data.locations.filter((row) => !pendingDeletes.has(row.locationId))
-    // Validate every row still on the page before anything is sent — legacy's JSF validated the whole
-    // table on Save. The 7A/7B precedent: nothing is sent while one row fails.
+    const { edited, flagged } = pendingWork(data.locations, rowForms, pendingDeletes)
+    // Validate every edited row before anything is sent; nothing is sent while one row fails (the
+    // 7A/7B precedent). Untouched rows are neither sent nor validated (review D-R1, deviation (E)).
     const errorsByRow: Record<number, SilvicultureErrors> = {}
     let firstFailing: number | null = null
     // In the order the user SEES, so the scroll lands on the topmost failing row under any sort.
-    for (const row of sortLocations(kept, sortColumn, sortDirection)) {
+    for (const row of sortLocations(edited, sortColumn, sortDirection)) {
       const errors = validateLocation(rowForms[row.locationId] ?? formFromRow(row))
       if (Object.keys(errors).length > 0) {
         errorsByRow[row.locationId] = errors
@@ -785,14 +844,14 @@ const Schedule11: FC = () => {
       return
     }
     const body: LocationSaveAllRequest = {
-      locations: kept.map((row) => ({
+      locations: edited.map((row) => ({
         basicSilvicultureReportId: row.locationId,
         location: buildBody(
           rowForms[row.locationId] ?? formFromRow(row),
           rowRevisions[row.locationId] ?? row.revisionCount,
         ),
       })),
-      deletedIds: [...pendingDeletes],
+      deletedIds: flagged,
     }
     setSaving(true)
     apiService
@@ -857,7 +916,9 @@ const Schedule11: FC = () => {
 
   const editable = data.editable
   const columnCount = editable ? 10 : 9
-  const pending = Object.keys(rowForms).length > 0 || pendingDeletes.size > 0
+  const work = pendingWork(data.locations, rowForms, pendingDeletes)
+  const pending = work.edited.length > 0 || work.flagged.length > 0
+  const names = rowNames(data.locations)
 
   // Only the data rows are sorted; the Totals row is rendered after this list, so it stays pinned
   // to the bottom exactly as legacy's footer column group did (xhtml:377-412). A row flagged for
@@ -1060,7 +1121,9 @@ const Schedule11: FC = () => {
                 {sortedLocations.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={columnCount}>
-                      No silviculture locations have been added.
+                      {data.locations.length === 0
+                        ? 'No silviculture locations have been added.'
+                        : ALL_FLAGGED}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1069,6 +1132,7 @@ const Schedule11: FC = () => {
                       {editable ? (
                         <LocationRow
                           row={row}
+                          name={names.get(row.locationId) ?? row.location}
                           form={rowForms[row.locationId] ?? formFromRow(row)}
                           errors={rowErrors[row.locationId] ?? {}}
                           saving={saving}

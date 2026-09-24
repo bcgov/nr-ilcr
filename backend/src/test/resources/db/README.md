@@ -166,7 +166,7 @@ sense against this directory, `mvn clean` before believing it.
    | Verify transition (17.1)  | **764–770**     | `R__55`; 768 is CLS, 769 has no auditor xref, 770 is the rollback arm |
    | Check Status submit (15.3) | **780–783**    | `R__55_check_status_submit_fixtures.sql`      |
    | Schedule 11 submit (26.1) | **784–789**     | `R__57`; locations `9411–9416`, summary `1680`, cost-report details `5800–5812`. **Report year 2021 only** — see below |
-   | Schedule 11 correction (26.2) | **801–806** | `R__58`; locations `9421–9429`, cost-report details `5830–5845`, the FIRST seeded `*_AUD` 'S' snapshot rows (BSR audit `1001–1009`, cost audit `2001–2012`). **Report year 2021 only** — see below |
+   | Schedule 11 correction (26.2) | **801–806** | `R__58`; locations `9421–9430`, cost-report details `5830–5845`, the FIRST seeded `*_AUD` 'S' snapshot rows (BSR audit `1001–1010`, cost audit `2001–2012`). **Report year 2021 only** — see below |
    | Reversal transitions (18.1) | **790–799**   | `R__56`; summaries `1650–1671`, cost-report details `3201–3452`. **Report year 2021 only** — see below |
 
    **⚠️ A static id is only free if it is also out of reach of every SEQUENCE.** `R__56`'s
@@ -235,7 +235,7 @@ sense against this directory, `mvn clean` before believing it.
    **`*_AUD` rows**: the delivery triggers own those tables and the test schema reproduces none, so the `'S'` snapshot
    the original-value indicators read (`BASIC_SILVICULTURE_REPORT_S_VW`, `ILCR_COST_REPORT_DETAIL_S_VW`) is written
    here exactly as the trigger would have left it at submission — the Licensee's values, differing from the current
-   rows. `801` is the read-only indicator anchor (`9421` differs on all five tracked fields, `9422` has no snapshot);
+   rows. `801` is the read-only indicator anchor (`9421` differs on all five tracked fields, `9422` has no snapshot, `9430`'s submitted BEC `8899` has no catalogue row);
    `802` is the one written by the happy-path arms, and its `9423` Actual cost carries a second `'S'` audit row under an
    OLDER detail id (`5899`, absent from the base table, higher audit id) so a snapshot keyed by (location, item) rather
    than by the current detail id serves the wrong baseline. `803` (Check Status), `804` (refusal table) and `805` (stale
