@@ -807,6 +807,57 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
+  // #332: the sub-page's row writes fall back to hardcoded messages when the failure carries no
+  // ProblemDetail detail (an empty-bodied 500). 'Row could not be saved.' is reached from both the
+  // add-row POST and the in-place edit PUT, so each path gets its own arm.
+  test('a detail-less add-row failure falls back to the generic row message and keeps the draft (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(ROWS_7001, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Added Towing')
+    await userEvent.type(screen.getByLabelText('Volume (m³)'), '5')
+    await userEvent.click(screen.getByRole('button', { name: /add row/i }))
+
+    expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
+    // The typed draft is retained for retry (the form only resets on success).
+    expect(screen.getByLabelText('Description')).toHaveValue('Added Towing')
+  })
+
+  test('a detail-less row-edit Save failure falls back to the generic row message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${ROWS_7001}/7013`, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    const cost = screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i })
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '12345')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less row delete failure falls back to the generic delete-row message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${ROWS_7001}/7013`, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deleteButtons = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deleteButtons[deleteButtons.length - 1])
+
+    expect(await screen.findByText('Unable to delete row.')).toBeInTheDocument()
+    // The document only updates on success, so the row is still there.
+    expect(screen.getByDisplayValue('Deferred towing row')).toBeInTheDocument()
+  })
+
   test('Back returns from a sub-page to the location list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
@@ -1029,6 +1080,57 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
+  })
+
+  // #332: every write falls back to a hardcoded message when the failure carries no ProblemDetail
+  // detail. An empty-bodied 500 is that case; the verbatim-detail siblings above cover the other arm.
+  test('a detail-less save failure falls back to the generic save message and keeps the panel open (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // The record stays open for retry; no success banner.
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less delete failure falls back to the generic delete message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(LOCATIONS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deletes = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deletes[deletes.length - 1])
+
+    expect(await screen.findByText('Unable to delete location.')).toBeInTheDocument()
+    // Nothing was re-read, so the family is still listed.
+    expect(screen.getByText('Harbour Dump')).toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status failure falls back to the generic check message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock releases on failure, so the check can be re-run.
+    await waitFor(() => expect(bottomCheckStatus()).toBeEnabled())
   })
 
   test('View opens a read-only panel (no Save) and sub-pages open directly (STA-001)', async () => {

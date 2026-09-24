@@ -437,4 +437,36 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
     ).toBeInTheDocument()
     expect(fetched).toBe(false)
   })
+
+  // Issue #332: `useEditableCostRows` falls back to the page's configured `loadError` when the load
+  // failure carries no ProblemDetail `detail` — an EMPTY 500 body, unlike `problemBody` above.
+  describe('detail-less error fallbacks (#332)', () => {
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(URL, () => new HttpResponse(null, { status: 500 })))
+      render(<OtherAcceptableCostsPage />)
+
+      expect(await screen.findByText('Unable to load Other Acceptable Costs.')).toBeInTheDocument()
+      // The document is suppressed with it: no list, no Save.
+      expect(screen.queryByText('Consulting')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Remove failure falls back to the delete message, not the save one', async () => {
+      // Remove and Save share one whole-set PUT in `useEditableCostRows`, and until #332 the page's
+      // `deleteError` never reached the hook — a failed Remove read as a failed save.
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc)),
+        http.put(URL, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<OtherAcceptableCostsPage />)
+      const user = userEvent.setup()
+
+      await screen.findByDisplayValue('Consulting')
+      await user.click(within(rowOf('Consulting')).getByRole('button', { name: /^remove$/i }))
+
+      expect(await screen.findByText('Unable to delete other cost.')).toBeInTheDocument()
+      expect(screen.queryByText('Other cost could not be saved.')).not.toBeInTheDocument()
+      expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    })
+  })
 })

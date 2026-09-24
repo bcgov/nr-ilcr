@@ -602,7 +602,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Status:** OPEN — `blocked` in coverage.md. A gate should treat this as **waived**, not failing.
   - **Test:** none today, by environment limitation rather than by choice.
 
-- **GAP-2 — Schedule 4's five error-fallback messages are untested (part of an app-wide gap).**
+- **GAP-2 — CLOSED 2026-09-24: Schedule 4's five error-fallback messages are now unit-tested (#332).**
   - **What's missing:** each of these is the string Schedule 4 shows when a request fails *and* the response
     carries no `ProblemDetail.detail` — a gateway error, a dropped connection, an empty-bodied 500. None is
     asserted at any level:
@@ -637,10 +637,15 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     territory; this suite changes no files outside `frontend/e2e/`.
   - **Ticket:** [bcgov/nr-ilcr#332](https://github.com/bcgov/nr-ilcr/issues/332) — the app-wide ticket, where
     Schedule 4 is group 1 (with Schedule 11).
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the Vitest cases when capacity allows; QA re-verifies and
-    closes this entry when Schedule 4's five land. `deferred` in coverage.md.
-  - **Test:** none for these fallbacks. The save handler's `detail` arm is covered by `duplicate-name.feature`
-    and `Schedule4.test.tsx:605`.
+  - **Status:** CLOSED 2026-09-24 — the Vitest cases landed with [#332](https://github.com/bcgov/nr-ilcr/issues/332), exactly as prescribed above
+    (empty-bodied 500 through the existing MSW setup, exact-string assertion). `covered (unit)` in coverage.md.
+  - **Test:** `Schedule4.test.tsx` — six `(#332)` cases, one per site: *"a detail-less save failure falls back
+    to the generic save message and keeps the panel open"*, *"a detail-less delete failure falls back to the
+    generic delete message"*, *"a detail-less Check Status failure falls back to the generic check message"*,
+    *"a detail-less add-row failure falls back to the generic row message and keeps the draft"*, *"a
+    detail-less row-edit Save failure falls back to the generic row message"* and *"a detail-less row delete
+    failure falls back to the generic delete-row message"*. The save handler's `detail` arm stays covered by
+    `duplicate-name.feature` and the existing verbatim case in `Schedule4.test.tsx`.
 
 - **GAP-3 — CLOSED 2026-08-20: the stale-token conflict is now covered end-to-end.**
   - **Test written:** `concurrency.feature` `@p1 @S02` — "Saving a location that another session already

@@ -565,6 +565,35 @@ describe('Schedule2 page', () => {
     ).toBeInTheDocument()
   })
 
+  test.each(detailLessFailures)(
+    'a Save failure carrying no detail falls back to the generic Save message and keeps the entries — %s (AC3, #332)',
+    async (_shape, respond) => {
+      // The 4xx test above proves the verbatim half of `extractDetail(err) || fallback`; this is the
+      // other half, run over the same four shapes as load/delete (#298) so the blank-detail shape
+      // guards `save` against a `??` swap too.
+      server.use(
+        http.get(URL, () => HttpResponse.json(schedule2Doc)),
+        http.put(URL, respond),
+      )
+      render(<Schedule2 />)
+      const user = userEvent.setup()
+
+      const cost = await screen.findByLabelText('Purchased Log Cost cost')
+      await user.clear(cost)
+      await user.type(cost, '61000')
+      await user.click(actionBarButtons(/^save$/i, 2)[0]!)
+
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          { kind: 'error', title: 'Action failed', subtitle: 'Schedule could not be saved.' },
+        ]),
+      )
+      // The typed value survives for a retry, and the in-flight lock released on the error path.
+      expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('61,000')
+      await waitFor(() => actionBarButtons(/^save$/i, 2).forEach((b) => expect(b).toBeEnabled()))
+    },
+  )
+
   test('a never-saved Schedule 2 disables Delete and leaves Save / Check Status usable (defect #292)', async () => {
     // The served body of a mill/year that has never had a Schedule 2 saved: 200, EDITABLE, every
     // figure blank, and NO `revisionCount` key. There is nothing to delete, so Delete must be
@@ -979,6 +1008,34 @@ describe('Schedule2 page', () => {
       await screen.findByText('Purchased/Private Log Costs - Cost: Value Required'),
     ).toBeInTheDocument()
   })
+
+  test.each(detailLessFailures)(
+    'a Check Status failure carrying no detail falls back to the generic check message — %s (AC5, #332)',
+    async (_shape, respond) => {
+      // `checkStatus` goes through the same `useScheduleBanners.run` as save/delete, so the
+      // `fallback: 'Unable to check status.'` arm is asserted over the same four shapes.
+      server.use(
+        http.get(URL, () => HttpResponse.json(schedule2Doc)),
+        http.post(CHECK_URL, respond),
+      )
+      render(<Schedule2 />)
+      const user = userEvent.setup()
+
+      await screen.findByLabelText('Purchased Log Cost cost')
+      await user.click(actionBarButtons(/check status/i, 2)[0]!)
+
+      // The whole set: no status banner beside the error, and severity carried by kind + title.
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          { kind: 'error', title: 'Action failed', subtitle: 'Unable to check status.' },
+        ]),
+      )
+      // The in-flight lock released on the error path, so the check can be retried.
+      await waitFor(() =>
+        actionBarButtons(/check status/i, 2).forEach((b) => expect(b).toBeEnabled()),
+      )
+    },
+  )
 
   test('409 mill-closed shows verbatim detail under its own title, form suppressed', async () => {
     const detail =

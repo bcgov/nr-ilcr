@@ -231,4 +231,63 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
     await user.click(within(dialog).getByRole('button', { name: /continue/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3' })
   })
+
+  // Issue #332: `useEditableCostRows` falls back to the page's configured `loadError` / `saveError`
+  // when the failure carries no ProblemDetail `detail`. Each case fails its request with an EMPTY
+  // 500 body and pins the exact fallback text.
+  describe('detail-less error fallbacks (#332)', () => {
+    const detailLess = () => new HttpResponse(null, { status: 500 })
+
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(URL, detailLess))
+      render(<UnacceptableCostsPage />)
+
+      expect(
+        await screen.findByText('Unable to load Included Unacceptable Costs.'),
+      ).toBeInTheDocument()
+      // The document is suppressed with it: no list, no Save.
+      expect(screen.queryByText('Penalty')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Save failure falls back to the generic save message and keeps the edit', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc)),
+        http.put(URL, detailLess),
+      )
+      render(<UnacceptableCostsPage />)
+      const user = userEvent.setup()
+
+      await screen.findByDisplayValue('Penalty')
+      const total = within(rowOf('Penalty')).getByLabelText('Edit total')
+      await user.clear(total)
+      await user.type(total, '300')
+      await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+      expect(await screen.findByText('Action failed')).toBeInTheDocument()
+      expect(screen.getByText('Unacceptable cost could not be saved.')).toBeInTheDocument()
+      // The edit survives for a retry and Save is live again.
+      expect(within(rowOf('Penalty')).getByLabelText('Edit total')).toHaveValue('300')
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Remove failure falls back to the delete message, not the save one', async () => {
+      // Remove and Save share one whole-set PUT in `useEditableCostRows`, and until #332 the page's
+      // `deleteError` never reached the hook — a failed Remove read as a failed save.
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc)),
+        http.put(URL, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<UnacceptableCostsPage />)
+      const user = userEvent.setup()
+
+      await screen.findByDisplayValue('Penalty')
+      await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+
+      expect(await screen.findByText('Unable to delete unacceptable cost.')).toBeInTheDocument()
+      expect(screen.queryByText('Unacceptable cost could not be saved.')).not.toBeInTheDocument()
+      expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    })
+  })
 })

@@ -89,4 +89,34 @@ describe('Open Reporting Year (Story 24.1)', () => {
     // POST rather than by the prompt text being absent from the DOM.
     expect(post).not.toHaveBeenCalled()
   })
+
+  // #332: both request sites fall back to a hardcoded message when the failure carries no
+  // ProblemDetail.detail. An empty-bodied 500 is the detail-less shape.
+  describe('detail-less error fallbacks (#332)', () => {
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(ENDPOINT, () => new HttpResponse(null, { status: 500 })))
+      render(<OpenReportingYear />)
+
+      expect(await screen.findByText('Unable to load the reporting years.')).toBeInTheDocument()
+      // No view → nothing to open.
+      expect(screen.getByRole('button', { name: 'Open Reporting Year' })).toBeDisabled()
+    })
+
+    test('a detail-less open failure falls back to the generic open message', async () => {
+      server.use(
+        http.get(ENDPOINT, () => HttpResponse.json(RECURRING)),
+        http.post(ENDPOINT, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<OpenReportingYear />)
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open Reporting Year' }))
+      expect(await screen.findByText(CONFIRM_PROMPT)).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+
+      expect(await screen.findByText('The reporting year could not be opened.')).toBeInTheDocument()
+      // No success banner, and the action is re-enabled for a retry.
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Open Reporting Year' })).toBeEnabled()
+    })
+  })
 })

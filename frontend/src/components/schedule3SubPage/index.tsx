@@ -94,6 +94,8 @@ export interface Schedule3SubPageConfig<
   descriptionMaxLength: number
   loadError: string
   saveError: string
+  /** Optional fallback for a failed Remove; without it a failed Remove reports {@code saveError}. */
+  deleteError?: string
   /** Optional intro paragraph shown above the add fields. */
   intro?: string
   /** Optional read-only figure (e.g. Annual Rents S111) shown above the table. */
@@ -131,6 +133,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     fieldKeys,
     loadError: config.loadError,
     saveError: config.saveError,
+    deleteError: config.deleteError,
     rowsFromDoc: (doc) =>
       config.rows(doc).map((r) => ({
         id: r.id,

@@ -274,7 +274,7 @@ recorded rather than silently dropped:
 | *(legacy chrome)* | `This will delete the current record. Do you want to continue?` (`confirmDeleteMsg`) | Carbon `Modal` body | `delete.feature` `@p2 @S08` | `covered` |
 | *(legacy chrome)* | `Any unsaved data will be lost. Are you sure you would like to continue?` (`confirmNavigationMsg`) | Carbon `Modal` body | asserted on **every** sub-page entry (`schedule3Page.openSubPage`) | `covered` |
 | *(new)* | `Description must be 30 characters or fewer.` | `validateOtherAcceptable` / `validateUnacceptable` | — | `not-applicable` — the input carries `maxLength={30}`, so the browser caps entry and the branch is unreachable through the UI (the same reason the legacy catalogue excluded the comments 3,500-char limit) |
-| *(new)* | `Unable to load Schedule 3.` / `Unable to delete Schedule 3.` / the sub-page load/save fallbacks | page fallbacks when the API returns no detail | — | `deferred` — belongs in Vitest, not E2E (an API that always sends a detail cannot exercise them) |
+| *(new)* | `Unable to load Schedule 3.` / `Unable to delete Schedule 3.` / `Unable to check status.` / the sub-page load/save/delete fallbacks | page fallbacks when the API returns no detail | `Schedule3.test.tsx` `describe('Schedule3 detail-less error fallbacks (#332)')` ×3 plus *"a Save failure carrying no detail…(#332)"*; `OtherAcceptableCosts.test.tsx` / `UnacceptableCosts.test.tsx` `describe('detail-less error fallbacks (#332)')` (load, save, Remove) | `covered (unit)` — closed 2026-09-24 by [#332](https://github.com/bcgov/nr-ilcr/issues/332). Vitest, not E2E, as always intended (an API that always sends a detail cannot exercise them). #332 also found and fixed the sub-pages' `deleteError` never reaching `useEditableCostRows`, so a failed Remove used to show the *save* fallback |
 
 ## Controls (40 in the slice catalogue's Field Reference)
 
@@ -390,7 +390,7 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-25. *
 - **Overall: 26/26 slices `covered`.** S18/S19 stopped being `not-applicable` when #296 made their state
   reachable; S25/S26 arrived upstream with ilcr-bmad PR #92 and are now covered by DIV-6's own reds rather
   than deferred. Every message-catalog row is dispositioned: covered, `divergence`, `not-applicable` with a
-  reason, or `deferred` (the page-fallback strings, which belong in Vitest). **THREE of this suite's four
+  reason, or `covered (unit)` (the page-fallback strings, in Vitest since #332 on 2026-09-24). **THREE of this suite's four
   coverage gaps are closed:** GAP-2 and GAP-3 on 2026-08-26 by writing them (`concurrency.feature`,
   `subpage-back.feature`), and **GAP-4 on 2026-08-27, also by writing them** — nine new scenarios across five
   domains, which is the way a coverage gap is supposed to close. **GAP-1 is the only one still open**, and it

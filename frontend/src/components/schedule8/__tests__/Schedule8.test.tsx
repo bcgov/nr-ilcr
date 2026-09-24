@@ -632,6 +632,19 @@ describe('Schedule8 page level', () => {
     expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
   })
 
+  test('a detail-less reference-options load error falls back to the generic options message (#332)', async () => {
+    // The option lists are reference data fetched apart from the document (index.tsx: GET
+    // /v1/schedule8/options); a failure there carries its own banner and never blocks the page list.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.get(`${URL}/options`, () => HttpResponse.json({}, { status: 500 })),
+    )
+    renderSchedule8()
+
+    expect(await screen.findByText('Failed to load reference options.')).toBeInTheDocument()
+    expect(await screen.findByText(/Page # 1/)).toBeInTheDocument()
+  })
+
   test('a page with null tsa / cutting-permit renders the composite label with fallbacks', async () => {
     const bare: Page = {
       ...emptyPage,

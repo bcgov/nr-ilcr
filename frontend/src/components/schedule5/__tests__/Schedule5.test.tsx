@@ -2748,3 +2748,93 @@ describe('Schedule 5 ministry correction at Submitted (Story 16.3)', () => {
     expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
   })
 })
+
+describe('Schedule 5 detail-less error fallbacks (#332)', () => {
+  // Every request path falls back to a hardcoded string when the failure carries no
+  // ProblemDetail.detail. A bare 500 with an EMPTY body is that shape — `extractDetail` finds nothing
+  // — and each case asserts the exact literal, typed here rather than imported from the page.
+  const detailLess = () => new HttpResponse(null, { status: 500 })
+
+  test('a load failure with no detail falls back to the generic load message and suppresses content', async () => {
+    server.use(http.get(URL, () => detailLess()))
+    render(<Schedule5 />)
+
+    expect(await screen.findByText('Unable to load Schedule 5.')).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: 'Existing Camps' })).not.toBeInTheDocument()
+  })
+
+  test('a detail-less PUT on an edited camp falls back to the generic save message and keeps the entry', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(CAMP_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const name = screen.getByLabelText('Camp Name')
+    await user.clear(name)
+    await user.type(name, 'Renamed Camp')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Camp could not be saved.')).toBeInTheDocument()
+    // The panel stays open with the entered value so a corrected save can retry.
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Renamed Camp')
+  })
+
+  test('a detail-less POST from the CFM-004 save-and-go falls back to the same message and does NOT navigate', async () => {
+    // The second `Camp could not be saved.` site: the sub-page ladder's own save (deviation (J)).
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CAMPS_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await user.type(await screen.findByLabelText('Camp Name'), 'Ridge Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+
+    const before = navigateSpy.mock.calls.length
+    await user.click(screen.getByRole('button', { name: /^Other Camp Expenses \(0\):$/ }))
+    const confirm = confirmDialog(
+      'The information for the New Camp must be saved before you can add other expenses. Would you like to save the information now?',
+    )
+    await user.click(within(confirm).getByRole('button', { name: /^yes$/i }))
+
+    expect(await screen.findByText('Camp could not be saved.')).toBeInTheDocument()
+    await flushAsync()
+    expect(navigateSpy.mock.calls).toHaveLength(before)
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Ridge Camp')
+  })
+
+  test('a detail-less DELETE falls back to the generic delete message and keeps the camp listed', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(CAMP_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }))
+    const dialog = confirmDialog('This will delete the current record. Do you want to continue?')
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    expect(await screen.findByText('Unable to delete camp.')).toBeInTheDocument()
+    expect(screen.getByText('Cedar Flats Camp')).toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status falls back to the generic check message', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
+  })
+})
