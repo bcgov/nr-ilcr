@@ -317,5 +317,52 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
       // set without this row and quietly finish the delete the user was just told had failed.
       expect(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i })).toBeEnabled()
     })
+
+    test('a failed Remove restores only the removed row — edits made to other rows while it was in flight survive', async () => {
+      // The row inputs stay live during the request (only Remove/Add are disabled), so the rollback
+      // must merge the row back into the CURRENT grid rather than replace the grid from the
+      // pre-removal snapshot — the first version of the rollback did the latter and would have
+      // thrown away this edit (SScholefield, #506 review).
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      server.use(
+        http.get(URL, () =>
+          HttpResponse.json({
+            ...doc,
+            count: 2,
+            rows: [
+              { id: 5505, description: 'Penalty', total: 250 },
+              { id: 5506, description: 'Interest', total: 40 },
+            ],
+          }),
+        ),
+        http.put(URL, async () => {
+          await held
+          return new HttpResponse(null, { status: 500 })
+        }),
+      )
+      render(<UnacceptableCostsPage />)
+      const user = userEvent.setup()
+
+      await screen.findByDisplayValue('Penalty')
+      await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+      expect(screen.queryByDisplayValue('Penalty')).not.toBeInTheDocument()
+
+      // Edit the OTHER row while the delete is still open.
+      const interestTotal = within(rowOf('Interest')).getByLabelText('Edit total')
+      await user.clear(interestTotal)
+      await user.type(interestTotal, '99')
+
+      release()
+      expect(await screen.findByText('Unable to delete unacceptable cost.')).toBeInTheDocument()
+      // Penalty is back in first position, and Interest still carries the in-flight edit.
+      const descriptions = screen
+        .getAllByLabelText('Edit description')
+        .map((input) => (input as HTMLInputElement).value)
+      expect(descriptions).toEqual(['Penalty', 'Interest'])
+      expect(within(rowOf('Interest')).getByLabelText('Edit total')).toHaveValue('99')
+    })
   })
 })

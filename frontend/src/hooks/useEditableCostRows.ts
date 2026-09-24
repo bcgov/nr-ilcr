@@ -213,7 +213,8 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
 
   // Persist the WHOLE current row set in one call — the legacy update() that every mutation funnels
   // through. `intent` only selects the success message; the persistence is identical either way.
-  const persist = (rowsToSave: EditRow[], intent: 'save' | 'delete') => {
+  // `rollback` runs on failure, for a caller that changed local state before the request (Remove).
+  const persist = (rowsToSave: EditRow[], intent: 'save' | 'delete', rollback?: () => void) => {
     if (!data || saving) {
       return
     }
@@ -254,15 +255,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
         // page supplies one, `saveError` otherwise (#332).
         const fallback = intent === 'delete' && deleteError ? deleteError : saveError
         setActionError(extractDetail(error) || fallback)
-        // A failed Remove puts the row back. `removeRow` drops it from local state BEFORE the PUT
-        // (so the grid answers the click at once), and without this the user is told the delete
-        // failed while looking at a grid without the row — and the next Save would then send the
-        // set without it, completing the very delete that just failed (#332 review). `rows` here is
-        // the pre-removal set: this closure was created by the render `removeRow` ran in. A failed
-        // Save/Add keeps the entered values on screen for retry, so nothing to roll back there.
-        if (intent === 'delete') {
-          setRows(rows)
-        }
+        rollback?.()
       })
       .finally(() => setSaving(false))
   }
@@ -301,6 +294,11 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     if (saving) {
       return
     }
+    const index = rows.findIndex((r) => r.key === key)
+    if (index < 0) {
+      return
+    }
+    const removed = rows[index]
     const next = rows.filter((r) => r.key !== key)
     setRows(next)
     setRowErrors((prev) => {
@@ -309,7 +307,20 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
       return cleared
     })
     setDirty(true)
-    persist(next, 'delete')
+    // A failed Remove puts the row back. It is dropped from local state BEFORE the PUT (so the grid
+    // answers the click at once), and without a restore the user is told the delete failed while
+    // looking at a grid without the row — and the next Save would send the set without it,
+    // completing the very delete that just failed (#332 review). Restore JUST this row, at its old
+    // position, into whatever the grid holds by then: the row inputs stay live during the request,
+    // so replacing the whole array from this closure would discard edits made to other rows in the
+    // meantime (SScholefield, #506). A failed Save/Add keeps the entered values on screen already.
+    persist(next, 'delete', () =>
+      setRows((current) =>
+        current.some((r) => r.key === key)
+          ? current
+          : [...current.slice(0, index), removed, ...current.slice(index)],
+      ),
+    )
   }
 
   // "Save" persists the whole set (legacy save() → update(true)).
