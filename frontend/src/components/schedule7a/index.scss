@@ -166,47 +166,121 @@
   margin-block-start: 1rem;
 }
 
-// The legacy cost matrix: a row label, the Material/Deliver/Install triple, and one standalone cost
-// on the right. Collapses to a single column when the three tracks no longer fit side by side.
-.schedule-7a__cost-row {
+// The legacy cost matrix as ONE grid: a row-label column, the Material/Deliver/Install triple, and
+// the standalone-cost column on the right, with the headings on the same row as Site Plan — legacy's
+// table shape. Every cell names its slot with `data-area` (BridgeFields.tsx).
+//
+// It used to be one grid PER ROW, and each row stacked on its own below the breakpoint. That parted
+// the headings from their boxes: the heading row stacked into "Material Deliver Install" with Site Plan
+// under it, then "Superstructure ($)", then the boxes — the headings labelled nothing. Now a narrow
+// editor keeps the matrix whole (headings over their boxes) and drops only the standalone column
+// beneath it.
+.schedule-7a__costs {
   display: grid;
-  // 8.5rem holds the widest row label ("Superstructure ($) :"); the standalone-cost column carries a
-  // left label AND its field, so it stays the wide one. Both were trimmed (10rem -> 8.5rem, 3rem ->
-  // 1.5rem gutters) to pay for the money boxes' invalid-state floor below without stacking this row at
-  // 1366 with the rail open — the width the #295 reporter used.
-  grid-template-columns: 8.5rem 1fr 22.5rem;
-  gap: 1.5rem;
+  // 8.5rem holds the widest row label ("Superstructure ($) :"). The standalone-cost column is 20rem:
+  // a 9rem left label (wrapping to two lines, as legacy's do) and a box above the money floor. The triple tracks are `1fr` with an AUTOMATIC
+  // minimum, which floors each at the money input's `min-inline-size` (.schedule-7a__num below) —
+  // writing `minmax(0, 1fr)` here would hand the #295 crush back.
+  grid-template-columns: 8.5rem repeat(3, 1fr) 20rem;
+  grid-template-areas:
+    '.  hm hd hi sp'
+    'sl sm sd si ap'
+    'al am ad ai ce'
+    'tl tm td ti .'
+    'cl cc cc cc og';
+  gap: 1.75rem 1rem;
   align-items: end;
 
-  // 65rem is derived, not chosen, and the arithmetic is the whole point of the number:
+  // Before the queries below: the phone reset matches these at the same specificity, so it must come
+  // later to win.
+  @each $area in hm, hd, hi, sp, sl, sm, sd, si, ap, al, am, ad, ai, ce, tl, tm, td, ti, cl, cc, og
+  {
+    > [data-area='#{$area}'] {
+      grid-area: $area;
+    }
+  }
+
+  // 60rem is derived, not chosen, and the arithmetic is the whole point of the number:
   //   8.5rem  row label
   // + 3 x (11ch + 3.5rem) = ~27.2rem   the three money boxes at the floor set below
-  // + 2 x 1.5rem                       the triple's own gutters
-  // + 22.5rem                          the standalone label + its box
-  // + 2 x 1.5rem                       this row's gutters
-  // = ~64.2rem, so 65rem is the narrowest container that still holds all three tracks, with a little
-  // slack. Below it the row stacks, because the alternative is what #295 reported: a `1fr` middle
-  // track handing the money boxes 32px each. Keep this in step with the floor below — they are two
-  // independently editable numbers describing one layout (recorded in `deferred-work.md`).
+  // + 20rem                            the standalone label + its box
+  // + 4 x 1rem                         the gutters
+  // = ~59.7rem, so 60rem is the narrowest container that still holds all five tracks. It was 65rem
+  // with a 22.5rem standalone column and 1.5rem gutters, which put the ~990px editor at 1366 (rail
+  // open) under the line and moved Site Plan off the heading row there — the layout legacy never shows. Keep this in step with the floor below — they are two independently editable numbers
+  // describing one layout (recorded in `deferred-work.md`).
   //
   // A CONTAINER query, because the width that shrank is this column's, not the window's (the accordion
   // row and the side-nav rail both change it invisibly to a media query). NAMED, so it cannot be
   // orphaned by a rename of the container selector above.
-  @container bridge-editor (max-width: 65rem) {
+  @container bridge-editor (max-width: 60rem) {
+    grid-template-columns: 8.5rem repeat(3, 1fr);
+    grid-template-areas:
+      '.  hm hd hi'
+      'sl sm sd si'
+      'al am ad ai'
+      'tl tm td ti'
+      'cl cc cc cc'
+      'sp sp sp sp'
+      'ap ap ap ap'
+      'ce ce ce ce'
+      'og og og og';
+  }
+
+  // Below ~39.5rem (the label column plus three floored boxes and their gutters) even the matrix no
+  // longer fits, so every cell takes a row of its own in DOM order — which is written as the phone
+  // reading order. A container query for the same reason as the one above.
+  @container bridge-editor (max-width: 42rem) {
     grid-template-columns: 1fr;
+    grid-template-areas: none;
+
+    > [data-area] {
+      grid-area: auto;
+    }
+  }
+
+  // Comments carries a character counter under the box, so bottom-aligning would drop its label and
+  // the Other Costs / Grand Total stack beside it below the top of the box.
+  > [data-area='cl'],
+  > [data-area='og'] {
+    align-self: start;
+  }
+
+  > [data-area='cl'] {
+    padding-block: 0.5rem 0;
   }
 }
 
 // Container queries are Chrome/Edge 105+, Firefox 110+, Safari 16+ — but this app declares no
 // browserslist, so "supported" is an assumption rather than a fact. Without them a UA ignores BOTH the
-// `container-type` above and the whole `@container` block, leaving the cost row at three fixed tracks
-// forever: measured 54px money boxes at a 700px container, i.e. #295 verbatim. The viewport query this
-// replaced worked everywhere, so it stays as the fallback — approximate (it cannot see the rail or the
-// accordion) but never worse than the defect.
+// `container-type` above and the whole `@container` block, leaving the matrix at five fixed tracks
+// forever: measured 54px money boxes at a 700px container, i.e. #295 verbatim. Viewport queries stand
+// in — approximate (they cannot see the rail or the accordion) but never worse than the defect.
 @supports not (container-type: inline-size) {
-  @media (max-width: 66rem) {
-    .schedule-7a__cost-row {
+  @media (max-width: 61rem) {
+    .schedule-7a__costs {
+      grid-template-columns: 8.5rem repeat(3, 1fr);
+      grid-template-areas:
+        '.  hm hd hi'
+        'sl sm sd si'
+        'al am ad ai'
+        'tl tm td ti'
+        'cl cc cc cc'
+        'sp sp sp sp'
+        'ap ap ap ap'
+        'ce ce ce ce'
+        'og og og og';
+    }
+  }
+
+  @media (max-width: 42rem) {
+    .schedule-7a__costs {
       grid-template-columns: 1fr;
+      grid-template-areas: none;
+
+      > [data-area] {
+        grid-area: auto;
+      }
     }
   }
 }
@@ -216,33 +290,17 @@
   padding-block-end: 0.5rem;
 }
 
-.schedule-7a__cost-triple {
-  display: grid;
-  // `1fr`, not `minmax(0, 1fr)`: an automatic minimum is what lets each track floor at its own
-  // content, and the money input's `min-inline-size` below is that content. Writing a 0 minimum here
-  // would hand the crush back.
-  grid-template-columns: repeat(3, 1fr);
-  // 1.5rem, down from 3rem: 96px of gutter inside a cell three boxes wide was the difference between
-  // fitting and not at 1366 with the rail open, and these three sit under one shared heading — they
-  // read as one group, so they do not need the same air as two separate label/field pairs.
-  gap: 1.5rem;
-
-  // Three cost inputs across a 320px phone leave ~90px each, too narrow for an 8-digit amount.
-  // Every Column on this page declares sm={4}, so mobile is a supported width. Deliberately still a
-  // MEDIA query: below 42rem the side-nav rail is an overlay rather than a rail (verified — opening it
-  // does not change the editor's width under 1056px), so at these widths the column and the viewport
-  // move together and there is nothing for a container query to see that a media query cannot.
-  @media (max-width: 42rem) {
-    grid-template-columns: 1fr;
-  }
-}
-
 // The right-hand standalone-cost cell. Stacks because the Comments row carries both Other Costs and
 // the Grand Total beneath it.
 .schedule-7a__cost-secondary {
-  // Wide enough for the longest label in this column to keep its colon on the first line
-  // ("Site Plan / Gen. Arr. ($) :").
-  --s7a-label-col: 12rem;
+  // Its legacy width even when a narrow editor moves the column under the matrix and spans it across
+  // the row — a Site Plan box stretched the full editor width reads as a different kind of field.
+  inline-size: min(20rem, 100%);
+
+  // Legacy wraps this column's longer labels ("Site Plan / Gen. Arr. ($) :", "Certification After
+  // install ($) :") onto two lines rather than widen the column; the non-breaking space before the
+  // colon keeps it off a line of its own.
+  --s7a-label-col: 9rem;
 
   display: flex;
   flex-direction: column;
