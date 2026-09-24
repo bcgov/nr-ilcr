@@ -903,3 +903,79 @@ describe('Schedule9 — Story 16.3: correcting a Submitted track', () => {
     expect(recordPanel(9101).getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 })
+
+// Issue #332: every failure path falls back to a hardcoded message when the response carries no
+// ProblemDetail `detail`. Each case below fails its request with an EMPTY 500 body (unlike
+// `problemBody`, which always supplies a detail) and pins the exact fallback text.
+describe('Schedule9 — detail-less error fallbacks (#332)', () => {
+  const detailLess = () => new HttpResponse(null, { status: 500 })
+
+  test('a load failure carrying no detail falls back to the generic load message', async () => {
+    server.use(http.get(URL, detailLess))
+    renderPage()
+    expect(await screen.findByText('Unable to load Schedule 9.')).toBeInTheDocument()
+    // The document is suppressed with it: nothing to act on.
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+  })
+
+  test('a detail-less add failure falls back to the generic save message and keeps the entry', async () => {
+    server.use(http.post(RECORDS_URL, detailLess))
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await fillAddForm(user)
+    await user.type(addPanel().getByLabelText('Cost'), '5000')
+    await user.click(screen.getByRole('button', { name: 'Add Record' }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // Entered values survive for correction, exactly as with a verbatim detail (S12).
+    expect(addPanel().getByLabelText('Cost')).toHaveValue('5,000')
+  })
+
+  test('a detail-less per-record Save failure falls back to the generic save message and keeps the edit', async () => {
+    server.use(http.put(`${RECORDS_URL}/:id`, detailLess))
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    await user.clear(recordPanel(9101).getByLabelText('Cost'))
+    await user.type(recordPanel(9101).getByLabelText('Cost'), '7777')
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    expect(recordPanel(9101).getByLabelText('Cost')).toHaveValue('7,777')
+    expect(recordPanel(9101).getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  test('a detail-less delete failure falls back to the generic delete message and keeps the record', async () => {
+    server.use(http.delete(`${RECORDS_URL}/:id`, detailLess))
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('presentation')).getByRole('button', { name: 'Yes' }),
+    )
+
+    expect(await screen.findByText('Unable to delete record.')).toBeInTheDocument()
+    // The failed DELETE echoed no document, so the record is still listed and no success shows.
+    expect(
+      screen.getByRole('button', { name: 'Contractual Work Report Id: 9101' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status failure falls back to the generic check message', async () => {
+    server.use(http.post(CHECK_URL, detailLess))
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await user.click(screen.getAllByRole('button', { name: 'Check Status' })[0])
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock released, so the check can be retried.
+    expect(screen.getAllByRole('button', { name: 'Check Status' })[0]).toBeEnabled()
+  })
+})

@@ -177,7 +177,7 @@ recorded rather than silently dropped:
 | *(new)* | `Entered volume entry is invalid.` | `validation.ts` NaN guard | `validation.feature` `@p2 @S14` | `covered` |
 | *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail, `index.tsx:60` / `:162` | `Schedule2.test.tsx` — *"a load failure carrying no detail… — %s"* ×4, *"a DELETE failure carrying no detail… — %s"* ×4 and *"a failed DELETE renders the API detail verbatim"* ×1 (`test.each`, so the emitted names carry the shape suffix), plus 2 in `fallback-strings.test.ts` — 11 cases, suite 43 → 54 | `covered (unit)` — GAP-3 closed by [#298](https://github.com/bcgov/nr-ilcr/issues/298), 2026-08-26. Deliberately unit, not E2E: pure client-side branches, and Vitest gates in CI where this suite does not. Label matches the project's existing `covered (unit)` (see `sch11/…/coverage.md:169`) rather than coining a third name for one concept |
 
-| *(new)* | `Unable to check status.` | page fallback when the API returns no detail, `index.tsx:216` | — | `deferred` — the page's fourth owned fallback. Added to this catalog by the #298 code review, which found the verdict below claiming "every row" against a list that omitted it. Assigned to [#332](https://github.com/bcgov/nr-ilcr/issues/332) (the app-wide fallback sweep), explicitly **not** to #298 |
+| *(new)* | `Unable to check status.` | page fallback when the API returns no detail, `index.tsx:216` | `Schedule2.test.tsx` — *"a Check Status failure carrying no detail falls back to the generic check message — %s (AC5, #332)"* ×4 (`test.each` over the same `detailLessFailures` shapes as the load/delete cases) | `covered (unit)` — the page's fourth owned fallback. Added to this catalog by the #298 code review, which found the verdict below claiming "every row" against a list that omitted it; closed 2026-09-24 by [#332](https://github.com/bcgov/nr-ilcr/issues/332) (the app-wide fallback sweep), which also added the save fallback's detail-less arm (*"a Save failure carrying no detail falls back to the generic Save message and keeps the entries — %s (AC3, #332)"* ×4) |
 | *(new)* | `Deleted, but the list could not be refreshed.` | post-delete reload failure, `index.tsx:188` | `Schedule2.test.tsx` — *"a FAILED post-delete reload still closes the Delete gate"* | `covered (unit)` — listed for completeness; it was never a catalog row despite being user-facing |
 
 ## Controls (8 in the legacy Field Reference)
@@ -286,9 +286,9 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
   **added to the catalog by the #298 code review** — the verdict here previously read "every
   message-catalog row except GAP-1", measured against a list that silently omitted the page's fourth
   fallback. Still above the 80% bar.
-- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth), GAP-4 (`deferred`,
-  documented) and `Unable to check status.` (assigned to #332) are the only non-covered items and none
-  is P0/P1-critical. Note this matrix now mixes levels: the GAP-3 row is credited to Vitest inside an
+- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-4 (`deferred`,
+  documented) are the only non-covered items and neither is P0/P1-critical; `Unable to check status.`
+  moved to `covered (unit)` with #332 on 2026-09-24. Note this matrix now mixes levels: the GAP-3 row is credited to Vitest inside an
   E2E coverage table, which is established practice here (`covered (+ backend)`, `covered (unit)`) but
   is invisible in a percentage.
 

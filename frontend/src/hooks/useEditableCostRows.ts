@@ -36,6 +36,12 @@ interface Params<TDoc extends EditableRowsDoc> {
   /** Verbatim load/save error fallbacks (AD-8 messages come from the server on success). */
   loadError: string
   saveError: string
+  /**
+   * Fallback for a failed Remove. Optional: a page that owns no delete-specific wording reports a
+   * failed Remove with {@code saveError}, which is accurate — Remove persists through the same
+   * whole-set PUT as Save (#332).
+   */
+  deleteError?: string
   /** Map a loaded document to the seed rows (id + description + raw string field values). */
   rowsFromDoc: (doc: TDoc) => Array<{
     id: number
@@ -96,6 +102,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
   fieldKeys,
   loadError,
   saveError,
+  deleteError,
   rowsFromDoc,
   validate,
   onBack,
@@ -206,7 +213,8 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
 
   // Persist the WHOLE current row set in one call — the legacy update() that every mutation funnels
   // through. `intent` only selects the success message; the persistence is identical either way.
-  const persist = (rowsToSave: EditRow[], intent: 'save' | 'delete') => {
+  // `rollback` runs on failure, for a caller that changed local state before the request (Remove).
+  const persist = (rowsToSave: EditRow[], intent: 'save' | 'delete', rollback?: () => void) => {
     if (!data || saving) {
       return
     }
@@ -243,7 +251,11 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
         }
       })
       .catch((error: unknown) => {
-        setActionError(extractDetail(error) || saveError)
+        // A detail-less failure names the action the user took: `deleteError` for Remove when the
+        // page supplies one, `saveError` otherwise (#332).
+        const fallback = intent === 'delete' && deleteError ? deleteError : saveError
+        setActionError(extractDetail(error) || fallback)
+        rollback?.()
       })
       .finally(() => setSaving(false))
   }
@@ -282,6 +294,11 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     if (saving) {
       return
     }
+    const index = rows.findIndex((r) => r.key === key)
+    if (index < 0) {
+      return
+    }
+    const removed = rows[index]
     const next = rows.filter((r) => r.key !== key)
     setRows(next)
     setRowErrors((prev) => {
@@ -290,7 +307,20 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
       return cleared
     })
     setDirty(true)
-    persist(next, 'delete')
+    // A failed Remove puts the row back. It is dropped from local state BEFORE the PUT (so the grid
+    // answers the click at once), and without a restore the user is told the delete failed while
+    // looking at a grid without the row — and the next Save would send the set without it,
+    // completing the very delete that just failed (#332 review). Restore JUST this row, at its old
+    // position, into whatever the grid holds by then: the row inputs stay live during the request,
+    // so replacing the whole array from this closure would discard edits made to other rows in the
+    // meantime (SScholefield, #506). A failed Save/Add keeps the entered values on screen already.
+    persist(next, 'delete', () =>
+      setRows((current) =>
+        current.some((r) => r.key === key)
+          ? current
+          : [...current.slice(0, index), removed, ...current.slice(index)],
+      ),
+    )
   }
 
   // "Save" persists the whole set (legacy save() → update(true)).
