@@ -21,14 +21,23 @@ import java.util.List;
  * the epics AC and {@code UC-SCH5-001-detailed.md:151}, each of which describes an all-met PAIR.
  * Legacy wins.
  *
- * @param campId the camp's DB id ({@code CAMP_REPORT_ID}) — UI correlation only
+ * @param campId the camp's DB id ({@code CAMP_REPORT_ID}) — UI correlation only. <strong>NULL for a
+ *     camp that exists only on screen</strong> (#476): an unsaved new or copied camp in the open
+ *     panel has no {@code CAMP_REPORT_ID} yet, and the transient state is made explicit rather than
+ *     signalled with a synthetic {@code 0}, which would read as a real persisted id to a
+ *     correlating client. Serialised as an explicit {@code null} — {@code ALWAYS} overrides this
+ *     type's {@code NON_NULL} default, so the key is present and a client can tell "unsaved" from
+ *     "field absent"
  * @param campName the camp name — THE identifier the composed message text carries
  * @param requirementsMet whether this camp meets its requirements
  * @param messages the met message, or the per-field {@code Value Required} lines — never both
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CampCheckResult(
-    int campId, String campName, boolean requirementsMet, List<CampCheckMessage> messages) {
+    @JsonInclude(JsonInclude.Include.ALWAYS) Integer campId,
+    String campName,
+    boolean requirementsMet,
+    List<CampCheckMessage> messages) {
 
   /**
    * One check-status line: the legacy bundle key, the request-DTO field it points at, and the

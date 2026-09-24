@@ -291,7 +291,9 @@ export class Schedule5Page {
   async runCheckStatus(): Promise<void> {
     await expect(
       this.checkStatusButton,
-      'Check Status is disabled while a camp panel is open — close the panel first',
+      // Since #476 the only thing that disables this is a non-editable schedule — the panel gate is
+      // gone, because the request now carries the open panel and the verdict describes the screen.
+      'Check Status is disabled — the schedule is not editable for this caller/status',
     ).toBeEnabled();
     await this.checkStatusButton.click();
   }

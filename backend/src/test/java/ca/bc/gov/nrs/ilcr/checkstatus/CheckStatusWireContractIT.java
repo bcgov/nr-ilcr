@@ -102,8 +102,20 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
         new Anchor("schedule3-572-2021", "/api/v1/schedule3/check-status", "572", "2021"),
         new Anchor("schedule4-560-2021", "/api/v1/schedule4/check-status", "560", "2021"),
         new Anchor("schedule4-514-2021", "/api/v1/schedule4/check-status", "514", "2021"),
-        new Anchor("schedule5-673-2021", "/api/v1/schedule5/check-status", "673", "2021"),
-        new Anchor("schedule5-692-2016", "/api/v1/schedule5/check-status", "692", "2016"),
+        new Anchor(
+            "schedule5-673-2021",
+            "/api/v1/schedule5/check-status",
+            "673",
+            "2021",
+            // Since #476 this endpoint takes the on-screen camp panel; no panel open.
+            "{\"camp\":null}"),
+        new Anchor(
+            "schedule5-692-2016",
+            "/api/v1/schedule5/check-status",
+            "692",
+            "2016",
+            // Since #476 this endpoint takes the on-screen camp panel; no panel open.
+            "{\"camp\":null}"),
         new Anchor(
             "schedule6-726-2020-issues",
             "/api/v1/schedule6/check-status",
