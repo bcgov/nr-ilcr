@@ -46,7 +46,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/accessibility.feature`
     ("A hovered row keeps its action labels readable", `@discovered-bug`).
 
-- **BUG-2 - Eight data tables declare an `aria-label` that the `TableContainer` title overrides (dead `aria-label`, APP-WIDE).**
+- **BUG-2 - CLOSED 2026-09-24: the dead `aria-label`s that a `TableContainer` title overrode are removed (APP-WIDE, #321).**
   - **What's wrong, in plain terms:** a data table can carry a *name* that screen readers read out. A Schedule 4
     sub-page's rows table is given **two** - "Towing Total" (from the visible heading) and "Towing Total rows"
     (typed onto the table). The heading wins, so screen readers say "Towing Total", which is the correct name.
@@ -87,10 +87,15 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     resolves **1**.
   - **Ticket:** [bcgov/nr-ilcr#321](https://github.com/bcgov/nr-ilcr/issues/321).
   - **Priority / env:** p3 - local seeded DB - Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to delete the eight dead attributes when capacity allows; QA
-    re-verifies and closes this entry then. No test: nothing user-facing is broken, and asserting the
-    currently-dead name would assert a behaviour nobody guarantees.
-  - **Test:** none (the locator note lives in `pages/sch4/schedule4SubPage.ts`).
+  - **Status:** CLOSED 2026-09-24 — fixed by [bcgov/nr-ilcr#321](https://github.com/bcgov/nr-ilcr/issues/321). All eight attributes above were deleted,
+    plus two more the same shape that had appeared since this sweep (`schedule10/RoadDetailPage.tsx`
+    "Road details" under the "<page> -> Roads" title, and `schedule10/index.tsx` "Construction pages" under
+    "Page Summary" — both drifted, both dead). No behaviour changes: every table keeps the name it already
+    announced, the container title. The ten correctly-labelled tables are untouched.
+  - **Test:** `components/__tests__/table-accessible-name.test.ts` — a source tripwire that fails when a
+    `<Table aria-label>` sits inside a `<TableContainer title>`, so the pattern cannot creep back (the two
+    Schedule 10 cases are exactly what it would have caught). Mutation-proved: re-adding one attribute fails
+    it by file and line. The E2E locator note in `pages/sch4/schedule4SubPage.ts` records the history.
 
 - **BUG-3 - A hovered button is almost indistinguishable from the row it sits in (APP-WIDE, WCAG 1.4.11).**
   - **What's wrong:** moving onto a row-action button normally gives it a slightly darker background so the

@@ -699,7 +699,7 @@ const Schedule1: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           <TableContainer title="Silviculture">
-            <Table aria-label="Silviculture" className="schedule-1__cost-table">
+            <Table className="schedule-1__cost-table">
               <TableHead>
                 <TableRow>
                   <TableHeader aria-label="Cost item" />
