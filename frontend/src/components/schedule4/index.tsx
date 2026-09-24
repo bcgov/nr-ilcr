@@ -1058,7 +1058,8 @@ const Schedule4: FC = () => {
       {/* `!editable` closes DIV-1 / issue #322 for Schedule 4: legacy bound EVERY Check Status instance
           to disableReportEdits() (schedule4.xhtml:43 and :220-221, schedule4NewLocation.xhtml:275,
           schedule4ExistingLocation.xhtml:1144), and the other seven schedules already include the term —
-          Schedules 4 and 8 were the outliers. Schedule 8 is still open; #322 does not close on this alone. */}
+          Schedules 4 and 8 were the outliers. Schedule 8 followed on 2026-09-14 (#464), so every Check
+          Status button in the app now carries it; #322 is closed. */}
       <Button
         kind="tertiary"
         renderIcon={CheckmarkOutline}
