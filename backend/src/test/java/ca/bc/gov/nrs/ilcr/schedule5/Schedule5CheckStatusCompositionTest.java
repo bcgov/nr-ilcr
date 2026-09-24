@@ -13,6 +13,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import java.util.List;
@@ -49,6 +50,13 @@ class Schedule5CheckStatusCompositionTest {
   private static final int YEAR = 2021;
   private static final String CAMP = "Cedar Flats Camp";
 
+  /**
+   * The body an endpoint call carries when no camp panel is open (#476) — the ordinary case, and
+   * the one these composition assertions want, since they are about message BYTES and not about
+   * which source the camps came from.
+   */
+  private static final Schedule5CheckRequest NO_PANEL = new Schedule5CheckRequest(null);
+
   private final Schedule5Service service = mock(Schedule5Service.class);
 
   /**
@@ -84,7 +92,7 @@ class Schedule5CheckStatusCompositionTest {
   }
 
   private List<String> composedTextsFor(String campName, String... fields) {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule5CheckStatusResponse(
                 "ISSUES",
@@ -98,7 +106,7 @@ class Schedule5CheckStatusCompositionTest {
                             .map(Schedule5CheckStatusCompositionTest::finding)
                             .toList()))));
     Schedule5CheckStatusResponse body =
-        controller.checkStatus("673", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("673", "2021", NO_PANEL, mock(Authentication.class)).getBody();
     return body.camps().get(0).messages().stream().map(CampCheckMessage::text).toList();
   }
 
@@ -153,7 +161,7 @@ class Schedule5CheckStatusCompositionTest {
   @Test
   @DisplayName("the per-camp met message interpolates the camp name as its {0} argument")
   void perCampMetMessage_interpolatesCampName() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule5CheckStatusResponse(
                 "ISSUES",
@@ -166,7 +174,7 @@ class Schedule5CheckStatusCompositionTest {
                         List.of(new CampCheckMessage("campRequirementsMetMsg", null, null))))));
 
     Schedule5CheckStatusResponse body =
-        controller.checkStatus("673", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("673", "2021", NO_PANEL, mock(Authentication.class)).getBody();
 
     // Verbatim legacy :40 — note the trailing period, which the SCHEDULE-level banner does not
     // have.
@@ -180,13 +188,13 @@ class Schedule5CheckStatusCompositionTest {
   @Test
   @DisplayName("the schedule-level banner resolves verbatim — and has NO trailing period")
   void scheduleBanner_resolvesVerbatim() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule5CheckStatusResponse(
                 "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)), List.of()));
 
     Schedule5CheckStatusResponse body =
-        controller.checkStatus("673", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("673", "2021", NO_PANEL, mock(Authentication.class)).getBody();
 
     // legacy :38 — `scheduleRequirementsMetMsg = All requirements for this schedule have been met`,
     // declared with spaces around the `=` (which .properties strips) and ending WITHOUT a period,
@@ -197,7 +205,7 @@ class Schedule5CheckStatusCompositionTest {
   @Test
   @DisplayName("an unmapped field name fails loudly instead of rendering \"…Campnull: …\"")
   void unmappedField_throws() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule5CheckStatusResponse(
                 "ISSUES",
@@ -211,6 +219,6 @@ class Schedule5CheckStatusCompositionTest {
     // the most likely name someone would wire in by mistake.
     assertThrows(
         IllegalStateException.class,
-        () -> controller.checkStatus("673", "2021", mock(Authentication.class)));
+        () -> controller.checkStatus("673", "2021", NO_PANEL, mock(Authentication.class)));
   }
 }

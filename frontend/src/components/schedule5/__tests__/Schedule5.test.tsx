@@ -1149,14 +1149,212 @@ describe('Schedule 5 Check Status (AC12)', () => {
     expect(screen.getByText('Check Status — value required')).toBeInTheDocument()
   })
 
-  test('Check Status is disabled while a panel holds unsaved entries (deviation (I))', async () => {
+  /**
+   * The screen-aware check (#476, closing DIV-1 / the Schedule 5 slice of #359).
+   *
+   * Evaluating the screen is a sanctioned divergence from the legacy Schedule 5 screen, which
+   * judges the last SAVED record unlike legacy's other schedules — a legacy inconsistency the
+   * business area ruled out in September 2026. The app read the database and compensated by
+   * disabling the button whenever a camp panel was open, which is the symptom #476 reported. The
+   * request now carries the open panel and the gate is gone.
+   *
+   * These cases assert the two halves that can each fail silently: the button is OFFERED, and the
+   * body actually CARRIES the screen. A test for the first alone would pass over an endpoint still
+   * answering about saved data.
+   */
+  const checkStatusButton = () => screen.getByRole('button', { name: /check status/i })
+
+  const metCheckResponse = () => ({
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    camps: [],
+  })
+
+  /** Capture the check-status request body, whatever it is, including its nulls. */
+  const captureCheckBody = () => {
+    const seen: { body: unknown } = { body: undefined }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        seen.body = await request.json()
+        return HttpResponse.json(metCheckResponse())
+      }),
+    )
+    return seen
+  }
+
+  test('an OPEN camp panel no longer takes Check Status away — the #476 report', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
     const user = userEvent.setup()
 
     expect(await screen.findByRole('button', { name: /check status/i })).toBeEnabled()
     await openEditor(user)
-    expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
+    expect(checkStatusButton()).toBeEnabled()
+  })
+
+  test('Check Status stays available with an UNSAVED edit on screen', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    await user.type(screen.getByLabelText('Size of Camp (number of persons)'), '75')
+    expect(checkStatusButton()).toBeEnabled()
+  })
+
+  test('the request carries the open panel as typed, not as stored', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    await user.type(screen.getByLabelText('Size of Camp (number of persons)'), '75')
+    await user.click(checkStatusButton())
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    // 75 is what is on screen; 60 is what is stored. The body must say 75.
+    expect(seen.body).toEqual({
+      camp: {
+        campId: 8401,
+        campName: 'Cedar Flats Camp',
+        roadDistanceToOperatingArea: 42.5,
+        sizeOfCamp: 75,
+        associatedCampVolume: 120000,
+      },
+    })
+  })
+
+  /**
+   * The false-GREEN guard, and the single most important assertion in this block. The server's
+   * check is a pure NULL test — a stored `0` passes — so a `?? 0` anywhere on the send path would
+   * turn every cleared descriptor into a pass. A cleared field must arrive as null.
+   */
+  test('a CLEARED descriptor is sent as null, never coerced to 0', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    await user.click(checkStatusButton())
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    const body = seen.body as { camp: { sizeOfCamp: number | null } }
+    expect(body.camp.sizeOfCamp).toBeNull()
+    expect(body.camp.sizeOfCamp).not.toBe(0)
+  })
+
+  /**
+   * Keyed on the panel being OPEN, never on it being dirty: an untouched new camp matches its
+   * `emptyForm()` baseline and is therefore CLEAN, so anything dirty-keyed would omit it and the
+   * verdict would read "requirements met" over a camp with four missing fields.
+   */
+  test('an untouched NEW camp is still sent, with a null id', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await screen.findByLabelText('Camp Name')
+    await user.click(checkStatusButton())
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    expect(seen.body).toEqual({
+      camp: {
+        campId: null,
+        campName: '',
+        roadDistanceToOperatingArea: null,
+        sizeOfCamp: null,
+        associatedCampVolume: null,
+      },
+    })
+  })
+
+  test('with no panel open the body carries camp: null', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /check status/i }))
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    expect(seen.body).toEqual({ camp: null })
+  })
+
+  test('editing a checked descriptor clears the verdict for the older screen snapshot', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(metCheckResponse())),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeVisible()
+
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metCheckResponse())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    await waitFor(() => expect(checkStatusButton()).toBeDisabled())
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+
+    releaseCheck()
+    await flushAsync()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('closing the evaluated panel clears its verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(metCheckResponse())),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeVisible()
+
+    await user.click(panelButton(/^close$/i))
+    expect(screen.queryByLabelText('Camp Name')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
   })
 })
 

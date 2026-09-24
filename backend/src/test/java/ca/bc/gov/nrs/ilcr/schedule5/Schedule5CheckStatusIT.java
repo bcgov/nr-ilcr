@@ -48,13 +48,32 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
 
   private static final String CHECK_STATUS = "/api/v1/schedule5/check-status";
 
+  /**
+   * The body sent when no camp panel is open (#476) — the stored camps are then evaluated alone,
+   * which is what every assertion in this class is about. The overlay path has its own class.
+   *
+   * <p>The body is REQUIRED, deliberately: an absent one is a clean 400 rather than a silently
+   * stored-only verdict, matching Schedule 6. {@code checkStatusRequiresABody} pins that.
+   */
+  private static final String NO_PANEL = "{\"camp\":null}";
+
+  /** ERR-003 verbatim, trailing space included (messages.properties:9). */
+  private static final String MILL_YEAR_NOT_SELECTED =
+      "Please Select Mill and Reporting Year in the Home Page. ";
+
   @Autowired private DataSource dataSource;
 
   @Test
   @DisplayName("672/2021 all met -> MET, the schedule banner ALONE, and camps: [] (deviation (C))")
   void allMet_emitsBannerAloneWithNoPerCampResults() throws Exception {
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "672").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "672")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(jsonPath("$.messages", hasSize(1)))
@@ -72,12 +91,52 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("a non-null screen camp overlays Oracle data and persists nothing")
+  void screenCampOverlaysStoredCampWithoutWriting() throws Exception {
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    List<Map<String, Object>> before = fingerprint(jdbc);
+
+    // Camp 8209 stores Size of Camp = 30 and is otherwise complete. Clearing only that on screen
+    // must produce the finding even though Oracle still holds the value.
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "672")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"camp":{"campId":8209,"campName":"Complete Camp One",\
+                    "roadDistanceToOperatingArea":20.00,"sizeOfCamp":null,\
+                    "associatedCampVolume":70000}}
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("ISSUES")))
+        .andExpect(jsonPath("$.camps[0].campId", is(8209)))
+        .andExpect(jsonPath("$.camps[0].messages", hasSize(1)))
+        .andExpect(jsonPath("$.camps[0].messages[0].field", is("sizeOfCamp")))
+        .andExpect(
+            jsonPath(
+                "$.camps[0].messages[0].text",
+                is("Camp Report Name : Complete Camp One - Size of Camp: Value Required")));
+
+    assertEquals(before, fingerprint(jdbc));
+  }
+
+  @Test
   @DisplayName("674/2021 with ZERO camps -> vacuously MET, not ISSUES and not 404")
   void zeroCamps_isVacuouslyMet() throws Exception {
     // isSchedule5Valid ANDs over the camps and returns true before its loop runs
     // (Schedule5CheckStatus.java:89-97).
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "674").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "674")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(jsonPath("$.messages[0].key", is("scheduleRequirementsMetMsg")))
@@ -89,7 +148,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
       "673/2021 mixed -> ISSUES, no banner, all four camps reported in CAMP_REPORT_ID order")
   void mixed_reportsEveryCampInIdOrder() throws Exception {
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "673").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "673")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")))
         // On ISSUES the schedule-level banner is empty — the two are mutually exclusive.
@@ -117,7 +182,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     //     (CheckStatusUtil.java:134), so a single space is a description. isBlank would flag it.
     // Because the schedule outcome is ISSUES, this camp is also the one carrying SUC-005.
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "673").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "673")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[0].requirementsMet", is(true)))
         .andExpect(jsonPath("$.camps[0].messages", hasSize(1)))
@@ -136,7 +207,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
   @DisplayName("the three numeric descriptor lines compose byte-for-byte, in legacy emission order")
   void missingDescriptors_composeVerbatimInOrder() throws Exception {
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "673").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "673")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[1].campName", is("Bare Descriptor Camp")))
         .andExpect(jsonPath("$.camps[1].requirementsMet", is(false)))
@@ -178,7 +255,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     // go into the composed line untouched: one space from the prefix, three from the name, one
     // leading the segment.
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "673").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "673")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[2].campId", is(8213)))
         .andExpect(jsonPath("$.camps[2].messages", hasSize(1)))
@@ -197,7 +280,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     // an item-62 row with no description, an item-62 row with no cost, and the same pair for item
     // 68.
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "673").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "673")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[3].campName", is("Sub Page Issue Camp")))
         .andExpect(jsonPath("$.camps[3].messages", hasSize(4)))
@@ -228,7 +317,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     // schedule;
     // gating this endpoint on Draft by copy-paste from the writes would take that away.
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "671").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "671")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")));
   }
@@ -237,14 +332,52 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
   @DisplayName("the context guards still apply — a closed mill 409s and an unknown mill 404s")
   void contextGuardsApply() throws Exception {
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "516").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "516")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isConflict());
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "999").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "999")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isNotFound());
     // ERR-003: missing params must stay the verbatim legacy message, which is why millId/year are
     // optional raw Strings rather than typed required params.
-    mockMvc.perform(post(CHECK_STATUS).with(csrf())).andExpect(status().isBadRequest());
+    //
+    // ⚠ The body is supplied here ON PURPOSE. Since #476 an absent body is ALSO a 400, so dropping
+    // it would leave this line green whether or not the param guard exists at all — a 400 for the
+    // wrong reason, and the assertion would no longer be about ERR-003. The message check below is
+    // the other half of the same precaution.
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail", is(MILL_YEAR_NOT_SELECTED)));
+  }
+
+  /**
+   * The body is REQUIRED, matching Schedule 6. An absent one is a clean 400 from
+   * {@code @RequestBody} rather than a 500, and rather than a silent fall-back to the stored-only
+   * verdict — which would be the dangerous reading, since it would look identical to a working
+   * check while ignoring everything on screen.
+   */
+  @Test
+  @DisplayName("an ABSENT body is a clean 400, not a silent stored-only verdict")
+  void checkStatusRequiresABody() throws Exception {
+    mockMvc
+        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "672").param("year", "2021"))
+        .andExpect(status().isBadRequest());
   }
 
   @Test
@@ -254,10 +387,22 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     List<Map<String, Object>> before = fingerprint(jdbc);
 
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "673").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "673")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk());
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "672").param("year", "2021"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "672")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk());
 
     // A per-row snapshot including BOTH audit pairs and REVISION_COUNT. Count- and sum-based
@@ -294,7 +439,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "692")
+                .param("year", "2016")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")))
         .andExpect(
@@ -323,7 +474,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "692")
+                .param("year", "2016")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath(
@@ -352,7 +509,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "692")
+                .param("year", "2016")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_PANEL))
         .andExpect(status().isOk())
         // Camp 8712 is fully populated apart from this row, so NO description finding may appear
         // against it — the space counts as a description.
