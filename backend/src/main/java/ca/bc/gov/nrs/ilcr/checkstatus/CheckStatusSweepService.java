@@ -114,7 +114,7 @@ public class CheckStatusSweepService {
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_5,
-                schedule5::checkStatus,
+                schedule5::checkStatusStored,
                 response -> outcomeMet(response.outcome())),
             // The stored-data path: Schedule 6's endpoint validates the posted screen instead, so
             // this sweep is checkStatusStored's only caller.

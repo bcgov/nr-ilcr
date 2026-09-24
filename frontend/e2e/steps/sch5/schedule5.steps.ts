@@ -45,7 +45,7 @@ import {
   CHECK_MISSING_FIX_DISTANCE,
   CHECK_UNSAVED_VIOLATION_ANCHOR,
   CHECK_UNSAVED_FIX_ANCHOR,
-  CHECK_PANEL_GATE_ANCHOR,
+  CHECK_NEW_CAMP_ANCHOR,
   SIZE_MISSING_BASELINE,
   UNSAVED_CHECK_STORED_SIZE,
   SUB_PAGE_HOST_CAMP,
@@ -93,7 +93,7 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   'subpage-cost-access': SUBPAGE_COST_ACCESS_ANCHOR,
   'check-unsaved-violation': CHECK_UNSAVED_VIOLATION_ANCHOR,
   'check-unsaved-fix': CHECK_UNSAVED_FIX_ANCHOR,
-  'check-panel-gate': CHECK_PANEL_GATE_ANCHOR,
+  'check-unsaved-new-camp': CHECK_NEW_CAMP_ANCHOR,
   'check-mixed': CHECK_MIXED_ANCHOR,
   'a11y-list': A11Y_LIST_ANCHOR,
   'a11y-panel': A11Y_PANEL_ANCHOR,
@@ -813,6 +813,22 @@ Then('{string} still has no stored size of camp', async ({ request, world }, cam
     camp?.sizeOfCamp ?? null,
     'the on-screen correction must not have been persisted by Check Status',
   ).toBeNull();
+});
+
+/**
+ * Prove an unsaved camp is still unsaved after Check Status has REPORTED on it (#476).
+ *
+ * Deliberately an API read-back and not `is no longer listed in the Existing Camps table`: the camps
+ * table is not refetched by Check Status, so the UI assertion would pass even if the camp HAD been
+ * persisted — the mirror image of the delete-read-back's reasoning a few steps above. Check Status
+ * evaluating a camp that does not exist is the whole point; creating it would be the defect.
+ */
+Then('no camp named {string} exists on the anchor', async ({ request, world }, campName) => {
+  const camp = await findCampByName(request, world.scheduleKey!, campName);
+  expect(
+    camp,
+    `Check Status must not persist the panel — "${campName}" was never saved`,
+  ).toBeUndefined();
 });
 
 // ---------------------------------------------------------------------------------------------------

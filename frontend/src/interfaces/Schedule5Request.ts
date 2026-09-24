@@ -64,3 +64,34 @@ export default interface CampRequest {
   /** Required on PUT only — THIS camp's token, read from its row. A falsy `0` is valid. */
   readonly revisionCount?: number
 }
+
+/**
+ * The Check Status body — the camp panel currently ON SCREEN, mirroring the backend
+ * `Schedule5CheckRequest`.
+ *
+ * Legacy's Check Status was a full form postback, so the verdict described the screen and not the
+ * saved record (issue #359, and #476 for Schedule 5's instance). The server overlays this camp onto
+ * the stored ones.
+ *
+ * ⚠ ONE camp, not all of them, unlike Schedule 6's equivalent: the camps table renders NAMES only,
+ * so the open panel is the only camp whose descriptors the client can have changed. Sending the
+ * whole list would assert values for camps the reporter is not looking at, out of a possibly stale
+ * client copy of the document.
+ *
+ * ⚠ `null` means "no usable value on screen" and MUST stay null — the server's check is a pure null
+ * test (a stored `0` passes), so coercing a blank or unparseable field to `0` turns a missing
+ * descriptor into a pass.
+ */
+export interface CampCheckEntry {
+  /** The stored id, or `null` for a camp that has never been saved (new or copied). */
+  readonly campId: number | null
+  readonly campName: string
+  readonly roadDistanceToOperatingArea: number | null
+  readonly sizeOfCamp: number | null
+  readonly associatedCampVolume: number | null
+}
+
+/** `camp` is `null` when no panel is open — the stored camps are then evaluated alone. */
+export interface Schedule5CheckRequest {
+  readonly camp: CampCheckEntry | null
+}
