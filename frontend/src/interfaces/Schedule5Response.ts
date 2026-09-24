@@ -115,7 +115,8 @@ export interface CampCheckMessage {
  * `Value Required` line per missing field — never both.
  */
 export interface CampCheckResult {
-  readonly campId: number
+  /** `null` for a camp that exists only on screen — an unsaved new or copied camp has no id yet. */
+  readonly campId: number | null
   readonly campName: string | null
   readonly requirementsMet: boolean
   readonly messages: readonly CampCheckMessage[]

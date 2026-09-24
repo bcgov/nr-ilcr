@@ -977,7 +977,7 @@ public class Schedule5Service {
       schedulePasses = schedulePasses && met;
       camps.add(
           new CampCheckResult(
-              candidate.row().campId(),
+              candidate.campId(),
               candidate.row().campName(),
               met,
               met ? List.of(new CampCheckMessage(MSG_CAMP_MET, null, null)) : issues));
@@ -1007,7 +1007,9 @@ public class Schedule5Service {
     List<CheckCandidate> candidates = new ArrayList<>();
     for (CampRow row : campRows) {
       CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
-      candidates.add(new CheckCandidate(row, details.otherCampRows(), details.otherAccessRows()));
+      candidates.add(
+          new CheckCandidate(
+              row.campId(), row, details.otherCampRows(), details.otherAccessRows()));
     }
     return candidates;
   }
@@ -1052,9 +1054,9 @@ public class Schedule5Service {
         return result;
       }
     }
-    result.add(
-        new CheckCandidate(
-            screenRow(UNSAVED_CAMP_ID, entry), new ArrayList<>(), new ArrayList<>()));
+    // campId NULL, not a synthetic 0: this camp has no CAMP_REPORT_ID yet, and 0 would read as a
+    // real persisted id to a client correlating the verdict back to a row (PR #504 review).
+    result.add(new CheckCandidate(null, screenRow(entry), new ArrayList<>(), new ArrayList<>()));
     return result;
   }
 
@@ -1067,30 +1069,29 @@ public class Schedule5Service {
    * @param otherAccessRows the itemized Other Access expense rows, always from the database
    */
   private record CheckCandidate(
-      CampRow row, List<DetailRow> otherCampRows, List<DetailRow> otherAccessRows) {
+      Integer campId, CampRow row, List<DetailRow> otherCampRows, List<DetailRow> otherAccessRows) {
 
-    /** The same camp with the screen's descriptors written over the stored ones. */
+    /**
+     * The same camp with the screen's descriptors written over the stored ones — keeping its stored
+     * {@code campId}, because overlaying a panel does not make the camp unsaved.
+     */
     CheckCandidate withScreenValues(CampEntry entry) {
-      return new CheckCandidate(screenRow(row.campId(), entry), otherCampRows, otherAccessRows);
+      return new CheckCandidate(campId, screenRow(entry), otherCampRows, otherAccessRows);
     }
   }
 
   /**
-   * The id reported for a camp that exists only on screen. {@code campId} is UI correlation only
-   * ({@code CampCheckResult}), the composed message text keys on the NAME, and a sequence-generated
-   * {@code CAMP_REPORT_ID} is never 0 — so 0 reads unambiguously as "not saved yet".
-   */
-  static final int UNSAVED_CAMP_ID = 0;
-
-  /**
    * A {@link CampRow} carrying the screen's four checked descriptors. The fields the check never
-   * reads — {@code isolatedCampInd}, {@code comments}, {@code revisionCount} — are left null/zero
-   * rather than sourced, because reading them would imply this row is usable for something other
-   * than the verdict. It is not: it reaches no write path and is never served.
+   * reads — {@code campId}, {@code isolatedCampInd}, {@code comments}, {@code revisionCount} — are
+   * left null/zero rather than sourced, because reading them would imply this row is usable for
+   * something other than the verdict. It is not: it reaches no write path and is never served.
    */
-  private static CampRow screenRow(int campId, CampEntry entry) {
+  private static CampRow screenRow(CampEntry entry) {
     return new CampRow(
-        campId,
+        // Unused: the reported id travels on CheckCandidate, and evaluateCamp reads only the four
+        // descriptors below. CampRow.campId is a primitive int, which is the whole reason the
+        // nullable id cannot live here.
+        0,
         entry.campName(),
         entry.roadDistanceToOperatingArea(),
         entry.sizeOfCamp(),

@@ -1503,7 +1503,7 @@ const Schedule5: FC = () => {
             {checkResult.camps.map((camp) =>
               camp.messages.map((message) => (
                 <NotificationColumn
-                  key={`camp-${String(camp.campId)}-${message.key}-${message.field ?? ''}`}
+                  key={`camp-${camp.campId ?? 'unsaved'}-${message.key}-${message.field ?? ''}`}
                   kind={camp.requirementsMet ? 'success' : 'warning'}
                   title={
                     camp.requirementsMet

@@ -455,7 +455,9 @@ class Schedule5CheckStatusServiceTest {
       assertThat(result.outcome()).isEqualTo("ISSUES");
       assertThat(result.camps()).hasSize(2);
       assertThat(result.camps().get(0).requirementsMet()).isTrue();
-      assertThat(result.camps().get(1).campId()).isEqualTo(Schedule5Service.UNSAVED_CAMP_ID);
+      // NULL, not 0: an on-screen-only camp has no CAMP_REPORT_ID, and a synthetic zero would
+      // read as a real persisted id to a correlating client (PR #504 review).
+      assertThat(result.camps().get(1).campId()).isNull();
       assertThat(result.camps().get(1).messages().stream().map(CampCheckMessage::field))
           .containsExactly(
               Schedule5Service.FIELD_CAMP_NAME,
