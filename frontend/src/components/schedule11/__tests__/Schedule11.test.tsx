@@ -984,6 +984,99 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(screen.getByLabelText('NAR(ha)')).toHaveValue('120.5')
   })
 
+  // ---- Issue #332: the page's OWN fallback strings, reached with a detail-less failure. ----------
+  // `extractDetail` returns `response.data.detail` or undefined, so an empty-bodied 500 (a gateway
+  // timeout, a crashed backend) is what makes each `|| '…'` arm the text the user actually sees.
+  // Every failure fixture above carries a detail, so none of these strings was asserted before.
+  const detailLess500 = () => new HttpResponse(null, { status: 500 })
+
+  test('a load failure carrying no detail falls back to the generic load message (#332)', async () => {
+    server.use(http.get(URL, detailLess500))
+    render(<Schedule11 />)
+
+    // Exact match on purpose: the panel's TITLE is the same words without the full stop.
+    expect(await screen.findByText('Unable to load Schedule 11.')).toBeInTheDocument()
+    expect(screen.queryByText('Silviculture Locations')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less add failure falls back to the generic Save message and retains the inputs (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, detailLess500),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Location'), 'North Ridge')
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'No' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    await user.type(screen.getByLabelText('NAR(ha)'), '120.5')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    // Inputs are cleared only on success, and the in-flight lock releases for a retry.
+    expect(screen.getByLabelText('Location')).toHaveValue('North Ridge')
+    await waitFor(() => expect(screen.getByRole('button', { name: /^add$/i })).toBeEnabled())
+  })
+
+  test('a detail-less edit failure falls back to the generic Save message and keeps the row in edit (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${LOCATIONS_URL}/9001`, detailLess500),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
+    const location = screen.getByLabelText('Edit Location')
+    await user.clear(location)
+    await user.type(location, 'North Ridge Revised')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // `cancelEdit` runs only on success: the row stays in edit with the typed value for a retry.
+    expect(screen.getByLabelText('Edit Location')).toHaveValue('North Ridge Revised')
+  })
+
+  test('a detail-less delete failure falls back to the generic delete message and keeps the row (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${LOCATIONS_URL}/9001`, detailLess500),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('North Ridge')
+    await user.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText('Unable to delete location.')).toBeInTheDocument()
+    // `applyDocument` never ran: the row is still there and no success banner appears.
+    expect(screen.getByText('North Ridge')).toBeInTheDocument()
+    expect(screen.queryByText(/successfully/i)).not.toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status failure falls back to the generic check message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, detailLess500),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('North Ridge')
+    await user.click(screen.getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // No check result renders beside the error, and the in-flight lock releases for a retry.
+    expect(screen.queryByText('Status checked')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled())
+  })
+
   test('a stale GET (mill/year changed mid-flight) is ignored (useScheduleDocument active flag)', async () => {
     // The initial context (13050) returns a slow docA; a mid-flight context change to 999 returns
     // docB immediately. The stale docA must never override docB.

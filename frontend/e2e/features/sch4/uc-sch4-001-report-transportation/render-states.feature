@@ -120,7 +120,8 @@ Feature: Schedule 4 — guard states and read-only view
   # DIV-1 — FIXED 2026-08-24 (defect #293 code review). Was DELIBERATELY RED; it went green on its own
   # exactly as designed, so only the @discovered-divergence tag was dropped — no assertion was edited.
   # `schedule4/index.tsx` now gives both Check Status buttons `disabled={!editable || saving}`.
-  # ⚠ Schedule 8 still carries the same defect, so issue #322 stays open. See this UC's defects.md (DIV-1).
+  # Schedule 8 carried the same defect until 2026-09-14 (#464); with both halves fixed, issue #322 is closed.
+  # See this UC's defects.md (DIV-1) for the app-wide sweep.
   #
   # The original analysis follows.
   #

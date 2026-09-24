@@ -373,4 +373,55 @@ describe('Home — select mill and year (Story 1.3)', () => {
     expect(await screen.findByText('Mill or Reporting Year not found.')).toBeInTheDocument()
     expect(screen.getByTestId('ctx')).toHaveTextContent('999/1999')
   })
+
+  // #332: each request site falls back to a hardcoded message when the failure carries no
+  // ProblemDetail body. An empty-bodied 500 is the detail-less shape (no `messages`, no `detail`).
+  describe('detail-less error fallbacks (#332)', () => {
+    test('a detail-less Save failure falls back to the generic save message and leaves context unchanged', async () => {
+      server.use(
+        ...listHandlers(),
+        http.get(CONTEXT, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(
+        <MillYearProvider initial={{ millId: 999, year: 1999 }}>
+          <Home />
+          <ContextProbe />
+        </MillYearProvider>,
+      )
+      const user = userEvent.setup()
+
+      await selectFromDropdown(user, /Mill/i, /514 - AAA Milling/)
+      await selectFromDropdown(user, /Reporting Year/i, /^2021$/)
+      await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+      expect(await screen.findByText('Unable to save the working context.')).toBeInTheDocument()
+      // Never setContext on an error; the Save button is usable again for a retry.
+      expect(screen.getByTestId('ctx')).toHaveTextContent('999/1999')
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+    })
+
+    test('a detail-less list-load failure falls back to the generic load message', async () => {
+      server.use(
+        http.get(MILLS, () => new HttpResponse(null, { status: 500 })),
+        http.get(YEARS, () => HttpResponse.json(YEARS_TWO)),
+      )
+      render(<Home />)
+
+      expect(
+        await screen.findByText('Unable to load the mill and reporting-year lists.'),
+      ).toBeInTheDocument()
+    })
+
+    test('a detail-less Home message failure falls back to its generic message without blocking the picker', async () => {
+      server.use(
+        ...listHandlers(),
+        http.get(MINE, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<Home />)
+
+      expect(await screen.findByText('Unable to load the Home message.')).toBeInTheDocument()
+      // The welcome message is decoration — the mill/year picker still renders (Story 24.2).
+      expect(screen.getByRole('combobox', { name: /Mill/i })).toBeInTheDocument()
+    })
+  })
 })

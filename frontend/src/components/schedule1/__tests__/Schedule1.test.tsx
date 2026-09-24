@@ -610,6 +610,23 @@ describe('Schedule1 editable page', () => {
     expect(attempts).toBe(2)
   })
 
+  test('a Save failure carrying no detail falls back to the generic Save message (#332)', async () => {
+    // The 500 case above sends the fallback wording AS the server detail, so it exercises the
+    // verbatim arm. An EMPTY 500 body is what reaches the right-hand side of
+    // `extractDetail(error) || fallback` — the situation the fallback exists for.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.put(URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
   test('Save and Check Status sit above AND below; Delete only below (schedule1.xhtml:35-38 vs :796-803)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
     render(<Schedule1 />)
@@ -659,6 +676,27 @@ describe('Schedule1 editable page', () => {
         screen.queryByLabelText('Standing Tree to Loaded Truck volume'),
       ).not.toBeInTheDocument(),
     )
+  })
+
+  test('a DELETE failure carrying no detail falls back to the generic delete message and keeps the record (#332)', async () => {
+    // `remove`'s `fallback: 'Unable to delete Schedule 1.'` had no coverage: every delete fixture in
+    // this file answers 200. An empty-bodied 500 is what makes that arm the text the user sees.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.delete(URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText('Unable to delete Schedule 1.')).toBeInTheDocument()
+    // `onSuccess` never ran: the schedule is NOT emptied, and no success banner appears.
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck volume')).toBeInTheDocument()
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
   })
 
   test('409 mill-closed shows verbatim ERR-002, form suppressed (AC / S20)', async () => {
@@ -954,6 +992,26 @@ describe('Schedule1 Check Status (Story 2.7)', () => {
     expect(
       await screen.findByText('This schedule cannot be edited in its current status.'),
     ).toBeInTheDocument()
+  })
+
+  test('a check failure carrying no detail falls back to the generic check message (#332)', async () => {
+    // The test above proves the verbatim half of `extractDetail(err) || fallback`; this is the other:
+    // an empty-bodied 500 has no detail, so `fallback: 'Unable to check status.'` is what renders.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock released on the error path, so the check can be retried.
+    await waitFor(() =>
+      screen
+        .getAllByRole('button', { name: /check status/i })
+        .forEach((b) => expect(b).toBeEnabled()),
+    )
   })
 })
 
