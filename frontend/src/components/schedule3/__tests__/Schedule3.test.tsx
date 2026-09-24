@@ -487,6 +487,23 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     expect(attempts).toBe(2)
   })
 
+  test('a Save failure carrying no detail falls back to the generic Save message (#332)', async () => {
+    // The 500 case above sends the fallback wording AS the server detail, so it exercises the
+    // verbatim arm. An EMPTY 500 body is what reaches the right-hand side of
+    // `extractDetail(error) || fallback` — the situation the fallback exists for.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule3Doc)),
+      http.put(URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
   test('Save and Check Status sit above AND below; Delete only below (schedule3.xhtml:37-38 vs :420-426)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule3Doc)))
     render(<Schedule3 />)
@@ -1474,5 +1491,55 @@ describe('Schedule3 correction at Submitted (Story 16.3)', () => {
     expect(writes).toBe(0)
     expect(costTableText()).toBe(before)
     expect(screen.getByLabelText(HARVEST_FIELD)).toHaveValue('1,000')
+  })
+})
+
+// Issue #332: the load / Delete / Check Status paths fall back to a hardcoded message when the
+// response carries no ProblemDetail `detail` (the Save fallback is pinned under AC4/AC5 above). Each
+// case fails its request with an EMPTY 500 body — `problemBody` always supplies a detail.
+describe('Schedule3 detail-less error fallbacks (#332)', () => {
+  const detailLess = () => new HttpResponse(null, { status: 500 })
+
+  test('a load failure carrying no detail falls back to the generic load message', async () => {
+    server.use(http.get(URL, detailLess))
+    render(<Schedule3 />)
+
+    expect(await screen.findByText('Unable to load Schedule 3.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+  })
+
+  test('a detail-less Delete failure falls back to the generic delete message and keeps the document', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule3Doc)),
+      http.delete(URL, detailLess),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    await user.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText('Unable to delete Schedule 3.')).toBeInTheDocument()
+    // Nothing was emptied: the served figures stay on screen and Delete stays open for a retry.
+    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toHaveValue('1,000')
+    expect(screen.getAllByRole('button', { name: /^delete$/i })[0]).toBeEnabled()
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status failure falls back to the generic check message', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule3Doc)),
+      http.post(CHECK_URL, detailLess),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock released, so the check can be retried.
+    screen.getAllByRole('button', { name: /check status/i }).forEach((b) => expect(b).toBeEnabled())
   })
 })

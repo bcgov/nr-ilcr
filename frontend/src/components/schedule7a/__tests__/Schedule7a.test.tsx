@@ -1208,6 +1208,84 @@ describe('Schedule 7A page', () => {
       expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     })
   })
+
+  // #332: every request carries a hardcoded fallback for a failure with NO ProblemDetail detail
+  // (a bare 500, a gateway timeout, a dropped connection). Each case fails ONE request with an empty
+  // body and asserts the exact literal, so a fallback cannot be dropped or reworded unnoticed.
+  describe('detail-less error fallbacks (#332)', () => {
+    const detailLess = () => new HttpResponse(null, { status: 500 })
+
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(URL, detailLess))
+      render(<Schedule7a />)
+
+      // Exact match: the panel TITLE is "Unable to load Schedule 7A" (no period); the fallback is
+      // the subtitle. The work area stays suppressed like every other load failure.
+      expect(await screen.findByText('Unable to load Schedule 7A.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Add Report failure falls back to the generic save message and keeps the draft', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc({ bridges: [] }))),
+        http.post(BRIDGES_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+
+      await user.click(await screen.findByRole('button', { name: 'Add' }))
+      await fillAddForm(user)
+      await user.click(screen.getByRole('button', { name: 'Add Report' }))
+
+      expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+      expect(field('Name/Location of Bridge')).toHaveValue('South Creek Bridge')
+    })
+
+    test('a detail-less page Save failure falls back to the generic save message', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.put(BRIDGES_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+      await openBridge(user, 1)
+      await savePage(user)
+
+      expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less confirmed delete falls back to the generic delete message and keeps the row', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.delete(`${BRIDGES_URL}/7001`, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+      await openBridge(user, 1)
+
+      await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+      await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+      expect(await screen.findByText('Unable to delete bridge report.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Bridge report Id: 1' })).toBeInTheDocument()
+    })
+
+    test('a detail-less Check Status failure falls back to the generic check message', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.post(CHECK_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+
+      await user.click((await screen.findAllByRole('button', { name: 'Check Status' }))[0])
+
+      expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+      // The in-flight lock releases on failure, so the reporter can retry.
+      expect(screen.getAllByRole('button', { name: 'Check Status' })[0]).toBeEnabled()
+    })
+  })
 })
 
 // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
