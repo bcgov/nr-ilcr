@@ -17,6 +17,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
@@ -25,6 +26,7 @@ import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.LocationSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
@@ -34,6 +36,7 @@ import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -489,34 +492,6 @@ class Schedule11ServiceTest {
   }
 
   @Test
-  void updateLocation_nonBiogeoIntegrityFailure_throwsNotSaved() {
-    stubTrack("D");
-    when(repository.countBiogeo(8801L)).thenReturn(1);
-    when(repository.updateLocation(
-            eq(9201L),
-            eq(MILL),
-            eq(YEAR),
-            eq(0),
-            anyString(),
-            anyLong(),
-            any(),
-            anyString(),
-            any(),
-            anyString()))
-        .thenReturn(1);
-    org.mockito.Mockito.doThrow(
-            new DataIntegrityViolationException(
-                "ORA-01400: cannot insert NULL into (THE.ILCR_COST_REPORT_DETAIL.UPDATE_USERID)"))
-        .when(repository)
-        .upsertCost(9201L, 24, 5000, "u");
-    assertThrows(
-        ScheduleNotSavedException.class,
-        () ->
-            service.updateLocation(
-                MILL, YEAR, 9201L, request(5000, 4000, 0), CallerRights.SUBMITTER, "u"));
-  }
-
-  @Test
   void addLocation_nullCost_writesNoCostRow_presentCost_upserts() {
     stubTrack("D");
     stubEmpty(); // for the recomputed getSchedule11 echo
@@ -528,11 +503,62 @@ class Schedule11ServiceTest {
     verify(repository).deleteCost(9500L, 23);
   }
 
+  // ---- page-level Save (Story 26.2 D1/D5 — legacy Schedule11MB.save(), one transaction)
+  // -----------
+  //
+  // REWRITTEN from the retired per-row PUT/DELETE arms (stale revision, unknown id, integrity
+  // failure, delete ownership + cascade). Each behaviour is kept; only the entry point changed.
+
+  private static LocationSaveAllRequest save(
+      List<LocationSaveAllRequest.Item> locations, List<Long> deletedIds) {
+    return new LocationSaveAllRequest(locations, deletedIds);
+  }
+
+  private static LocationSaveAllRequest.Item item(long id, Integer rev) {
+    return new LocationSaveAllRequest.Item(id, request(5000, 4000, rev));
+  }
+
+  private void stubUpdate(long id, int rev, int rows) {
+    when(repository.updateLocation(
+            eq(id),
+            eq(MILL),
+            eq(YEAR),
+            eq(rev),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            anyString()))
+        .thenReturn(rows);
+  }
+
   @Test
-  void updateLocation_staleRevision_throwsStaleRevision() {
+  void saveAll_nonBiogeoIntegrityFailure_throwsNotSaved() {
     stubTrack("D");
     when(repository.countBiogeo(8801L)).thenReturn(1);
-    when(repository.updateLocation(
+    stubUpdate(9201L, 0, 1);
+    org.mockito.Mockito.doThrow(
+            new DataIntegrityViolationException(
+                "ORA-01400: cannot insert NULL into (THE.ILCR_COST_REPORT_DETAIL.UPDATE_USERID)"))
+        .when(repository)
+        .upsertCost(9201L, 24, 5000, "u");
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () ->
+            service.saveAllLocations(
+                MILL, YEAR, save(List.of(item(9201L, 0)), List.of()), CallerRights.SUBMITTER, "u"));
+  }
+
+  @Test
+  void saveAll_duplicateBiogeoKey_throwsBiogeoConflict() {
+    stubTrack("S");
+    when(repository.countBiogeo(8801L)).thenReturn(1);
+    org.mockito.Mockito.doThrow(
+            new DataIntegrityViolationException(
+                "ORA-00001: unique constraint (THE.BSRPT_BSRPT_UK_UK) violated"))
+        .when(repository)
+        .updateLocation(
             eq(9201L),
             eq(MILL),
             eq(YEAR),
@@ -542,47 +568,67 @@ class Schedule11ServiceTest {
             any(),
             anyString(),
             any(),
-            anyString()))
-        .thenReturn(0);
+            anyString());
+    assertThrows(
+        SilvicultureBiogeoConflictException.class,
+        () ->
+            service.saveAllLocations(
+                MILL, YEAR, save(List.of(item(9201L, 0)), List.of()), CallerRights.ADMIN, "u"));
+  }
+
+  @Test
+  void saveAll_staleRevision_throwsStaleRevision_andStopsTheLoop() {
+    stubTrack("D");
+    when(repository.countBiogeo(8801L)).thenReturn(1);
+    stubUpdate(9201L, 0, 0);
     when(repository.countLocation(9201L, MILL, YEAR)).thenReturn(1); // exists -> stale, not 404
     assertThrows(
         StaleRevisionException.class,
         () ->
-            service.updateLocation(
-                MILL, YEAR, 9201L, request(5000, 4000, 0), CallerRights.SUBMITTER, "u"));
-  }
-
-  @Test
-  void updateLocation_unknownId_throwsNotFound() {
-    stubTrack("D");
-    when(repository.countBiogeo(8801L)).thenReturn(1);
-    when(repository.updateLocation(
-            eq(9999L),
-            eq(MILL),
-            eq(YEAR),
-            eq(0),
+            service.saveAllLocations(
+                MILL,
+                YEAR,
+                save(List.of(item(9201L, 0), item(9202L, 0)), List.of()),
+                CallerRights.SUBMITTER,
+                "u"));
+    // The whole request rolls back, so nothing after the refused row may be attempted.
+    verify(repository, never())
+        .updateLocation(
+            eq(9202L),
+            anyLong(),
+            anyInt(),
+            anyInt(),
             anyString(),
             anyLong(),
             any(),
             anyString(),
             any(),
-            anyString()))
-        .thenReturn(0);
+            anyString());
+    verify(repository, never()).upsertCost(eq(9201L), anyInt(), any(), anyString());
+  }
+
+  @Test
+  void saveAll_unknownUpdateId_throwsNotFound() {
+    stubTrack("D");
+    when(repository.countBiogeo(8801L)).thenReturn(1);
+    stubUpdate(9999L, 0, 0);
     when(repository.countLocation(9999L, MILL, YEAR)).thenReturn(0); // absent -> 404, not stale
     assertThrows(
         SilvicultureLocationNotFoundException.class,
         () ->
-            service.updateLocation(
-                MILL, YEAR, 9999L, request(5000, 4000, 0), CallerRights.SUBMITTER, "u"));
+            service.saveAllLocations(
+                MILL, YEAR, save(List.of(item(9999L, 0)), List.of()), CallerRights.SUBMITTER, "u"));
   }
 
   @Test
-  void deleteLocation_unknownId_throwsNotFound_withoutTouchingCostRows() {
+  void saveAll_unknownDeleteId_throwsNotFound_withoutTouchingCostRows() {
     stubTrack("D");
     when(repository.deleteLocation(9999L, MILL, YEAR)).thenReturn(0);
     assertThrows(
         SilvicultureLocationNotFoundException.class,
-        () -> service.deleteLocation(MILL, YEAR, 9999L, CallerRights.SUBMITTER));
+        () ->
+            service.saveAllLocations(
+                MILL, YEAR, save(List.of(), List.of(9999L)), CallerRights.SUBMITTER, "u"));
     // The mill/year-scoped location delete IS the ownership check — an id the caller does not own
     // must fail 404 BEFORE the id-scoped cost cascade runs (cross-mill isolation without relying
     // on rollback).
@@ -590,14 +636,108 @@ class Schedule11ServiceTest {
   }
 
   @Test
-  void deleteLocation_cascadesWholeCostFamilyAfterOwnershipCheck() {
-    stubTrack("D");
+  void saveAll_deletesRunFirst_thenUpdates_eachDeleteCascadingAfterItsOwnershipCheck() {
+    stubTrack("S");
     stubEmpty(); // for the recomputed document echo
+    when(repository.countBiogeo(8801L)).thenReturn(1);
     when(repository.deleteLocation(9202L, MILL, YEAR)).thenReturn(1);
-    service.deleteLocation(MILL, YEAR, 9202L, CallerRights.SUBMITTER);
-    InOrder inOrder = inOrder(repository);
+    stubUpdate(9201L, 3, 1);
+
+    service.saveAllLocations(
+        MILL, YEAR, save(List.of(item(9201L, 3)), List.of(9202L)), CallerRights.ADMIN, "admin");
+
+    // Deletes FIRST: a row taking over a deleted row's biogeo+location would otherwise trip the
+    // BSRPT_BSRPT_UK_UK unique key inside a request that is valid as a whole.
+    InOrder inOrder = inOrder(millContextService, repository);
+    inOrder.verify(millContextService).findSchedule11TrackStatusCodeForUpdate(MILL, YEAR);
     inOrder.verify(repository).deleteLocation(9202L, MILL, YEAR);
     inOrder.verify(repository).deleteCostsForLocation(9202L);
+    inOrder
+        .verify(repository)
+        .updateLocation(
+            eq(9201L),
+            eq(MILL),
+            eq(YEAR),
+            eq(3),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            eq("admin"));
+    inOrder.verify(repository).upsertCost(9201L, 24, 5000, "admin");
+  }
+
+  @Test
+  void saveAll_gateRunsOnceBeforeAnyWrite_andRefusesAtANonWritableStatus() {
+    stubTrack("S"); // SUBMITTER may not write at S
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () ->
+            service.saveAllLocations(
+                MILL,
+                YEAR,
+                save(List.of(item(9201L, 0)), List.of(9202L)),
+                CallerRights.SUBMITTER,
+                "u"));
+    verify(millContextService).findSchedule11TrackStatusCodeForUpdate(MILL, YEAR);
+    verify(repository, never()).deleteLocation(anyLong(), anyLong(), anyInt());
+    verify(repository, never()).countBiogeo(anyLong());
+  }
+
+  @Test
+  void saveAll_bothListsEmpty_isRefused_beforeAnyWrite() {
+    stubTrack("D");
+    assertThrows(
+        EmptyLocationSaveException.class,
+        () ->
+            service.saveAllLocations(
+                MILL, YEAR, save(List.of(), List.of()), CallerRights.SUBMITTER, "u"));
+    verify(repository, never()).countBiogeo(anyLong());
+  }
+
+  @Test
+  void saveAll_anIdNamedTwice_isRefused_inEitherListOrAcrossBoth() {
+    stubTrack("D");
+    for (LocationSaveAllRequest bad :
+        List.of(
+            save(List.of(item(9201L, 0), item(9201L, 0)), List.of()),
+            save(List.of(), List.of(9202L, 9202L)),
+            save(List.of(item(9201L, 0)), List.of(9201L)))) {
+      assertThrows(
+          DuplicateLocationException.class,
+          () -> service.saveAllLocations(MILL, YEAR, bad, CallerRights.SUBMITTER, "u"));
+    }
+    verify(repository, never()).deleteLocation(anyLong(), anyLong(), anyInt());
+    verify(repository, never())
+        .updateLocation(
+            anyLong(),
+            anyLong(),
+            anyInt(),
+            anyInt(),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            anyString());
+  }
+
+  @Test
+  void saveAll_biogeoCheckedOncePerDistinctId_andAnUnresolvableOneRefusesBeforeAnyWrite() {
+    stubTrack("D");
+    when(repository.countBiogeo(8801L)).thenReturn(0);
+    assertThrows(
+        InvalidBiogeoCodeException.class,
+        () ->
+            service.saveAllLocations(
+                MILL,
+                YEAR,
+                save(List.of(item(9201L, 0), item(9202L, 0)), List.of(9203L)),
+                CallerRights.SUBMITTER,
+                "u"));
+    verify(repository).countBiogeo(8801L); // two rows share 8801: one lookup
+    verify(repository, never()).deleteLocation(anyLong(), anyLong(), anyInt());
   }
 
   // ---- check-status BR-07 (AC9/AC10) -----------------------------------------------------------
@@ -741,7 +881,14 @@ class Schedule11ServiceTest {
           .thenReturn(
               List.of(
                   new Schedule11Repository.LocationSnapshotRow(
-                      9101L, "Submitted location", 8801L, new BigDecimal("100.0"))));
+                      9101L,
+                      "Submitted location",
+                      8801L,
+                      new BigDecimal("100.0"),
+                      "ICH",
+                      "dw",
+                      "1",
+                      null)));
       when(costSnapshots.findBySilvicultureLocations(List.of(9101L)))
           .thenReturn(
               List.of(
@@ -759,6 +906,76 @@ class Schedule11ServiceTest {
               "location", "biogeoclimaticCatalogueId", "netArea", "actualCost", "plannedCost");
       assertThat(served.originalValues().get("location").value()).isEqualTo("Submitted location");
       assertThat(served.originalValues().get("actualCost").value()).isEqualTo("20000");
+    }
+
+    private void stubOneLocationAtSubmitted(
+        List<CostDetailSnapshotRepository.Row> costSnapshotRows) {
+      stubTrack("S");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL))
+          .thenReturn(List.of(cost(7L, 9101L, 24, 25000), cost(8L, 9101L, 23, 10000)));
+      when(repository.findLocationSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule11Repository.LocationSnapshotRow(
+                      9101L,
+                      "Submitted",
+                      8802L,
+                      new BigDecimal("100.0"),
+                      "CWH",
+                      "vm",
+                      null,
+                      null)));
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101L))).thenReturn(costSnapshotRows);
+    }
+
+    @Test
+    @DisplayName("the BEC original is COMPARED by id and SHOWN by the submitted catalogue label")
+    void becOriginalShowsTheLabel() {
+      stubOneLocationAtSubmitted(List.of());
+
+      OriginalValue bec =
+          service
+              .getSchedule11(MILL, YEAR, CallerRights.ADMIN)
+              .locations()
+              .get(0)
+              .originalValues()
+              .get("biogeoclimaticCatalogueId");
+
+      // legacy schedule11.xhtml:251 printed getBiogeoSubZoneVariantPase(), never the number.
+      assertThat(bec.value()).isEqualTo("8802");
+      assertThat(bec.tooltip()).isEqualTo("Original Submission Value: CWHvm");
+    }
+
+    @Test
+    @DisplayName(
+        "each cost's original is the snapshot of the SAME detail id, whatever order the rows arrive")
+    void costOriginalIsKeyedByTheCurrentDetailId() {
+      // Detail 7 is the CURRENT actual cost. Detail 3 is an older row for the same (location, item)
+      // — cleared and re-entered since an earlier submission. Fed in BOTH orders: a (location,
+      // item)
+      // bucket would serve 777 for one of them.
+      CostDetailSnapshotRepository.Row current =
+          new CostDetailSnapshotRepository.Row(7, 9101L, 24, null, 20000, null, null);
+      CostDetailSnapshotRepository.Row older =
+          new CostDetailSnapshotRepository.Row(3, 9101L, 24, null, 777, null, null);
+      for (List<CostDetailSnapshotRepository.Row> order :
+          List.of(List.of(current, older), List.of(older, current))) {
+        org.mockito.Mockito.clearInvocations(repository, costSnapshots);
+        stubOneLocationAtSubmitted(order);
+
+        Map<String, OriginalValue> originals =
+            service
+                .getSchedule11(MILL, YEAR, CallerRights.ADMIN)
+                .locations()
+                .get(0)
+                .originalValues();
+
+        assertThat(originals.get("actualCost").value()).as("order %s", order).isEqualTo("20000");
+        // Detail 8 (the current planned cost) has no snapshot of its own: no submitted figure.
+        assertThat(originals.get("plannedCost").value()).isEmpty();
+      }
     }
 
     @Test

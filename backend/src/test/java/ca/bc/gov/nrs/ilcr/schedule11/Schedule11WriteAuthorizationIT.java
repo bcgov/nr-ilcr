@@ -3,7 +3,6 @@ package ca.bc.gov.nrs.ilcr.schedule11;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -90,30 +89,39 @@ class Schedule11WriteAuthorizationIT extends AbstractOracleIT {
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
   }
 
+  // MIGRATED by Story 26.2: the per-row PUT and DELETE are retired for the page-level save. Both
+  // arms are kept — one carries an update, one a delete — so neither half of the save can lose its
+  // EDIT_SCHEDULE gate unnoticed.
+
   @Test
-  @DisplayName("PUT with no group -> 403")
-  void updateLocation_noGroup_returns403() throws Exception {
+  @DisplayName("page-level save carrying an update, with no group -> 403")
+  void saveAll_updateWithNoGroup_returns403() throws Exception {
     mockMvc
         .perform(
-            put(LOCATIONS + "/9201")
+            put(LOCATIONS)
                 .with(csrf())
                 .param("millId", "614")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(VALID_BODY)
+                .content(
+                    "{\"locations\":[{\"basicSilvicultureReportId\":9201,\"location\":"
+                        + VALID_BODY
+                        + "}],\"deletedIds\":[]}")
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
   }
 
   @Test
-  @DisplayName("DELETE with no group -> 403")
-  void deleteLocation_noGroup_returns403() throws Exception {
+  @DisplayName("page-level save carrying a delete, with no group -> 403")
+  void saveAll_deleteWithNoGroup_returns403() throws Exception {
     mockMvc
         .perform(
-            delete(LOCATIONS + "/9201")
+            put(LOCATIONS)
                 .with(csrf())
                 .param("millId", "614")
                 .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locations\":[],\"deletedIds\":[9201]}")
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
   }
@@ -236,12 +244,15 @@ class Schedule11WriteAuthorizationIT extends AbstractOracleIT {
     // administrator may not write at 'D'. Location 9402 is R__50's seeded row on mill 736, so this
     // removes a real row, and it is not the row admin_writesAtSilvicultureVerified creates, so the
     // two arms stay independent of JUnit method order.
+    // MIGRATED by Story 26.2 onto the page-level save (the per-row DELETE is retired).
     mockMvc
         .perform(
-            delete(LOCATIONS + "/9402")
+            put(LOCATIONS)
                 .with(csrf())
                 .param("millId", "736")
                 .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locations\":[],\"deletedIds\":[9402]}")
                 .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful())
         .andExpect(jsonPath("$.trackStatus", is("V")));

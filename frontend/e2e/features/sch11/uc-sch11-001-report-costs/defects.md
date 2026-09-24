@@ -15,7 +15,8 @@ pin down. Beyond that bug, what this log records is that **Schedule 11 was rebui
 **four** behaviours genuinely differ from the legacy Gherkin — DIV-1 through DIV-4 — and all four were
 triaged with the Schedule 11 dev on 2026-08-10:
 - **DIV-2 — closed.** Hiding the editing controls in read-only is deliberate, so nothing more is needed.
-- **DIV-1 and DIV-3** — the dev will double-check these with the BA when she gets a chance.
+- **DIV-1 and DIV-3 — closed 2026-09-24 by Story 26.2** (Scho's ruling D1(b)/D4(a)): the page is legacy's
+  again — every row live, Save and Check Status above and below the table, Delete a flag until Save.
 - **DIV-4 — delivered, with one recorded exception.** This was the one with real substance: a legacy
   capability with no new-app counterpart, needing a backend change, and Schedule 1 was missing it too.
   Story 16.2 rebuilt it on both screens (2026-09-11). Five of Schedule 11's six indicators are reproduced;
@@ -84,10 +85,16 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Is it a defect?** Almost certainly not — it is the shipped Story 25.2 contract. But it removes a control
     users know, so it wants an explicit product decision rather than our assumption.
   - **Priority / env:** p2 (informational) · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the dev (2026-08-10): she'll double-check the no-Save-button
-    model with the BA when she gets a chance.
-  - **Test:** covered as the app behaves — `happy-path.feature` `@S01`, `inline-edit.feature` `@S03`,
-    `delete.feature` `@S07`, `persistence.feature` `@S09`. No red.
+  - **Status:** **CLOSED 2026-09-24 — legacy model restored by Story 26.2** (ruling D1(b), D4(a), D5(a)).
+    Every row is a live input; one page-level Save, above and below the table, sends every pending edit and
+    delete in one atomic `PUT /api/v1/schedule11/locations`. Delete is now a flag until Save, as legacy's was
+    (`Schedule11MB.java:132-138`) — without legacy's premature "Data deleted successfully" (26.2 deviation (B)).
+    The per-row `PUT`/`DELETE /locations/{id}` are retired.
+  - **Test:** Vitest (`Schedule11.test.tsx`) and backend ITs (`Schedule11CorrectionIT`, `Schedule11WriteIT`).
+    ⚠️ The scenarios named here — `happy-path.feature` `@S01`, `inline-edit.feature` `@S03`,
+    `delete.feature` `@S07`, `persistence.feature` `@S09` — still script the retired per-row editor and
+    immediate delete, and need re-grounding on the new page. The API helpers they seed and clean up with
+    (`steps/sch11/schedule11Api.ts`) were moved onto the bulk save by 26.2.
 
 - **DIV-2 — When the schedule is read-only, the editing controls are removed rather than greyed out.**
   - **What's different:** Once the silviculture track leaves Draft, legacy **disabled** the six Add
@@ -118,10 +125,11 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Is it a defect?** Very unlikely — a duplicate control for convenience on a long page. Recorded only
     so the S20 assertion's wording change is traceable.
   - **Priority / env:** p3 (cosmetic) · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the Schedule 11 dev (2026-08-10): she'll double-check the
-    single Check Status button with the BA when she gets a chance. We'd previously written this off as "no
-    action expected" on our own judgement — that call is really theirs, so it stays open until they make it.
-  - **Test:** `render-states.feature` `@S20` asserts the single button is disabled. No red.
+  - **Status:** **CLOSED 2026-09-24 — legacy's two buttons restored by Story 26.2** (ruling D4(a)): Save and
+    Check Status render above and below the table. While any change is unsaved, both Check Status buttons are
+    disabled with a screen-reader reason, "Save your changes before checking status" (26.2 D7(a), deviation (C)).
+  - **Test:** Vitest (`Schedule11.test.tsx`). ⚠️ `render-states.feature` `@S20` still asserts ONE Check
+    Status button and needs re-grounding (legacy's S20 wording — "both … are disabled" — applies again).
 
 - **DIV-4 — The per-field "original value" indicators from legacy do not exist anywhere in the new app.**
   _(NEW 2026-08-10 — found by checking whether Schedule 1's DIV-5 also applies to this screen. It does.)_

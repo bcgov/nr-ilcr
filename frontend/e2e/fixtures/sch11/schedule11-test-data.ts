@@ -267,8 +267,8 @@ export const scheduleUrl = (millId: number, year: number): string =>
 export const locationsUrl = (millId: number, year: number): string =>
   `${SCHEDULE11_API}/locations?millId=${millId}&year=${year}`;
 
-export const locationUrl = (id: number, millId: number, year: number): string =>
-  `${SCHEDULE11_API}/locations/${id}?millId=${millId}&year=${year}`;
+// No per-location URL: edits and deletes go through the one page-level save on `locationsUrl`
+// (PUT, `LocationSaveAllRequest`) — the per-row PUT and DELETE are retired (Story 26.2).
 
 // No `checkStatusUrl` builder: Check Status is only ever exercised through the button and asserted on the
 // rendered result, so nothing needs the endpoint's URL (see the note in steps/sch11/schedule11Api.ts).
