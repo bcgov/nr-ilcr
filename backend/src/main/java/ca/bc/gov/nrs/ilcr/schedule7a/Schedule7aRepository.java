@@ -154,7 +154,7 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
            :#{#bridge.constructionTypeCode()}, :#{#bridge.superstructureTypeCode()},
            :#{#bridge.deckTypeCode()}, :#{#bridge.abutmentTypeCode()},
            :#{#bridge.loadRatingCode()}, :#{#bridge.comments()},
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertBridge(
       @Param("bridge") BridgeReportEntity bridge,
@@ -192,7 +192,7 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
              COMMENTS = :#{#bridge.comments()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BRIDGE_REPORT_ID = :#{#bridge.bridgeReportId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -250,7 +250,7 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BRIDGE_REPORT_ID = :bridgeReportId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
@@ -270,7 +270,7 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :bridgeReportId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCost(
       @Param("id") long id,

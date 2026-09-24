@@ -7,7 +7,7 @@
 
 | Source | What it contributed |
 |---|---|
-| `UC-SCH4-001/gherkin/*.feature` (**34** slices S01–S34) | the executable scenarios. S32 is "Correct a Sub-Page Row In Place"; **S33/S34 arrived upstream 2026-08-27 with ilcr-bmad PR #92** — the Check-Status-on-unsaved-edits arms, **covered** 2026-08-27 by ONE deliberate `@discovered-divergence` scenario carrying both directions (`check-status-unsaved.feature` `@S33 @S34` — an anchor limit, not a shortcut; see that file's header), against [#359](https://github.com/bcgov/nr-ilcr/issues/359). Register entry: defects.md **DIV-8**, a pointer; the analysis lives once, in `sch3/defects.md` DIV-6 |
+| `UC-SCH4-001/gherkin/*.feature` (**34** slices S01–S34) | the executable scenarios. S32 is "Correct a Sub-Page Row In Place"; **S33/S34 arrived upstream 2026-08-27 with ilcr-bmad PR #92** — the Check-Status-on-unsaved-edits arms, **covered** 2026-08-27 by ONE deliberate `@discovered-divergence` scenario carrying both directions, against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — **RETIRED 2026-09-18**: since #465 (DIV-9) nothing saved on Schedule 4 can be flagged, so S33/S34 have no producible Schedule 4 state (`not-applicable`; the arms stay live on sch1/sch2/sch3/sch11). Register entry: defects.md **DIV-8**, a pointer; the analysis lives once, in `sch3/defects.md` DIV-6 |
 | `UC-SCH4-001-slices.md` (Relevant Controls / Messages / Fields / Business Rules per slice; Gap Analysis) | 9 business rules (BR-01…BR-09), 27 fields, the deliberate-exclusion list |
 | `UC-SCH4-001-technical.md` (Confirmed Messages, Validation Rules, UI Element Reference) | the ERR/WRN/STA/CNT/FLD/SUC/EF2/NAV catalogue (25 rows) |
 
@@ -63,8 +63,9 @@ See GAP-1.
 | Running totals across several rows incl. Cycle | S05, legacy footer | `SubPage.tsx` totals row | subpage-rows `@S05 @p1` | covered | — |
 | The group's grid row shows the rolled-up totals | CNT-001 + legacy rollup inputs | `panelSubTotals` + `renderSubPageRow` | subpages `@S03 @S05 @p0/@p1` | covered | — |
 | Sub-page link labels carry the live row count | CNT-001 | `` `${def.label} (${totals.count}):` `` | update/subpages/subpage-rows `@p0…@p2` | covered | — |
-| Warn before discarding unsaved input (panel Close / Edit / Add New, and each sub-page's Back) | S12, NAV-001, epics.md Story 10.5 AC | NOT IMPLEMENTED (`closePanel`, `openNew`, `openEditOrView` switch unconditionally; `SubPage.tsx` has no confirm at all) | nav-and-recompute `@S12 @discovered-divergence` ×3 | divergence | DIV-3 |
-| A discarded panel edit is never written | S12 consequence | no write path on close | nav-and-recompute `@S12 @p1` | covered | — |
+| Warn before discarding unsaved input (panel Back/Close / Edit / Copy / Add New, and each sub-page's Back) — dirty-gated | S12, NAV-001, epics.md Story 10.5 AC | `index.tsx` `requestLeave` + `panelDirty` → the shared `ConfirmNavigationModal`; `SubPage.tsx` `requestBack` + `hasUnsavedInput` | nav-and-recompute `@S12` ×3 (fixed by #324, 2026-09-22) | covered | DIV-3 (fixed) |
+| Cancelling the NAV-001 prompt keeps the dirty panel and its entry | NAV-001 dialog semantics | `setNavConfirm(null)` | nav-and-recompute `@S12 @p1` (Cancel arm) and `@S12 @p2` (Edit-another arm) | covered | — |
+| A discarded panel edit is never written | S12 consequence | no write path on close — nor on the prompt's Continue | nav-and-recompute `@S12 @p1` | covered | — |
 | Cancelling NAV-002 stays on the panel with the edit intact | NAV-002 dialog semantics | `setNavConfirm(null)` | subpages `@S04 @p2` | covered | — |
 | Column sort on a sub-page (3-state) | none — app-only affordance | `SubPage.tsx` `toggleSort` | subpage-rows `@p2` | covered | — |
 | Cancelling NAV-003 stays on the New panel with the typed name, nothing saved | NAV-003 dialog semantics (the mirror of the NAV-002 cancel arm) | `setNavConfirm(null)` | subpages `@S03 @p2` | covered | — |
@@ -107,15 +108,17 @@ See GAP-1.
 
 | Source item | Source citation | App enforcement / render point | Scenario (tags) | Status | Gap/defect |
 |---|---|---|---|---|---|
-| A stored category with a null Cost is "Value Required" | S28, EF3, BR-07 | `Schedule4Service.checkStatus` cost-null branch | check-status `@S28 @p0` (incl. recovery) | covered | — |
-| A stored Cost of ZERO counts as present | §Decision 1 (`CheckStatusUtil`) | `category.cost() == null` only | check-status `@S28 @p1` | covered | — |
-| A sub-page ROW with a null Cost fails its location | BR-07 ("and per sub-page row") | `checkStatus` row loop | check-status `@S28 @S11 @p1` | covered | — |
+| A stored category with a null Cost is NOT a finding (**S28 / BR-07 as re-grounded 2026-09-18** — legacy's Cost checks were behind never-true `isXxxToCheck` gates) | S28, EF3, BR-07 as written; `Schedule4CheckStatus.java:26-79` + `Schedule4DAO.java:243-337` as the truth | `Schedule4Service.checkStatus` — description check only | check-status `@S28 @p0` | covered | DIV-9 (resolved, #465) |
+| A stored Cost of ZERO passes | legacy `CheckStatusUtil` keyed on null; moot under DIV-9 but kept as the easy-to-invert value | no cost branch | check-status `@S28 @p1` | covered | — |
+| A sub-page ROW with a null Cost is NOT a finding | BR-07 "and per sub-page row" as written; `Schedule4CheckStatus.java:96-140` gated the same way | no row branch | check-status `@S28 @S11 @p1` | covered | DIV-9 (resolved, #465) |
+| A BLANK location description is the one finding ("Description: Value Required") | `Schedule4CheckStatus.java:19-23`; `checkStatusSchedule4.xhtml:16-23` | `FieldIssue.LOCATION_DESCRIPTION`; `checkStatusFieldLabel()` | — (the save refuses a blank name, S13, so no browser state exists) | not-applicable | backend `Schedule4CheckStatusServiceTest` + Vitest `Schedule4.test.tsx` / `verdicts.test.ts` |
 | SUC-005 per-location "All requirements for {0} have been met." | SUC-005 | `locationRequirementsMetMsg` + name arg | check-status `@S28 @S31` | covered | — |
-| SUC-006 whole-schedule banner ONLY when every location passes | SUC-006, S31 | `scheduleMet &= met` | check-status `@S31 @p1` | covered | — |
-| Mixed per-location results in one response | S31 | per-location `LocationCheckResult` | check-status `@S31 @p1` | covered | — |
+| SUC-006 whole-schedule banner ONLY when every location passes | SUC-006, S31 | `scheduleMet &= met` | check-status `@S31 @p1` (passing arm); failing arm unreachable from a browser — backend `mixed_someLocationsPassOthersFail_scheduleNotMet` | covered | — |
+| Mixed per-location results in one response | S31 | per-location `LocationCheckResult` | check-status `@S31 @p1` (two met lines); a failing line is unreachable — backend unit test | covered | — |
 | A mill/year with no locations is vacuously MET | legacy AND-over-locations | `checkStatus` empty loop | check-status `@S28 @p2` | covered | — |
 | Check Status mutates nothing | AD-5 | `@Transactional(readOnly)`; no state change | implicit in every check-status scenario (read-backs unchanged) | covered | — |
-| …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | the page renders only the location name + "Value Required" | check-status `@S28 @discovered-divergence` | divergence | DIV-2 |
+| …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | `describeIssue()` in `schedule4/index.tsx` → `checkStatusFieldLabel()` — `"Description: Value Required"`; a cost-item code would render `"<category> (Cost $): …"` | — (no producible finding since #465) | not-applicable | DIV-2 (resolved 2026-09-18 by #326, superseded by DIV-9) — Vitest only |
+| Check Status on unsaved panel edits (S33 / S34) | ilcr-bmad PR #92 | Check Status judges the saved document (app-wide, #359) | — (retired: nothing saved can be flagged) | not-applicable | DIV-8 (Schedule 4 instance retired 2026-09-18) |
 | Check Status does NOT require a Distance | **S29 as corrected 2026-08-20** (its original missing-Distance premise never existed anywhere) | not enforced — legacy's check is commented out (`Schedule4CheckStatus.java:88-94`) | check-status `@S29 @p1` | covered | SPEC-3 (closed) |
 | Comments never affect Check Status | **S30 as corrected 2026-08-20** (Schedule 4 never had that rule; legacy's was on 7B, conditional) | not enforced — commented out inline (`Schedule4CheckStatus.java:22`) | check-status `@S30 @p1` | covered | SPEC-4 (closed) |
 
@@ -185,8 +188,10 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 | Parallel stress ×3 | `--repeat-each=5` (twice at default workers, once at `--workers=4`) | **512 / 514 each run — 1,542 executions, 6 failures, ALL at the entry point (app-shell paint, Home's first fetch, one Chrome launch >60 s), never the same test twice, and ZERO data-contention failures.** Two genuine readiness waits were stabilised as a result (see `defects.md`); the rest is this box's dev-mode Vite server saturating under ~24 concurrent browsers for 20+ min. Reported as measured rather than retried away or timeout-inflated — see the note below. |
 
 > ### Suite state — the ONE place this is recorded
-> **74 scenarios / 92 tests after Scenario-Outline expansion: 82 green + 10 deliberately-red.** Measured
-> from the generated specs and a full run on **2026-08-27**. The run rows above are the dated
+> **72 scenarios / 90 tests after Scenario-Outline expansion: 82 green + 8 deliberately-red.** Measured
+> from the generated specs and a full run on **2026-08-27**, then adjusted on 2026-09-18 for #326/#465 (DIV-9):
+> DIV-2's S28 scenario and DIV-8's S33/S34 scenario were retired as unproducible, one green and one red
+> (counted from `playwright test --list`; not re-run as a whole suite). The run rows above are the dated
 > authoring-time records and are left as written. No whole-suite total is written down anywhere by design —
 > the e2e [`README.md`](../../../README.md) gives the command to measure one.
 >
@@ -195,27 +200,30 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 > tags had already been retired in the feature files, so the tables disagreed with the suite they described.
 > Re-measure with `npx playwright test --list --project=chromium` and edit **this block only**.
 
-The 10 deliberate reds (7 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
-`defects.md` entry each is named in. Six rows, because some entries are red in more than one scenario —
-the inline `×n` is a scenario count (absent means ×1), and those counts sum to 10. All 10 are plain
-`Scenario`s; none expands through `Examples`:
+The 5 deliberate reds (2 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
+`defects.md` entry each is named in. Three rows, because some entries are red in more than one scenario —
+the inline `×n` is a scenario count (absent means ×1), and those counts sum to 5. All 5 are plain
+`Scenario`s; none expands through `Examples`. (Was 8 until DIV-3's three went green with #324 on
+2026-09-22 — the Suite-state block above is the dated record and was NOT re-measured; re-measure with the
+`--list` command there before quoting a total.)
 
 | Red | Entry | What it tracks |
 |---|---|---|
-| check-status-unsaved `@S33 @S34` | DIV-8 | Check Status judges the SAVED locations, ignoring the open panel (#359, app-wide — one scenario carries both arms) |
-| check-status `@S28` | DIV-2 | the Check Status issue does not name the category |
-| nav-and-recompute `@S12` ×3 | DIV-3 | NAV-001 confirm is not implemented — panel Back, Add New Location, and sub-page Back |
 | update `@S02` ×2 | BUG-4 | a category cleared to fully-empty is silently discarded (data loss) |
 | accessibility ×2 | DIV-7 | the editing-row highlight should not exist (legacy had none); it also fails contrast at 3.81:1, Draft and View |
 | accessibility ×1 | BUG-1 | app-wide: a hovered table row fails contrast (3.79:1) |
 
-**Retired, GREEN, no longer reds** — kept here so a reader comparing against an older copy of this file can
-see where the two went:
+**Retired, no longer reds** — kept here so a reader comparing against an older copy of this file can
+see where they went:
+- nav-and-recompute `@S12` ×3 (DIV-3, NAV-001 confirm) — fixed by #324 on 2026-09-22; tags retired, no
+  assertion edited (the Cancel and Edit-another arms were folded in).
 
 | Ex-red | Entry | Fixed |
 |---|---|---|
 | render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) — Schedule 4 half only; **#322 stays open for Schedule 8**, still `disabled={saving}` at `schedule8/index.tsx:792` |
 | nav-and-recompute `@S01 @S02` | DIV-4 | issue #291's fix (`6e86d7a`) — the panel shows the recomputed $/m³ without a reopen |
+| check-status `@S28` | DIV-2 | issue #326's fix (2026-09-18) named the field; the scenario was then REMOVED the same day when #465 (DIV-9) removed the cost finding it labelled — Vitest covers the labelling |
+| check-status-unsaved `@S33 @S34` | DIV-8 | REMOVED 2026-09-18, not fixed: #465 (DIV-9) left Schedule 4 with no saved state Check Status can flag, so neither arm is producible. #359 stays open on sch1/sch2/sch3/sch11 |
 
 > ⚠️ **Every mutating scenario owns its own (mill, year)** — 50 of them, listed in
 > `fixtures/sch4/schedule4-test-data.ts`'s anchor table, and `preflight/sch4-anchors.setup.ts` fails the run

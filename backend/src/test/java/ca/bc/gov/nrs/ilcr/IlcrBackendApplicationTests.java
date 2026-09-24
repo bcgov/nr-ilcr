@@ -68,6 +68,10 @@ class IlcrBackendApplicationTests {
   @MockitoBean private ReportTrackTransitionRepository reportTrackTransitionRepository;
   @MockitoBean private MillUserXrefRepository millUserXrefRepository;
 
+  // The report-status transition repository (Story 17.1) — same story: a Spring Data JDBC
+  // repository, so absent with the datasource off, and the check-status controller now depends on
+  // it through the transition service.
+
   @Test
   void contextLoads() {}
 }

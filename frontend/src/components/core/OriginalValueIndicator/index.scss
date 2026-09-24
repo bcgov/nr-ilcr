@@ -28,3 +28,49 @@
     outline-offset: 1px;
   }
 }
+
+// Put the icon BESIDE an editable field instead of letting it wrap under one.
+//
+// WHY IT WRAPPED. A Carbon form item is a BLOCK-LEVEL box, so it consumes the whole line and the
+// trigger after it has nowhere to go but the next one. A read-only value is inline text, which is
+// why the same icon sat beside it there and underneath here.
+//
+// WHY THIS DOES NOT RE-FLOW THE HOST. Two earlier attempts made the host a flex container. That
+// changes its intrinsic sizing: Carbon's input contributes almost nothing to a max-content
+// calculation, so hosts without a definite width collapsed the field to a narrow stub — a worse
+// bug than the one being fixed (reverted in a338352). So the host keeps its layout mode untouched.
+// `position: relative` establishes a containing block without affecting sizing at all, and the icon
+// is lifted OUT of flow into a lane reserved by padding. The field's own box is never touched: it
+// stays block-level and full width, just 1.5rem narrower.
+//
+// THE SELECTOR GOES THROUGH CARBON'S TOOLTIP WRAPPERS, which is the other thing the first attempt
+// got wrong. `<Tooltip>` does not render the button as a sibling of the field; it renders
+//
+//   <div class="cds--form-item …">…the input…</div>
+//   <span class="cds--popover-container … cds--tooltip">
+//     <div class="cds--tooltip-trigger__wrapper"><button class="original-value-indicator">
+//     <span class="cds--popover" role="tooltip">…</span>
+//   </span>
+//
+// so the host's second child is the POPOVER CONTAINER and the button is two levels inside it.
+// Matching `.cds--form-item + .original-value-indicator` matched nothing at all.
+//
+// Read-only markup has no `.cds--form-item`, so it is untouched — which matters, because the
+// read-only panels stack label above value deliberately. `:has()` is already used in this codebase
+// (`schedule2/index.scss`, `styles/_overrides.scss`) and the build targets `esnext`.
+:has(> .cds--form-item + .cds--popover-container .original-value-indicator) {
+  position: relative;
+  // The icon's lane. 1rem glyph + 0.25rem of the button's own inline-start margin, rounded up so
+  // the icon never sits against the host's edge.
+  padding-inline-end: 1.5rem;
+
+  > .cds--popover-container {
+    position: absolute;
+    inset-inline-end: 0;
+    // Centred on the host, which for these fields is the height of the input box. Centring beats
+    // measuring from an edge: no assumption about label visibility or Carbon's internal spacing,
+    // and it cannot drift if an inline error message appears under the input.
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+  }
+}

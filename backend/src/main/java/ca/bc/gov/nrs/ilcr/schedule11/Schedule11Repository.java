@@ -152,7 +152,7 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
            REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :year, :millId, '11', :location, :biogeoId, :netArea, :enhancedInd, :comments,
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertLocation(
       @Param("id") long id,
@@ -184,7 +184,7 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
              COMMENTS = :comments,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BASIC_SILVICULTURE_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -258,7 +258,7 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BASIC_SILVICULTURE_REPORT_ID = :locationId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
@@ -284,7 +284,7 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :locationId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCost(
       @Param("id") long id,

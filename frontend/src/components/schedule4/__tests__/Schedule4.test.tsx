@@ -439,7 +439,11 @@ describe('Schedule4 page', () => {
     expect(rate('Lakeside Dry Dump')).toBe('999.99')
   })
 
-  test('Check Status renders the per-location results', async () => {
+  // The one finding the check can raise (#465, legacy parity): a null or blank location description.
+  // The backend passes the stored value through, so `name` arrives as NULL on the wire; the location
+  // has no name to head the banner with, so the report id stands in; the field is named ahead of the
+  // API's verbatim text (#326).
+  test('Check Status renders the per-location results (null-named location does not crash)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, () =>
@@ -449,11 +453,11 @@ describe('Schedule4 page', () => {
           locations: [
             {
               id: 7001,
-              name: 'Harbour Dump',
+              name: null,
               met: false,
               messages: [],
               issues: [
-                { code: 52, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+                { code: 0, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
               ],
             },
             {
@@ -477,10 +481,130 @@ describe('Schedule4 page', () => {
 
     await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
-    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    expect(await screen.findByText('Description: Value Required')).toBeInTheDocument()
+    expect(screen.getByText('Location 7001 — required')).toBeInTheDocument()
     expect(
       screen.getByText('All requirements for Empty Landing have been met.'),
     ).toBeInTheDocument()
+    // The bare, unlabelled text never appears on its own.
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  // A Volume-only category is the state #465 removed from the check: the API now answers MET for it,
+  // and the page shows the met messages with no "required" banner anywhere.
+  test('a location whose category has a Volume but no Cost is reported met (#465)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: true,
+              messages: [
+                {
+                  key: 'locationRequirementsMetMsg',
+                  text: 'All requirements for Harbour Dump have been met.',
+                },
+              ],
+              issues: [],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(
+      await screen.findByText('All requirements for Harbour Dump have been met.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('All requirements for this schedule have been met')).toBeInTheDocument()
+    expect(screen.queryByText(/— required/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Value Required/)).not.toBeInTheDocument()
+  })
+
+  // Defect #326 (DIV-2): legacy named the field on every issue ("Location : <name> - Lakeside Dry
+  // Dump (Cost $): Value Required", Schedule4MB.java:688) and the page used to render only "Value
+  // Required". The API no longer emits cost-item codes (#465), but the vocabulary is kept so a
+  // finding would be named should a Cost check ever be enabled — grid categories AND the list
+  // sub-pages (43/46/55).
+  test('a cost-item code, were one ever emitted, names its category (#326 fallback)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              issues: [
+                { code: 40, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+                { code: 46, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(
+      await screen.findByText('Lakeside Dry Dump (Cost $): Value Required'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Truck Rehaul-Dewater/Transfer (Cost $): Value Required'),
+    ).toBeInTheDocument()
+    // One banner per issue, each headed by the location.
+    expect(screen.getAllByText('Harbour Dump — required')).toHaveLength(2)
+  })
+
+  test('an issue whose code has no label falls back to the API text verbatim (AD-8)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              issues: [
+                { code: 999, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    expect(screen.getByText('Harbour Dump — required')).toBeInTheDocument()
+    expect(screen.queryByText(/Description|\(Cost \$\)/)).not.toBeInTheDocument()
   })
 
   test('editable:false renders View actions and disables Add/Copy/Delete (STA-001)', async () => {
@@ -1602,8 +1726,9 @@ describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
               name: 'Harbour Dump',
               met: false,
               messages: [],
+              // A blank description is the one finding the check raises (#465); named per #326.
               issues: [
-                { code: 52, message: { key: 'missingRequiredFieldMsg', text: VALUE_REQUIRED } },
+                { code: 0, message: { key: 'missingRequiredFieldMsg', text: VALUE_REQUIRED } },
               ],
             },
             {
@@ -1629,7 +1754,7 @@ describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
     expect(bottomCheckStatus()).toBeEnabled()
     await userEvent.click(top)
 
-    expect(await screen.findByText(VALUE_REQUIRED)).toBeInTheDocument()
+    expect(await screen.findByText(`Description: ${VALUE_REQUIRED}`)).toBeInTheDocument()
     expect(screen.getByText(LOCATION_MET)).toBeInTheDocument()
     expect(checks).toBe(1)
     expect(checkRole).toBe(ILCR_ROLES.admin)
@@ -1671,6 +1796,314 @@ describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
     expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
     expect(screen.queryAllByRole('button', { name: /check status/i })).toHaveLength(0)
     expect(screen.queryByText('Harbour Dump')).not.toBeInTheDocument()
+  })
+})
+
+// ---- NAV-001 (#324): confirm before unsaved panel / sub-page input is discarded. -------------------
+// Legacy attached `confirmNavigationMsg` to the panel's Add New / Edit / Copy / Close controls
+// (schedule4.xhtml:74,130,160,189,213) and to each sub-page's Back (schedule4TowingTotal.xhtml:173-175).
+// The rewrite fires it only when something would actually be lost, so both arms are pinned here: the
+// prompt on a dirty panel, and its ABSENCE on a clean one.
+describe('Schedule4 NAV-001 — confirm before discarding unsaved changes (#324)', () => {
+  const NAV_MSG = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+
+  // The dialog is addressed by its accessible name: a closed ComposedModal is `aria-hidden`, so the
+  // role query answers "is the prompt showing?" honestly, where a text query would find the hidden copy.
+  const unsavedDialog = () => screen.getByRole('dialog', { name: 'Unsaved changes' })
+  const noUnsavedDialog = () =>
+    expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument()
+  const continueButton = () => within(unsavedDialog()).getByRole('button', { name: /^continue$/i })
+  const cancelButton = () => within(unsavedDialog()).getByRole('button', { name: /^cancel$/i })
+
+  // The panel/sub-page action-bar Back (scoped — the always-rendered delete-confirm modal has a "Cancel").
+  const actionBack = () =>
+    screen
+      .getAllByRole('button', { name: /^back$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))[0]
+
+  const openHarbourForEdit = async () => {
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+  }
+
+  // Dirty the open panel with one keystroke in a category cell (Harbour Dump's Lakeside cost is 100000).
+  const dirtyHarbour = async () => {
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+  }
+
+  test('Back on an untouched Edit panel closes it with no prompt', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+
+    await userEvent.click(actionBack())
+
+    noUnsavedDialog()
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+  })
+
+  test('Back on a dirty Edit panel asks first; Cancel keeps the entry, Continue discards it without a write', async () => {
+    let puts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => {
+        puts += 1
+        return HttpResponse.json(doc())
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    // Cancel: the panel stays with the typed value intact.
+    await userEvent.click(cancelButton())
+    noUnsavedDialog()
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+
+    // Continue: the panel closes and the edit is dropped, never saved (the compensating guarantee).
+    await userEvent.click(actionBack())
+    await userEvent.click(continueButton())
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+    expect(puts).toBe(0)
+    // Re-opening shows the STORED value, not the abandoned one.
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
+  })
+
+  test('Add New Location over a dirty panel asks first; Continue opens the New panel', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    // Held: still the Edit panel behind the dialog.
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+
+    await userEvent.click(continueButton())
+    expect(screen.getByText('New Location')).toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('')
+  })
+
+  test('Edit of another location over a dirty panel asks first; Continue opens that location', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[1]) // Empty Landing
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour Dump')
+
+    await userEvent.click(continueButton())
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Empty Landing')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('')
+  })
+
+  test('Copy of another location over a dirty panel asks first; Cancel stays on the edit', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[1]) // Empty Landing
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(cancelButton())
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.queryByText('Copy Location')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour Dump')
+  })
+
+  test('a Copy panel counts as unsaved from the moment it opens (like Schedule 5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+    expect(screen.getByText('Copy Location')).toBeInTheDocument()
+
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(continueButton())
+    expect(screen.queryByText('Copy Location')).not.toBeInTheDocument()
+  })
+
+  test('an untouched New panel closes with no prompt; a typed one asks', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByText('New Location')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.type(screen.getByLabelText('Location Name'), 'Half typed')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Half typed')
+  })
+
+  test('a typed comment alone makes the panel dirty', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+
+    await userEvent.type(screen.getByLabelText(/additional comments/i), ' more')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+  })
+
+  test('after a successful Save the panel is clean again: Back closes it with no prompt', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({
+            locations: [
+              {
+                ...harbour,
+                revisionCount: 1,
+                categories: [
+                  { ...harbour.categories[0], cost: 1000009, perUnit: 500.0045 },
+                  harbour.categories[1],
+                ],
+              },
+              emptyLanding,
+            ],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await screen.findByText('Data saved successfully')
+    // The saved panel stays open, re-seeded from the echo — and is no longer "unsaved".
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+  })
+
+  // PR #492 review: the inputs stay live while the PUT is pending, so a keystroke landing mid-request
+  // used to be wiped by the echo re-seed and then counted as clean. Post-dispatch entry must survive
+  // the save AND still be guarded; untouched fields still take the server's echo (AD-5).
+  test('typing while a Save is in flight survives the echo and is still guarded by NAV-001', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 1000009, distance: null, perUnit: 500.0045 },
+        harbour.categories[1],
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, async () => {
+        await gate
+        return HttpResponse.json(
+          doc({
+            locations: [saved, emptyLanding],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour() // Lakeside cost 1000009 — what the PUT carries
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    // Mid-flight entry: a different category cell and the name, neither of which the PUT carried.
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry volume'), '7')
+    await userEvent.type(screen.getByLabelText('Location Name'), 'X')
+    release()
+    await screen.findByText('Data saved successfully')
+
+    // The echo landed on the field that was sent; the mid-flight entry was NOT replaced by it.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour DumpX')
+
+    // And it is still unsaved: Back asks first.
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+  })
+
+  test('the read-only View panel closes with no prompt (nothing to lose)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(screen.getByText('View Location')).toBeInTheDocument()
+
+    const [close] = screen
+      .getAllByRole('button', { name: /^close$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))
+    await userEvent.click(close)
+    noUnsavedDialog()
+    expect(screen.queryByText('View Location')).not.toBeInTheDocument()
+  })
+
+  // ---- The sub-page's own Back (fourth path). ----------------------------------------------------
+
+  // Edit Harbour Dump → "Towing Total (1)" → NAV-002 Continue → the Towing sub-page.
+  const openTowingSubPage = async () => {
+    await openHarbourForEdit()
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(continueButton())
+    await screen.findByRole('table', { name: /Towing Total/i })
+  }
+
+  test('sub-page Back with a typed add-row asks first; Cancel keeps the input, Continue returns to the list', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Half a row')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(cancelButton())
+    expect(screen.getByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toHaveValue('Half a row')
+
+    await userEvent.click(actionBack())
+    await userEvent.click(continueButton())
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+  })
+
+  test('sub-page Back with an unsaved in-place row edit asks first', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.type(screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i }), '1')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+  })
+
+  test('sub-page Back with nothing pending returns to the list with no prompt', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
   })
 })
 

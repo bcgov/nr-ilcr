@@ -265,16 +265,25 @@ const SamplePage: FC<SamplePageProps> = ({
   const errors = showErrors && !readOnly ? validateSampleForm(form) : {}
 
   // ---- Editor field helpers ----------------------------------------------------------------------
-  // A field label with an optional info tooltip carrying the legacy "Note:" entry hint (hover/focus).
+  // The info tooltip carrying a legacy "Note:" entry hint (hover/focus) beside a field's label.
+  const noteTrigger = (note: string) => (
+    <Tooltip label={note} align="top">
+      <button type="button" className="schedule-8__note-trigger" aria-label={note}>
+        <Information />
+      </button>
+    </Tooltip>
+  )
+
+  // A field heading with its optional note. Read-only and computed fields render it as their visible
+  // heading; the editable fields render it ABOVE the input instead of as `labelText`, because Carbon's
+  // TextInput rejects interactive content inside its label (`useNoInteractiveChildren`, enforced from
+  // @carbon/react 1.116 — it throws in development). The input keeps a plain, visually hidden label
+  // of its own, so its accessible name is the bare field name rather than "label + note".
   const fieldLabel = (label: string, note?: string) =>
     note ? (
       <span className="schedule-8__label-note">
         {label}
-        <Tooltip label={note} align="top">
-          <button type="button" className="schedule-8__note-trigger" aria-label={note}>
-            <Information />
-          </button>
-        </Tooltip>
+        {noteTrigger(note)}
       </span>
     ) : (
       label
@@ -305,9 +314,16 @@ const SamplePage: FC<SamplePageProps> = ({
     }
     return (
       <div className="schedule-8__field">
+        {note !== undefined && (
+          <span className="cds--label schedule-8__label-note">
+            {label}
+            {noteTrigger(note)}
+          </span>
+        )}
         <TextInput
           id={`sample-${field}`}
-          labelText={fieldLabel(label, note)}
+          labelText={label}
+          hideLabel={note !== undefined}
           size="sm"
           inputMode="numeric"
           value={form[field]}

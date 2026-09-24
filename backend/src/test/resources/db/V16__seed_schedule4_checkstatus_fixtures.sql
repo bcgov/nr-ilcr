@@ -1,7 +1,9 @@
 -- Story 4.4 (Schedule 4 Check Status) seed EXTENSION (never edit V1-V9). A dedicated ALL-PASS mill
--- (every in-scope Cost present) for the MET outcome. The mixed/ISSUES case reuses the read-only
--- fixture 514 (Harbour Dump has a null-Cost category 52 -> fails; Empty Landing has no categories ->
--- passes), which check-status never mutates. V10 is the next free migration number.
+-- (every in-scope Cost present) for the MET outcome. The read-only fixture 514 (Harbour Dump has a
+-- null-Cost category 52; Empty Landing has no categories) was the mixed/ISSUES case until issue
+-- #465 re-grounded the rule to legacy parity (only a blank description fails), so 514 is now the
+-- pin that a Volume-only category is NOT reported. Check-status never mutates either. V10 is the
+-- next free migration number.
 --
 -- Cost items 40/47 (V7) and 43 (V7) already exist.
 

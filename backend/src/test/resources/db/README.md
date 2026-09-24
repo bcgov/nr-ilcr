@@ -163,6 +163,74 @@ sense against this directory, `mvn clean` before believing it.
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
    | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
+   | Verify transition (17.1)  | **764–770**     | `R__55`; 768 is CLS, 769 has no auditor xref, 770 is the rollback arm |
+   | Check Status submit (15.3) | **780–783**    | `R__55_check_status_submit_fixtures.sql`      |
+   | Reversal transitions (18.1) | **790–799**   | `R__56`; summaries `1650–1671`, cost-report details `3201–3452`. **Report year 2021 only** — see below |
+
+   **⚠️ A static id is only free if it is also out of reach of every SEQUENCE.** `R__56`'s
+   cost-detail block was first claimed at `10500–10751`, which no fixture used and which the usual
+   grep therefore reported clear. But `V4` creates `THE.ILCR_COST_REPORT_DETAIL_SEQ` and
+   `V20260811` re-creates it `START WITH 10000`, and a full IT run draws enough `NEXTVAL`s to climb
+   into that band. The result was **38 integration-test failures** — bare `500`s on the Schedule
+   3/4/6/7A/10 cost-line write paths, none of them naming `R__56`, and **none reproducible in a
+   single-class run**, because the sequence only gets that high once the whole suite has run. Keep
+   static cost-detail ids below `9000`; the same applies to `ILCR_REPORT_COMMON_SEQ` (9500 — the
+   sequence that mints `ILCR_REPORT_SUMMARY_ID` and Schedule 11's `BASIC_SILVICULTURE_REPORT_ID`, so
+   `R__56`'s `1650–1699` band is safe by a wide margin), `ROAD_CONSTRUCTION_REPORT_SEQ` (9600) and
+   the three Schedule 8 sequences (9000). There is no sequence behind `ILCR_MILL_USER_XREF`; its key
+   is composite.
+
+   **Reversal transitions (`R__56`, UC-CHK-016/018)** — Set to Draft (`S`→`D`) and Set to Submit
+   (`V`→`S`) need ten mill/year shapes, all 2021. Four of them are mutated and six never are, and
+   the split is what removes the ordering dependence rather than hiding it:
+
+   - **Mutated, one test each.** `790` (`S`, all-met) is Set to Draft's happy path; `791` (`V`,
+     all-met) is Set to Submit's; `798` (`S`) and `795` (`V`) are the two rollback arms, all-met so
+     the forced persistence failure is reached only after every guard has passed.
+   - **Never written, so safely shared across three IT classes.** `792` is `S` with a Schedule 1
+     summary carrying no cost rows, so the validation gate fails while everything else about the
+     request is valid — and because the gate runs before legality it serves BOTH endpoints. `793`
+     (`D`, all-met) is Set to Draft's no-op and Set to Submit's "`D`→`S` is a legal pair but it is
+     SUBMIT" arm. `794` (`V`, all-met) is the illegal `V`→`D` jump. `797` (`S`, all-met) is Set to
+     Submit's no-op. `796` is `CLS` and carries no schedule data, because the mill-active guard
+     refuses it before any schedule is read. `799` is `S` with no schedule data at all, for
+     `ReportTrackTransitionRepositoryIT`'s two statement-level arms.
+
+   Three things about this block are load-bearing. **The prefix is `56`, below `70`**, so `R__70`'s
+   set-based submitter association covers these mills and `SetReportStatusAuthorizationIT`'s
+   denied arm fails for lacking the action rather than for mill scope. **Every status row seeds
+   both identity pairs non-null**, pointing at two xref rows this file creates itself (`R__70`'s
+   canonical submitter sorts *after* `R__56`, so its rows do not exist yet and V20260915's
+   composite FKs would reject the insert) — that is what lets AC 3 assert the four columns
+   unchanged *by value*, which is the only assertion distinguishing "writes no identity pair" from
+   the auditor statement. **Schedule 11 is seeded to a code that differs from the 1–10 code on
+   every row**, so a write that reached `MILL_SILVICULTUR_STATUS_CODE` fails a test instead of
+   coinciding with the right answer.
+
+   The all-met Schedule 1/2/3 data is cloned statement-for-statement from `R__55`'s mill 764 rather
+   than re-derived: that cost-item set is already proven to pass the eleven-schedule gate by 17.1's
+   own green ITs, and hand-rolling a second one is how a fixture ends up almost right.
+
+   **Verify transition (`R__55`, UC-CHK-007/012)** — the Submitted→Verified endpoint needs seven
+   mill/year shapes, all 2021, and it genuinely mutates the ones it succeeds on, so none can be
+   shared. `764` is the happy path: track `S`, all-met data, and the only mill with an **admin**
+   `ILCR_MILL_USER_XREF` row, which is what lets the auditor-recording assertion be made by value
+   rather than merely non-null. `765` is `S` with a Schedule 1 summary carrying no cost rows, so the
+   validation gate fails while everything else about the request is valid. `766` (`D`) and `767`
+   (`V`) are all-met so that a refused transition is refused for the *transition* reason and not by
+   the gate — the gate runs first, exactly as legacy's did. `768` is `CLS` and deliberately carries
+   no *schedule* data (it does carry the eleven `ILCR_REPORT_CATEGORY` rows every mill/year has),
+   because the mill-active guard refuses it before any schedule is read. `769`
+   repeats the happy path with **no** admin association, covering the legacy behaviour of writing
+   NULL into both auditor columns. `770` is the rollback arm: `S` and all-met, so the forced
+   persistence failure is reached after every guard has passed. Summaries take `1060–1077` and
+   cost details `2711–2912`.
+
+   Two facts about the band and the prefix are worth not undoing. The band moved from `757–763` to
+   `764–770` on 2026-09-18: Epic 21's `R__60` had already claimed `760–762`, and two repeatable
+   migrations inserting the same `THE.MILL` row fail the whole Flyway run. And the prefix is `55`
+   rather than anything above `70` so `R__70`'s set-based submitter association covers these mills,
+   which is what makes the submitter-refused arm fail for the right reason.
 
    **Data Extract CSV (`R__60`, UC-EXT-001)** — three mills whose two status tracks disagree in the
    three ways the "Data Verified" rule has to tell apart: `760` is `V`/`V`, `761` is `V`/`D` and

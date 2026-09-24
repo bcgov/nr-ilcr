@@ -226,17 +226,21 @@ export const schedule2Issues: Schedule2CheckStatusResponse = {
 
 export const SCH4_EMPTY_LANDING_MET_TEXT = 'All requirements for Empty Landing have been met.'
 
-/** schedule4-514-2021.json — one failing location (code 52 = Rail Haul), one met. */
+/**
+ * Hand-composed (no golden: the one finding Schedule 4 can raise since #465 — a blank location
+ * description, code 0 — cannot be stored through the app). One failing, unnamed location — `name`
+ * is NULL, as the backend passes the stored value through (`nullDescription_issues`) — and one met.
+ */
 export const schedule4Issues: Schedule4CheckStatusResponse = {
   outcome: 'ISSUES',
   messages: [],
   locations: [
     {
       id: 7001,
-      name: 'Harbour Dump',
+      name: null,
       met: false,
       messages: [],
-      issues: [{ code: 52, message: REQUIRED }],
+      issues: [{ code: 0, message: REQUIRED }],
     },
     {
       id: 7002,
@@ -593,6 +597,12 @@ type SweepOptions = {
   /** The 1–10 track's status code; `null` OMITS the property, as the wire does for a null column. */
   readonly statusCode1To10?: string | null
   readonly statusCode11?: string | null
+  /**
+   * The server's Submit offer for the 1–10 track; `null` (the default) OMITS it. Deliberately NOT
+   * derived from `statusCode1To10`: the real flag is role-aware (ReportSubmission.java:52-54), so a
+   * Draft default would enable the admin-at-Draft arm and invite the wrong fix. Set it per arm.
+   */
+  readonly canSubmit1To10?: boolean | null
   /** Replace individual verdicts; anything not named stays met. */
   readonly overrides?: readonly ScheduleCheckResult[]
 }
@@ -606,6 +616,7 @@ export const sweep = ({
   year = 2017,
   statusCode1To10 = 'D',
   statusCode11 = null,
+  canSubmit1To10 = null,
   overrides = [],
 }: SweepOptions = {}): CheckStatusSweepResponse => {
   const byCode = new Map<ScheduleCode, ScheduleCheckResult>(
@@ -624,6 +635,7 @@ export const sweep = ({
       ...(statusCode1To10 === null ? {} : { statusCode: statusCode1To10 }),
       requirementsMet: first.every((entry) => entry.requirementsMet),
       schedules: first,
+      ...(canSubmit1To10 === null ? {} : { canSubmit: canSubmit1To10 }),
     },
     schedule11: {
       ...(statusCode11 === null ? {} : { statusCode: statusCode11 }),
