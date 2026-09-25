@@ -22,16 +22,16 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The Check Status endpoints (Stories 15.1, 15.3, 17.1 and 18.1). Each authorizes by naming an
- * action (AD-7) — {@code VIEW_SCHEDULE} for the sweep, exactly as the twelve per-schedule
- * check-status endpoints do, {@code SUBMIT_REPORT} for the licensee's submit and {@code
- * SET_REPORT_STATUS} for all three of the ministry's transitions (verify and both reversals; one
- * action, not one per button — see {@code Action.SET_REPORT_STATUS}) — and delegates ALL mill/year
- * validation to {@link MillContextService} as its first line (AD-4). Mill scope normally arrives
- * with it: {@code validateMillYearActive}'s first statement is {@code validateMillAccess}. Submit
- * adds one action-specific check for a dual-role ADMIN+SUBMITTER because ADMIN's browsing scope
- * must not widen SUBMITTER's submission scope. There is no {@code isAuthenticated()}: the epic's
- * "any signed-in user" phrasing is imprecise and is not the spec (FR2 requires role AND mill
+ * The Check Status endpoints (Stories 15.1, 15.3, 17.1, 18.1 and 26.1). Each authorizes by naming
+ * an action (AD-7) — {@code VIEW_SCHEDULE} for the sweep, exactly as the twelve per-schedule
+ * check-status endpoints do, {@code SUBMIT_REPORT} for the licensee's submit on either track and
+ * {@code SET_REPORT_STATUS} for all three of the ministry's transitions (verify and both reversals;
+ * one action, not one per button — see {@code Action.SET_REPORT_STATUS}) — and delegates ALL
+ * mill/year validation to {@link MillContextService} as its first line (AD-4). Mill scope normally
+ * arrives with it: {@code validateMillYearActive}'s first statement is {@code validateMillAccess}.
+ * Submit adds one action-specific check for a dual-role ADMIN+SUBMITTER because ADMIN's browsing
+ * scope must not widen SUBMITTER's submission scope. There is no {@code isAuthenticated()}: the
+ * epic's "any signed-in user" phrasing is imprecise and is not the spec (FR2 requires role AND mill
  * scope).
  *
  * <p>This is the ONE guard the sweep owns (AC 9). None of the twelve in-process validations checks
@@ -73,16 +73,20 @@ public class CheckStatusController implements CheckStatusApi {
       // Read-only (AD-5): context guard first — 400 ERR-001 / 404 / 409 — then evaluate.
       MillYearContext context = millContextService.validateMillYearActive(millId, year);
       CheckStatusSweepResponse sweep = sweepService.sweep(context.millId(), context.year());
-      // The offer flag rides on the 1-10 track only; Schedule 11's rule arrives with Epic 26.
+      // One offer rule for both tracks, each against its own status code (legacy
+      // canUserSubmitReport(boolean):502-517 took the track as its argument).
       TrackCheckResult schedules1To10 = sweep.schedules1To10();
-      boolean offered =
-          reportSubmission.canSubmit(authentication, schedules1To10.statusCode(), context.millId());
+      TrackCheckResult schedule11 = sweep.schedule11();
       return ResponseEntity.ok(
           new CheckStatusSweepResponse(
               sweep.millId(),
               sweep.year(),
-              schedules1To10.withCanSubmit(offered),
-              sweep.schedule11()));
+              schedules1To10.withCanSubmit(
+                  reportSubmission.canSubmit(
+                      authentication, schedules1To10.statusCode(), context.millId())),
+              schedule11.withCanSubmit(
+                  reportSubmission.canSubmit(
+                      authentication, schedule11.statusCode(), context.millId()))));
     } catch (ScheduleNotFoundException notFound) {
       throw checkStatusNotFound(notFound);
     }
@@ -92,12 +96,28 @@ public class CheckStatusController implements CheckStatusApi {
   @PreAuthorize("@permissions.hasPermission(authentication, 'SUBMIT_REPORT')")
   public ResponseEntity<MessageResponse> submit(
       String millId, String year, Authentication authentication) {
+    return submitOnTrack(ScheduleTrack.SCHEDULES_1_TO_10, millId, year, authentication);
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'SUBMIT_REPORT')")
+  public ResponseEntity<MessageResponse> submitSchedule11(
+      String millId, String year, Authentication authentication) {
+    return submitOnTrack(ScheduleTrack.SCHEDULE_11, millId, year, authentication);
+  }
+
+  /**
+   * Both submits, which differ only in the track they name: the same guard in the same order, the
+   * same Submit-specific mill scope, one service method.
+   */
+  private ResponseEntity<MessageResponse> submitOnTrack(
+      ScheduleTrack track, String millId, String year, Authentication authentication) {
     try {
       MillYearContext context = millContextService.validateMillYearActive(millId, year);
       reportSubmission.validateSubmitterMillAccess(authentication, context.millId());
       String key =
           transitionService.submit(
-              context.millId(), context.year(), authentication, authentication.getName());
+              track, context.millId(), context.year(), authentication, authentication.getName());
       return ResponseEntity.ok(new MessageResponse(message(key)));
     } catch (ScheduleNotFoundException notFound) {
       throw checkStatusNotFound(notFound);
@@ -158,7 +178,8 @@ public class CheckStatusController implements CheckStatusApi {
           transitionService.reverse(
               context.millId(), context.year(), transition, authentication.getName());
       return ResponseEntity.ok(
-          new SetTrackStatusResponse(status, message(transition.successKey())));
+          new SetTrackStatusResponse(
+              status, message(transition.successKey(ScheduleTrack.SCHEDULES_1_TO_10))));
     } catch (ScheduleNotFoundException notFound) {
       throw checkStatusNotFound(notFound);
     }

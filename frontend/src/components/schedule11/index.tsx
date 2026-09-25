@@ -7,6 +7,7 @@ import type {
   SilvicultureLocation,
 } from '@/interfaces/Schedule11Response'
 import type SilvicultureLocationRequest from '@/interfaces/Schedule11Request'
+import type { LocationSaveAllRequest } from '@/interfaces/Schedule11Request'
 import type { LocationFormValues, SilvicultureErrors } from './validation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -28,7 +29,8 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Close, Edit, Save, TrashCan } from '@carbon/icons-react'
+import SaveCheckActions from '@/components/core/SaveCheckActions'
+import { Add, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -321,11 +323,125 @@ const PAGE_HEADER = (
 // renders verbatim (AC8); a network error with no detail falls back to a generic message.
 const mapLoadError = (detail: string | undefined): string => detail ?? 'Unable to load Schedule 11.'
 
-// A location row in its inline-edit state: input controls bound to the edit form, with the two
-// server-derived cells (Total Cost, $/NAR) shown read-only. Split out from the display rendering so
-// each mode reads on its own and new fields can be added without growing one 100+ line function.
-type EditRowProps = {
+// The five fields that carry an original-value indicator, and how each compares (Story 16.2). Enhanced
+// and Comments are absent on purpose — no submitted value exists for either (16.2 D5; 26.2 D3).
+type TrackedField =
+  'location' | 'biogeoclimaticCatalogueId' | 'netArea' | 'actualCost' | 'plannedCost'
+
+const TRACKED_LABELS: Record<TrackedField, string> = {
+  location: 'Location',
+  biogeoclimaticCatalogueId: 'Biogeo/Subzone/Variant',
+  netArea: 'NAR(ha)',
+  actualCost: 'Actual Cost ($)',
+  plannedCost: 'Planned Cost ($)',
+}
+
+// Client chrome for a blocked Save — the text five other pages already use for the same case.
+const SAVE_BLOCKED = 'Please correct the highlighted fields before saving.'
+// Why Check Status is greyed while changes are pending (Story 26.2 D7(a), deviation (C)): the check
+// reads what is STORED, so running it over unsaved edits would describe a report nobody saved.
+export const CHECK_NEEDS_SAVE = 'Save your changes before checking status'
+// Client chrome for a table whose every row is flagged: the report still holds them until Save, so
+// "none have been added" would be untrue (legacy's table showed PrimeFaces' generic default either way).
+const ALL_FLAGGED = 'Every location is marked for deletion. Save to remove them.'
+
+const formFromRow = (row: SilvicultureLocation): LocationFormValues => ({
+  location: row.location,
+  enhanced: row.enhancedIndicator,
+  // A row whose catalogue label is missing (dangling id — no FK in delivery) must NOT seed a phantom
+  // selection: force a real re-pick instead of resubmitting the dangling id (BR-09).
+  bec: row.becLabel === null ? null : { id: row.biogeoclimaticCatalogueId, label: row.becLabel },
+  netArea: numStr(row.netArea),
+  actualCost: numStr(row.actualCost),
+  plannedCost: numStr(row.plannedCost),
+  comments: row.comments ?? '',
+})
+
+// Whether a row's form still says what the row was served with. A row typed into and typed back is
+// not an edit: it is not sent, and it neither enables Save nor greys Check Status.
+const sameForm = (a: LocationFormValues, b: LocationFormValues): boolean =>
+  a.location === b.location &&
+  a.enhanced === b.enhanced &&
+  (a.bec?.id ?? null) === (b.bec?.id ?? null) &&
+  a.netArea === b.netArea &&
+  a.actualCost === b.actualCost &&
+  a.plannedCost === b.plannedCost &&
+  a.comments === b.comments
+
+// The work a Save would send, derived from the served document every render: the rows whose form
+// differs from what was served (review D-R1: only edited rows are sent) and the flagged ids still on
+// the document. Deriving it — rather than trusting the pending maps — means a row another session
+// deleted, or one dropped from an Add echo, can never strand a flag or an edit that every later Save
+// would carry to a 404 (review P1).
+const pendingWork = (
+  locations: readonly SilvicultureLocation[],
+  rowForms: Readonly<Record<number, LocationFormValues>>,
+  pendingDeletes: ReadonlySet<number>,
+) => {
+  const edited = locations.filter((row) => {
+    const form = rowForms[row.locationId]
+    return (
+      !pendingDeletes.has(row.locationId) && form !== undefined && !sameForm(form, formFromRow(row))
+    )
+  })
+  const flagged = locations
+    .filter((row) => pendingDeletes.has(row.locationId))
+    .map((row) => row.locationId)
+  return { edited, flagged }
+}
+
+// The value of each tracked field as the indicator compares it: the form's string for a live row,
+// the served value for a read-only one.
+const trackedValue = (form: LocationFormValues, field: TrackedField): string => {
+  switch (field) {
+    case 'biogeoclimaticCatalogueId':
+      return form.bec === null ? '' : String(form.bec.id)
+    default:
+      return form[field]
+  }
+}
+
+const Indicator: FC<{
   readonly row: SilvicultureLocation
+  readonly field: TrackedField
+  readonly form: LocationFormValues
+}> = ({ row, field, form }) => (
+  <OriginalValueIndicator
+    originals={row.originalValues}
+    field={field}
+    current={trackedValue(form, field)}
+    numeric={field === 'netArea' || field === 'actualCost' || field === 'plannedCost'}
+    label={TRACKED_LABELS[field]}
+  />
+)
+
+// A location row while the page is editable: every field a live input, as legacy's table was
+// (schedule11.xhtml:204-374 — no per-row edit mode). Edits stay on the page until Save; the two
+// server-derived cells (Total Cost, $/NAR) are display-only and refresh on the next save (AD-5).
+// Each row's hidden labels name the row they sit in ("NAR(ha) for North Ridge"): unique on the page,
+// where the Add panel carries the bare names, and a screen-reader user hears which row they are in.
+// Keyed to the SERVED name so the label does not change under the user while they retype it. The
+// unique key is biogeo + location, so two rows may share a name: those carry their BEC as well.
+const rowLabel = (label: string, name: string): string => `${label} for ${name}`
+
+const rowNames = (locations: readonly SilvicultureLocation[]): ReadonlyMap<number, string> => {
+  const counts = new Map<string, number>()
+  for (const row of locations) {
+    counts.set(row.location, (counts.get(row.location) ?? 0) + 1)
+  }
+  return new Map(
+    locations.map((row) => [
+      row.locationId,
+      (counts.get(row.location) ?? 0) > 1
+        ? `${row.location} (${row.becLabel ?? String(row.biogeoclimaticCatalogueId)})`
+        : row.location,
+    ]),
+  )
+}
+
+type LocationRowProps = {
+  readonly row: SilvicultureLocation
+  readonly name: string
   readonly form: LocationFormValues
   readonly errors: SilvicultureErrors
   readonly saving: boolean
@@ -333,24 +449,23 @@ type EditRowProps = {
     key: K,
     value: LocationFormValues[K],
   ) => void
-  readonly onSave: () => void
-  readonly onCancel: () => void
+  readonly onDelete: () => void
 }
 
-const EditRow: FC<EditRowProps> = ({
+const LocationRow: FC<LocationRowProps> = ({
   row,
+  name,
   form,
   errors,
   saving,
   onFieldChange,
-  onSave,
-  onCancel,
+  onDelete,
 }) => (
   <>
     <TableCell>
       <TextInput
         id={`edit-location-${row.locationId}`}
-        labelText="Edit Location"
+        labelText={rowLabel('Location', name)}
         hideLabel
         size="sm"
         maxLength={LOCATION_MAX_LENGTH}
@@ -360,49 +475,34 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.location)}
         invalidText={errors.location}
       />
-      <OriginalValueIndicator
-        originals={row.originalValues}
-        field="location"
-        current={form.location}
-        numeric={false}
-        label="Location"
-      />
+      <Indicator row={row} field="location" form={form} />
     </TableCell>
     <TableCell>
       <BiogeoComboBox
         id={`edit-bec-${row.locationId}`}
-        label="Edit Biogeo/Subzone/Variant"
+        label={rowLabel('Biogeo/Subzone/Variant', name)}
         hideLabel
         selected={form.bec}
         disabled={saving}
         invalidText={errors.bec}
         onSelect={(o) => onFieldChange('bec', o)}
       />
-      <OriginalValueIndicator
-        originals={row.originalValues}
-        field="biogeoclimaticCatalogueId"
-        current={form.bec === null ? '' : String(form.bec.id)}
-        numeric={false}
-        label="Biogeo/Subzone/Variant"
-      />
+      <Indicator row={row} field="biogeoclimaticCatalogueId" form={form} />
     </TableCell>
     <TableCell>
       {/* Hidden label stays "Enhanced", not the "ES" header abbreviation — the accessible name is
-          what a screen reader announces for the control, and legacy names the field "Enhanced".
+          what a screen reader announces, and legacy names the field "Enhanced".
 
-          NO INDICATOR HERE, DELIBERATELY (story deviation D5, finding F4 — asked again in review of
-          #452). `schedule11.xhtml` does draw a sixth indicator button, for this control, but it can
-          never fire: `BASIC_SILVICULTURE_REPORT_S_VW` does not select `ENHANCED_IND`, so no
-          submitted value for it can exist, and legacy's own DAO read the CURRENT value into
-          `enhancedIndicatorOriginalVal` (`Schedule11DAO.java:226`), which always compares equal.
-          Widening that view is delivery-schema DDL, outside this project's sanctioned scope.
-          Rendering one anyway would be worse than omitting it: the backend never emits an
-          `enhancedIndicator` key, so `originalValueState` would take its "added since submission"
-          branch and — because `String(false)` is non-empty — light the indicator on EVERY row of
-          every submitted report. Omitting it is what reproduces legacy's observable behaviour. */}
+          NO INDICATOR HERE, DELIBERATELY (16.2 D5; Story 26.2 D3). Legacy drew a sixth indicator for
+          this control, but its "original" was the CURRENT persisted value (Schedule11DAO.java:226),
+          so the icon labelled the last-saved value "Original Submission Value" — untrue about what
+          the Licensee submitted. The snapshot view carries no ENHANCED_IND, so no true original
+          exists to show, and widening the view is delivery-schema DDL. The backend emits no key for
+          it; an indicator bound to one would take the "added since submission" branch on every row
+          of every submitted report. */}
       <EnhancedDropdown
         id={`edit-enhanced-${row.locationId}`}
-        label="Edit Enhanced"
+        label={rowLabel('Enhanced', name)}
         hideLabel
         value={form.enhanced}
         disabled={saving}
@@ -413,7 +513,7 @@ const EditRow: FC<EditRowProps> = ({
     <TableCell className="schedule-11__num">
       <TextInput
         id={`edit-net-area-${row.locationId}`}
-        labelText="Edit NAR(ha)"
+        labelText={rowLabel('NAR(ha)', name)}
         hideLabel
         size="sm"
         inputMode="decimal"
@@ -423,18 +523,12 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.netArea)}
         invalidText={errors.netArea}
       />
-      <OriginalValueIndicator
-        originals={row.originalValues}
-        field="netArea"
-        current={form.netArea}
-        numeric={true}
-        label="NAR(ha)"
-      />
+      <Indicator row={row} field="netArea" form={form} />
     </TableCell>
     <TableCell className="schedule-11__num">
       <TextInput
         id={`edit-actual-cost-${row.locationId}`}
-        labelText="Edit Actual Cost ($)"
+        labelText={rowLabel('Actual Cost ($)', name)}
         hideLabel
         size="sm"
         inputMode="numeric"
@@ -444,18 +538,12 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.actualCost)}
         invalidText={errors.actualCost}
       />
-      <OriginalValueIndicator
-        originals={row.originalValues}
-        field="actualCost"
-        current={form.actualCost}
-        numeric={true}
-        label="Actual Cost ($)"
-      />
+      <Indicator row={row} field="actualCost" form={form} />
     </TableCell>
     <TableCell className="schedule-11__num">
       <TextInput
         id={`edit-planned-cost-${row.locationId}`}
-        labelText="Edit Planned Cost ($)"
+        labelText={rowLabel('Planned Cost ($)', name)}
         hideLabel
         size="sm"
         inputMode="numeric"
@@ -465,33 +553,16 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.plannedCost)}
         invalidText={errors.plannedCost}
       />
-      <OriginalValueIndicator
-        originals={row.originalValues}
-        field="plannedCost"
-        current={form.plannedCost}
-        numeric={true}
-        label="Planned Cost ($)"
-      />
+      <Indicator row={row} field="plannedCost" form={form} />
     </TableCell>
-    {/* Total Cost + $/NAR are server-derived (AD-5); shown read-only, they refresh on re-save. */}
     <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
     <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
     <TableCell>
-      {/* Legacy's table cell was a p:inputTextarea rows=3 (the character counter is
-          Add-panel-only, matching legacy).
-
-          NO INDICATOR HERE, DELIBERATELY (AC7 — asked again in review of #452). Schedule 11 is one
-          of the three comments fields legacy wires no indicator for: it persists
-          `commentsOriginalVal` but declares no `isCommentsOriginalVal` accessor and draws no button
-          in the view, so the licensee's original comment was never surfaced. The backend therefore
-          emits no `comments` key for a location (`Schedule11Service.locationOriginals`), and an
-          indicator bound to it would take the "added since submission" branch and flag every
-          commented row on a submitted report as a ministry addition. The comments variant this
-          story owes is delivered on the nine schedules legacy does declare it for — Sch 1, 2, 3,
-          6 (row and general), 7A, 7B, 8 and 9, plus the Schedule 10 road detail. */}
+      {/* Legacy's table cell was a p:inputTextarea rows=3 (the character counter is Add-panel-only,
+          matching legacy). No indicator: legacy declared none for Schedule 11 comments. */}
       <TextArea
         id={`edit-comments-${row.locationId}`}
-        labelText="Edit Comments"
+        labelText={rowLabel('Comments', name)}
         hideLabel
         rows={3}
         maxLength={COMMENTS_MAX_LENGTH}
@@ -501,61 +572,61 @@ const EditRow: FC<EditRowProps> = ({
       />
     </TableCell>
     <TableCell>
-      <Button kind="primary" size="sm" disabled={saving} renderIcon={Save} onClick={onSave}>
-        Save
-      </Button>
-      <Button kind="ghost" size="sm" disabled={saving} renderIcon={Close} onClick={onCancel}>
-        Cancel
+      <Button
+        kind="danger--tertiary"
+        size="sm"
+        renderIcon={TrashCan}
+        disabled={saving}
+        onClick={onDelete}
+      >
+        Delete
       </Button>
     </TableCell>
   </>
 )
 
-// A location row in its read-only display state: formatted values (server-computed, AD-5) plus the
-// per-row Edit/Delete actions, rendered only when the schedule is editable.
-type DisplayRowProps = {
-  readonly row: SilvicultureLocation
-  readonly editable: boolean
-  readonly actionsDisabled: boolean
-  readonly onEdit: () => void
-  readonly onDelete: () => void
+// A location row while the page is read-only: formatted, server-computed values (AD-5). The
+// original-value indicators render here too — legacy's were icons beside always-present, merely
+// disabled inputs, so a read-only viewer saw them as well (Story 26.2 D2, schedule11.xhtml:214-325).
+const DisplayRow: FC<{ readonly row: SilvicultureLocation }> = ({ row }) => {
+  // The served id, not formFromRow's forced re-pick: a read-only row whose catalogue label is missing
+  // still holds the id it was saved with, and comparing '' against the submission would flag a field
+  // nobody changed.
+  const form = {
+    ...formFromRow(row),
+    bec: { id: row.biogeoclimaticCatalogueId, label: row.becLabel ?? '' },
+  }
+  return (
+    <>
+      <TableCell>
+        {row.location}
+        <Indicator row={row} field="location" form={form} />
+      </TableCell>
+      <TableCell>
+        {row.becLabel ?? ''}
+        <Indicator row={row} field="biogeoclimaticCatalogueId" form={form} />
+      </TableCell>
+      <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
+      <TableCell className="schedule-11__num">
+        {area(row.netArea)}
+        <Indicator row={row} field="netArea" form={form} />
+      </TableCell>
+      <TableCell className="schedule-11__num">
+        {money(row.actualCost)}
+        <Indicator row={row} field="actualCost" form={form} />
+      </TableCell>
+      <TableCell className="schedule-11__num">
+        {money(row.plannedCost)}
+        <Indicator row={row} field="plannedCost" form={form} />
+      </TableCell>
+      <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
+      <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
+      <TableCell>{row.comments ?? ''}</TableCell>
+    </>
+  )
 }
 
-const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdit, onDelete }) => (
-  <>
-    <TableCell>{row.location}</TableCell>
-    <TableCell>{row.becLabel ?? ''}</TableCell>
-    <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
-    <TableCell className="schedule-11__num">{area(row.netArea)}</TableCell>
-    <TableCell className="schedule-11__num">{money(row.actualCost)}</TableCell>
-    <TableCell className="schedule-11__num">{money(row.plannedCost)}</TableCell>
-    <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
-    <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
-    <TableCell>{row.comments ?? ''}</TableCell>
-    {editable && (
-      <TableCell>
-        <Button
-          kind="ghost"
-          size="sm"
-          renderIcon={Edit}
-          disabled={actionsDisabled}
-          onClick={onEdit}
-        >
-          Edit
-        </Button>
-        <Button
-          kind="danger--tertiary"
-          size="sm"
-          renderIcon={TrashCan}
-          disabled={actionsDisabled}
-          onClick={onDelete}
-        >
-          Delete
-        </Button>
-      </TableCell>
-    )}
-  </>
-)
+const NO_DELETES: ReadonlySet<number> = new Set()
 
 const Schedule11: FC = () => {
   const { millId, year } = useMillYear()
@@ -580,15 +651,19 @@ const Schedule11: FC = () => {
   const [addForm, setAddForm] = useState<LocationFormValues>(emptyForm)
   const [addErrors, setAddErrors] = useState<SilvicultureErrors>({})
 
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editRevision, setEditRevision] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState<LocationFormValues>(emptyForm)
-  const [editErrors, setEditErrors] = useState<SilvicultureErrors>({})
+  // Pending work, legacy's in-memory model (Schedule11MB.save()): the forms of rows the user has
+  // edited, keyed by location id (an absent entry means "as served"), the revisionCount each was
+  // edited AGAINST, and the rows flagged with Delete. All of it survives an Add and every refused
+  // Save; only a successful Save or a context change clears it.
+  const [rowForms, setRowForms] = useState<Record<number, LocationFormValues>>({})
+  const [rowRevisions, setRowRevisions] = useState<Record<number, number>>({})
+  const [rowErrors, setRowErrors] = useState<Record<number, SilvicultureErrors>>({})
+  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<number>>(NO_DELETES)
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
-  // Presentation-only, so it deliberately survives saves: a re-sort after every add/edit would
-  // yank the row the user is working on back to document order.
+  // Presentation-only, so it deliberately survives saves: a re-sort after every save would yank the
+  // row the user is working on back to document order.
   const [sortColumn, setSortColumn] = useState<SortKey | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>('NONE')
 
@@ -600,8 +675,15 @@ const Schedule11: FC = () => {
     setSortColumn(next === 'NONE' ? null : key)
   }
 
-  // Clear all transient mutation + add/edit state whenever a fresh document loads (mill/year change),
-  // so a context change can't strand an open editor or a stale banner (Story 2.5 carryover patch).
+  const clearPending = () => {
+    setRowForms({})
+    setRowRevisions({})
+    setRowErrors({})
+    setPendingDeletes(NO_DELETES)
+  }
+
+  // Clear all transient mutation + pending state whenever a fresh document loads (mill/year change),
+  // so a context change can't carry one report's unsaved work onto another.
   const resetTransient = useCallback(() => {
     setSaving(false)
     setMessage(null)
@@ -609,10 +691,10 @@ const Schedule11: FC = () => {
     setCheckResult(null)
     setAddForm(emptyForm())
     setAddErrors({})
-    setEditingId(null)
-    setEditRevision(null)
-    setEditForm(emptyForm())
-    setEditErrors({})
+    setRowForms({})
+    setRowRevisions({})
+    setRowErrors({})
+    setPendingDeletes(NO_DELETES)
     setConfirmDeleteId(null)
   }, [])
 
@@ -652,7 +734,7 @@ const Schedule11: FC = () => {
     enhancedIndicator: form.enhanced as boolean,
     biogeoclimaticCatalogueId: (form.bec as BiogeoclimaticOption).id,
     // Parse with the SAME legacy DecimalFormat-faithful parser as validation.ts, not toNum/Number:
-    // a grouped value like "1,000" that validateLocation now accepts must serialize to 1000, not the
+    // a grouped value like "1,000" that validateLocation accepts must serialize to 1000, not the
     // null Number("1,000") would yield (which would trip the backend's @NotNull netArea as a 400).
     netArea: parseDecimalInput(form.netArea) as number,
     actualCost: roundCost(parseDecimalInput(form.actualCost)),
@@ -663,8 +745,23 @@ const Schedule11: FC = () => {
 
   const setAddField = <K extends keyof LocationFormValues>(key: K, value: LocationFormValues[K]) =>
     setAddForm((prev) => ({ ...prev, [key]: value }))
-  const setEditField = <K extends keyof LocationFormValues>(key: K, value: LocationFormValues[K]) =>
-    setEditForm((prev) => ({ ...prev, [key]: value }))
+
+  // The first edit of a row seeds its form from the row AND records the revision it was edited
+  // against, so a later Add echo (which re-serves every row) cannot silently hand the save a newer
+  // token than the one the user's edit was based on.
+  const setRowField =
+    (row: SilvicultureLocation) =>
+    <K extends keyof LocationFormValues>(key: K, value: LocationFormValues[K]) => {
+      setRowForms((prev) => ({
+        ...prev,
+        [row.locationId]: { ...(prev[row.locationId] ?? formFromRow(row)), [key]: value },
+      }))
+      setRowRevisions((prev) =>
+        row.locationId in prev ? prev : { ...prev, [row.locationId]: row.revisionCount },
+      )
+      // A check verdict names fields by their value at the time; once the user edits, it is stale.
+      setCheckResult(null)
+    }
 
   const handleAdd = () => {
     if (!data || saving) {
@@ -686,8 +783,9 @@ const Schedule11: FC = () => {
         if (!contextStillCurrent()) {
           return
         }
+        // Add persists only the new row (legacy addLocation() -> save(true)); the pending edits and
+        // deletes stay pending over the refreshed document, keyed by the ids they already carry.
         applyDocument(response.data)
-        // Inputs cleared only on success (add-is-save).
         setAddForm(emptyForm())
       })
       .catch((error: unknown) => {
@@ -706,94 +804,73 @@ const Schedule11: FC = () => {
       })
   }
 
-  const startEdit = (row: SilvicultureLocation) => {
-    clearBanners()
-    setEditingId(row.locationId)
-    setEditRevision(row.revisionCount)
-    setEditForm({
-      location: row.location,
-      enhanced: row.enhancedIndicator,
-      // A row whose catalogue label is missing (dangling id — no FK in delivery) must NOT seed a
-      // phantom selection: force a real re-pick instead of resubmitting the dangling id (BR-09).
-      bec:
-        row.becLabel === null ? null : { id: row.biogeoclimaticCatalogueId, label: row.becLabel },
-      netArea: numStr(row.netArea),
-      actualCost: numStr(row.actualCost),
-      plannedCost: numStr(row.plannedCost),
-      comments: row.comments ?? '',
-    })
-    setEditErrors({})
-  }
-
-  const cancelEdit = () => {
-    setEditingId(null)
-    setEditRevision(null)
-    setEditForm(emptyForm())
-    setEditErrors({})
-  }
-
-  const handleSaveEdit = () => {
-    // revisionCount is read from the loaded row at startEdit — never hardcoded or coerced; an
-    // unseeded token cannot reach the PUT (a coerced 0 could silently bypass the stale-edit check).
-    if (editingId === null || editRevision === null || saving) {
-      return
-    }
-    clearBanners()
-    const errors = validateLocation(editForm)
-    if (Object.keys(errors).length > 0) {
-      setEditErrors(errors)
-      return
-    }
-    setEditErrors({})
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .put<Schedule11Response>(
-        `${SCHEDULE11_PATH}/locations/${editingId}${query}`,
-        buildBody(editForm, editRevision),
-      )
-      .then((response) => {
-        if (!contextStillCurrent()) {
-          return
-        }
-        applyDocument(response.data)
-        cancelEdit()
-      })
-      .catch((error: unknown) => {
-        if (!contextStillCurrent()) {
-          return
-        }
-        setActionError(extractDetail(error) || 'Schedule could not be saved.')
-      })
-      .finally(() => {
-        if (contextStillCurrent()) {
-          setSaving(false)
-        }
-      })
-  }
-
-  const handleDelete = () => {
+  // Delete FLAGS the row (legacy Schedule11MB.deleteLocation, :132-138) and takes it off the table;
+  // nothing is written until Save. No message: legacy's "Data deleted successfully" was untrue at this
+  // moment (Story 26.2 D6(b), deviation (B)).
+  const flagDelete = () => {
     if (confirmDeleteId === null || saving) {
       return
     }
     const id = confirmDeleteId
     setConfirmDeleteId(null)
-    setSaving(true)
     clearBanners()
-    // Modern immediate-DELETE (shipped 25.2 contract), no revision token; the recomputed document is
-    // echoed with the delete success message.
+    setPendingDeletes((prev) => new Set(prev).add(id))
+  }
+
+  const handleSave = () => {
+    if (!data || saving) {
+      return
+    }
+    clearBanners()
+    const { edited, flagged } = pendingWork(data.locations, rowForms, pendingDeletes)
+    // Validate every edited row before anything is sent; nothing is sent while one row fails (the
+    // 7A/7B precedent). Untouched rows are neither sent nor validated (review D-R1, deviation (E)).
+    const errorsByRow: Record<number, SilvicultureErrors> = {}
+    let firstFailing: number | null = null
+    // In the order the user SEES, so the scroll lands on the topmost failing row under any sort.
+    for (const row of sortLocations(edited, sortColumn, sortDirection)) {
+      const errors = validateLocation(rowForms[row.locationId] ?? formFromRow(row))
+      if (Object.keys(errors).length > 0) {
+        errorsByRow[row.locationId] = errors
+        firstFailing ??= row.locationId
+      }
+    }
+    setRowErrors(errorsByRow)
+    if (firstFailing !== null) {
+      setActionError(SAVE_BLOCKED)
+      document.getElementById(`schedule-11-row-${String(firstFailing)}`)?.scrollIntoView?.({
+        block: 'center',
+      })
+      return
+    }
+    const body: LocationSaveAllRequest = {
+      locations: edited.map((row) => ({
+        basicSilvicultureReportId: row.locationId,
+        location: buildBody(
+          rowForms[row.locationId] ?? formFromRow(row),
+          rowRevisions[row.locationId] ?? row.revisionCount,
+        ),
+      })),
+      deletedIds: flagged,
+    }
+    setSaving(true)
     apiService
       .getAxiosInstance()
-      .delete<Schedule11Response>(`${SCHEDULE11_PATH}/locations/${id}${query}`)
+      .put<Schedule11Response>(`${SCHEDULE11_PATH}/locations${query}`, body)
       .then((response) => {
-        if (contextStillCurrent()) {
-          applyDocument(response.data)
+        if (!contextStillCurrent()) {
+          return
         }
+        applyDocument(response.data)
+        clearPending()
       })
       .catch((error: unknown) => {
-        if (contextStillCurrent()) {
-          setActionError(extractDetail(error) || 'Unable to delete location.')
+        if (!contextStillCurrent()) {
+          return
         }
+        // The pending work is KEPT: a refused save (a stale row, a clash) must never cost the user
+        // the corrections they made — they fix the cause and save again.
+        setActionError(extractDetail(error) || 'Schedule could not be saved.')
       })
       .finally(() => {
         if (contextStillCurrent()) {
@@ -839,33 +916,29 @@ const Schedule11: FC = () => {
 
   const editable = data.editable
   const columnCount = editable ? 10 : 9
+  const work = pendingWork(data.locations, rowForms, pendingDeletes)
+  const pending = work.edited.length > 0 || work.flagged.length > 0
+  const names = rowNames(data.locations)
 
-  const rowCells = (row: SilvicultureLocation) =>
-    editable && editingId === row.locationId ? (
-      <EditRow
-        row={row}
-        form={editForm}
-        errors={editErrors}
-        saving={saving}
-        onFieldChange={setEditField}
-        onSave={handleSaveEdit}
-        onCancel={cancelEdit}
-      />
-    ) : (
-      <DisplayRow
-        row={row}
-        editable={editable}
-        actionsDisabled={saving || editingId !== null}
-        onEdit={() => startEdit(row)}
-        onDelete={() => setConfirmDeleteId(row.locationId)}
-      />
-    )
-
-  // Only the data rows are sorted; the Totals row is rendered after this list, so it stays
-  // pinned to the bottom exactly as legacy's footer column group did (xhtml:377-412).
-  const sortedLocations = sortLocations(data.locations, sortColumn, sortDirection)
+  // Only the data rows are sorted; the Totals row is rendered after this list, so it stays pinned
+  // to the bottom exactly as legacy's footer column group did (xhtml:377-412). A row flagged for
+  // deletion leaves the table at once, as legacy's did; the server-computed Totals refresh on Save.
+  const sortedLocations = sortLocations(data.locations, sortColumn, sortDirection).filter(
+    (row) => !pendingDeletes.has(row.locationId),
+  )
 
   const totals = data.totals
+
+  const actions = (className: string) => (
+    <SaveCheckActions
+      className={className}
+      saveDisabled={!editable || saving || !pending}
+      checkDisabled={!editable || saving || pending}
+      checkDisabledReason={editable && pending ? CHECK_NEEDS_SAVE : undefined}
+      onSave={handleSave}
+      onCheckStatus={handleCheckStatus}
+    />
+  )
 
   return (
     <div className="app-page">
@@ -919,17 +992,6 @@ const Schedule11: FC = () => {
             ))}
           </Column>
         )}
-
-        <Column sm={4} md={8} lg={16} className="schedule-11__actions">
-          <Button
-            kind="tertiary"
-            renderIcon={CheckmarkOutline}
-            disabled={!editable || saving}
-            onClick={handleCheckStatus}
-          >
-            Check Status
-          </Button>
-        </Column>
 
         {editable && (
           <Column sm={4} md={8} lg={16} className="schedule-11__section">
@@ -1010,17 +1072,16 @@ const Schedule11: FC = () => {
                   onChange={(e) => setAddField('comments', e.target.value)}
                 />
               </div>
-              <Button
-                kind="primary"
-                renderIcon={Add}
-                disabled={saving || editingId !== null}
-                onClick={handleAdd}
-              >
+              <Button kind="primary" renderIcon={Add} disabled={saving} onClick={handleAdd}>
                 Add
               </Button>
             </div>
           </Column>
         )}
+
+        {/* Save + Check Status above AND below the table, as legacy's two rows were
+            (schedule11.xhtml:185-194, :420-429). */}
+        {actions('schedule-11__actions schedule-11__actions--top')}
 
         <Column sm={4} md={8} lg={16} className="schedule-11__section">
           {/* Titled with the same h3 + class as "Add New Location" rather than TableContainer's
@@ -1034,8 +1095,8 @@ const Schedule11: FC = () => {
               <TableHead>
                 <TableRow>
                   {/* Order, header text and sortability all come from COLUMNS (legacy-verbatim).
-                      The table says "ES" while the Add panel below says "Enhanced" — that
-                      asymmetry is legacy's too (xhtml:71 labels the form field "Enhanced"). */}
+                      The table says "ES" while the Add panel says "Enhanced" — that asymmetry is
+                      legacy's too (xhtml:71 labels the form field "Enhanced"). */}
                   {COLUMNS.map(({ label, sortKey, numeric }) => {
                     const isSortHeader = sortKey !== null && sortKey === sortColumn
                     return (
@@ -1057,15 +1118,31 @@ const Schedule11: FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.locations.length === 0 ? (
+                {sortedLocations.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={columnCount}>
-                      No silviculture locations have been added.
+                      {data.locations.length === 0
+                        ? 'No silviculture locations have been added.'
+                        : ALL_FLAGGED}
                     </TableCell>
                   </TableRow>
                 ) : (
                   sortedLocations.map((row) => (
-                    <TableRow key={row.locationId}>{rowCells(row)}</TableRow>
+                    <TableRow key={row.locationId} id={`schedule-11-row-${String(row.locationId)}`}>
+                      {editable ? (
+                        <LocationRow
+                          row={row}
+                          name={names.get(row.locationId) ?? row.location}
+                          form={rowForms[row.locationId] ?? formFromRow(row)}
+                          errors={rowErrors[row.locationId] ?? {}}
+                          saving={saving}
+                          onFieldChange={setRowField(row)}
+                          onDelete={() => setConfirmDeleteId(row.locationId)}
+                        />
+                      ) : (
+                        <DisplayRow row={row} />
+                      )}
+                    </TableRow>
                   ))
                 )}
                 {/* Footer Totals (BR-08/CNT-001) — server-computed, null renders blank not 0. */}
@@ -1085,6 +1162,8 @@ const Schedule11: FC = () => {
             </Table>
           </TableContainer>
         </Column>
+
+        {actions('schedule-11__actions schedule-11__actions--bottom')}
       </Grid>
 
       {editable && (
@@ -1095,7 +1174,7 @@ const Schedule11: FC = () => {
           primaryButtonText="Delete"
           secondaryButtonText="Cancel"
           onRequestClose={() => setConfirmDeleteId(null)}
-          onRequestSubmit={handleDelete}
+          onRequestSubmit={flagDelete}
         >
           <p>{CONFIRM_DELETE}</p>
         </Modal>

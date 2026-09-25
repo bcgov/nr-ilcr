@@ -5,7 +5,6 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -25,9 +24,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Story 25.2 acceptance — {@code POST/PUT/DELETE /api/v1/schedule11/locations} (AC1–AC8/AC11,
- * slices S01/S02/S03/S07/S09/S14/S16/S17/S18/S19; AD-5, AD-9, AD-10, AD-12). The mock {@code
- * ILCR_SUBMITTER} holds both VIEW and EDIT; authz is proven in {@link
+ * Story 25.2 acceptance — {@code POST} and the page-level {@code PUT /api/v1/schedule11/locations}
+ * (AC1–AC8/AC11, slices S01/S02/S03/S07/S09/S14/S16/S17/S18/S19; AD-5, AD-9, AD-10, AD-12). Story
+ * 26.2 retired the per-row {@code PUT /locations/{id}} and {@code DELETE /locations/{id}} for the
+ * one bulk save (legacy {@code Schedule11MB.save()}); the edit and delete arms below were MIGRATED
+ * onto it with their assertions unchanged, except that a delete now answers the save message. The
+ * mock {@code ILCR_SUBMITTER} holds both VIEW and EDIT; authz is proven in {@link
  * Schedule11WriteAuthorizationIT}. Security-off is pinned EXPLICITLY and every mutation carries
  * {@code .with(csrf())} — no-ops today (CSRF is disabled in {@code SecurityConfiguration}), but
  * they keep this suite green when main's fail-closed security default / {@code csrf.spa()} merges
@@ -39,7 +41,7 @@ import org.springframework.test.context.TestPropertySource;
  * filters) rather than array index or count.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=false")
-@DisplayName("POST/PUT/DELETE /api/v1/schedule11/locations — Schedule 11 writes (Story 25.2)")
+@DisplayName("POST / PUT /api/v1/schedule11/locations — Schedule 11 writes (Stories 25.2, 26.2)")
 class Schedule11WriteIT extends AbstractOracleIT {
 
   private static final String LOCATIONS = "/api/v1/schedule11/locations";
@@ -111,19 +113,33 @@ class Schedule11WriteIT extends AbstractOracleIT {
 
   // ---- AC2 edit (S03) — order-independent: read current revision, then PUT with it ------------
 
+  /** A page-level save body: the given update items and deleted ids (JSON array text). */
+  private static String saveBody(String items, String deletedIds) {
+    return "{\"locations\":[" + items + "],\"deletedIds\":[" + deletedIds + "]}";
+  }
+
+  /** One update item for {@link #saveBody}. */
+  private static String item(long id, String location) {
+    return "{\"basicSilvicultureReportId\":" + id + ",\"location\":" + location + "}";
+  }
+
   @Test
-  @DisplayName("S03: PUT edits an existing location and bumps its revisionCount")
+  @DisplayName("S03: the page-level save edits an existing location and bumps its revisionCount")
   void editLocation_persistsAndBumpsRevision() throws Exception {
     int currentRevision = currentRevision(614, 2021, 9201);
     String body =
-        """
-            {"location":"Existing Ridge","enhancedIndicator":true,"biogeoclimaticCatalogueId":8801,
-             "netArea":110.0,"actualCost":5500,"plannedCost":4000,"revisionCount":%d}
-            """
-            .formatted(currentRevision);
+        saveBody(
+            item(
+                9201,
+                """
+                {"location":"Existing Ridge","enhancedIndicator":true,"biogeoclimaticCatalogueId":8801,
+                 "netArea":110.0,"actualCost":5500,"plannedCost":4000,"revisionCount":%d}
+                """
+                    .formatted(currentRevision)),
+            "");
     mockMvc
         .perform(
-            put(LOCATIONS + "/9201")
+            put(LOCATIONS)
                 .with(csrf())
                 .param("millId", "614")
                 .param("year", "2021")
@@ -140,7 +156,8 @@ class Schedule11WriteIT extends AbstractOracleIT {
   // ---- AC3 delete (S07) -----------------------------------------------------------------------
 
   @Test
-  @DisplayName("S07: DELETE removes the location and its WHOLE cost family -> deleted message")
+  @DisplayName(
+      "S07: a flagged delete, saved, removes the location and its WHOLE cost family -> saved message")
   void deleteLocation_removesRowAndAllCostChildren() throws Exception {
     // 9202 carries an item-24 row AND an out-of-scope item-19 row (V21) — legacy whole-row
     // removal: a 23/24-only cascade would orphan the item-19 row on a dangling location id.
@@ -151,20 +168,32 @@ class Schedule11WriteIT extends AbstractOracleIT {
 
     mockMvc
         .perform(
-            delete(LOCATIONS + "/9202").with(csrf()).param("millId", "614").param("year", "2021"))
+            put(LOCATIONS)
+                .with(csrf())
+                .param("millId", "614")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(saveBody("", "9202")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")))
+        // Story 26.2 D6(b): the delete persists on Save, which answers the save message — legacy's
+        // "Data deleted successfully" was shown on the flag, before anything was written.
+        .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
         .andExpect(jsonPath("$.locations[?(@.locationId==9202)]", hasSize(0)));
 
     assertEquals(0, jdbc.queryForObject(costCount, Integer.class));
   }
 
   @Test
-  @DisplayName("AC3: DELETE an unknown id -> 404")
+  @DisplayName("AC3: a save deleting an unknown id -> 404")
   void deleteUnknownLocation_returns404() throws Exception {
     mockMvc
         .perform(
-            delete(LOCATIONS + "/999999").with(csrf()).param("millId", "614").param("year", "2021"))
+            put(LOCATIONS)
+                .with(csrf())
+                .param("millId", "614")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(saveBody("", "999999")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail", is("Location not found.")));
   }
@@ -338,16 +367,20 @@ class Schedule11WriteIT extends AbstractOracleIT {
   // ---- AC7 optimistic concurrency -------------------------------------------------------------
 
   @Test
-  @DisplayName("AC7: PUT with a stale revisionCount -> 409; PUT omitting it -> clean 400")
+  @DisplayName("AC7: a save with a stale revisionCount -> 409; one omitting it -> clean 400")
   void staleAndMissingRevision() throws Exception {
     String stale =
-        """
-            {"location":"Existing Ridge","enhancedIndicator":false,"biogeoclimaticCatalogueId":8801,
-             "netArea":100.0,"revisionCount":9999}
-            """;
+        saveBody(
+            item(
+                9201,
+                """
+                {"location":"Existing Ridge","enhancedIndicator":false,"biogeoclimaticCatalogueId":8801,
+                 "netArea":100.0,"revisionCount":9999}
+                """),
+            "");
     mockMvc
         .perform(
-            put(LOCATIONS + "/9201")
+            put(LOCATIONS)
                 .with(csrf())
                 .param("millId", "614")
                 .param("year", "2021")
@@ -360,12 +393,16 @@ class Schedule11WriteIT extends AbstractOracleIT {
                 is("This schedule was changed by another user. Please reload and try again.")));
 
     String noToken =
-        """
-            {"location":"Existing Ridge","enhancedIndicator":false,"biogeoclimaticCatalogueId":8801,"netArea":100.0}
-            """;
+        saveBody(
+            item(
+                9201,
+                """
+                {"location":"Existing Ridge","enhancedIndicator":false,"biogeoclimaticCatalogueId":8801,"netArea":100.0}
+                """),
+            "");
     mockMvc
         .perform(
-            put(LOCATIONS + "/9201")
+            put(LOCATIONS)
                 .with(csrf())
                 .param("millId", "614")
                 .param("year", "2021")

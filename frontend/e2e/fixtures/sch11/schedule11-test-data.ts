@@ -267,8 +267,8 @@ export const scheduleUrl = (millId: number, year: number): string =>
 export const locationsUrl = (millId: number, year: number): string =>
   `${SCHEDULE11_API}/locations?millId=${millId}&year=${year}`;
 
-export const locationUrl = (id: number, millId: number, year: number): string =>
-  `${SCHEDULE11_API}/locations/${id}?millId=${millId}&year=${year}`;
+// No per-location URL: edits and deletes go through the one page-level save on `locationsUrl`
+// (PUT, `LocationSaveAllRequest`) — the per-row PUT and DELETE are retired (Story 26.2).
 
 // No `checkStatusUrl` builder: Check Status is only ever exercised through the button and asserted on the
 // rendered result, so nothing needs the endpoint's URL (see the note in steps/sch11/schedule11Api.ts).
@@ -295,9 +295,13 @@ export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
 // ---------------------------------------------------------------------------------------------------
 
 export const MSG = {
-  /** SUC-001 `dataSavedSuccesfullyInfoMsg` — echoed by the add POST and the inline-edit PUT. */
+  /** SUC-001 `dataSavedSuccesfullyInfoMsg` — echoed by the add POST and the page-level Save PUT. */
   saved: 'Data saved successfully',
-  /** SUC-002 `dataDeletedSuccesfullyInfoMsg` — echoed by the location DELETE. */
+  /**
+   * SUC-002 `dataDeletedSuccesfullyInfoMsg` — NO LONGER RENDERED by this page (Story 26.2 D6(b)): Delete
+   * only flags a row until Save, and legacy's "deleted" at the flag was untrue. Kept so the scenarios can
+   * assert its ABSENCE.
+   */
   deleted: 'Data deleted successfully',
   /** SUC-004 `checkStatusMessage` — present on EVERY check-status invocation, pass or fail. */
   statusChecked: 'Status has been checked',
@@ -376,6 +380,15 @@ export const CONFIRM_DELETE = {
 
 /** The empty-table placeholder rendered when a Schedule 11 has no locations. */
 export const EMPTY_TABLE_TEXT = 'No silviculture locations have been added.';
+
+/** The placeholder while every served row is flagged for deletion but not yet saved (Story 26.2). */
+export const ALL_FLAGGED_TEXT = 'Every location is marked for deletion. Save to remove them.';
+
+/** Client chrome when Save is blocked by a row that fails validation (Story 26.2 AC 3). */
+export const SAVE_BLOCKED = 'Please correct the highlighted fields before saving.';
+
+/** The screen-reader reason both Check Status buttons carry while a change is unsaved (26.2 D7(a)). */
+export const CHECK_NEEDS_SAVE = 'Save your changes before checking status';
 
 /**
  * Per-scenario row markers. Each mutating scenario tags the rows it creates with its own marker so

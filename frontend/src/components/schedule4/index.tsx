@@ -831,7 +831,7 @@ const Schedule4: FC = () => {
   // ---- Existing Locations table. -----------------------------------------------------------------
   const locationsTable = (
     <TableContainer title="Existing Locations">
-      <Table aria-label="Existing Locations">
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Location Name</TableHeader>

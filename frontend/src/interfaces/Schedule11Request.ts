@@ -16,3 +16,14 @@ export default interface SilvicultureLocationRequest {
   // Required on UPDATE only (read from the loaded document, never hardcoded/coerced).
   readonly revisionCount?: number
 }
+
+// The page-level Save (legacy Schedule11MB.save(), Story 26.2): every location still on the page,
+// each with its own revisionCount, plus the ids the user flagged with Delete since the last save. One
+// transaction on the server; any refusal rolls the whole save back.
+export interface LocationSaveAllRequest {
+  readonly locations: readonly {
+    readonly basicSilvicultureReportId: number
+    readonly location: SilvicultureLocationRequest
+  }[]
+  readonly deletedIds: readonly number[]
+}

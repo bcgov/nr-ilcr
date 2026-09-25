@@ -131,6 +131,30 @@ class OriginalValuesTest {
     }
 
     @Test
+    @DisplayName(
+        "a field compared by one value may SHOW another — Schedule 11's BEC id vs its label")
+    void shownValue_isWhatTheTooltipPrints_comparedValueIsUnchanged() {
+      Map<String, OriginalValue> map =
+          originalValues.forTrack("S").put("bec", 8802L, "CWHvm", OriginalValueFormat.TEXT).build();
+
+      assertThat(map.get("bec"))
+          .isEqualTo(new OriginalValue("8802", "Original Submission Value: CWHvm"));
+    }
+
+    @Test
+    @DisplayName(
+        "with a separate shown value, a null submitted value is still legacy's empty entry")
+    void shownValue_nullSubmitted_isTheEmptyEntry() {
+      Map<String, OriginalValue> map =
+          originalValues
+              .forTrack("S")
+              .put("bec", null, "ignored", OriginalValueFormat.TEXT)
+              .build();
+
+      assertThat(map.get("bec")).isEqualTo(new OriginalValue("", "Original Submission Value: "));
+    }
+
+    @Test
     @DisplayName("the compared value is ungrouped, and a BigDecimal's trailing zeros are stripped")
     void value_isCanonical() {
       // Legacy compared rounded BigDecimals (CoreUtil.isBigDecimalOriginalVal), so 600.0 and 600

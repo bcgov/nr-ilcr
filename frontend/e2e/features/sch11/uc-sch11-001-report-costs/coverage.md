@@ -16,23 +16,31 @@ mill × reporting year (118 rows carrying a report-status row), then classifying
 one, and `preflight/sch11-anchors.setup.ts` asserts that distinctness plus every pinned anchor and BEC
 option before the suite runs.
 
-Scope: S01 add (`happy-path.feature`); S02 multiple locations (`multiple-locations.feature`); S03 inline
-edit (`inline-edit.feature`); S04–S06 Check Status (`check-status.feature`); S07–S08 delete + cancel
+> **Re-grounded 2026-09-24 by Story 26.2** (Scho's rulings D1(b)/D4(a)/D5(a)/D7(a)): the page is legacy's
+> model again — every row a live input, one page-level Save above AND below the table sending every edit
+> and flagged delete in one atomic `PUT /locations`, Delete a flag until Save, Check Status disabled while a
+> change is unsaved. DIV-1, DIV-3 and (for Schedule 11) DIV-5 are CLOSED; the S03, S07, S20, S21/S22,
+> concurrency and a11y scenarios were rewritten onto the new page. Where a note below says otherwise it is
+> the pre-26.2 record, kept for its history.
+
+Scope: S01 add (`happy-path.feature`); S02 multiple locations (`multiple-locations.feature`); S03 row
+edit + page-level Save (`inline-edit.feature`); S04–S06 Check Status (`check-status.feature`); S07–S08 delete + cancel
 (`delete.feature`); S09 add-is-save persistence (`persistence.feature`); S10 track independence
 (`track-independence.feature`); S11–S13 + S20 guard/read-only renders (`render-states.feature`);
 S14–S19 entry rejection (`validation.feature`); the correct-and-retry recovery arm
 (`correction.feature`); per-row optimistic locking (`concurrency.feature`, closing GAP-3); and WCAG 2.1 AA (NFR1) across **six** structurally distinct renders.
-**Five are clean** — editable-with-a-row, the open inline row editor, read-only and a guard state
+**Five are clean** — editable-with-a-row, a change pending (Save live, Check Status greyed with its
+reason), read-only and a guard state
 (`accessibility.feature`), plus the Check-Status result (`check-status.feature`). The **sixth**, the
 **validation-error** state, carries a genuine pre-existing violation and is therefore a deliberate RED
 (`accessibility.feature` `@discovered-bug`) rather than a clean pass.
 
 **All 22 slices are `covered`.** The last two to land were **S21/S22**, the Check-Status-on-unsaved-edits
 arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by two deliberate
-`@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — see defects.md
-**DIV-5**, a pointer; the analysis lives once, in `sch3/defects.md` DIV-6. **Read DIV-5's re-grounding note
-before touching them:** Schedule 11 has no page-level Save, so the unsaved state is a row in the INLINE
-EDITOR, not the Add panel the upstream slices name.
+`@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359). **Since
+2026-09-24 both are GREEN**: Story 26.2's ruling D7(a) disables Check Status while a change is unsaved, so
+the divergence is unreachable here — see defects.md **DIV-5** (CLOSED for Schedule 11; the analysis lives
+once, in `sch3/defects.md` DIV-6, and #359 stays open for the other schedules).
 
 28 scenarios / **31 tests** after
 Scenario-Outline expansion: 28 green + **3 deliberate REDs** — S21/S22 above, plus the pre-existing
@@ -48,7 +56,7 @@ Schedule 11 was rebuilt, not ported, so some structural facts of the legacy `.fe
 counterpart** in the React app. Each is asserted as the app actually behaves and logged as a Divergence
 rather than silently dropped:
 
-1. **There is no page-level Save button.** Legacy `btnSaveTop` (`schedule11.xhtml:185`) / `btnSave` (`:420`)
+1. ~~**There is no page-level Save button.**~~ **CLOSED 2026-09-24 — restored by Story 26.2.** Legacy `btnSaveTop` (`schedule11.xhtml:185`) / `btnSave` (`:420`)
    are gone, so every "…then click Save" tail step has no control to click — each action saves itself
    instead (DIV-1). **Add is NOT part of this** — legacy `addLocation()` itself called `save(true)`, so
    legacy was add-is-save too (corrected 2026-08-10 against the legacy source). Delete is not part of it
@@ -56,7 +64,8 @@ rather than silently dropped:
 2. **Read-only OMITS rather than disables.** Legacy disabled the six Add fields and every row control
    (20 `disableReportEdits()` bindings); the app does not render the Add panel or the Actions column at
    all when `editable` is false (DIV-2).
-3. **One Check Status button, not two** (legacy had both `:191` and `:426` — DIV-3).
+3. ~~**One Check Status button, not two**~~ (legacy had both `:191` and `:426` — DIV-3). **CLOSED
+   2026-09-24 — both restored by Story 26.2**; `render-states` `@S20` asserts both pairs disabled.
 4. **The per-field "original value" indicators are gone.** All six legacy row fields carried an
    `OV`/`OB`/`TT` indicator triple showing the previously-saved value once the report left Draft; the new
    app has no counterpart, and the API exposes no prior value to render one from (DIV-4). Found on
@@ -138,7 +147,7 @@ pre-exists and must be restored). The `schedule11Cleanup` registry fails loud on
 |---|---|---|---|---|---|
 | S01 Add and save a location (happy path) | S01.feature; slices.md | `Schedule11Api.addLocation` (POST `/locations`); `Schedule11.handleAdd` (index.tsx:596) | `happy-path.feature` `@S01 @p0` | covered | Legacy's trailing Save click has no analogue — DIV-1 |
 | S02 Report additional locations in one session | S02.feature (Alt, AF1) | same POST; `data.totals` re-echoed per write | `multiple-locations.feature` `@S02 @p1` | covered | Both rows asserted independently (own Enhanced flag + own BEC entry) plus accumulated footer totals |
-| S03 Edit an existing location inline | S03.feature (Alt, AF2) | `Schedule11Api.editLocation` (PUT `/locations/{id}`, `OnUpdate` group); `handleSaveEdit` (index.tsx:662); `EditRow` (index.tsx:337) | `inline-edit.feature` `@S03 @p1` | covered | Asserts the post-save refresh, which is what BOTH legacy and the app do (legacy's derived cells are disabled inputs; nothing recomputed on keystroke) — see defects.md VER-6 + SPEC-3 (both CLOSED). Reject arm proves zero-write with the spy |
+| S03 Edit an existing location inline | S03.feature (Alt, AF2) | `Schedule11Api.saveAllLocations` (PUT `/locations`, `OnUpdate` group per item — Story 26.2); `handleSave`; every row a live `LocationRow` | `inline-edit.feature` `@S03 @p1` | covered | Re-grounded 2026-09-24: edit the live row, then the page-level Save (top, and bottom for the reject arm). Asserts the post-save refresh, which is what BOTH legacy and the app do (legacy's derived cells are disabled inputs; nothing recomputed on keystroke) — see defects.md VER-6 + SPEC-3 (both CLOSED). Reject arm proves zero-write with the spy |
 | S04 Check Status — all requirements met | S04.feature (AF3, BR-07 pass) | `Schedule11Service.checkStatus` (`requirementsMetMessage` non-null); `handleCheckStatus` (index.tsx:732) | `check-status.feature` `@S04 @p1` | covered | Asserts SUC-004 **and** SUC-003 together |
 | S05 Check Status — missing Actual Cost flagged | S05.feature (BR-07 fail) | `Schedule11Service.missingCost` (FLD-004 composition) | `check-status.feature` `@S05 @p1` | covered | Verbatim incl. the literal DOUBLE space, asserted against RAW `textContent` because Playwright's text matchers normalize whitespace — VER-3. Precondition asserts the seeded cost is really missing |
 | S06 Check Status — missing Planned Cost flagged | S06.feature (BR-07 fail) | as above, `"Planned cost"` label | `check-status.feature` `@S06 @p1` | covered | as above |
@@ -158,7 +167,7 @@ pre-exists and must be restored). The `schedule11Cleanup` registry fails loud on
 | S20 Silviculture track no longer Draft — read-only | S20.feature (EF5); STA-001 | `editable:false` → Add panel + Actions unrendered; Check Status `disabled` (index.tsx:881) | `render-states.feature` `@S20 @p1` (outline ×2) | covered | BOTH non-Draft codes ("S" and "V") covered. Also makes a POSITIVE assertion on each anchor's real seeded row, so an empty-table regression cannot pass vacuously. Omit-vs-disable — DIV-2, **CLOSED as confirmed-intentional** (dev, 2026-08-10) |
 | Correct-and-retry recovery (the second scenario of S14–S19) | S14–S19.feature recovery arms | `handleAdd` clears `addErrors` and re-runs `validateLocation` over the whole form | `correction.feature` `@S14 @S17 @p2` | covered | Covered ONCE by equivalence: one code path serves every field, and each copy would need its own write anchor. The per-field REJECTIONS (what the 25.4 AC enumerates) are each covered individually |
 | SUC-001 "Data saved successfully" (add + edit) | technical.md SUC-001; `messages.properties:125` | echoed in `Schedule11Response.message` | `happy-path` `@S01`, `inline-edit` `@S03`, `multiple-locations` `@S02`, `persistence` `@S09`, `track-independence` `@S10`, `correction` | covered | API-owned, asserted verbatim |
-| SUC-002 "Data deleted successfully" | technical.md SUC-002; `messages.properties:126` | DELETE response `message` | `delete.feature` `@S07` | covered | Legacy fired this BEFORE persistence; the app fires it after the real delete — DIV-1 |
+| SUC-002 "Data deleted successfully" | technical.md SUC-002; `messages.properties:126` | **not rendered** since Story 26.2 D6(b): Delete only flags, and the Save that deletes shows SUC-001 | `delete.feature` `@S07`, `@S08` (both assert its ABSENCE) | covered | Legacy fired this at the flag, BEFORE persistence — untrue at that moment, so not reproduced (26.2 deviation (B)) |
 | SUC-003 "All requirements … met" (conditional) | technical.md SUC-003 | `requirementsMetMessage` non-null only when met | `check-status` `@S04` (present), `@S05`/`@S06` (asserted ABSENT) | covered | Both arms of the conditional asserted — symmetry check |
 | SUC-004 "Status has been checked" (unconditional) | technical.md SUC-004 | `message` on every check-status response | `check-status` `@S04`/`@S05`/`@S06` | covered | Asserted on the pass AND both fail branches, which is what "unconditional" means |
 | CNT-001 footer Totals recompute | technical.md CNT-001; BR-08 | `SilvicultureTotals` server-computed; rendered index.tsx:1024-1028 | `happy-path` `@S01`, `multiple-locations` `@S02`, `inline-edit` `@S03` | covered | Asserted after add, after a second add (accumulation), and after an edit |
@@ -178,7 +187,7 @@ pre-exists and must be restored). The `schedule11Cleanup` registry fails loud on
 | Column sorting (3-state, per column) | **no legacy slice** — new-app behaviour | `handleSort` / `COLUMNS` (index.tsx:524, 258) | — | **covered (unit)** | **GAP-5 CLOSED** — 7 Vitest tests in `Schedule11.test.tsx`'s `describe('Schedule 11 column sorting (legacy p:column sortBy parity)')`, incl. the every-column-except-Comments/Actions parity check. These **do** gate (CI runs `npm run test:cov`). E2E would be slower and add nothing: sorting persists nothing and fires no request. SPEC-2 (no slice) is CLOSED — sorting is unit-covered, so no requirement is owed |
 | Role-dependent behaviour / a role-driven 403 | `Schedule11Api` javadoc; codebase-map role model | `SchedulePermissions.ROLE_ACTIONS` grants ADMIN and SUBMITTER the SAME two actions; every `Schedule11Controller` endpoint guards on `VIEW_SCHEDULE`/`EDIT_SCHEDULE` only | — | **deferred** | **GAP-6** — no admin-only branch and no role-driven 403 exists on this UC, so there is nothing to assert today (NOT merely something we cannot reach). `deferred` rather than `not-applicable` because there is a named trigger: the day the two `ROLE_ACTIONS` sets diverge this becomes an owed test |
 | Legacy role `ILCR_LICENSEE` | every S01–S20 Background line; legacy `Constant.java:580` | renamed to the ratified `ILCR_ADMIN` + `ILCR_SUBMITTER` model (PRD DL-23) | all scenarios (run as `ILCR_SUBMITTER`) | verified — not a defect | **VER-5** (was DIV-5, reclassified 2026-08-10 to match Schedule 1): the rename is ratified, so there is nothing to adjudicate. Distinct from GAP-6, which is about there being no role-dependent *behaviour* to test |
-| WCAG 2.1 AA — editable page + inline editor | NFR1; issue #170 AC | `pages/common/axe.ts` (wcag2a+2aa+21a+21aa) | `accessibility.feature` `@p1` | covered | Zero violations. Sweeps the Add panel (7 controls incl. Dropdown + ComboBox), sortable headers, row actions, Totals row, and the open inline editor's hidden-label inputs |
+| WCAG 2.1 AA — editable page + a pending change | NFR1; issue #170 AC | `pages/common/axe.ts` (wcag2a+2aa+21a+21aa) | `accessibility.feature` `@p1` | covered | Zero violations. Sweeps the Add panel (7 controls incl. Dropdown + ComboBox), sortable headers, the live row's hidden-label inputs, its Delete, both Save/Check Status bars, the Totals row, and — with a change pending — both Check Status buttons' `aria-describedby` reason (Story 26.2) |
 | WCAG 2.1 AA — read-only page | NFR1 | as above | `accessibility.feature` `@p2` | covered | Zero violations. A structurally different tree (no Add panel, no Actions column) |
 | WCAG 2.1 AA — guard state | NFR1 | as above | `accessibility.feature` `@p2` | covered | Zero violations. The PageState notification that replaces the whole body |
 | WCAG 2.1 AA — Check Status result | NFR1; story AC7 names this state | as above | `check-status.feature` `@S04 @a11y @p1` | covered | Zero violations. A freshly-rendered notification set no other sweep sees. Carries `@a11y` so the documented accessibility-only run (`--grep @a11y`) includes this render state |

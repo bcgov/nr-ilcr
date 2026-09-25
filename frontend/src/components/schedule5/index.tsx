@@ -1365,7 +1365,7 @@ const Schedule5: FC = () => {
 
   const campsTable = (
     <TableContainer title={SECTION_HEADING}>
-      <Table aria-label={SECTION_HEADING}>
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Camp Name</TableHeader>

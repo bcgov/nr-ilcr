@@ -6,8 +6,9 @@ import org.springframework.http.HttpStatus;
 /**
  * The transition guard refused: the track is not at the status the transition starts from &mdash; a
  * Submit against a track already Submitted or Verified, or at the dead {@code O} (UC-CHK-002 S08,
- * BR-06). Maps to HTTP 409 with the transition's own {@link TrackTransition#rejectedKey()} &mdash;
- * for a Submit, "Schedules 1-10 are no longer in Draft and cannot be submitted."
+ * BR-06). Maps to HTTP 409 with the transition's own {@link TrackTransition#rejectedKey} &mdash;
+ * for a Schedules 1&ndash;10 Submit, "Schedules 1-10 are no longer in Draft and cannot be
+ * submitted."
  *
  * <p>A deliberate departure from legacy, ruled by the business 2026-09-17 (Story 15.4). Legacy's
  * guard returned {@code false}, {@code ILCRService.submitReport():720-722} threw {@code
@@ -27,22 +28,21 @@ public class ReportTransitionRejectedException extends BusinessException {
   static final String GENERIC_KEY = "reportSubmissionErrorMsg";
 
   /**
-   * A refusal named by the transition that was attempted.
+   * A refusal named by the transition that was attempted, in the words of the track it was
+   * attempted on.
    *
    * @param transition the transition the track could not make; null falls back to the generic key
+   * @param track the track the transition was attempted on
    */
-  public ReportTransitionRejectedException(TrackTransition transition) {
-    super(HttpStatus.CONFLICT, transition == null ? GENERIC_KEY : transition.rejectedKey());
+  public ReportTransitionRejectedException(TrackTransition transition, ScheduleTrack track) {
+    super(HttpStatus.CONFLICT, transition == null ? GENERIC_KEY : transition.rejectedKey(track));
   }
 
   /**
-   * A refusal with legacy's generic text.
-   *
-   * @deprecated name the transition instead, so the message says which status the track has left;
-   *     kept so callers that predate {@link TrackTransition#rejectedKey()} still compile
+   * A refusal with legacy's generic text &mdash; Verify's, which Epic 17 kept on legacy parity
+   * rather than taking Story 15.4's more specific wording.
    */
-  @Deprecated
   public ReportTransitionRejectedException() {
-    this(null);
+    this(null, null);
   }
 }

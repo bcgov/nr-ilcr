@@ -224,7 +224,9 @@ class ReportTrackTransitionReversalTest {
     assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
         .isInstanceOfSatisfying(
             ReportNotSubmittedException.class,
-            ex -> assertThat(ex.getMessageKey()).isEqualTo(transition.gateFailedKey()));
+            ex ->
+                assertThat(ex.getMessageKey())
+                    .isEqualTo(transition.gateFailedKey(ScheduleTrack.SCHEDULES_1_TO_10)));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -362,7 +364,9 @@ class ReportTrackTransitionReversalTest {
     assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
         .isInstanceOfSatisfying(
             ReportTransitionRejectedException.class,
-            ex -> assertThat(ex.getMessageKey()).isEqualTo(transition.rejectedKey()));
+            ex ->
+                assertThat(ex.getMessageKey())
+                    .isEqualTo(transition.rejectedKey(ScheduleTrack.SCHEDULES_1_TO_10)));
     verifyNoInteractions(sweepService, writer);
   }
 }
