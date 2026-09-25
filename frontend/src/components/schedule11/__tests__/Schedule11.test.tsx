@@ -2479,6 +2479,13 @@ describe('Schedule 11 ministry correction at Submitted and Verified (Stories 16.
 
       const row = await findRow('North Ridge Revised')
       expectActingAs(role, header)
+      // The labels are claims: the admin's row is live, the submitter's read-only — and the
+      // indicators are drawn on both.
+      if (role === ILCR_ROLES.admin) {
+        expect(within(row).getByLabelText('Location for North Ridge Revised')).toBeEnabled()
+      } else {
+        expect(within(row).queryByRole('textbox')).not.toBeInTheDocument()
+      }
       for (const field of [
         'location',
         'biogeoclimaticCatalogueId',
@@ -2551,46 +2558,53 @@ describe('Schedule 11 ministry correction at Submitted and Verified (Stories 16.
     // MSW's strict mode would already fail an unhandled DELETE; this watches the axios instance the
     // page actually talks through, so "nothing was sent" is asserted rather than inferred. Positive
     // control: the same spy sees the one PUT that Save sends, so a spy on the wrong instance fails.
+    // The control covers `put` only. The page has no DELETE call site at all since 26.2 retired the
+    // per-row endpoint, so `deleteSpy` cannot fail today — it is a tripwire for one being re-added.
     const transport = apiService.getAxiosInstance()
     const putSpy = vi.spyOn(transport, 'put')
     const deleteSpy = vi.spyOn(transport, 'delete')
     const postSpy = vi.spyOn(transport, 'post')
-    server.use(
-      matrixGet({ trackStatus: 'V' }),
-      http.put(LOCATIONS_URL, ({ request }) =>
-        HttpResponse.json(
-          matrixDoc(request, { trackStatus: 'V', locations: [], totals: {}, message: SAVED }),
+    // Restored on every path: the axios instance is a module singleton, and a spy left on it by a
+    // failing assertion would wrap the next test's spy.
+    try {
+      server.use(
+        matrixGet({ trackStatus: 'V' }),
+        http.put(LOCATIONS_URL, ({ request }) =>
+          HttpResponse.json(
+            matrixDoc(request, { trackStatus: 'V', locations: [], totals: {}, message: SAVED }),
+          ),
         ),
-      ),
-    )
-    renderAsAdmin(<Schedule11 />)
-    const user = userEvent.setup()
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
 
-    const row = await findRow('North Ridge')
-    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
-    await user.click(within(row).getByRole('button', { name: /^delete$/i }))
-    await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }),
-    )
-    await waitFor(() => expect(queryRow('North Ridge')).toBeNull())
+      const row = await findRow('North Ridge')
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      await user.click(within(row).getByRole('button', { name: /^delete$/i }))
+      await user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }),
+      )
+      await waitFor(() => expect(queryRow('North Ridge')).toBeNull())
 
-    expect(putSpy).not.toHaveBeenCalled()
-    expect(deleteSpy).not.toHaveBeenCalled()
-    expect(postSpy).not.toHaveBeenCalled()
-    // A confirmed delete that is never saved is simply lost on leaving — legacy parity (26.2 fences):
-    // there is no navigation guard to find here, and none should be added.
+      expect(putSpy).not.toHaveBeenCalled()
+      expect(deleteSpy).not.toHaveBeenCalled()
+      expect(postSpy).not.toHaveBeenCalled()
+      // A confirmed delete that is never saved is simply lost on leaving — legacy parity (26.2 fences):
+      // there is no navigation guard to find here, and none should be added.
 
-    await user.click(saveButtons()[0])
-    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(putSpy).toHaveBeenCalledTimes(1)
-    expect(putSpy.mock.calls[0][1]).toEqual({ locations: [], deletedIds: [9001] })
-    expect(deleteSpy).not.toHaveBeenCalled()
-    putSpy.mockRestore()
-    deleteSpy.mockRestore()
-    postSpy.mockRestore()
+      await user.click(saveButtons()[0])
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expect(putSpy).toHaveBeenCalledTimes(1)
+      expect(putSpy.mock.calls[0][1]).toEqual({ locations: [], deletedIds: [9001] })
+      expect(deleteSpy).not.toHaveBeenCalled()
+    } finally {
+      putSpy.mockRestore()
+      deleteSpy.mockRestore()
+      postSpy.mockRestore()
+    }
   })
 
-  test('admin at Verified: Add persists at once and keeps a pending edit and a flag (S04/S24)', async () => {
+  test('admin at Verified: Add persists at once and keeps a pending edit and a flag (CHK-015 S04, CHK-006 S24)', async () => {
     const added: SilvicultureLocation = {
       ...midSlope,
       locationId: 9004,

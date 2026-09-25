@@ -50,6 +50,15 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
   }
 
   private JsonNode location(long mill, long id, String groups) throws Exception {
+    for (JsonNode loc : document(mill, groups).get("locations")) {
+      if (loc.get("locationId").asLong() == id) {
+        return loc;
+      }
+    }
+    throw new IllegalStateException("location " + id + " not served");
+  }
+
+  private JsonNode document(long mill, String groups) throws Exception {
     MockHttpServletRequestBuilder request =
         get("/api/v1/schedule11")
             .param("millId", String.valueOf(mill))
@@ -58,20 +67,24 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
     if (groups != null) {
       request.header("X-Mock-Groups", groups);
     }
-    JsonNode doc =
-        mapper.readTree(
-            mockMvc
-                .perform(request)
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString());
-    for (JsonNode loc : doc.get("locations")) {
-      if (loc.get("locationId").asLong() == id) {
-        return loc;
-      }
-    }
-    throw new IllegalStateException("location " + id + " not served");
+    return mapper.readTree(
+        mockMvc
+            .perform(request)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString());
+  }
+
+  /**
+   * The originals are role-independent, so the role is proven to have ARRIVED by the one field it
+   * does change: with security off a dropped or misspelt {@code X-Mock-Groups} falls back to the
+   * default mock role, and both arms would otherwise pass as that one role.
+   */
+  private void assertServedAs(String groups) throws Exception {
+    assertThat(document(816, groups).get("editable").asBoolean())
+        .as("editable at V for " + groups)
+        .isEqualTo("ILCR_ADMIN".equals(groups));
   }
 
   private static void assertOriginal(JsonNode loc, String key, String value, String shown) {
@@ -137,6 +150,7 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
   @ValueSource(strings = {"ILCR_ADMIN", "ILCR_SUBMITTER"})
   @DisplayName("at Verified, every tracked field is still read from the Licensee's submission")
   void atVerified_theBaselineIsTheSubmission(String groups) throws Exception {
+    assertServedAs(groups);
     JsonNode loc = location(816, 9441, groups);
 
     assertThat(loc.get("location").asText()).isEqualTo("Late Corrected North");
@@ -153,9 +167,12 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
       "at Verified, a row the ministry corrected at S still flags against the Licensee's value —"
           + " its later 'A' and 'V' audit rows never become the baseline")
   void atVerified_aCorrectionMadeAtSubmittedStillFlags(String groups) throws Exception {
+    assertServedAs(groups);
     // 9442's 'A' (the admin save at S) and 'V' (the verify touch) rows carry the ministry's
     // values under HIGHER audit ids; ranking before filtering on 'S' would serve them and every
-    // indicator would fall silent.
+    // indicator would fall silent. That filter lives in the view, so what this pins is the TEST
+    // schema's copy of it (V20260910, copied from the live schema); a delivery view that differed
+    // is out of this suite's reach.
     JsonNode loc = location(816, 9442, groups);
 
     assertThat(loc.get("location").asText()).isEqualTo("Ministry Fixed At S");

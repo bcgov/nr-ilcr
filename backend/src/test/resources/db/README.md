@@ -248,13 +248,15 @@ sense against this directory, `mvn clean` before believing it.
    (category `'11'` at `'V'` on every mill). `816` (1–10 `V`) is the read-only indicator anchor: `9441` differs from
    its `'S'` snapshot on all five tracked fields, and `9442` was corrected by the ministry at `S` — its later `'A'`
    and `'V'` audit rows carry the ministry's values with higher audit ids, so a view that ranked before filtering on
-   `'S'` would serve them. `817` (1–10 `S`, the real S/V pair) is the only mill written, by one test: its `9443`
+   `'S'` would serve them (this pins the test schema's copy of the view, `V20260910`; a delivery view that differed is
+   out of the suite's reach). `817` (1–10 `S`, the real S/V pair) is the only mill written, by one test: its `9443`
    Actual cost has a second `'S'` row under an older detail id (`5898`) with a higher audit id, as `R__58`'s `802`
    does, and its status row carries a LICENSEE and an AUDITOR pair (R__59's users) proven untouched. `818` (Check
    Status: `9446`'s two cost rows exist with `COST NULL`), `819` (all met), `820` (refusal tables; `9449` is named
    `'Refusal Block'` so the shared refusal bodies fit), `821` (stale revision at `REVISION_COUNT 3`) and `822` (the
    SUBMITTER refused at `V`) are never written. **"Free" is per table**: nothing above audit id `1010` / `2012` is
-   seeded, and the bare `10xx` hits elsewhere are `ILCR_REPORT_SUMMARY_ID`s. Prefix `61`, below `70`; it rides the
+   seeded, the bare `10xx` hits elsewhere are `ILCR_REPORT_SUMMARY_ID`s, and cost audit id `2021` is skipped on
+   purpose: it is the report year on nearly every fixture line, so no bare-id grep could prove it free. Prefix `61`, below `70`; it rides the
    `db/` chain, so these mills also appear in the e2e database's Home dropdown.
 
    **`V20260910`'s header names a fixture that was never written.** Its lines 4–5 point to

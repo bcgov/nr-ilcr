@@ -170,10 +170,23 @@ class Schedule11LateCorrectionIT extends Schedule11CorrectionSupport {
                         item(9443, fields("Late Second Fix", 8801, "22", "1200", rev + 1)), ""))
                 .with(admin()))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
         .andExpect(jsonPath("$.message.text", is(SAVED)))
         .andExpect(jsonPath("$.trackStatus", is("V")))
         .andExpect(jsonPath("$.editable", is(true)));
-    assertThat(((Number) row(9443).get("REVISION_COUNT")).intValue()).isEqualTo(rev + 2);
+    Map<String, Object> second = row(9443);
+    assertThat(second.get("LOCATION")).isEqualTo("Late Second Fix");
+    assertThat(((Number) second.get("BECBIOGEOCLIMATIC_CATALOGUE_ID")).longValue())
+        .isEqualTo(8801L);
+    assertThat(((Number) second.get("REFORESTED_NET_AREA")).intValue()).isEqualTo(22);
+    assertThat(((Number) second.get("REVISION_COUNT")).intValue()).isEqualTo(rev + 2);
+    assertThat(second.get("UPDATE_USERID")).isEqualTo(ADMIN_NAME);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COST FROM THE.ILCR_COST_REPORT_DETAIL WHERE ILCR_COST_REPORT_DETAIL_ID ="
+                    + " 5874",
+                Integer.class))
+        .isEqualTo(1200);
 
     // The row nobody sent is untouched (the Save carries edited rows only, 26.2 deviation (E)).
     assertThat(row(9445)).isEqualTo(untouchedBefore);
@@ -264,13 +277,18 @@ class Schedule11LateCorrectionIT extends Schedule11CorrectionSupport {
   }
 
   @Test
-  @DisplayName("S19: several invalid fields in one save at V are all reported at once")
+  @DisplayName(
+      "S19: different invalid fields on different locations in one save at V are all reported at"
+          + " once")
   void multiErrorBatch_reportsEveryFailure() throws Exception {
     String before = footprint(820);
-    String bad = item(9449, fields("", 8801, "1000000", "100000000", 0));
+    // Each row fails on fields the other does not, so a validator that stopped at the first bad
+    // row would drop the second row's message.
+    String first = item(9449, fields("", 8801, "1000000", "100", 0));
+    String second = item(9450, fields("Late Clash Block", 8802, "8", "100000000", 0));
 
     mockMvc
-        .perform(save(820, saveBody(bad, "")).with(admin()))
+        .perform(save(820, saveBody(first + "," + second, "")).with(admin()))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", containsString("Location: Value is required.")))
         .andExpect(jsonPath("$.detail", containsString("Entered NAR (ha) must be between")))
@@ -375,6 +393,7 @@ class Schedule11LateCorrectionIT extends Schedule11CorrectionSupport {
         .andExpect(jsonPath("$.errors", hasSize(0)))
         .andExpect(jsonPath("$.requirementsMetMessage.key", is("scheduleRequirementsMetMsg")))
         .andExpect(jsonPath("$.requirementsMetMessage.text", is(REQUIREMENTS_MET)))
+        .andExpect(jsonPath("$.message.key", is("checkStatusMessage")))
         .andExpect(jsonPath("$.message.text", is(STATUS_CHECKED)));
 
     assertThat(footprint(819)).isEqualTo(before);
