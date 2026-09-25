@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.dataextract.csv.section;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,6 +28,16 @@ class Schedule8SampleSectionTest {
 
   private static BigDecimal bd(String value) {
     return new BigDecimal(value);
+  }
+
+  /** A rate row carrying only a costing rate — all the totals' presence rule reads. */
+  private static RateRow rate(BigDecimal costingRate) {
+    return new RateRow(null, 0, 1, null, costingRate, null, null);
+  }
+
+  /** The rate rows behind a served total: none when the total is null, else one carrying it. */
+  private static List<RateRow> ratesFor(BigDecimal total) {
+    return total == null ? List.of() : List.of(rate(total));
   }
 
   /** The one page every test here hangs its samples from; only the sample list varies. */
@@ -86,14 +97,27 @@ class Schedule8SampleSectionTest {
         bd("3.5"),
         bd("1.25"),
         bd("31"),
-        0,
-        0,
-        List.of(),
-        List.of());
+        1,
+        1,
+        List.of(rate(bd("3.5"))),
+        List.of(rate(bd("1.25"))));
   }
 
-  /** A sample varying only the two rate totals; every other component is a filler. */
+  /**
+   * A sample varying only the two rate totals, each backed by one rate row carrying it (none for a
+   * null total); every other component is a filler.
+   */
   private static Sample totalsSample(BigDecimal additionsTotal, BigDecimal deductionsTotal) {
+    return totalsSample(
+        additionsTotal, deductionsTotal, ratesFor(additionsTotal), ratesFor(deductionsTotal));
+  }
+
+  /** As the owner serves it: totals and the rate rows behind them, set independently. */
+  private static Sample totalsSample(
+      BigDecimal additionsTotal,
+      BigDecimal deductionsTotal,
+      List<RateRow> additions,
+      List<RateRow> deductions) {
     return new Sample(
         10,
         0,
@@ -122,10 +146,10 @@ class Schedule8SampleSectionTest {
         additionsTotal,
         deductionsTotal,
         null,
-        0,
-        0,
-        List.of(),
-        List.of());
+        additions.size(),
+        deductions.size(),
+        additions,
+        deductions);
   }
 
   /** A sample varying only its contract id, which is the name legacy put in the sample title. */
@@ -399,6 +423,75 @@ class Schedule8SampleSectionTest {
       // An additions total of zero is still "present", so the gate opens on it.
       assertThat(row[ADDITIONS]).isEqualTo("0");
       assertThat(row[DEDUCTIONS]).isEqualTo("500");
+    }
+
+    @Test
+    @DisplayName("#474: a sample with no rate rows prints the null marker, not the owner's zero")
+    void noRateRowsIsNullMarkerNotZero() {
+      // The owner seeds both totals at ZERO for the screen, so "nothing recorded" arrives as 0.
+      // Legacy's sum returned null with no rates to add, and printed "-" in both cells.
+      String[] row =
+          section
+              .rows(CTX, page(List.of(totalsSample(bd("0"), bd("0"), List.of(), List.of()))), 1)
+              .get(0);
+
+      assertThat(row[ADDITIONS]).isEqualTo("-");
+      assertThat(row[DEDUCTIONS]).isEqualTo("-");
+    }
+
+    @Test
+    @DisplayName("#474: additions rows but no deduction rows prints the deductions null marker")
+    void additionsRowsWithoutDeductionRowsIsDeductionsNullMarker() {
+      // Mill 727's 24 / 666,444 / - / 666,468: the additions sum prints, the absent deductions do
+      // not.
+      String[] row =
+          section
+              .rows(
+                  CTX,
+                  page(
+                      List.of(
+                          totalsSample(
+                              bd("666444"), bd("0"), List.of(rate(bd("666444"))), List.of()))),
+                  1)
+              .get(0);
+
+      assertThat(row[ADDITIONS]).isEqualTo("666,444");
+      assertThat(row[DEDUCTIONS]).isEqualTo("-");
+    }
+
+    @Test
+    @DisplayName("#474: rate rows that genuinely sum to zero print 0, not the null marker")
+    void realZeroSumPrintsZero() {
+      // The positive control, mill 727's 25 / 2 / 0 / 26: a real zero stays a zero.
+      String[] row =
+          section
+              .rows(
+                  CTX,
+                  page(
+                      List.of(
+                          totalsSample(
+                              bd("2"), bd("0"), List.of(rate(bd("2"))), List.of(rate(bd("0")))))),
+                  1)
+              .get(0);
+
+      assertThat(row[ADDITIONS]).isEqualTo("2");
+      assertThat(row[DEDUCTIONS]).isEqualTo("0");
+    }
+
+    @Test
+    @DisplayName("#474: rate rows whose costing rates are all blank count as no rates")
+    void blankRatesOnlyIsNullMarker() {
+      // sumBigDecimalValues skipped null items and returned null if nothing was added.
+      String[] row =
+          section
+              .rows(
+                  CTX,
+                  page(List.of(totalsSample(bd("0"), bd("0"), List.of(rate(null)), List.of()))),
+                  1)
+              .get(0);
+
+      assertThat(row[ADDITIONS]).isEqualTo("-");
+      assertThat(row[DEDUCTIONS]).isEqualTo("-");
     }
 
     @Test

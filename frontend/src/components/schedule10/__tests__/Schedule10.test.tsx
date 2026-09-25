@@ -2104,3 +2104,53 @@ describe('Schedule 10 ministry correction at Submitted (Story 16.3)', () => {
     expect(await screen.findByDisplayValue('North Division')).toBeEnabled()
   })
 })
+
+// Legacy left a road row live while it was open; the business adopted the page list's freeze
+// (legacy Schedule 8's) for every row editor, so the road level now matches the page level.
+describe('the road level open-row freeze', () => {
+  test('the road open in the panel has its row actions disabled; other roads stay live', async () => {
+    server.use(
+      getHandler(
+        doc({
+          pages: [
+            page({
+              roadDetailCount: 2,
+              roadDetails: [
+                roadDetail(),
+                roadDetail({
+                  roadDetailId: 8911,
+                  rowNumber: 2,
+                  roadDetailLabel: 'Road #2, Spur B',
+                  roadName: 'Spur B',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+
+    // Carbon names the table by its container title, so reach it through a row it holds.
+    const table = (await screen.findByText('Road #1, Mainline A')).closest('table') as HTMLElement
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    const actions = ['Edit', 'Delete']
+    for (const name of actions) {
+      expect(within(rowOf('Road #1, Mainline A')).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await userEvent.click(
+      within(rowOf('Road #1, Mainline A')).getByRole('button', { name: 'Edit' }),
+    )
+
+    await waitFor(() =>
+      expect(
+        within(rowOf('Road #1, Mainline A')).getByRole('button', { name: 'Edit' }),
+      ).toBeDisabled(),
+    )
+    for (const name of actions) {
+      expect(within(rowOf('Road #1, Mainline A')).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowOf('Road #2, Spur B')).getByRole('button', { name })).toBeEnabled()
+    }
+  })
+})

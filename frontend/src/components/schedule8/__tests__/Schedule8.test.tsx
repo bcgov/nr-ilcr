@@ -2100,3 +2100,63 @@ describe('Schedule8 correction at Submitted (Story 16.3)', () => {
     expect(screen.queryByRole('button', { name: /add new page/i })).not.toBeInTheDocument()
   })
 })
+
+// Legacy Schedule 8's disableReport(report) (Schedule8MB.java:135-137): the row open in the editor
+// cannot act on itself. The business adopted this as the rule for every schedule.
+describe('Schedule8 open-row freeze', () => {
+  const rowsOf = (table: HTMLElement) => within(table).getAllByRole('row').slice(1) as HTMLElement[]
+  const actions = [/^edit$/i, /^copy$/i, /^delete$/i]
+
+  test('the page open in the panel has its row actions disabled; other rows stay live', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule8()
+
+    const table = await screen.findByRole('table', { name: 'Page Summary' })
+    for (const name of actions) {
+      expect(within(rowsOf(table)[0]).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await userEvent.click(within(rowsOf(table)[0]).getByRole('button', { name: /^edit$/i }))
+
+    await waitFor(() =>
+      expect(within(rowsOf(table)[0]).getByRole('button', { name: /^edit$/i })).toBeDisabled(),
+    )
+    for (const name of actions) {
+      expect(within(rowsOf(table)[0]).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowsOf(table)[1]).getByRole('button', { name })).toBeEnabled()
+    }
+  })
+
+  test('the sample open in the panel has its row actions disabled; other rows stay live', async () => {
+    const second: Sample = { ...sample8101, id: 8102, contractId: 'C-2' }
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            pages: [{ ...fullPage, sampleCount: 2, samples: [sample8101, second] }, emptyPage],
+          }),
+        ),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(2\)/i }))
+
+    // Carbon names the table by its container title, so reach it through a row it holds.
+    const table = (await screen.findByText(/Sample # 1 - C-1/)).closest('table') as HTMLElement
+    for (const name of actions) {
+      expect(within(rowsOf(table)[0]).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await userEvent.click(within(rowsOf(table)[0]).getByRole('button', { name: /^edit$/i }))
+
+    await waitFor(() =>
+      expect(within(rowsOf(table)[0]).getByRole('button', { name: /^edit$/i })).toBeDisabled(),
+    )
+    for (const name of actions) {
+      expect(within(rowsOf(table)[0]).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowsOf(table)[1]).getByRole('button', { name })).toBeEnabled()
+    }
+  })
+})

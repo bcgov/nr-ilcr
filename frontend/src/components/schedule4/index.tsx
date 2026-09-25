@@ -709,48 +709,50 @@ const Schedule4: FC = () => {
               <TableCell colSpan={2}>No locations have been added.</TableCell>
             </TableRow>
           ) : (
-            data.locations.map((location) => (
-              <TableRow
-                key={location.id ?? location.name}
-                className={
-                  panelOpen && location.id != null && location.id === panelEditId
-                    ? 'schedule-4__row--editing'
-                    : undefined
-                }
-              >
-                <TableCell>{location.name}</TableCell>
-                <TableCell>
-                  <div className="schedule-4__row-actions">
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      renderIcon={editable ? Edit : View}
-                      onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
-                    >
-                      {editable ? 'Edit' : 'View'}
-                    </Button>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      renderIcon={Copy}
-                      disabled={!editable || saving}
-                      onClick={() => openCopy(location)}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      kind="danger--tertiary"
-                      size="sm"
-                      renderIcon={TrashCan}
-                      disabled={!editable || saving}
-                      onClick={() => setConfirmDelete(location)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+            data.locations.map((location) => {
+              // The location open in the panel cannot act on itself: its row actions grey out while
+              // it is open — the business ruling that adopts legacy Schedule 8's freeze everywhere.
+              const isOpen = panelOpen && location.id != null && location.id === panelEditId
+              return (
+                <TableRow
+                  key={location.id ?? location.name}
+                  className={isOpen ? 'schedule-4__row--editing' : undefined}
+                >
+                  <TableCell>{location.name}</TableCell>
+                  <TableCell>
+                    <div className="schedule-4__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={editable ? Edit : View}
+                        disabled={isOpen}
+                        onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
+                      >
+                        {editable ? 'Edit' : 'View'}
+                      </Button>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={Copy}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => openCopy(location)}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        kind="danger--tertiary"
+                        size="sm"
+                        renderIcon={TrashCan}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => setConfirmDelete(location)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>

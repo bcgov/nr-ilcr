@@ -641,48 +641,47 @@ const Schedule8: FC = () => {
               <TableCell colSpan={2}>No pages have been added.</TableCell>
             </TableRow>
           ) : (
-            data.pages.map((page, index) => (
-              <TableRow
-                key={page.id}
-                className={
-                  panelOpen && page.id != null && page.id === editId
-                    ? 'schedule-8__row--editing'
-                    : undefined
-                }
-              >
-                <TableCell>{pageLabel(page, index)}</TableCell>
-                <TableCell>
-                  <div className="schedule-8__row-actions">
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      renderIcon={editable ? Edit : View}
-                      onClick={() => openEditOrView(page, editable ? 'edit' : 'view')}
-                    >
-                      {editable ? 'Edit' : 'View'}
-                    </Button>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      renderIcon={Copy}
-                      disabled={!editable || saving}
-                      onClick={() => openCopy(page)}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      kind="danger--tertiary"
-                      size="sm"
-                      renderIcon={TrashCan}
-                      disabled={!editable || saving}
-                      onClick={() => setConfirmDelete(page)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+            data.pages.map((page, index) => {
+              // The page open in the panel cannot act on itself: its row actions grey out while it
+              // is open, as legacy's disableReport(report) did (Schedule8MB.java:135-137).
+              const isOpen = panelOpen && page.id != null && page.id === editId
+              return (
+                <TableRow key={page.id} className={isOpen ? 'schedule-8__row--editing' : undefined}>
+                  <TableCell>{pageLabel(page, index)}</TableCell>
+                  <TableCell>
+                    <div className="schedule-8__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={editable ? Edit : View}
+                        disabled={isOpen}
+                        onClick={() => openEditOrView(page, editable ? 'edit' : 'view')}
+                      >
+                        {editable ? 'Edit' : 'View'}
+                      </Button>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={Copy}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => openCopy(page)}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        kind="danger--tertiary"
+                        size="sm"
+                        renderIcon={TrashCan}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => setConfirmDelete(page)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>

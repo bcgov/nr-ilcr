@@ -1258,7 +1258,14 @@ const Schedule5: FC = () => {
   // because `applySaved` re-seats the panel in edit mode from the echo without checking its flag.
   const derived = readOnlyPanel || !editable ? null : deriveSchedule5(committed, derivedSource)
 
+  // The camp open in the panel cannot act on itself: its row actions grey out while it is open. Legacy
+  // Schedule 5 instead swapped the Action column and confirmed a switch (schedule5.xhtml:79-102); the
+  // business adopted legacy Schedule 8's freeze for every schedule, so this row is locked instead.
+  const isOpenCamp = (camp: Camp) =>
+    panelOpen && panelCampId !== null && camp.campId === panelCampId
+
   const rowActions = (camp: Camp) => {
+    const isOpen = isOpenCamp(camp)
     if (!editable) {
       // Legacy also renders a permanently-disabled Delete here (schedule5.xhtml:103-119); the epics
       // AC collapses the column to a single View and Schedule 6 set the same precedent, so the inert
@@ -1268,6 +1275,7 @@ const Schedule5: FC = () => {
           kind="ghost"
           size="sm"
           renderIcon={View}
+          disabled={isOpen}
           onClick={() => openEditOrView(camp, 'view')}
         >
           View
@@ -1280,7 +1288,7 @@ const Schedule5: FC = () => {
           kind="ghost"
           size="sm"
           renderIcon={Edit}
-          disabled={saving}
+          disabled={saving || isOpen}
           onClick={() =>
             panelOpen && panelDirty
               ? setPendingSwitch({ kind: 'edit', camp })
@@ -1293,7 +1301,7 @@ const Schedule5: FC = () => {
           kind="danger--tertiary"
           size="sm"
           renderIcon={TrashCan}
-          disabled={saving}
+          disabled={saving || isOpen}
           onClick={() => setConfirmDelete(camp)}
         >
           Delete
@@ -1304,7 +1312,7 @@ const Schedule5: FC = () => {
           kind="ghost"
           size="sm"
           renderIcon={Copy}
-          disabled={saving}
+          disabled={saving || isOpen}
           onClick={() => openCopy(camp)}
         >
           Copy
@@ -1329,7 +1337,10 @@ const Schedule5: FC = () => {
             </TableRow>
           ) : (
             data.camps.map((camp) => (
-              <TableRow key={camp.campId}>
+              <TableRow
+                key={camp.campId}
+                className={isOpenCamp(camp) ? 'schedule-5__row--editing' : undefined}
+              >
                 <TableCell>{camp.campName}</TableCell>
                 <TableCell>
                   <div className="schedule-5__row-actions">{rowActions(camp)}</div>

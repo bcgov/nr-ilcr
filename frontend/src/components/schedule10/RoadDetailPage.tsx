@@ -100,42 +100,41 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
                 <TableCell colSpan={2}>{EMPTY_LIST}</TableCell>
               </TableRow>
             ) : (
-              page.roadDetails.map((detail) => (
-                <TableRow
-                  key={detail.roadDetailId}
-                  className={
-                    openDetailId === detail.roadDetailId && panelMode !== 'closed'
-                      ? 'schedule-10__row--editing'
-                      : undefined
-                  }
-                >
-                  <TableCell>{detail.roadDetailLabel}</TableCell>
-                  <TableCell>
-                    <div className="schedule-10__row-actions">
-                      {/* Unlike the page list, legacy leaves a road row actionable while that road
-                          is open in the panel below — re-opening it simply reloads the form. */}
-                      <Button
-                        kind="ghost"
-                        size="sm"
-                        disabled={saving}
-                        renderIcon={editable ? Edit : View}
-                        onClick={() => onOpenDetail(detail)}
-                      >
-                        {editable ? 'Edit' : 'View'}
-                      </Button>
-                      <Button
-                        kind="danger--tertiary"
-                        size="sm"
-                        disabled={controlsDisabled}
-                        renderIcon={TrashCan}
-                        onClick={() => onRequestDelete(detail)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              page.roadDetails.map((detail) => {
+                // The road open in the panel cannot act on itself. Legacy left this row live, but
+                // the business adopted the page list's freeze (legacy Schedule 8's) for every row.
+                const isOpen = openDetailId === detail.roadDetailId && panelMode !== 'closed'
+                return (
+                  <TableRow
+                    key={detail.roadDetailId}
+                    className={isOpen ? 'schedule-10__row--editing' : undefined}
+                  >
+                    <TableCell>{detail.roadDetailLabel}</TableCell>
+                    <TableCell>
+                      <div className="schedule-10__row-actions">
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          disabled={saving || isOpen}
+                          renderIcon={editable ? Edit : View}
+                          onClick={() => onOpenDetail(detail)}
+                        >
+                          {editable ? 'Edit' : 'View'}
+                        </Button>
+                        <Button
+                          kind="danger--tertiary"
+                          size="sm"
+                          disabled={controlsDisabled || isOpen}
+                          renderIcon={TrashCan}
+                          onClick={() => onRequestDelete(detail)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>

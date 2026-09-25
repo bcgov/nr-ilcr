@@ -1812,3 +1812,43 @@ const StaleRaceHarness = () => {
     </>
   )
 }
+
+// The business ruling on legacy's inconsistency: every schedule freezes the row open in the editor,
+// as legacy Schedule 8 did (disableReport). Legacy Schedule 4 left it live.
+describe('Schedule4 open-row freeze', () => {
+  test('the location open in the panel has its row actions disabled; other rows stay live', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+
+    const table = await screen.findByRole('table', { name: 'Existing Locations' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    const actions = [/^edit$/i, /^copy$/i, /^delete$/i]
+    for (const name of actions) {
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await userEvent.click(within(rowOf('Harbour Dump')).getByRole('button', { name: /^edit$/i }))
+
+    await waitFor(() =>
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name: /^edit$/i })).toBeDisabled(),
+    )
+    for (const name of actions) {
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowOf('Empty Landing')).getByRole('button', { name })).toBeEnabled()
+    }
+  })
+
+  test('a non-editable viewer gets the same freeze on the row being viewed', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+
+    const table = await screen.findByRole('table', { name: 'Existing Locations' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    await userEvent.click(within(rowOf('Harbour Dump')).getByRole('button', { name: /^view$/i }))
+
+    await waitFor(() =>
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name: /^view$/i })).toBeDisabled(),
+    )
+    expect(within(rowOf('Empty Landing')).getByRole('button', { name: /^view$/i })).toBeEnabled()
+  })
+})

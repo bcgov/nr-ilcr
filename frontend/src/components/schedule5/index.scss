@@ -30,6 +30,10 @@
   gap: $spacing-02;
 }
 
+.schedule-5__row--editing td {
+  background-color: var(--cds-highlight);
+}
+
 .schedule-5__panel {
   border: 1px solid var(--cds-border-subtle);
   padding: $spacing-05;

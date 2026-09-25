@@ -369,23 +369,50 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
     expect(screen.getByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp')
   })
 
-  test('editable WITH a panel open: Edit fires CFM-003 before switching', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  test('editable WITH a panel open: another camp\u2019s Edit fires CFM-003 before switching', async () => {
+    const other: Camp = { ...cedarFlats, campId: 8402, campName: 'Birch Ridge Camp' }
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, other] }))))
     render(<Schedule5 />)
     const user = userEvent.setup()
 
-    await openEditor(user)
-    await user.clear(screen.getByLabelText('Camp Name'))
-    await user.type(screen.getByLabelText('Camp Name'), 'Edited Name')
+    const table = await screen.findByRole('table', { name: 'Existing Camps' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    await user.click(within(rowOf('Cedar Flats Camp')).getByRole('button', { name: /^edit$/i }))
+    fireEvent.change(await screen.findByLabelText('Camp Name'), {
+      target: { value: 'Edited Name' },
+    })
 
-    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    // The open camp's own row is frozen, so the switch can only come from another row.
+    await user.click(within(rowOf('Birch Ridge Camp')).getByRole('button', { name: /^edit$/i }))
     const dialog = confirmDialog(
       'Any unsaved changes to the current camp report will be lost. Are you sure you would like to continue?',
     )
     await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
 
-    // The draft is discarded and the panel re-seats on the stored camp.
-    await waitFor(() => expect(screen.getByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp'))
+    // The draft is discarded and the panel re-seats on the other stored camp.
+    await waitFor(() => expect(screen.getByLabelText('Camp Name')).toHaveValue('Birch Ridge Camp'))
+  })
+
+  test('the camp open in the panel has its row actions frozen; other rows stay live', async () => {
+    const other: Camp = { ...cedarFlats, campId: 8402, campName: 'Birch Ridge Camp' }
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, other] }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    const table = await screen.findByRole('table', { name: 'Existing Camps' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    const actions = [/^edit$/i, /^delete$/i, /^copy$/i]
+    for (const name of actions) {
+      expect(within(rowOf('Cedar Flats Camp')).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await user.click(within(rowOf('Cedar Flats Camp')).getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Camp Name')
+
+    for (const name of actions) {
+      expect(within(rowOf('Cedar Flats Camp')).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowOf('Birch Ridge Camp')).getByRole('button', { name })).toBeEnabled()
+    }
   })
 
   test('Add New Camp fires CFM-003 when a panel is already open', async () => {
@@ -2557,8 +2584,11 @@ describe('Schedule 5 ministry correction at Submitted (Story 16.3)', () => {
     // matches two nodes.
     const campsTable = screen.getByRole('table', { name: 'Existing Camps' })
     const afterRow = within(campsTable).getByText('Cedar Flats Camp').closest('tr') as HTMLElement
-    expect(within(afterRow).getByRole('button', { name: /^edit$/i })).toBeEnabled()
-    expect(within(afterRow).getByRole('button', { name: /^delete$/i })).toBeEnabled()
+    // Still the WRITE surface (Edit/Delete, not View) — frozen only because this camp is the one
+    // still open in the panel after the save.
+    expect(within(afterRow).getByRole('button', { name: /^edit$/i })).toBeDisabled()
+    expect(within(afterRow).getByRole('button', { name: /^delete$/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /^view$/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
   })
