@@ -379,7 +379,7 @@ const SamplePage: FC<SamplePageProps> = ({
   // ---- Samples table -----------------------------------------------------------------------------
   const samplesTable = (
     <TableContainer title={`Samples (${samples.length})`}>
-      <Table aria-label="Samples">
+      <Table>
         <TableHead>
           <TableRow>
             {/* Legacy samples list (schedule8Detail.xhtml) uses this exact "Tree To Truck Pages"

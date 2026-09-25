@@ -40,14 +40,15 @@ export class Schedule4SubPage {
   }
 
   /**
-   * The rows table, addressed by its accessible name — which is the sub-page LABEL ("Towing Total"),
-   * NOT the table's own `aria-label` ("Towing Total rows").
+   * The rows table, addressed by its accessible name — the sub-page LABEL ("Towing Total"), which is
+   * the `TableContainer title` Carbon wires to the table through `aria-labelledby`. Confirmed against
+   * the running app 2026-08-17 via `ariaSnapshot()`: `- table "Towing Total"`.
    *
-   * Why: the table carries BOTH `aria-label="<label> rows"` and the `aria-labelledby` Carbon's
-   * `TableContainer title` adds, and per the accessible-name spec `aria-labelledby` WINS — so the name
-   * assistive technology (and `getByRole`) sees is the container title. Confirmed against the running
-   * app 2026-08-17 via `ariaSnapshot()`: `- table "Towing Total"`. Matching on the `aria-label` string
-   * silently resolves nothing. (That dead `aria-label` is filed as BUG-2 in this UC's defects.md.)
+   * History: the table also used to carry `aria-label="<label> rows"`, which `aria-labelledby`
+   * overrides per the accessible-name spec, so matching on it silently resolved nothing. That dead
+   * attribute was BUG-2 in this UC's defects.md and was removed by bcgov/nr-ilcr#321 (2026-09-24);
+   * an ESLint rule (`no-restricted-syntax` in `frontend/eslint.config.mjs`) now keeps it out, and
+   * `components/__tests__/table-accessible-name.test.ts` proves that rule fires.
    *
    * `exact: true` because `getByRole`'s name matching is substring-by-default.
    */

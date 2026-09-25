@@ -498,7 +498,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
 
   const listTable = (
     <TableContainer title={def.listHeader}>
-      <Table aria-label={def.listHeader}>
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Description</TableHeader>

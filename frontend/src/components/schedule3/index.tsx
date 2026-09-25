@@ -651,10 +651,7 @@ const Schedule3: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
           <TableContainer title="Total Overhead and Cost Per Unit Calculation">
-            <Table
-              aria-label="Total Overhead and Cost Per Unit Calculation"
-              className="schedule-3__cost-table"
-            >
+            <Table className="schedule-3__cost-table">
               <TableHead>
                 <TableRow>
                   <TableHeader aria-label="Cost item" />
