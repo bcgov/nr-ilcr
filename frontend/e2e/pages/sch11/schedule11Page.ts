@@ -246,13 +246,21 @@ export class Schedule11Page {
    * either way, scoped to the table body and to the FIRST cell, so a value that also appears in Comments
    * cannot select the wrong row; the footer "Totals" row and the placeholder row are excluded by
    * construction.
+   *
+   * WHY A PATTERN, NOT `getByText(location, { exact: true })`: past Draft a read-only cell also holds the
+   * original-value indicator (Story 26.2 D2 — every row, every role), and its tooltip text lives inside
+   * the same cell, so the cell's text is "<name>Original Submission Value: …". An exact match then finds
+   * nothing — which is how S20 failed in CI (PR #508), where the Flyway e2e DB has no 'S' snapshot and so
+   * every field flags "added since submission", while the extract's real snapshots matched and stayed
+   * silent locally. The name must be the WHOLE cell text, or be followed only by that verbatim label.
    */
   row(location: string): Locator {
+    const name = location.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return this.table.locator('tbody tr').filter({
       has: this.page
         .locator('td')
         .first()
-        .getByText(location, { exact: true })
+        .filter({ hasText: new RegExp(`^${name}(?:\\s*${ORIGINAL_VALUE_TOOLTIP_LABEL}[\\s\\S]*)?$`) })
         .or(this.page.getByRole('textbox', { name: `Location for ${location}`, exact: true })),
     });
   }
@@ -260,8 +268,17 @@ export class Schedule11Page {
   /** Every Location value currently listed, in render order — the input's value on an editable row. */
   async listedLocations(): Promise<string[]> {
     const cells = this.table.locator('tbody tr:not(.schedule-11__totals) td:first-child');
+    // The input's value on a live row; otherwise the cell's OWN text nodes, so an original-value
+    // indicator's tooltip inside a read-only cell cannot leak into the name (see row()).
     const texts = await cells.evaluateAll((tds) =>
-      tds.map((td) => (td.querySelector('input') as HTMLInputElement | null)?.value ?? td.textContent ?? ''),
+      tds.map(
+        (td) =>
+          (td.querySelector('input') as HTMLInputElement | null)?.value ??
+          Array.from(td.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent ?? '')
+            .join(''),
+      ),
     );
     // Drop the placeholder row, which occupies the same first-cell position — both texts it can carry.
     // Matched against the pinned constants rather than a hand-typed prefix: with a local literal, a change
@@ -413,6 +430,12 @@ export class Schedule11Page {
 }
 
 /** The Locations table's columns, in render order (COLUMNS in components/schedule11/index.tsx). */
+/**
+ * The verbatim label every original-value tooltip starts with (the server composes it, AD-8). A read-only
+ * cell's text is its value followed by this, whenever the field carries an indicator.
+ */
+const ORIGINAL_VALUE_TOOLTIP_LABEL = 'Original Submission Value:';
+
 /** The text controls of a live row, named as the page labels them. */
 export type Sch11RowField =
   | 'Location'
