@@ -126,6 +126,14 @@ const DELIBERATELY_ABSENT = new Map<AnchorKey, string>([
   ['13/2016', 'sch2 "not-found" — 404 on a closed mill that has no row for this year.'],
   ['25051/2018', 'sch4 "not-found" — 404. Mill 25051 IS seeded (CLS) and has a 2015 row for the 409 arm.'],
   [
+    '23050/2024',
+    'sch6 "not-found" (S08, "Schedule not found." -> 404). CARVED, like sch5\'s below: the sch6 patch '
+      + 'opens reporting year 2024 for six mills and skips this one precisely so a 404 anchor exists '
+      + "inside sch6's own minted year. Mill 23050 IS seeded (ACT) and holds rows for 2017-2023, so "
+      + 'the mill resolves and only the YEAR is missing — which is what makes the GET 404 rather than '
+      + 'fail on an unknown mill. Seeding it would delete the fixture, not fix it.',
+  ],
+  [
     '16050/2022',
     'sch5 "no-schedule" (S18, "No Schedule 5 Record Found for Mill/Year" -> 404). The hole is CARVED '
       + 'rather than found: the sch5 fan-out opens 2022 for sixteen of the seventeen ACT mills and skips '
@@ -608,11 +616,11 @@ test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented
   // that "should be there" with nothing pointing at the cause.
   //
   // ILCR_COST_REPORT_DETAIL carries ONE FK per report family and they are mutually exclusive: a row
-  // belongs to a summary (schedules 1/2/3), a transportation report (schedule 4), or a camp
-  // (schedule 5). Every family this seed uses must be listed — a MISSING family reads exactly like an
-  // orphan, which is how the sch5 read-only camp first tripped this gate (2026-09-10). If a future
-  // schedule adds another FK column (V31's ROAD_MAINTENANCE_REPORT_ID is the obvious next one), add
-  // it here in the same change or its rows will be reported as parentless.
+  // belongs to a summary (schedules 1/2/3), a transportation report (schedule 4), a camp
+  // (schedule 5), or a road maintenance report (schedule 6). Every family this seed uses must be
+  // listed — a MISSING family reads exactly like an orphan, which is how the sch5 read-only camp first
+  // tripped this gate (2026-09-10). If a future schedule adds another FK column, add it here in the
+  // same change or its rows will be reported as parentless.
   const parentsByColumn: ReadonlyArray<{ column: string; ids: Set<string | null> }> = [
     {
       column: 'ILCR_REPORT_SUMMARY_ID',
@@ -627,6 +635,16 @@ test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented
     {
       column: 'CAMP_REPORT_ID',
       ids: new Set(parseInserts(e2eOnly, 'CAMP_REPORT').map((r) => r.CAMP_REPORT_ID)),
+    },
+    {
+      // Schedule 6, added 2026-09-18 with S17's read-only fixture — the family this comment had been
+      // predicting. It is the first ROAD_MAINTENANCE_REPORT content the seed carries: every other sch6
+      // anchor is empty at rest and its scenarios create records through the app, but S17's page is
+      // non-Draft and refuses every write, so its two records have to be seeded.
+      column: 'ROAD_MAINTENANCE_REPORT_ID',
+      ids: new Set(
+        parseInserts(e2eOnly, 'ROAD_MAINTENANCE_REPORT').map((r) => r.ROAD_MAINTENANCE_REPORT_ID),
+      ),
     },
   ];
   const orphans = parseInserts(e2eOnly, 'ILCR_COST_REPORT_DETAIL')

@@ -91,9 +91,10 @@
 --                                        16050, 17052, 22050, 22051, 23050,
 --                                        23051, 23052, 24050, 24051,
 --                                        25050-25054
---   ILCR_REPORTING_PERIOD              : 2015-2019, 2022-2023 (2020/2021 exist
+--   ILCR_REPORTING_PERIOD              : 2015-2019, 2022-2024 (2020/2021 exist
 --                                        in V2/V8; 2022-2023 opened 2026-09-09
---                                        for the sch5 fan-out)
+--                                        for the sch5 fan-out, 2024 opened
+--                                        2026-09-17 for the sch6 fan-out)
 --   ILCR_REPORT_SUMMARY_ID             : 3001-3044   (db/ uses 1001-1228)
 --   ILCR_COST_REPORT_DETAIL_ID         : 4001-4317   (db/ uses 5001-9506;
 --                                        4306-4317 added 2026-09-10 for the
@@ -416,6 +417,172 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 24050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 24051, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- SCHEDULE 6 fan-out: reporting year 2024 (fixtures/sch6/schedule6-test-data.ts).
+-- Folded in from real-test-data-patches/sch6/draft-anchors.sql.
+--
+-- WHY ANOTHER NEW YEAR. By the time Schedule 6 was authored the grid was FULL:
+-- surveyed 2026-09-17, the other seven domains pin 151 (mill, year) keys against
+-- 136 Draft cells, and the only two unpinned cells (1/2017, 14050/2018) are CLS
+-- mills that answer HTTP 409 — verified through GET /api/v1/schedule6. Every one
+-- of the ten Draft cells that HOLDS road records is pinned by another domain
+-- (eight by sch1), so none could be borrowed for a read scenario either. So
+-- UC-SCH6-001 had no usable anchor at all and had to mint capacity, exactly as
+-- the FAN-OUT NOTE in sch5/draft-anchors.sql anticipated.
+--
+-- 2024 rather than a reused year: every key any other fixture pins is <= 2023
+-- (sch5 took 2022-2023), so "year >= 2024 belongs to sch6" is STRUCTURAL — no
+-- cross-domain collision is even expressible. Purely additive; no existing row
+-- changes. Safe for the year LIST too, on the same grounds sch5 recorded: nothing
+-- asserts its contents, and the app has no default working context to shift.
+--
+-- CATEGORY ROWS ARE NOT MIRRORED HERE, and for Schedule 6 that needs restating
+-- rather than inheriting: delivery's ROAD_MAINTENANCE_REPORT carries the composite
+-- FK RM_RPT_ILCR_RCAT_FK -> ILCR_RCAT_PK (verified ENABLED in all_constraints,
+-- 2026-09-17), so the PATCH must seed eleven ILCR_REPORT_CATEGORY rows per anchor
+-- or the first record save 500s on the real Oracle. The Flyway test schema models
+-- ILCR_REPORT_CATEGORY with a PK and NO FK, so those rows change nothing here —
+-- the same reasoning as the header's "NOT REPLICATED, deliberately" paragraph.
+-- If a future migration ever adds that FK to the test schema, this block needs
+-- category rows too.
+--
+-- Empty editable Draft at rest; the S01 scenario creates its road record and
+-- deletes it again through the app's own DELETE endpoint.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, ENTRY_USERID) VALUES (2024, DATE '2024-01-01', DATE '2024-12-31', 'E2E_SEED');
+-- 9050/2024 — S01 add (TSA + Supply Block happy path).
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 9050,  'D', 'D', 'E2E_SEED');
+-- 10050/2024 — S02 edit. Empty at rest like the rest: the scenario's own Given creates the record it
+-- then edits, through POST /records, so no ROAD_MAINTENANCE_REPORT row is seeded for it here.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 10050, 'D', 'D', 'E2E_SEED');
+-- 12050/2024 — S03 record a TFL instead of a TSA.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 12050, 'D', 'D', 'E2E_SEED');
+-- 13050/2024 — S04 general comment. Saving a comment on an empty schedule inserts a bare BR-09
+-- PLACEHOLDER row to carry it; clearing the comment removes it again, which is what the scenario's
+-- cleanup PUT does. So this is empty at rest too, and no placeholder is seeded here.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 13050, 'D', 'D', 'E2E_SEED');
+-- 17052/2024 — S05 arm 2 (the corrected TFL number is accepted and saved). Its own cell because a
+-- writer cannot share a (mill, year) with anything under `fullyParallel`.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 17052, 'D', 'D', 'E2E_SEED');
+-- 22050/2024 — the VALIDATE-ONLY anchor: S05's reject arm now, S12-S16 later. Nothing ever saves
+-- here, which is what lets non-writing scenarios share it.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22050, 'D', 'D', 'E2E_SEED');
+-- 22051 / 23051 / 23052 in 2024 — S09, S10 and S11, the three Check Status "Value Required"
+-- outcomes. Each needs its own cell because all three reach their state by saving a record (or saving
+-- one and then editing it on screen), so all three are writers. Empty at rest.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 22051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 23051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 23052, 'D', 'D', 'E2E_SEED');
+-- 24050/2024 — S12 arm 2 (the chosen area type is accepted and saved). Added 2026-09-18 with the
+-- S12-S16 validation block, and the ONLY writer among those ten scenarios: the four numeric slices are
+-- refused entirely on the client and their correction arms never save, so all of them share the
+-- validate-only cell above. A writer cannot share a (mill, year) under `fullyParallel`. Mill 24050 is
+-- ACT and already seeded above, pinned by sch1/sch4/sch5 at 2016-2023, so only the year is new.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 24050, 'D', 'D', 'E2E_SEED');
+-- 24051/2024 — S17's READ-ONLY anchor, and the one sch6 cell that is deliberately NOT Draft. Track
+-- code 'S' (Submitted): the suite runs as ILCR_SUBMITTER, which edits at Draft ONLY, while ADMIN edits
+-- at Submitted/Verified (ScheduleEditability:63-64) — so 'S' makes the document editable:false and the
+-- page renders read-only. Mirrors sch5's own READ_ONLY_ANCHOR (16050/2023 at 'S'). It is kept OUT of
+-- EDITABLE_DRAFT_ANCHORS in the fixture and has its own preflight check, because the list that file
+-- asserts is Draft + editable + record-free and this anchor is none of the three.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 24051, 'S', 'D', 'E2E_SEED');
+-- 25050 / 25052 / 25053 in 2024 — S18, S19 and S20, added 2026-09-18. Each writes, so each needs its
+-- own cell, and all three are empty at rest because every one reaches its state through the app's own
+-- endpoints. S18 stores only a general comment (the backend carries it on a bare BR-09 placeholder row,
+-- which the comment-clearing cleanup PUT removes again, exactly like S04's 13050/2024). S20 is the one
+-- that needs TWO records on ONE cell — Check Status mixed results — which is why it cannot borrow any
+-- other anchor, all of which are asserted record-free at rest.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25052, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25053, 'D', 'D', 'E2E_SEED');
+-- 16050 / 25054 in 2024, and 9050 in 2025 — S21, S22 and S23, added 2026-09-18. The last three slices;
+-- all writers, one cell each, all empty at rest.
+--
+-- THE BR-10 PAIR (S22/S23) CANNOT SHARE A CELL, and the reason is the rule itself rather than
+-- parallelism: they need OPPOSITE stored states. S22 stores a COMPLETE record and breaks it on screen
+-- (a database-reading Check Status would wrongly answer MET — the false-GREEN arm); S23 stores an
+-- INCOMPLETE record and fixes it on screen (such an implementation would wrongly keep reporting it —
+-- the false-RED arm). Each fails in the direction the other cannot detect.
+--
+-- 9050/2025 IS THE FIRST CELL IN 2025, and it is a consequence of arithmetic rather than a new policy:
+-- the extract holds 17 ACT mills, sch6 pins 15 of them at 2024 (plus 23050, whose ABSENCE is S08's
+-- fixture), so 16050 and 25054 were the last two and S21/S22 took them. "Year >= 2024 belongs to sch6"
+-- is the structural invariant the whole sch6 fan-out rests on — every other domain pins <= 2023 — so
+-- 2025 collides with nothing by construction. Mill 9050 is ACT and already seeded; only the year is new.
+INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, ENTRY_USERID) VALUES (2025, DATE '2025-01-01', DATE '2025-12-31', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 16050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2024, 25054, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2025,  9050, 'D', 'D', 'E2E_SEED');
+-- 10050 / 12050 in 2025 — the two ACCESSIBILITY sweeps that need a saved record on screen. Every other
+-- @a11y sweep is a pure reader and needs no cell: the empty-Draft, blank-Add-panel and validation-error
+-- sweeps ride the validate-only cell (nothing is ever written there), the read-only sweep reads S17's
+-- seeded records, and the context-suppressed sweep needs no anchor at all.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2025, 10050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2025, 12050, 'D', 'D', 'E2E_SEED');
+-- 23050/2024 IS ABSENT ON PURPOSE — the absence is S08's fixture (GET -> 404 "Schedule not found.").
+-- The hole is CARVED rather than found: the sch6 patch opens 2024 for six mills and skips this one, so
+-- a 404 anchor exists inside sch6's own new year. Seeding it would delete the fixture, not fix it. It
+-- is registered in DELIBERATELY_ABSENT in preflight/ci-seed-parity.setup.ts, whose reverse check fails
+-- if anyone ever gives it a row. Same construction as sch5's 16050/2022.
+--
+-- 1/2017 — S07's closed-mill guard (GET -> 409). Mill 1 and its CLS xref are already seeded above;
+-- only this report-status row was missing. A row must EXIST for the year or MillContextService answers
+-- 404 first and the 409 the scenario asserts is never reached — the same trap the 1/2016 comment
+-- records for sch3. REUSED from the extract rather than minted in 2024 deliberately: opening 2024 for
+-- a closed mill is fine, but no mill's ILCR_MILL_STATUS_XREF may be flipped to create a guard, since
+-- that would silently redden the closed-mill guards sch2/sch3/sch4/sch5 already pin.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2017, 1,     'D', 'D', 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- SCHEDULE 6 read-only CONTENT on 24051/2024 (S17).
+-- Folded in from real-test-data-patches/sch6/view-mode-road-records.sql.
+--
+-- THE FIRST ROAD_MAINTENANCE_REPORT ROWS THIS SEED HAS EVER CARRIED. Every other
+-- sch6 anchor is empty at rest and its scenarios create their own records through
+-- the app's POST; S17 cannot, because every write to a non-Draft document is
+-- refused — which is the condition the slice is about. So these rows are seeded.
+--
+-- Two records, one per BR-02 branch (a TSA/Supply-Block row and a TFL row), so
+-- the read-only render is proved for both. The figures divide exactly and the
+-- TOTAL rate equals neither record's:
+--     3100  TSA 01 / block 01B : 10,000 / 30,000  -> 3.00, RMG 15
+--     3101  TFL 48             : 20,000 / 90,000  -> 4.50, RMG 10
+--     totals                   : 30,000 / 120,000 -> 4.00
+-- so a page that echoed one row into the totals strip fails instead of passing.
+-- Two rows also sits under the 5-row page size on purpose: the totals' pagination
+-- scope is unresolved in legacy source (e2e defects.md SPEC-3), and six rows would
+-- force this slice to assert an answer to an open question.
+--
+-- COLUMN SHAPE mirrors the app's own writes (Schedule6Repository.insertRoadReport
+-- :241-258 / insertCostDetail :370-376) so the read model assembles these rows
+-- identically to app-created ones: ILCR_CATEGORY_ID '6'; cost item 69 (the single
+-- Schedule 6 item the read side filters on); ILCR_REPORT_SUMMARY_ID NULL, because
+-- a road detail hangs off its report and the ICRD_CHK_B_I_U delivery trigger wants
+-- EXACTLY one parent FK; ITEM_DESCRIPTION NULL, which legacy never sets.
+--
+-- THE GENERAL COMMENT IS ON BOTH ROWS, which is not redundancy: BR-09 is a
+-- replication invariant — every cat-6 row of a mill/year stores the same
+-- schedule-level comment (Schedule6DAO.java:229) and the read side takes the
+-- highest-id row's copy. The per-record comments live on the DETAIL rows; the two
+-- COMMENTS columns are different fields with different widths (deviation E).
+--
+-- IDS ARE EXPLICIT AND BELOW THE SEQUENCE STARTS, per this file's standing rule:
+-- ROAD_MAINTENANCE_REPORT_ID draws from ILCR_REPORT_COMMON_SEQ (start 9500) and
+-- ILCR_COST_REPORT_DETAIL_ID from ILCR_COST_REPORT_DETAIL_SEQ (restarted at 10000
+-- by R__60), so 3100/3101 and 4320/4321 cannot collide with an id the app draws at
+-- runtime. The local patch uses NEXTVAL instead, so the recordIds differ between
+-- environments — which is why the scenario DISCOVERS them from the API rather than
+-- pinning them (the row field ids are `row-<recordId>-*`).
+--
+-- ROAD_MAINTENANCE_REPORT_ID is registered in `parentsByColumn` in
+-- preflight/ci-seed-parity.setup.ts in this same change, or these detail rows would
+-- be reported as parentless — the gate's own header named this as the next FK.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, ENTRY_USERID) VALUES (3100, 2024, 24051, '6', '01', '01B', NULL, 'E2E S17 read-only schedule general comment.', 'E2E_SEED');
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, ENTRY_USERID) VALUES (3101, 2024, 24051, '6', NULL, NULL, '48', 'E2E S17 read-only schedule general comment.', 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4320, NULL, 3100, 69, 10000, 30000, 'E2E S17 read-only TSA record', NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4321, NULL, 3101, 69, 20000, 90000, 'E2E S17 read-only TFL record', NULL, 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
 -- Banner status dates (sec S01 asserts "Sch 1-10 - Status: Draft - Date:

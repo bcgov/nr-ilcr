@@ -96,6 +96,55 @@ export type World = {
    */
   sch4ListedBefore?: string[];
 
+  // --- sch6 ---
+  // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above, so
+  // the promoted common step (steps/common/home-context.steps.ts) serves Schedule 6 unchanged.
+  /**
+   * The per-record comment the scenario owns — its cleanup handle AND the way later steps find the
+   * record it created. A road record has no unique natural key (the same TSA/Supply Block pair may
+   * legitimately repeat), so the comment is what identifies "the record this scenario made".
+   */
+  sch6RecordComment?: string;
+  /**
+   * The `ROAD_MAINTENANCE_REPORT_ID` of the record the scenario created, read back from the API once
+   * the add succeeds. Needed because every row-scoped locator is keyed on it (`row-<recordId>-volume`),
+   * so a Then cannot address the new row until a previous step has captured this.
+   */
+  sch6RecordId?: number;
+  /**
+   * S17's seeded read-only records, resolved from the served document: each expected fixture entry
+   * paired with the record as served and its 1-based DISPLAY ORDINAL.
+   *
+   * Resolved at scenario time rather than pinned, because neither half is stable in the fixture. The
+   * `recordId` differs by environment — the local seed patch draws it from `ILCR_REPORT_COMMON_SEQ`
+   * while the CI seed pins explicit ids — and every row locator is built from `row-<recordId>-*`. The
+   * ordinal is the position in the served list, which is what the accordion titles and the Check Status
+   * lines key on. So the Given matches each record by its per-record COMMENT (stable everywhere) and
+   * carries both derived values forward.
+   */
+  /**
+   * A snapshot of the STORED Schedule 6 records, taken before an action that must not write.
+   *
+   * The BR-10 arms (S22/S23) each assert "no schedule records are changed": Check Status is a READ, and
+   * an implementation that wrote the on-screen payload through on its way to a verdict would still pass
+   * every message assertion while silently saving edits the reporter never committed. So the Given
+   * captures the served records here and a Then re-reads and compares.
+   */
+  sch6StoredSnapshot?: {
+    recordId: number;
+    areaType: string | null;
+    supplyBlock: string | null;
+    tflNumber: string | null;
+    volume: number | null;
+    cost: number | null;
+    comments: string | null;
+  }[];
+  sch6ReadOnlyRecords?: {
+    expected: (typeof import('../../fixtures/sch6/schedule6-test-data'))['S17_RECORDS'][number];
+    record: { recordId: number; comments: string | null };
+    ordinal: number;
+  }[];
+
   // --- sch11 ---
   // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above —
   // Schedule 11 deliberately reuses them so the promoted common step
