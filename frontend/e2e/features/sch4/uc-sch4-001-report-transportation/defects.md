@@ -47,13 +47,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     ("A hovered row keeps its action labels readable", `@discovered-bug`).
 
 - **BUG-2 - CLOSED 2026-09-24: the dead `aria-label`s that a `TableContainer` title overrode are removed (APP-WIDE, #321).**
-  - **What's wrong, in plain terms:** a data table can carry a *name* that screen readers read out. A Schedule 4
-    sub-page's rows table is given **two** - "Towing Total" (from the visible heading) and "Towing Total rows"
-    (typed onto the table). The heading wins, so screen readers say "Towing Total", which is the correct name.
-    **Nothing is wrong for any user;** the defect is that "Towing Total rows" is dead code that looks as though
-    it does something.
-  - **Expected vs actual:** expected one name per table with no ignored attribute in the markup; actual two
-    names declared, one silently discarded.
+  - **What was wrong, in plain terms:** a data table can carry a *name* that screen readers read out. A Schedule 4
+    sub-page's rows table was given **two** - "Towing Total" (from the visible heading) and "Towing Total rows"
+    (typed onto the table). The heading won, so screen readers said "Towing Total", which is the correct name.
+    **Nothing was wrong for any user;** the defect was that "Towing Total rows" was dead code that looked as
+    though it did something.
+  - **Expected vs actual (as raised):** expected one name per table with no ignored attribute in the markup; actual
+    two names declared, one silently discarded.
   - **NOT a WCAG/accessibility item.** Every affected table has a valid accessible name, no success criterion
     fails, and the axe sweeps pass all of them. It involves ARIA attributes, but both the visible and the
     audible behaviour are already correct, so this is a trivial cleanup rather than an accessibility defect.
@@ -87,15 +87,20 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     resolves **1**.
   - **Ticket:** [bcgov/nr-ilcr#321](https://github.com/bcgov/nr-ilcr/issues/321).
   - **Priority / env:** p3 - local seeded DB - Chrome.
-  - **Status:** CLOSED 2026-09-24 — fixed by [bcgov/nr-ilcr#321](https://github.com/bcgov/nr-ilcr/issues/321). All eight attributes above were deleted,
+  - **Status:** CLOSED 2026-09-24 — fixed by PR [#507](https://github.com/bcgov/nr-ilcr/pull/507) for #321. All eight attributes above were deleted,
     plus two more the same shape that had appeared since this sweep (`schedule10/RoadDetailPage.tsx`
     "Road details" under the "<page> -> Roads" title, and `schedule10/index.tsx` "Construction pages" under
     "Page Summary" — both drifted, both dead). No behaviour changes: every table keeps the name it already
     announced, the container title. The ten correctly-labelled tables are untouched.
-  - **Test:** `components/__tests__/table-accessible-name.test.ts` — a source tripwire that fails when a
-    `<Table aria-label>` sits inside a `<TableContainer title>`, so the pattern cannot creep back (the two
-    Schedule 10 cases are exactly what it would have caught). Mutation-proved: re-adding one attribute fails
-    it by file and line. The E2E locator note in `pages/sch4/schedule4SubPage.ts` records the history.
+  - **Test:** an ESLint `no-restricted-syntax` rule in `frontend/eslint.config.mjs` (an AST selector: an
+    `aria-label` on a `<Table>` inside a `<TableContainer title>`), so the pattern cannot creep back — the two
+    Schedule 10 cases are exactly what it would have caught, and `npm run lint` gates in CI (`analysis.yml`).
+    Being an AST match it reads real TSX (a `>` in an earlier prop, arrow functions, spacing) rather than the
+    tag text a regex scan would. `components/__tests__/table-accessible-name.test.ts` lints fixtures through
+    the real config and proves the rule fires on the dead shapes, stays quiet on untitled containers, and
+    names the line when the Schedule 4 attribute is re-added in memory — a rule that matched nothing would
+    pass every lint run silently, which the first draft of it did. The E2E locator note in
+    `pages/sch4/schedule4SubPage.ts` records the history.
 
 - **BUG-3 - A hovered button is almost indistinguishable from the row it sits in (APP-WIDE, WCAG 1.4.11).**
   - **What's wrong:** moving onto a row-action button normally gives it a slightly darker background so the

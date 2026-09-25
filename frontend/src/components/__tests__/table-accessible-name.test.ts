@@ -1,90 +1,137 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { ESLint } from 'eslint'
+import { beforeAll, describe, expect, test } from 'vitest'
 
 /**
- * A tripwire for defect #321: a `<Table aria-label>` inside a `<TableContainer title>` is dead code.
+ * Proof that the #321 lint rule fires — and only where it should.
  *
- * Carbon's `TableContainer` renders its `title` as a heading and hands the heading's id to the
- * `Table` through context, which sets `aria-labelledby` on the `<table>`
+ * The rule itself lives in `eslint.config.mjs` (`no-restricted-syntax`, the selector commented
+ * "#321"). Carbon's `TableContainer` renders its `title` as a heading and hands the heading's id to
+ * the `Table` through context, which sets `aria-labelledby` on the `<table>`
  * (@carbon/react DataTable/TableContainer.js, Table.js). Per the accessible-name computation
- * `aria-labelledby` wins over `aria-label`, so the label never reaches assistive technology. Eight
- * tables carried one when #321 was raised and two more (Schedule 10) had appeared by the time it was
- * fixed — two of the ten with a label that had drifted from the live name. This fails on the next one.
+ * `aria-labelledby` wins over `aria-label`, so a `<Table aria-label>` inside a
+ * `<TableContainer title>` is dead: never heard, and free to drift from the live name. Ten tables
+ * carried one when #321 was fixed; `npm run lint` (gated in CI by analysis.yml) now fails the next.
  *
- * READ THIS BEFORE TRUSTING IT. It is a source scan, in the pattern of
- * `schedule2/__tests__/fallback-strings.test.ts` and `schedule7a/__tests__/layout-rules.test.ts`:
+ * WHY THIS FILE EXISTS. A lint rule that matches nothing passes every run, silently. The first draft
+ * of this rule did exactly that — esquery does not honour a chained `:has(> A > B)` — and only a
+ * mutation run caught it. So this test lints TSX fixtures through the project's real config and
+ * asserts the rule fires on the dead shapes and stays quiet on the live ones, including the
+ * "valid TSX" shapes the PR #507 review raised against the regex scan this replaced:
  *
- *   - It matches TEXT, not the rendered tree. "Inside" means: the nearest `<TableContainer` opening
- *     tag before the `<Table` tag has not been closed by a `</TableContainer>` in between. That is
- *     right for every table in this codebase today and obvious when it stops being right.
- *   - It says nothing about tables whose container has NO title. There the `aria-label` IS the
- *     accessible name (the ten tables #321 lists as correct) and it must stay.
- *   - It cannot tell a good name from a bad one. It only fails when a name is declared that cannot
- *     be heard.
+ *   - a `>` inside an earlier prop (`isSortable={n > 0}`, an arrow function, `->` in a title)
+ *   - whitespace around `=`, template-literal values, a Table nested deeper in the container
+ *   - an untitled container: there the `aria-label` IS the accessible name and must stay
+ *   - a titled and an untitled container side by side in one tree (a descendant `:has` would
+ *     wrongly flag the untitled one — this is what the nested `:has(> …)` buys)
+ *
+ * It then mutates a real component in memory — re-adding the exact attribute #321 removed — and
+ * asserts the rule names that line. That is the "still finds the tables it polices" check the old
+ * source scan had, tied to the real shape instead of a count.
  */
-const COMPONENTS_DIR = resolve(__dirname, '..')
+const FRONTEND_ROOT = resolve(__dirname, '../../..')
+const RULE_TAG = '#321'
 
-function componentSources(dir: string): string[] {
-  const out: string[] = []
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry)
-    if (statSync(full).isDirectory()) {
-      if (entry !== '__tests__') {
-        out.push(...componentSources(full))
-      }
-    } else if (entry.endsWith('.tsx') && !entry.endsWith('.test.tsx')) {
-      out.push(full)
-    }
-  }
-  return out
-}
+let eslint: ESLint
 
-interface TitledTable {
-  where: string
-  ariaLabel: string | null
-}
-
-/** Every `<Table …>` that sits inside a `<TableContainer …title=…>` in `source`. */
-function titledTables(source: string, file: string): TitledTable[] {
-  const found: TitledTable[] = []
-  // `<Table` followed by whitespace, `>` or `/` — not `<TableHead`, `<TableRow`, `<TableContainer`.
-  const tableTag = /<Table(?=[\s>/])([^>]*)>/g
-  for (const match of source.matchAll(tableTag)) {
-    const before = source.slice(0, match.index)
-    const containerStart = before.lastIndexOf('<TableContainer')
-    if (containerStart < 0) {
-      continue
-    }
-    if (before.indexOf('</TableContainer>', containerStart) >= 0) {
-      continue
-    }
-    const containerTag = before.slice(containerStart, before.indexOf('>', containerStart) + 1)
-    if (!/\btitle=/.test(containerTag)) {
-      continue
-    }
-    const attrs = match[1]
-    const label = /aria-label=(\{[^}]*\}|"[^"]*"|'[^']*')/.exec(attrs)
-    const line = before.split('\n').length
-    found.push({ where: `${file}:${line}`, ariaLabel: label ? label[1] : null })
-  }
-  return found
-}
-
-describe('data tables inside a titled TableContainer (defect #321)', () => {
-  const tables = componentSources(COMPONENTS_DIR).flatMap((full) =>
-    titledTables(readFileSync(full, 'utf8'), relative(COMPONENTS_DIR, full)),
+/** Lint `code` as a component file and return the #321 messages. */
+async function dead321(code: string, filePath = 'src/components/__fixture__/Fixture.tsx') {
+  const [result] = await eslint.lintText(code, { filePath: resolve(FRONTEND_ROOT, filePath) })
+  return result.messages.filter(
+    (m) => m.ruleId === 'no-restricted-syntax' && m.message.includes(RULE_TAG),
   )
+}
 
-  test('the scan still finds the titled tables it exists to police', () => {
-    // A rename of `TableContainer`/`Table`, or a scan bug, would otherwise pass the assertion below
-    // vacuously. Ten titled tables exist at the time of writing (the eight in #321 plus Schedule 10's
-    // two); the floor is lower so that removing a table is not a failure of this file.
-    expect(tables.length).toBeGreaterThanOrEqual(8)
+const component = (jsx: string) => `export const Fixture = () => (${jsx})\n`
+
+beforeAll(() => {
+  eslint = new ESLint({ cwd: FRONTEND_ROOT })
+})
+
+describe('the #321 lint rule: <Table aria-label> inside <TableContainer title>', () => {
+  test.each<[string, string, number]>([
+    [
+      'plain',
+      `<TableContainer title="Roads"><Table aria-label="Roads rows" /></TableContainer>`,
+      1,
+    ],
+    [
+      'a `>` in an earlier Table prop',
+      `<TableContainer title="Roads"><Table isSortable={items.length > 0} aria-label="Roads rows" /></TableContainer>`,
+      1,
+    ],
+    [
+      'an arrow function in an earlier container prop and `->` in a template-literal title',
+      `<TableContainer description={(v) => v > 0} title={\`\${page.label} -> Roads\`}><Table aria-label={\`\${def.label} rows\`} /></TableContainer>`,
+      1,
+    ],
+    [
+      'spaces around `=`',
+      `<TableContainer title = "Roads"><Table aria-label = "Roads rows" /></TableContainer>`,
+      1,
+    ],
+    [
+      'the Table nested deeper in the container',
+      `<TableContainer title="Roads"><div><Table aria-label="x"><TableHead /></Table></div></TableContainer>`,
+      1,
+    ],
+    [
+      'two tables in one titled container — both reported',
+      `<TableContainer title="Roads"><Table aria-label="x" /><Table aria-label="y" /></TableContainer>`,
+      2,
+    ],
+  ])('fires on a dead label: %s', async (_name, jsx, count) => {
+    await expect(dead321(component(jsx))).resolves.toHaveLength(count)
   })
 
-  test('none of them declares an aria-label the container title would override', () => {
-    const dead = tables.filter((t) => t.ariaLabel !== null).map((t) => `${t.where} ${t.ariaLabel}`)
-    expect(dead).toEqual([])
+  test.each<[string, string]>([
+    [
+      'an untitled container — the label is the name',
+      `<TableContainer><Table aria-label="Roads rows" /></TableContainer>`,
+    ],
+    [
+      'a self-closing untitled container before the one that holds the table',
+      `<><TableContainer /><TableContainer><Table aria-label="Roads rows" /></TableContainer></>`,
+    ],
+    [
+      'a titled container beside an untitled one in the same tree',
+      `<div><TableContainer title="A"><Table /></TableContainer><TableContainer><Table aria-label="B rows" /></TableContainer></div>`,
+    ],
+    [
+      'a titled container whose table has no label',
+      `<TableContainer title="A"><Table /></TableContainer>`,
+    ],
+    [
+      'TableHead is not Table',
+      `<TableContainer title="A"><Table><TableHead aria-label="h" /></Table></TableContainer>`,
+    ],
+    [
+      'a `title` on an element inside a prop, not on the container',
+      `<TableContainer description={<span title="t" />}><Table aria-label="x" /></TableContainer>`,
+    ],
+  ])('stays quiet on a live label: %s', async (_name, jsx) => {
+    await expect(dead321(component(jsx))).resolves.toEqual([])
+  })
+
+  test('a real component: clean as committed, flagged at the line if the attribute comes back', async () => {
+    // Schedule 4's sub-page table — `<TableContainer title={def.label}>` wrapping `<Table>` — carried
+    // aria-label={`${def.label} rows`} until #321. Re-adding it in memory must fail at that line.
+    const file = 'src/components/schedule4/SubPage.tsx'
+    const source = readFileSync(resolve(FRONTEND_ROOT, file), 'utf8')
+    const container = source.indexOf('<TableContainer title=')
+    const table = source.indexOf('<Table>', container)
+    expect(
+      container,
+      'the fixture component no longer has a titled TableContainer',
+    ).toBeGreaterThan(-1)
+    expect(table, 'the fixture component no longer has a bare <Table> under it').toBeGreaterThan(-1)
+
+    await expect(dead321(source, file)).resolves.toEqual([])
+
+    const mutated = `${source.slice(0, table)}<Table aria-label={\`\${def.label} rows\`}>${source.slice(table + '<Table>'.length)}`
+    const line = source.slice(0, table).split('\n').length
+    const hits = await dead321(mutated, file)
+    expect(hits.map((m) => m.line)).toEqual([line])
   })
 })

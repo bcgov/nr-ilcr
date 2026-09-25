@@ -47,7 +47,8 @@ export class Schedule4SubPage {
    * History: the table also used to carry `aria-label="<label> rows"`, which `aria-labelledby`
    * overrides per the accessible-name spec, so matching on it silently resolved nothing. That dead
    * attribute was BUG-2 in this UC's defects.md and was removed by bcgov/nr-ilcr#321 (2026-09-24);
-   * a source tripwire (`components/__tests__/table-accessible-name.test.ts`) now keeps it out.
+   * an ESLint rule (`no-restricted-syntax` in `frontend/eslint.config.mjs`) now keeps it out, and
+   * `components/__tests__/table-accessible-name.test.ts` proves that rule fires.
    *
    * `exact: true` because `getByRole`'s name matching is substring-by-default.
    */
