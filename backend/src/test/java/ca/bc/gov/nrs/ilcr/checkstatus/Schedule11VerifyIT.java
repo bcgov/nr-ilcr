@@ -238,6 +238,8 @@ class Schedule11VerifyIT extends AbstractOracleIT {
     // The seeded pair a verify must REPLACE (D1), so "the auditor was written" cannot pass on a
     // column that simply already held the right value.
     assertThat(before.get("AUDITOR_USER_GUID")).isEqualTo(OLD_AUDITOR_GUID);
+    // Both halves differ from what the verify writes (807), so each column's overwrite is observed.
+    assertThat(((Number) before.get("AUDITOR_MILL_ID")).longValue()).isEqualTo(813L);
 
     mockMvc
         .perform(verify11(807, 2021))

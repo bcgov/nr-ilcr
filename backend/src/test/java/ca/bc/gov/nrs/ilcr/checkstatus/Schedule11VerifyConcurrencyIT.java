@@ -105,6 +105,9 @@ class Schedule11VerifyConcurrencyIT extends AbstractOracleIT {
               result.getResponse().getStatus(), content.isBlank() ? null : json.readTree(content));
         };
 
+    // What must not change is read BEFORE the race, not restated as a literal after it.
+    Map<String, Object> before = statusRow();
+
     ExecutorService pool = Executors.newFixedThreadPool(2);
     List<Outcome> outcomes = new ArrayList<>();
     try {
@@ -126,13 +129,15 @@ class Schedule11VerifyConcurrencyIT extends AbstractOracleIT {
     assertThat(winner.body().path("message").path("key").asText()).isEqualTo("sch11VerifiedMsg");
     assertThat(loser.body().path("detail").asText()).isEqualTo(SUBMISSION_ERROR);
 
-    Map<String, Object> row =
-        jdbc.queryForMap(
-            "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REVISION_COUNT"
-                + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = 812 AND REPORT_YEAR = 2021");
+    Map<String, Object> row = statusRow();
+    assertThat(before.get("MILL_SILVICULTUR_STATUS_CODE")).isEqualTo("S");
     assertThat(row.get("MILL_SILVICULTUR_STATUS_CODE")).isEqualTo("V");
-    assertThat(row.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("D");
-    assertThat(((Number) row.get("REVISION_COUNT")).intValue()).isZero();
+    // The 1-10 code and REVISION_COUNT (D3: no bump) are unchanged by the winner and the loser
+    // alike.
+    assertThat(row.get("ILCR_MILL_REPORT_STATUS_CODE"))
+        .isEqualTo(before.get("ILCR_MILL_REPORT_STATUS_CODE"));
+    assertThat(((Number) row.get("REVISION_COUNT")).intValue())
+        .isEqualTo(((Number) before.get("REVISION_COUNT")).intValue());
 
     // The loser's transaction rolled back whole: category '11' advanced exactly once.
     Map<String, Object> eleven =
@@ -141,5 +146,11 @@ class Schedule11VerifyConcurrencyIT extends AbstractOracleIT {
                 + " WHERE ILCR_MILL_ID = 812 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '11'");
     assertThat(eleven.get("CATEGORY_STATE_CODE")).isEqualTo("V");
     assertThat(((Number) eleven.get("REVISION_COUNT")).intValue()).isEqualTo(1);
+  }
+
+  private Map<String, Object> statusRow() {
+    return jdbc.queryForMap(
+        "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REVISION_COUNT"
+            + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = 812 AND REPORT_YEAR = 2021");
   }
 }

@@ -167,6 +167,11 @@ class TrackTransitionTest {
     assertThat(TrackTransition.VERIFY.rejectedKey(ELEVEN))
         .isEqualTo(ReportTransitionRejectedException.GENERIC_KEY)
         .isEqualTo("reportSubmissionErrorMsg");
+    // Production never reads this key: refusedVerify and the writer's zero-row path both throw the
+    // no-arg exception. Pin that the text actually shown IS the declared key, so the two cannot
+    // drift.
+    assertThat(new ReportTransitionRejectedException().getMessageKey())
+        .isEqualTo(TrackTransition.VERIFY.rejectedKey(ELEVEN));
     assertThat(TrackTransition.VERIFY.gateFailedKey(ELEVEN))
         .isEqualTo("reportNotSubmittedErrorMsg");
   }

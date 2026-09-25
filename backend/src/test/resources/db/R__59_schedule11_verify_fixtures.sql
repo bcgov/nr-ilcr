@@ -9,7 +9,8 @@
 -- Schedule 11 is MET when every location has BOTH an Actual (item 24) and a Planned (item 23) cost; zero locations
 -- is vacuously MET (legacy Schedule11CheckStatus.java:19).
 --   807  Schedule11VerifyIT             -- AC 1 happy path: silviculture S, 1-10 D; two met locations; the new admin
---                                           is xref'd here; a PRE-EXISTING different AUDITOR pair (overwritten, D1)
+--                                           is xref'd here; a PRE-EXISTING AUDITOR pair differing in BOTH halves,
+--                                           (813, OLDAUDITOR), set by an UPDATE after 813's xref (overwritten, D1)
 --                                           and a LICENSEE pair (never touched); one 1-10 summary + cost detail
 --   808  Schedule11VerifyIT             -- AC 2 gate fails: the Planned Cost row exists with COST NULL (never written)
 --   809  Schedule11VerifyIT             -- AC 5 D->V jump refused (never written)
@@ -341,6 +342,13 @@ INSERT INTO THE.ILCR_MILL_USER_XREF (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACT
                                      ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
   SELECT 813, 'VERIFY11OLDAUDITOR00011112222AA1', SYSDATE, NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE FROM DUAL
    WHERE NOT EXISTS (SELECT 1 FROM THE.ILCR_MILL_USER_XREF WHERE ILCR_MILL_ID = 813 AND USER_GUID = 'VERIFY11OLDAUDITOR00011112222AA1');
+-- 807's pre-existing AUDITOR pair must differ from the acting admin's in BOTH halves, or the MILL_ID column's overwrite
+-- (D1) is proven by no arm: re-point it at the (813, OLDAUDITOR) xref just created. An UPDATE here rather than in 807's
+-- INSERT because the pair's FK needs this xref row first. Guarded on the exact seed values, so a re-run is a no-op.
+UPDATE THE.ILCR_MILL_REPORT_STATUS
+   SET AUDITOR_MILL_ID = 813
+ WHERE REPORT_YEAR = 2021 AND ILCR_MILL_ID = 807 AND MILL_SILVICULTUR_STATUS_CODE = 'S'
+   AND AUDITOR_MILL_ID = 807 AND AUDITOR_USER_GUID = 'VERIFY11OLDAUDITOR00011112222AA1';
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE,
                                          MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, REVISION_COUNT,
                                          AUDITOR_MILL_ID, AUDITOR_USER_GUID, LICENSEE_MILL_ID,

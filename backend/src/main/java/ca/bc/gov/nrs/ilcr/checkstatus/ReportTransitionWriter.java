@@ -124,8 +124,11 @@ public class ReportTransitionWriter {
         // Zero rows is a REFUSAL, not a failure: the track left expectedStatus between the
         // service's unlocked read and this write. Legacy's generic text, because VERIFY's other
         // refusals carry it too (Epic 17's parity tie-breaker) — null selects it.
+        // Names the pair, not a verb: Story 26.5's V->S will reuse this dispatch.
         log.info(
-            "Verify 409: the {} track left {} for millId={} year={} before the write",
+            "{}->{} 409: the {} track left {} for millId={} year={} before the write",
+            expectedStatus,
+            targetStatus,
             track,
             expectedStatus,
             millId,

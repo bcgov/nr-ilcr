@@ -4360,10 +4360,12 @@ describe('Verify Schedule 11 (Story 26.3)', () => {
     expect(oneToTen.count).toBe(1)
   })
 
-  test('AC 8 (mirror): a Schedule 11 verify success does not release a latched Schedule 11 Submit', async () => {
+  test('AC 8 (mirror): a Schedule 11 verify success never clears the whole latch set, so a latched Schedule 11 Submit stays greyed', async () => {
     // The fake answers the refresh after the Schedule 11 submit with Submitted AND `canSubmit11:
     // true` — deliberately inconsistent, so the latch is the ONLY thing holding that Submit greyed
-    // while the Verified beside it is live. A verify that cleared the latch set re-offers it here.
+    // while the Verified beside it is live. A verify that emptied the latch set re-offers it here.
+    // This arm does NOT pin the `which === 'verify'` guard: `withoutOneToTenSubmit` never removes
+    // 'submit11', so dropping that guard leaves this arm green. The arm above pins the guard.
     const reads = fakeReads(
       sweep({ statusCode11: 'D', canSubmit11: true }),
       json(millContextBody('D', 'D')),
