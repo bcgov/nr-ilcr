@@ -1,23 +1,17 @@
-# DIVERGENCE — this scenario is DELIBERATELY RED. It reproduces defects.md DIV-6, tracked upstream as
-# bcgov/nr-ilcr#359, and stays failing until Check Status accounts for what is on screen. Do not weaken
-# it, skip it, or "fix" it by asserting the current behaviour: the failing state IS the tracking signal.
-# Filter it out of a fresh-failures run with `npm run test:gate`.
+# Check Status evaluates what is ON SCREEN, including unsaved edits. These scenarios were DELIBERATELY RED
+# until 2026-09-25, reproducing defects.md DIV-6 (bcgov/nr-ilcr#359): Check Status judged the LAST SAVED
+# schedule, so changing the Override switch (or any amount) and checking without saving described the
+# stored data, not the screen. They went green, unedited, when #359's Schedules 1–3 fix gave
+# `POST /api/v1/schedule3/check-status` a body carrying the on-screen values.
 #
-# WHAT IT REPRODUCES
-# Check Status reports on the LAST SAVED schedule and silently ignores anything typed since. Change the
-# Override switch (or any amount) and press Check Status without saving, and the answer describes the
-# stored data, not the screen — with nothing telling the reporter that.
+# That is legacy parity: legacy's Schedule 3 Check Status (`webapp/schedule3.xhtml:38,421`) described
+# the screen, the unsaved Override (`#{schedule3MB.schedule3.overrideTotalPop}`, `:323-324`) included,
+# and persisted nothing — the observed behaviour #359 records. No mechanism is claimed: the same
+# `ajax="false"` markup on legacy Schedule 5 judged the saved record instead (#476).
 #
-# Legacy could not behave this way. Its Check Status button was `ajax="false"`
-# (`webapp/schedule3.xhtml:38,421`), i.e. a full form postback: JSF pushed every submitted field —
-# including `overrideTotPopVal`, bound to `#{schedule3MB.schedule3.overrideTotalPop}` (`:323-324`) —
-# into the bean during UPDATE_MODEL_VALUES, and only then ran `checkStatus()`, which validated that
-# in-memory schedule and persisted nothing. So legacy checked what you were looking at.
-#
-# The rewrite cannot: `POST /api/v1/schedule3/check-status` takes only `millId` and `year` and carries NO
-# request body (`Schedule3Api.java:85-87`), the client posts no payload
-# (`useScheduleMutations.checkStatus` -> `api().post(url(suffix))`), and the service reads the persisted
-# summary and details (`Schedule3Service.java:889-895`, `override = OVERRIDE_YES.equals(summary.location())`).
+# The body carries the Override and the fixed-line amounts; the Other Acceptable / Unacceptable sub-page
+# rows are not on this screen and stay database-sourced, but the on-screen Override drives their
+# Harvest < PO&P check too.
 #
 # WHY THIS ANCHOR AND WHY IT IS SAFE TO SHARE. `check-override` is seeded with Override "Y" plus two
 # stored BR-03 violations, so it PASSES Check Status as it stands — which is exactly the starting point
@@ -31,8 +25,8 @@ Feature: Report Forest Management Administration Costs (Schedule 3) — Check St
   I want Check Status to judge what is on my screen
   So that I am not told the schedule is fine when what I am looking at is not
 
-  @discovered-divergence @p1 @S12
-  Scenario: Check Status reflects an Override change that has not been saved yet [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-6 / issue #359]
+  @p1 @S12
+  Scenario: Check Status reflects an Override change that has not been saved yet
     Given the Schedule 3 anchor "check-override"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 3
@@ -63,8 +57,8 @@ Feature: Report Forest Management Administration Costs (Schedule 3) — Check St
   # suppress the required-field checks (`Schedule3CheckStatus.isScheduleValid`, the two families are
   # independent). Verified at rest 2026-08-27: `POST /check-status` on 22050/2021 answers
   # `requirementsMet: true` with zero errors, and Office Expense holds Harvest 25,000.
-  @discovered-divergence @p1 @S25
-  Scenario: Check Status reports a mandatory amount cleared on screen but not saved [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-6 / issue #359]
+  @p1 @S25
+  Scenario: Check Status reports a mandatory amount cleared on screen but not saved
     Given the Schedule 3 anchor "check-override"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 3
@@ -89,8 +83,8 @@ Feature: Report Forest Management Administration Costs (Schedule 3) — Check St
   # line's. That single-error state is what makes the mirror assertable in both directions: correcting the
   # one thing on screen must clear the one error AND flip the whole verdict to met. Read-only: typing
   # without saving writes nothing, which the unmoved lock token proves.
-  @discovered-divergence @p1 @S26
-  Scenario: Check Status stops reporting a flagged amount once it is corrected on screen [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-6 / issue #359]
+  @p1 @S26
+  Scenario: Check Status stops reporting a flagged amount once it is corrected on screen
     Given the Schedule 3 anchor "check-harvest-pop"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 3

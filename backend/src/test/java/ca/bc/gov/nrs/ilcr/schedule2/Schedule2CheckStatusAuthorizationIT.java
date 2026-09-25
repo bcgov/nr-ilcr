@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -26,6 +27,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2/check-status";
+
+  /** Since #359 the endpoint requires the on-screen body; its content is irrelevant to authz. */
+  private static final String BODY = "{\"purchasedLogCostCost\":null}";
+
   private static final long SEEDED_MILL = 514L;
   private static final int SEEDED_YEAR = 2021;
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
@@ -45,6 +50,8 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
                 .with(jwtWithGroups(List.of())))
@@ -58,6 +65,8 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
                 .with(canonicalSubmitter()))

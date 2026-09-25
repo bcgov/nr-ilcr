@@ -12,11 +12,13 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -137,10 +139,11 @@ class Schedule1ControllerTest {
   @Test
   void checkStatus_validatesContext_andReturnsServiceResult() {
     Schedule1CheckStatusResponse status = mock(Schedule1CheckStatusResponse.class);
-    when(schedule1Service.checkSchedule1Status(MILL_ID, YEAR)).thenReturn(status);
+    Schedule1CheckRequest request = new Schedule1CheckRequest(List.of(), null);
+    when(schedule1Service.checkStatus(MILL_ID, YEAR, request)).thenReturn(status);
 
     ResponseEntity<Schedule1CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(status, response.getBody());

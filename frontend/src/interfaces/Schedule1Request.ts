@@ -38,3 +38,20 @@ export const WRITABLE_LINE_ITEM_CODES = [12, 13, 14, 15, 16, 17, 18] as const
 /** Codes whose VOLUME is user-entered but whose cost is pulled/derived (read-only). */
 export const VOLUME_ONLY_8_DIGIT_CODES = [143, 144] as const
 export const VOLUME_ONLY_7_DIGIT_CODES = [139, 140] as const
+
+/**
+ * The Check Status body — the values currently ON SCREEN, mirroring the backend
+ * `Schedule1CheckRequest` (issue #359).
+ *
+ * Legacy's Check Status was a full form postback, so the verdict described the screen and not the
+ * saved record. The itemized Other Costs rows are NOT sent: they are edited on the Other Costs
+ * sub-page, never on this screen, and the server reads them from the database.
+ *
+ * ⚠ `null` means "no usable value on screen" and MUST stay null — the server's check is a pure null
+ * test (a stored `0` passes), so coercing a blank field to `0` turns a missing value into a pass.
+ */
+export interface Schedule1CheckRequest {
+  // 12–18, 1, 2 carry volume + cost; 143, 144, 139, 140 carry a volume only (cost null).
+  readonly lineItems: readonly Schedule1LineItemInput[]
+  readonly otherCostsVolume: number | null
+}

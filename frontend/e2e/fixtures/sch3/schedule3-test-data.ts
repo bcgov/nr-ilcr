@@ -241,10 +241,6 @@ export const millOptionText = (m: MillRef): string => `${m.millNumber} - ${m.mil
 export const scheduleUrl = (millId: number, year: number): string =>
   `/api/v1/schedule3?millId=${millId}&year=${year}`;
 
-/** POST-only, mutates nothing by contract (AD-5) — never counted by the mutation spy. */
-export const checkStatusUrl = (millId: number, year: number): string =>
-  `/api/v1/schedule3/check-status?millId=${millId}&year=${year}`;
-
 /** The Other Acceptable Costs sub-resource (item-124 TOT+PO&P groups). */
 export const otherAcceptableUrl = (millId: number, year: number): string =>
   `/api/v1/schedule3/other-acceptable-costs?millId=${millId}&year=${year}`;

@@ -30,3 +30,22 @@ export const HARVEST_ONLY_LINE_CODES = [29, 33, 37] as const
 
 /** All 11 fixed lines in legacy display order (schedule3.xhtml). */
 export const ALL_LINE_CODES = [27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37] as const
+
+/**
+ * The Check Status body — the values currently ON SCREEN, mirroring the backend
+ * `Schedule3CheckRequest` (issue #359).
+ *
+ * Legacy's Check Status was a full form postback, so the verdict described the screen and not the
+ * saved record — the Override included, which suppresses BOTH Harvest≥PO&P rules. The item-124/38
+ * sub-page rows are NOT sent: they are never on this screen, and the server reads them from the
+ * database.
+ *
+ * ⚠ `null` means "no usable value on screen" and MUST stay null — the server's check is a pure null
+ * test (a stored `0` passes), so coercing a blank field to `0` turns a missing value into a pass.
+ */
+export interface Schedule3CheckRequest {
+  readonly overrideHarvestTotalPop: string | null
+  readonly lineItems: readonly Schedule3LineItemInput[]
+  readonly popTimberVolume: number | null
+  readonly crownTimberVolume: number | null
+}

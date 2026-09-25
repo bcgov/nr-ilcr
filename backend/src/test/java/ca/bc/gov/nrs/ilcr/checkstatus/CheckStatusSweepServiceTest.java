@@ -188,10 +188,10 @@ class CheckStatusSweepServiceTest {
   private void stub(CheckedSchedule schedule, boolean met) {
     switch (schedule) {
       case SCHEDULE_1 ->
-          when(schedule1Service.checkSchedule1Status(MILL, YEAR)).thenReturn(schedule1(met));
-      case SCHEDULE_2 -> when(schedule2.checkStatus(MILL, YEAR)).thenReturn(schedule2(met));
+          when(schedule1Service.checkStatusStored(MILL, YEAR)).thenReturn(schedule1(met));
+      case SCHEDULE_2 -> when(schedule2.checkStatusStored(MILL, YEAR)).thenReturn(schedule2(met));
       case SCHEDULE_3 ->
-          when(schedule3Service.checkSchedule3Status(MILL, YEAR)).thenReturn(schedule3(met));
+          when(schedule3Service.checkStatusStored(MILL, YEAR)).thenReturn(schedule3(met));
       case SCHEDULE_4 -> when(schedule4.checkStatus(MILL, YEAR)).thenReturn(schedule4(met));
       case SCHEDULE_5 -> when(schedule5.checkStatusStored(MILL, YEAR)).thenReturn(schedule5(met));
       case SCHEDULE_6 -> when(schedule6.checkStatusStored(MILL, YEAR)).thenReturn(schedule6(met));
@@ -384,7 +384,7 @@ class CheckStatusSweepServiceTest {
 
     assertThat(codesOf(results)).containsExactly("11");
     assertThat(results.get(0).requirementsMet()).isFalse();
-    verify(schedule1Service, never()).checkSchedule1Status(anyLong(), anyInt());
+    verify(schedule1Service, never()).checkStatusStored(anyLong(), anyInt());
   }
 
   @Test
@@ -394,7 +394,7 @@ class CheckStatusSweepServiceTest {
         .isInstanceOf(NullPointerException.class)
         .hasMessage("track");
 
-    verify(schedule1Service, never()).checkSchedule1Status(anyLong(), anyInt());
+    verify(schedule1Service, never()).checkStatusStored(anyLong(), anyInt());
     verify(schedule11Service, never()).checkStatus(anyLong(), anyInt());
   }
 

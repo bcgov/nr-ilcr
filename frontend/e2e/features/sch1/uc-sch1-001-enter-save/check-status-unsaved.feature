@@ -1,20 +1,14 @@
-# DIVERGENCE — both scenarios here are DELIBERATELY RED. They reproduce defects.md DIV-6, tracked upstream
-# as bcgov/nr-ilcr#359, and stay failing until Check Status accounts for what is on screen. Do not weaken
-# them, skip them, or "fix" them by asserting the current behaviour: the failing state IS the tracking
-# signal. Filter them out of a fresh-failures run with `npm run test:gate`.
+# Check Status evaluates what is ON SCREEN, including unsaved edits. Both scenarios were DELIBERATELY RED
+# until 2026-09-25, reproducing defects.md DIV-6 (bcgov/nr-ilcr#359): Check Status judged the LAST SAVED
+# schedule and ignored anything typed since. They went green, unedited, when #359's Schedules 1–3 fix gave
+# `POST /api/v1/schedule1/check-status` a body carrying the on-screen values. Schedule 3's DIV-6 holds the
+# full analysis.
 #
-# WHAT THEY REPRODUCE
-# Check Status reports on the LAST SAVED schedule and silently ignores anything typed since. This is the
-# same app-wide defect Schedule 3 carries as DIV-6 — 11 of the 12 schedules are affected, Schedule 6 being
-# the only correct implementation. Schedule 3's register entry holds the full analysis; this entry is the
-# Schedule 1 instance, and one fix turns both green.
+# That is legacy parity: legacy's Schedule 1 Check Status described the screen, unsaved edits included
+# (the observed behaviour #359 records). No mechanism is claimed — the same `ajax="false"` markup on
+# legacy Schedule 5 judged the saved record instead (#476).
 #
-# Legacy could not behave this way. Its Check Status was a full JSF postback (`ajax="false"`), so
-# UPDATE_MODEL_VALUES pushed every submitted field into the bean BEFORE the action ran, and the check
-# validated the in-memory schedule. The rewrite's `POST /api/v1/schedule1/check-status` carries no request
-# body at all, so the endpoint cannot see the screen even in principle.
-#
-# BOTH ARMS ARE NEEDED — they fail in OPPOSITE directions:
+# BOTH ARMS ARE KEPT — the defect failed in OPPOSITE directions:
 #   * the false-GREEN arm (S27): an unsaved violation goes unreported, so a schedule looks ready when it is
 #     not. This is the one that lets a bad schedule be submitted.
 #   * the false-RED arm (S28): a correction made on screen is still reported as broken. This is the one a
@@ -38,8 +32,8 @@ Feature: Report Average Cost of Logging (Schedule 1) — Check Status and unsave
   I want Check Status to judge what is on my screen
   So that I am not told the schedule is fine when what I am looking at is not
 
-  @discovered-divergence @p1 @S27
-  Scenario: Check Status reports a mandatory volume cleared on screen but not saved [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-6 / issue #359]
+  @p1 @S27
+  Scenario: Check Status reports a mandatory volume cleared on screen but not saved
     Given the Schedule 1 anchor "requirements-met" is an editable Draft
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1
@@ -53,8 +47,8 @@ Feature: Report Average Cost of Logging (Schedule 1) — Check Status and unsave
     And I should not see the message "All requirements for this schedule have been met"
     And the Schedule 1 data should be unchanged
 
-  @discovered-divergence @p1 @S28
-  Scenario: Check Status stops reporting a missing volume once it is supplied on screen [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-6 / issue #359]
+  @p1 @S28
+  Scenario: Check Status stops reporting a missing volume once it is supplied on screen
     Given the Schedule 1 anchor "missing-line-item-volume" is an editable Draft
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1

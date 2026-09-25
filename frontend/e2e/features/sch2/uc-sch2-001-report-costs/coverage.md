@@ -44,12 +44,15 @@ S13–S16 entry rejection (`validation.feature`); the save round-trip surviving 
 arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by two deliberate
 `@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — see defects.md
 **DIV-2**, a pointer; the analysis for that app-wide divergence (11 of 12 schedules; Schedule 6 is the only
-correct implementation) lives once, in `sch3/defects.md` DIV-6.
+correct implementation) lives once, in `sch3/defects.md` DIV-6. Their tags and title markers came off on
+**2026-09-25**, when #359 group A (Schedules 1–3) made the endpoint judge the screen.
 
 > ### Suite state — the ONE place this is recorded
-> **35 scenarios / 41 tests after Scenario-Outline expansion: 39 green + 2 deliberate
-> `@discovered-divergence` REDs** (S17/S18 / DIV-2 — Check Status on unsaved edits, #359). Measured from the
-> generated specs and a full run on **2026-08-27**. This suite had no tracked reds at all until these two.
+> **35 scenarios / 41 tests after Scenario-Outline expansion: 41 green, 0 tracked reds.** S17/S18 / DIV-2
+> (Check Status on unsaved edits) lost their tags and markers on 2026-09-25 with the #359 group A fix.
+> Re-measured **2026-09-25** from the generated specs: `npm run bddgen`, then
+> `npx playwright test --list --project=chromium` filtered to `uc-sch2-001` gives **41**, and with
+> `--grep @discovered-divergence` / `@discovered-bug`, **0** / **0**. The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
 
 **All green as of 2026-08-24:** the one deliberate `@discovered-bug` RED — Delete offered on a
 schedule that has never been saved (defects.md **BUG-1**, BR-08/S06) — was fixed in nr-ilcr #292, so its tag
@@ -278,7 +281,7 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
 - **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
   formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
 - **Overall: 18/18 slices covered** (S17/S18, the unsaved-edit arms, covered 2026-08-27 by two deliberate
-  reds against #359 — see the header). On messages: **the two GAP-3 fallbacks are no longer
+  reds against #359 and untagged 2026-09-25 by its group A fix — see the header). On messages: **the two GAP-3 fallbacks are no longer
   `deferred`** — covered in Vitest by [#298](https://github.com/bcgov/nr-ilcr/issues/298) on
   2026-08-26, which is where they belong (a route-interception fallback is a component concern, and Vitest
   needs no database to prove it).

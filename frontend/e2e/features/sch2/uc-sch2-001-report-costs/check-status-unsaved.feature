@@ -1,19 +1,14 @@
-# DIVERGENCE — both scenarios here are DELIBERATELY RED. They reproduce defects.md DIV-2, tracked upstream
-# as bcgov/nr-ilcr#359, and stay failing until Check Status accounts for what is on screen. Do not weaken
-# them, skip them, or "fix" them by asserting the current behaviour: the failing state IS the tracking
-# signal. Filter them out of a fresh-failures run with `npm run test:gate`.
+# Check Status evaluates what is ON SCREEN, including unsaved edits. Both scenarios were DELIBERATELY RED
+# until 2026-09-25, reproducing defects.md DIV-2 (bcgov/nr-ilcr#359): Check Status judged the LAST SAVED
+# schedule and ignored anything typed since. They went green, unedited, when #359's Schedules 1–3 fix gave
+# `POST /api/v1/schedule2/check-status` a body carrying the on-screen values. Schedule 3's DIV-6 holds the
+# full analysis.
 #
-# WHAT THEY REPRODUCE
-# Check Status reports on the LAST SAVED schedule and silently ignores anything typed since. Same app-wide
-# defect Schedule 3 carries as DIV-6 — 11 of the 12 schedules are affected, Schedule 6 being the only
-# correct implementation. Schedule 3's register entry holds the full analysis; this is the Schedule 2
-# instance, and one fix turns them all green.
+# That is legacy parity: legacy's Schedule 2 Check Status described the screen, unsaved edits included
+# (the observed behaviour #359 records). No mechanism is claimed — the same `ajax="false"` markup on
+# legacy Schedule 5 judged the saved record instead (#476).
 #
-# Legacy could not behave this way: its Check Status was a full JSF postback (`ajax="false"`), so every
-# submitted field reached the bean before the check ran. `POST /api/v1/schedule2/check-status` carries no
-# request body at all, so the endpoint cannot see the screen even in principle.
-#
-# BOTH ARMS ARE NEEDED — they fail in OPPOSITE directions: the false-GREEN arm (S17) lets an incomplete
+# BOTH ARMS ARE KEPT — the defect failed in OPPOSITE directions: the false-GREEN arm (S17) lets an incomplete
 # schedule look ready, which is the one that allows a bad schedule to be submitted; the false-RED arm (S18)
 # keeps reporting something the reporter has already fixed, which is the one they meet most often.
 #
@@ -35,8 +30,8 @@ Feature: Report Purchased and Private Log Costs and Sales (Schedule 2) — Check
   I want Check Status to judge what is on my screen
   So that I am not told the schedule is fine when what I am looking at is not
 
-  @discovered-divergence @p1 @S17
-  Scenario: Check Status reports the purchased-log cost cleared on screen but not saved [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-2 / issue #359]
+  @p1 @S17
+  Scenario: Check Status reports the purchased-log cost cleared on screen but not saved
     Given the Schedule 2 anchor "check-unsaved-violation" has a saved schedule
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 2
@@ -50,8 +45,8 @@ Feature: Report Purchased and Private Log Costs and Sales (Schedule 2) — Check
     And I should not see the message "All requirements for this schedule have been met"
     And the stored Schedule 2 revision is unchanged
 
-  @discovered-divergence @p1 @S18
-  Scenario: Check Status stops reporting the missing purchased-log cost once it is supplied on screen [DISCOVERED DIVERGENCE — Check Status judges the SAVED schedule, ignoring the screen; defects.md DIV-2 / issue #359]
+  @p1 @S18
+  Scenario: Check Status stops reporting the missing purchased-log cost once it is supplied on screen
     Given the Schedule 2 anchor "check-unsaved-fix" has a saved schedule with no purchased log cost
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 2
