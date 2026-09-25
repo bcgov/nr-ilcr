@@ -4,7 +4,8 @@ import type { FC } from 'react'
 import type Schedule2Response from '@/interfaces/Schedule2Response'
 import type { CostBlock, CheckStatusResponse } from '@/interfaces/Schedule2Response'
 import type Schedule2Request from '@/interfaces/Schedule2Request'
-import { useState } from 'react'
+import type { Schedule2CheckRequest } from '@/interfaces/Schedule2Request'
+import { useRef, useState } from 'react'
 import {
   Column,
   Grid,
@@ -81,6 +82,14 @@ function buildRequest(doc: Schedule2Response, form: FieldValues): Schedule2Reque
   }
 }
 
+// The Check Status body (#359): the item-25 cost as it is ON SCREEN — `form`, the keystroke state,
+// not the blur-committed snapshot, because that is what legacy's full postback submitted. `toNum`
+// returns null for a blank field and that null is carried through deliberately: the server's check
+// is a pure null test (a stored `0` passes), so a `?? 0` here would turn a missing cost into a pass.
+function buildCheckRequest(form: FieldValues): Schedule2CheckRequest {
+  return { purchasedLogCostCost: toNum(form[F_ITEM25_COST] ?? '') }
+}
+
 const Schedule2: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
@@ -104,6 +113,15 @@ const Schedule2: FC = () => {
   } = useScheduleMutations<CheckStatusResponse>({ path: '/v1/schedule2', millId, year, isCurrent })
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever a
+  // checked field changes, so an older response cannot repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setStatusMessages(null)
+  }
 
   const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule2Response>({
@@ -206,17 +224,28 @@ const Schedule2: FC = () => {
     }
     // Legacy Check Status is validateClient="true": invalid entered values block the action with the
     // same FLD-* messages Save uses, rather than firing a POST that ignores them.
-    if (Object.keys(validateSchedule2(form)).length > 0) {
+    // Gated on `editable`, exactly as `fieldErrors` is: a read-only page highlights nothing, so a stored
+    // value failing the client range check must not block the check silently.
+    if (data.editable && Object.keys(validateSchedule2(form)).length > 0) {
       setSaveMessage(null)
       setStatusMessages(null)
       setSaveError('Please correct the highlighted fields before checking status.')
       return
     }
     clearBanners() // don't leave a stale Save success banner beside a new check result
-    checkStatus<CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setStatusMessages,
-    })
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // The body carries the screen (#359); nothing is persisted (AD-5).
+    checkStatus<CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setStatusMessages(result)
+          }
+        },
+      },
+      buildCheckRequest(form),
+    )
   }
 
   if (loadState) return loadState
@@ -276,7 +305,13 @@ const Schedule2: FC = () => {
         hideLabel
         size="sm"
         value={form[fieldKey] ?? ''}
-        onValueChange={(raw) => setForm((prev) => ({ ...prev, [fieldKey]: raw }))}
+        onValueChange={(raw) => {
+          // Only the item-25 cost is checked; an edit to it makes a shown verdict stale.
+          if (fieldKey === F_ITEM25_COST) {
+            invalidateCheckResult()
+          }
+          setForm((prev) => ({ ...prev, [fieldKey]: raw }))
+        }}
         onBlur={() => commit(fieldKey, { invalid: Boolean(fieldErrors[fieldKey]) })}
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}

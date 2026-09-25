@@ -297,19 +297,22 @@ count does.
     ready while the screen says otherwise. The mirror case is just as bad — fix a flagged field, press
     Check Status, and the same error is still reported.
   - **How we caught it (verified on real data 2026-08-25):** the repo owner found it by hand; reproduced
-    as a scenario on the seeded `check-override` anchor (mill 20171/2021, Override "Y" + a stored
+    as a scenario on the seeded `check-override` anchor (20171 MILES MILLING / 2021 — millId 22050,
+    not mill 20171; corrected 2026-09-25 — Override "Y" + a stored
     Wages/Salaries 40,000-vs-50,000 violation + an other-acceptable 1,000-vs-2,500 violation). Check
     Status passes; switching Override to "No" on screen and re-checking still does not report either
     violation. Read-only — nothing is saved, and the unmoved optimistic-lock token is asserted to prove
     it.
-  - **Why (technical):** the request carries no client state, by contract.
+  - **Why (technical):** the request carries no client state, by contract. *(Cites re-verified
+    2026-09-25 against `d89ff151`, the last commit before the fix; the originals had drifted.)*
     - `POST /api/v1/schedule3/check-status` declares only `@RequestParam millId` and `@RequestParam year`
-      — **no `@RequestBody`** (`Schedule3Api.java:85-87`).
-    - the client posts no payload: `useScheduleMutations.checkStatus` is
-      `api().post(url(suffix))` with no second argument (`useScheduleMutations.ts:77-78`).
+      — **no `@RequestBody`** (`Schedule3Api.java:86-88`).
+    - the client posts no payload: `useScheduleMutations.checkStatus` has taken an optional body since
+      #476 (`useScheduleMutations.ts:85-88`), but the Schedule 3 page never passed one
+      (`schedule3/index.tsx:291-294`).
     - the service therefore reads the database: `repository.findSummary(...)`,
       `repository.findDetails(...)`, and `override = OVERRIDE_YES.equals(summary.location())`
-      (`Schedule3Service.java:889-895`).
+      (`Schedule3Service.java:1137-1140`).
   - **Legacy could not behave this way.** Its Check Status button was `ajax="false"`
     (`webapp/schedule3.xhtml:38` and `:421`) — a full form postback. JSF applied every submitted field to
     the bean during UPDATE_MODEL_VALUES *before* `checkStatus()` ran, including `overrideTotPopVal`, which
@@ -343,7 +346,7 @@ count does.
     `ajax="false"` postback applied the screen to the model before evaluating
     (`Schedule6MB.checkStatus` :139-140), so **the verdict must describe the screen, not the database**"
     (`Schedule6Api.java:100-103`). Its endpoint takes `@Valid @RequestBody Schedule6CheckRequest` and its
-    page posts a body (`components/schedule6/index.tsx:754`). So this is not a matter of interpretation:
+    page posts a body (`components/schedule6/index.tsx:822` at `d89ff151`). So this is not a matter of interpretation:
     one schedule implements the rule and eleven do not.
   - **Scope — 11 of 12 schedules (wire contract verified for all; end-to-end proven for Schedule 3):**
 
@@ -379,12 +382,36 @@ count does.
     things this entry keeps, as the register is their home: the DOM/request evidence dump, why the suite
     missed the defect, and the related-ticket comparison.
   - **Priority / env:** p1 · branch `test/schedule-3-e2e` · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to send the on-screen values with the
-    check-status request and evaluate those, following Schedule 6 (`Schedule6CheckRequest`), across the
-    eleven affected schedules; QA re-verifies and closes this entry then. The `@discovered-divergence`
-    scenario asserts the CORRECT behaviour, so it is RED today and goes green on its own when the fix
-    lands, at which point its tag comes off. No test change is needed. Found 2026-08-25 by the repo owner;
-    legacy-source-confirmed and scoped across the app the same day.
+  - **Status:** **CLOSED 2026-09-25 for Schedule 3 (#359 group A — Schedules 1, 2 and 3).** Found
+    2026-08-25 by the repo owner; legacy-source-confirmed and scoped across the app the same day.
+    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10. Schedules 5 (#476) and 6 were already
+    correct; Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a) (see "Where they stand").
+  - **HOW IT WAS FIXED (2026-09-25, #359 group A).** A legacy restoration, unlike #476: `POST
+    /api/v1/schedule3/check-status` now takes a required body, `Schedule3CheckRequest` — the eleven fixed
+    lines' Harvest/PO&P, both timber volumes and the Override, as typed. `Schedule3Service` splits into
+    `checkStatus(millId, year, request)` (the endpoint) and `checkStatusStored(millId, year)` (the Story
+    15.1 sweep, re-pointed), and both build one `CheckCandidate` for a single private `evaluate(...)` —
+    so no rule is stated twice (AD-5) and labels, messages and emission order are byte-identical on the
+    stored path. The **on-screen Override drives both Harvest&lt;PO&amp;P rules**, the fixed-line one and
+    the item-124 subtotal one (normalised through `normalizeOverride`), which is exactly what `@S12`
+    needs. The item-124/38 sub-page rows are never on this screen and stay database-sourced on both paths.
+    The page sends `form` (keystroke state), gates Check Status on `validateSchedule3` as Save does (legacy
+    `validateClient="true"`, so `12x` is blocked rather than reported as "Value Required"), and copies
+    Schedule 5's stale-verdict guard: any edit to a checked field — the Override included — clears the
+    shown verdict, and a response for a superseded snapshot is dropped.
+  - **The closure evidence, reproducible (2026-09-25).**
+    - Backend unit: `cd backend && mvn -B -ntp clean test "-Dtest=Schedule1*,Schedule2*,Schedule3*,CheckStatus*"`
+      — 982 run, 0 failed (947 before the fix). The payload cases, the stored-path parity set
+      (`storedAndPayload_agree_whenTheScreenMirrorsTheRecord`) and the S12 pair live in
+      `Schedule3CheckStatusServiceTest`.
+    - Backend IT: `cd backend && mvn -B -ntp clean -P integration-test verify "-Dit.test=Schedule1*IT,Schedule2*IT,Schedule3*IT,CheckStatus*IT"`
+      — 375 run, 0 failed (362 before), against Testcontainers Oracle `gvenzl/oracle-free:23.9-slim-faststart`.
+      `Schedule3CheckStatusIT` posts bodies that DISAGREE with Oracle and proves the body wins and nothing
+      is persisted; `CheckStatusWireContractIT`'s `schedule3-572-2021` golden is unchanged byte-for-byte.
+    - Frontend: `cd frontend && npx vitest run --mode test` — 2212 passed, 0 failed.
+    - E2E run: `cd frontend/e2e && npx playwright test --grep "@check-status-unsaved"` on 2026-09-25 against the local real-data extract DB, branch at `beb1515d` + this change — 190 passed: 178 setup/preflight tests plus all 12 `@check-status-unsaved` scenarios (sch1 S27/S28, sch2 S17/S18, sch3 S12/S25/S26, sch5 ×3, sch11 ×2)
+  - **Test:** `@S12`, `@S25` and `@S26` had ONLY their `@discovered-divergence` tag and `[DISCOVERED …]`
+    title marker removed, both together; no assertion, step or fixture was edited.
   - **THIS ENTRY IS THE ANALYSIS HOME for the whole family.** Schedules 1, 2, 4 and 11 each carry a short
     POINTER entry — **sch1 DIV-6, sch2 DIV-2, sch4 DIV-8, sch11 DIV-5** — holding only their own scenarios,
     anchors and re-groundings. The reasoning lives here and only here; keep it that way, because two copies
@@ -404,6 +431,11 @@ count does.
     | sch11 | `@S21` / `@S22` (inline row editor, NOT the Add panel) | sch11 DIV-5 |
 
     Ex-**GAP-4** tracked the absence of these and was CLOSED by writing them.
+
+    **Where they stand, 2026-09-25:** sch1, sch2 and sch3 closed by #359 group A (green unedited, untagged).
+    sch4 retired (above). sch11 was NOT fixed by #359: Story 26.2 re-grounded S21/S22 green under Scho's
+    ruling D7(a) (Check Status keeps judging saved data and is greyed while anything is unsaved), and sch11
+    DIV-5 is CLOSED as a recorded deviation. #359 stays open for Schedules 4, 7A, 7B, 8, 9 and 10.
   - **CLOSE-OUT CHECKLIST — QA must not close this family on the fix alone.** When #359 lands all TEN go
     green on their own. Then, per domain: retire the `@discovered-divergence` tag AND the `[DISCOVERED …]`
     title marker together, close that domain's pointer entry with the date and the fixing PR, and correct its
@@ -419,7 +451,7 @@ count does.
     optimistic-lock token has not moved, so a fix cannot satisfy the test by quietly saving. Seed the anchor
     so it PASSES Check Status as stored — that is what makes the unsaved-edit change observable.
   - **Test:** `features/sch3/uc-sch3-001-report-admin-costs/check-status-unsaved.feature` — **three**
-    scenarios, all `@discovered-divergence`: `@p1 @S12` (the Override input), `@p1 @S25` (a mandatory amount
+    scenarios, untagged since the 2026-09-25 fix: `@p1 @S12` (the Override input), `@p1 @S25` (a mandatory amount
     cleared on screen) and `@p1 @S26` (the mirror — correcting a flagged Harvest). S25 CLEARS a field rather
     than typing a violation because the only at-rest-PASSING anchor passes *because* Override is "Y", which
     legitimately suppresses the Harvest≥PO&P comparison — the required-field checks it does not suppress.

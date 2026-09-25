@@ -372,7 +372,7 @@ class Schedule3SubPageServiceTest {
     details.add(oa(null, "  ", "SCH3_2_TOT_GRP1"));
     stubCheckStatus("N", details);
 
-    Schedule3CheckStatusResponse r = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
     assertFalse(r.requirementsMet());
     assertTrue(hasError(r, "missingRequiredFieldMsg", "Subtotal Other Costs (Description)"));
     assertTrue(hasError(r, "missingRequiredFieldMsg", "Subtotal Other Costs (Harvest Total $)"));
@@ -384,13 +384,13 @@ class Schedule3SubPageServiceTest {
     List<DetailRow> details =
         List.of(oa(100, "Consulting", "SCH3_2_TOT_GRP1"), oa(500, "Consulting", "SCH3_2_POP_GRP1"));
     stubCheckStatus("N", new ArrayList<>(details));
-    Schedule3CheckStatusResponse flagged = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse flagged = service.checkStatusStored(MILL, YEAR);
     assertTrue(
         hasError(
             flagged, "harvestNotGreaterThanPopErrorMsg", "Subtotal Other Costs (Harvest Total $)"));
 
     stubCheckStatus("Y", new ArrayList<>(details));
-    Schedule3CheckStatusResponse suppressed = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse suppressed = service.checkStatusStored(MILL, YEAR);
     assertFalse(
         hasError(
             suppressed,
@@ -404,7 +404,7 @@ class Schedule3SubPageServiceTest {
     details.add(new DetailRow(38, null, null, "  ", null)); // blank description + null total
     stubCheckStatus("N", details);
 
-    Schedule3CheckStatusResponse r = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
     assertTrue(hasError(r, "missingRequiredFieldMsg", "Included Unacceptable Costs (Description)"));
     assertTrue(hasError(r, "missingRequiredFieldMsg", "Included Unacceptable Costs (Total $)"));
   }

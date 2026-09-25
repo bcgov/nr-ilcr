@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsSummary;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
@@ -938,13 +939,45 @@ public class Schedule1Service {
       "warning.schedule1.checkstatus.subtotalother.costEmpty";
 
   /**
-   * BR-07 Check Status (S14–S18): validate whether the stored Schedule 1 meets all requirements. A
-   * field is missing when its stored value is null (0 is present). Read-only — mutates nothing.
-   * Errors (missing mandatory fields + Other-Costs volume/cost consistency) block; the empty-cost
-   * row check is a non-blocking warning. Verbatim messages composed server-side (AD-8), in legacy
-   * field order.
+   * BR-07 Check Status (S14–S18) against the SCREEN — the endpoint's entry point
+   * (bcgov/nr-ilcr#359). Read-only — mutates nothing. Legacy's Check Status was an {@code
+   * ajax="false"} full postback into a {@code @ViewScoped} bean, so it judged what was on screen;
+   * this restores that. The body's lines and shared Other Costs volume replace the stored ones; the
+   * itemized Other Costs rows are never on this screen and stay database-sourced. The rule itself
+   * is {@link #evaluate}, shared with {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the on-screen values
+   * @return the check-status result with verbatim messages
    */
-  public Schedule1CheckStatusResponse checkSchedule1Status(long millId, int year) {
+  public Schedule1CheckStatusResponse checkStatus(
+      long millId, int year, Schedule1CheckRequest request) {
+    SummaryRow summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null);
+    List<OtherCostDetailRow> otherRows =
+        summary == null ? List.of() : repository.findOtherCostRows(summary.summaryId());
+    return evaluate(
+        new CheckCandidate(screenByCode(request), request.otherCostsVolume(), otherRows));
+  }
+
+  /**
+   * BR-07 Check Status (S14–S18): validate whether the STORED Schedule 1 meets all requirements —
+   * the stored-data counterpart of {@link #checkStatus}, for report-level callers (Story 15.0/15.1)
+   * that have no screen to describe. A field is missing when its stored value is null (0 is
+   * present). Read-only — mutates nothing.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". They can legitimately disagree — for instance over a crown volume the GET
+   * pre-filled on screen but that was never saved. Named apart from {@link #checkStatus} on
+   * purpose: with both called {@code checkStatus} a future caller picks the wrong one by
+   * autocomplete and the failure is SILENT. Schedules 5 and 6 name them apart for the same reason.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the check-status result with verbatim messages
+   */
+  public Schedule1CheckStatusResponse checkStatusStored(long millId, int year) {
     // Never 404s since defect #296, matching Schedule 2: an unsaved schedule is checkable, and
     // every
     // mandatory field is reported missing — which is the honest answer, not an error.
@@ -956,9 +989,6 @@ public class Schedule1Service {
     // corrupt duplicate can't make check-status disagree with the served document.
     Map<Integer, DetailRow> byCode = indexFirstByCode(details);
 
-    List<MessageInfo> errors = new ArrayList<>(collectRequiredFieldErrors(byCode));
-    List<MessageInfo> warnings = new ArrayList<>();
-
     // Subtotal Other Costs (N = itemized-row count).
     BigDecimal sharedVolume =
         summary == null
@@ -966,6 +996,56 @@ public class Schedule1Service {
             : repository.findSharedOtherCostsVolume(summary.summaryId()).orElse(null);
     List<OtherCostDetailRow> otherRows =
         summary == null ? List.of() : repository.findOtherCostRows(summary.summaryId());
+    return evaluate(new CheckCandidate(byCode, sharedVolume, otherRows));
+  }
+
+  /**
+   * The Schedule 1 values one check judges, from either source.
+   *
+   * @param byCode the checked line values by cost-item code (a missing entry is a missing value)
+   * @param sharedVolume the shared Subtotal Other Costs volume
+   * @param otherRows the itemized Other Costs rows — always from the database
+   */
+  private record CheckCandidate(
+      Map<Integer, DetailRow> byCode,
+      BigDecimal sharedVolume,
+      List<OtherCostDetailRow> otherRows) {}
+
+  /**
+   * The on-screen lines indexed by code, in the stored path's {@link DetailRow} shape so {@link
+   * #evaluate} needs no variant. First entry per code wins, as {@link #indexFirstByCode} does for
+   * stored rows; null entries and null codes are skipped. Values are taken VERBATIM, nulls included
+   * — the check is a null test, so coercing a blank to zero would turn every missing value into a
+   * pass.
+   */
+  private static Map<Integer, DetailRow> screenByCode(Schedule1CheckRequest request) {
+    Map<Integer, DetailRow> byCode = new HashMap<>();
+    if (request.lineItems() == null) {
+      return byCode;
+    }
+    for (Schedule1CheckRequest.LineEntry line : request.lineItems()) {
+      if (line != null && line.costItemCode() != null) {
+        byCode.putIfAbsent(
+            line.costItemCode(),
+            new DetailRow(line.costItemCode(), line.volume(), line.cost(), null));
+      }
+    }
+    return byCode;
+  }
+
+  /**
+   * The BR-07 verdict, source-agnostic. Errors (missing mandatory fields + Other-Costs volume/cost
+   * consistency) block; the empty-cost row check is a non-blocking warning. Verbatim messages
+   * composed server-side (AD-8), in legacy field order. Neither {@link #checkStatus} nor {@link
+   * #checkStatusStored} may restate any part of it (AD-5).
+   */
+  private Schedule1CheckStatusResponse evaluate(CheckCandidate candidate) {
+    List<MessageInfo> errors = new ArrayList<>(collectRequiredFieldErrors(candidate.byCode()));
+    List<MessageInfo> warnings = new ArrayList<>();
+
+    // Subtotal Other Costs (N = itemized-row count).
+    BigDecimal sharedVolume = candidate.sharedVolume();
+    List<OtherCostDetailRow> otherRows = candidate.otherRows();
     int count = otherRows.size();
     long subtotalCost =
         otherRows.stream()

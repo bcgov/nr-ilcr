@@ -27,7 +27,8 @@ S25/S26)**; **clearing a saved amount (`clear-amounts.feature`)**; persistence +
 
 **Disposition: all 28 slices `covered`.** The last two to land were **S27/S28**, the
 Check-Status-on-unsaved-edits arms, covered 2026-08-27 by two deliberate reds against
-[#359](https://github.com/bcgov/nr-ilcr/issues/359).
+[#359](https://github.com/bcgov/nr-ilcr/issues/359). Their tags and title markers came off on
+**2026-09-25**, when #359 group A (Schedules 1–3) made the endpoint judge the screen.
 **S08 was the last of the original 24 to land:** `deferred` until 2026-08-07, then `not-applicable (E2E)` as
 unreachable dead code, and **covered from 2026-08-27** once defect #296 gave the branch a real trigger. See
 defects.md GAP-3 (closed).
@@ -59,9 +60,11 @@ this matrix:
   `not-applicable (E2E)` to `covered` — guarded by a reopen at the end of the clear-amounts scenario.
 
 > ### Suite state — the ONE place this is recorded
-> **30 scenarios / 42 tests after Scenario-Outline expansion: 39 green + 3 deliberate
-> `@discovered-divergence` REDs** — S12 / DIV-3 (row delete confirm, #362) and **S27/S28 / DIV-6** (Check
-> Status on unsaved edits, #359). Measured from the generated specs and a full run on **2026-08-27**.
+> **30 scenarios / 42 tests after Scenario-Outline expansion: 41 green + 1 deliberate
+> `@discovered-divergence` RED** — S12 / DIV-3 (row delete confirm, #362). **S27/S28 / DIV-6** lost their
+> tags and markers on 2026-09-25 with the #359 group A fix. Re-measured **2026-09-25** from the generated
+> specs: `npm run bddgen`, then `npx playwright test --list --project=chromium` filtered to `uc-sch1-001`
+> gives **42**, and with `--grep @discovered-divergence`, **1**. The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
 >
 > Counts used to be restated three times in this section, from three different runs and on two different
 > denominators (57 was this UC alone; 163 and 164 included the 126-check preflight, which has itself grown).
@@ -76,6 +79,9 @@ this matrix:
 A clean run needs `npm run test:gate`, which excludes every `@discovered-*` red.
 
 **What moved the numbers, in order (history — the state above is current):**
+- **2026-09-25 — S27/S28 retired as tracked reds** (#359 group A: Schedules 1, 2 and 3 now send the screen
+  with Check Status). Only the `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off,
+  together; no assertion, step or fixture changed. Reds 3 → 1.
 - **2026-08-11** — BUG-2/BUG-3 fixed, the last red retired, suite fully green.
 - **2026-08-26 — S12 became a tracked red again, and not because of a new defect but a corrected test.**
   The per-row delete confirmation legacy required is missing (defects.md **DIV-3**, ticket

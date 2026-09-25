@@ -4,8 +4,9 @@ import type { FC } from 'react'
 import type Schedule3Response from '@/interfaces/Schedule3Response'
 import type { CostLine, ThreeColumnTotal } from '@/interfaces/Schedule3Response'
 import type Schedule3Request from '@/interfaces/Schedule3Request'
+import type { Schedule3CheckRequest } from '@/interfaces/Schedule3Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -127,6 +128,26 @@ function buildRequest(doc: Schedule3Response, form: FieldValues): Schedule3Reque
   }
 }
 
+// The Check Status body (#359): every checked value as it is ON SCREEN — `form`, the keystroke state,
+// not the blur-committed snapshot, because that is what legacy's full postback submitted. The
+// Override travels too: on screen it drives BOTH Harvest≥PO&P rules, the fixed-line one and the
+// Other Acceptable subtotal one. `toNum` returns null for a blank field and that null is carried
+// through deliberately: the server's check is a pure null test (a stored `0` passes), so a `?? 0`
+// here would turn a missing value into a pass. The item-124/38 sub-page rows are not on this screen
+// and are not sent.
+function buildCheckRequest(form: FieldValues): Schedule3CheckRequest {
+  return {
+    overrideHarvestTotalPop: form['overrideHarvestTotalPop'] ?? 'N',
+    lineItems: ALL_LINE_CODES.map((code) => ({
+      costItemCode: code,
+      harvest: toNum(form[`harvest-${code}`] ?? ''),
+      pop: HARVEST_POP.has(code) ? toNum(form[`pop-${code}`] ?? '') : null,
+    })),
+    popTimberVolume: toNum(form['popTimberVolume'] ?? ''),
+    crownTimberVolume: toNum(form['crownTimberVolume'] ?? ''),
+  }
+}
+
 const mapLoadErrorDetail = (detail: string | undefined): string =>
   detail || 'Unable to load Schedule 3.'
 
@@ -167,6 +188,15 @@ const Schedule3: FC = () => {
   // pending" — and neither handler ever writes the other.
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever a
+  // checked field changes, so an older response cannot repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
   const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule3Response>({
       path: '/v1/schedule3',
@@ -189,6 +219,16 @@ const Schedule3: FC = () => {
   // because it drives the inputs, `committed` advances only when a field loses focus. Re-seeds
   // whenever `data` is replaced (load / Save echo / Delete reset).
   const { committed, commit } = useCommittedValues(form, data)
+
+  // Every input on this page but the comments is a checked field — the Override included — so an
+  // edit to any of them makes a shown Check Status verdict stale.
+  const setCheckedField = (fieldKey: string) => {
+    const set = setField(fieldKey)
+    return (event: Parameters<typeof set>[0]) => {
+      invalidateCheckResult()
+      set(event)
+    }
+  }
 
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
@@ -286,12 +326,33 @@ const Schedule3: FC = () => {
     if (!data || saving) {
       return
     }
+    // Legacy Check Status is validateClient="true": invalid entered values block the action with the
+    // same FLD-* messages Save uses. Without this gate `toNum` would send `12x` as null and the
+    // verdict would misreport a typo as "Value Required" (#359).
+    // Gated on `editable`, exactly as `fieldErrors` is: a read-only page highlights nothing, so a stored
+    // value failing the client range check must not block the check silently.
+    if (data.editable && Object.keys(validateSchedule3(form)).length > 0) {
+      setSaveMessage(null)
+      setSaveWarnings([])
+      setCheckResult(null)
+      setSaveError('Please correct the highlighted fields before checking status.')
+      return
+    }
     clearBanners() // don't leave a stale Save success banner beside a new check result
     setSaveWarnings([])
-    checkStatus<CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // The body carries the screen (#359); nothing is persisted (AD-5).
+    checkStatus<CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
+      },
+      buildCheckRequest(form),
+    )
   }
 
   const openSubPage = (route: SubPageRoute) => {
@@ -380,7 +441,7 @@ const Schedule3: FC = () => {
           hideLabel
           size="sm"
           value={form[fieldKey] ?? ''}
-          onChange={setField(fieldKey)}
+          onChange={setCheckedField(fieldKey)}
           // Re-group the value, commit it to the derived mirror's baseline (#291), AND run the
           // caller's own blur hook (the Annual Rents S111 alert). The GROUPED string is passed
           // explicitly so `committed` and `form` hold the same text, and an invalid field holds its
@@ -634,7 +695,7 @@ const Schedule3: FC = () => {
                       hideLabel
                       size="sm"
                       value={form['overrideHarvestTotalPop'] ?? 'N'}
-                      onChange={setField('overrideHarvestTotalPop')}
+                      onChange={setCheckedField('overrideHarvestTotalPop')}
                       disabled={!editable}
                     >
                       <SelectItem value="N" text="No" />

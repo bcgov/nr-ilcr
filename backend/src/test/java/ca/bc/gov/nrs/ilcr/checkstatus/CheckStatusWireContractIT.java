@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -74,7 +76,7 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
 
   /**
    * One pinned call: a name that becomes the golden filename, the endpoint, the mill/year, and the
-   * request body for the one schedule that takes one.
+   * request body for the schedules that take one.
    */
   private record Anchor(String name, String path, String millId, String year, String body) {
 
@@ -88,6 +90,34 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
     }
   }
 
+  /** V7 mill 528: every volume+cost line 100 / 500, the volume-only lines 100, shared volume 0. */
+  private static final String SCHEDULE1_528_SCREEN =
+      "{\"lineItems\":["
+          + Stream.concat(
+                  Stream.of(12, 13, 14, 15, 16, 17, 18, 1, 2)
+                      .map(c -> "{\"costItemCode\":" + c + ",\"volume\":100,\"cost\":500}"),
+                  Stream.of(143, 144, 139, 140)
+                      .map(c -> "{\"costItemCode\":" + c + ",\"volume\":100,\"cost\":null}"))
+              .collect(Collectors.joining(","))
+          + "],\"otherCostsVolume\":0}";
+
+  /**
+   * V18 mill 572: Harvest 1000 on all eleven lines, PO&amp;P 500 on the eight both-columns lines,
+   * both timber volumes 1000, Override not set.
+   */
+  private static final String SCHEDULE3_572_SCREEN =
+      "{\"overrideHarvestTotalPop\":\"N\",\"lineItems\":["
+          + Stream.of(27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37)
+              .map(
+                  c ->
+                      "{\"costItemCode\":"
+                          + c
+                          + ",\"harvest\":1000,\"pop\":"
+                          + (c == 29 || c == 33 || c == 37 ? "null" : "500")
+                          + "}")
+              .collect(Collectors.joining(","))
+          + "],\"popTimberVolume\":1000,\"crownTimberVolume\":1000}";
+
   /**
    * Every schedule appears at least once, and the schedules whose composed lines are richest appear
    * on both branches. Schedule 6's third anchor is the highest-value row in the table: one payload
@@ -96,10 +126,34 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
    */
   static List<Anchor> anchors() {
     return List.of(
-        new Anchor("schedule1-528-2021", "/api/v1/schedule1/check-status", "528", "2021"),
-        new Anchor("schedule1-530-2021", "/api/v1/schedule1/check-status", "530", "2021"),
-        new Anchor("schedule2-621-2021", "/api/v1/schedule2/check-status", "621", "2021"),
-        new Anchor("schedule3-572-2021", "/api/v1/schedule3/check-status", "572", "2021"),
+        // Since #359 Schedules 1-3 take the on-screen values. Each body MIRRORS the anchor's stored
+        // fixture, so the golden bytes are the stored verdict, unchanged.
+        new Anchor(
+            "schedule1-528-2021",
+            "/api/v1/schedule1/check-status",
+            "528",
+            "2021",
+            SCHEDULE1_528_SCREEN),
+        new Anchor(
+            "schedule1-530-2021",
+            "/api/v1/schedule1/check-status",
+            "530",
+            "2021",
+            // V7: no line rows at all, shared Other Costs volume 100.
+            "{\"lineItems\":[],\"otherCostsVolume\":100}"),
+        new Anchor(
+            "schedule2-621-2021",
+            "/api/v1/schedule2/check-status",
+            "621",
+            "2021",
+            // V10 detail 6030: item-25 cost 500000.
+            "{\"purchasedLogCostCost\":500000}"),
+        new Anchor(
+            "schedule3-572-2021",
+            "/api/v1/schedule3/check-status",
+            "572",
+            "2021",
+            SCHEDULE3_572_SCREEN),
         new Anchor("schedule4-560-2021", "/api/v1/schedule4/check-status", "560", "2021"),
         new Anchor("schedule4-514-2021", "/api/v1/schedule4/check-status", "514", "2021"),
         new Anchor(

@@ -162,7 +162,7 @@ at-rest state.
   - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
     affected schedule. One fix turns all of these green.
   - **Local facts (this is what belongs here):**
-    - **Scenarios:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S17` (the false-GREEN arm)
+    - **Scenarios:** `check-status-unsaved.feature` `@p1 @S17` (the false-GREEN arm)
       and `@S18` (the false-RED arm). Both are needed: they fail in OPPOSITE directions.
     - **Anchors:** two SEEDED, dedicated mill-years — `check-unsaved-violation` (23052/2015) and
       `check-unsaved-fix` (23052/2016), created by
@@ -172,12 +172,21 @@ at-rest state.
     - **Re-grounding note:** Schedule 2 renders Check Status issues as **warning** notifications, not errors
       (unlike Schedules 1 and 3), so these scenarios assert "the warning" — matching S08.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged against the shared ticket. Dev to send the on-screen values with
-    the check-status request and evaluate those, following Schedule 6's `Schedule6CheckRequest`; QA
-    re-verifies and closes this entry when the fix lands. The scenarios assert the CORRECT behaviour, so they
-    go green on their own, at which point their tags and `[DISCOVERED …]` title markers come off together.
-    No test change is needed. Added 2026-08-27.
-  - **Test:** `check-status-unsaved.feature` ×2 — both RED by design.
+  - **Status:** **CLOSED 2026-09-25 for Schedule 2 (#359 group A — Schedules 1, 2 and 3).**
+    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 (Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a); see sch3 DIV-6). The fix and its
+    reasoning are recorded in **sch3 DIV-6**, not here. Local to Schedule 2: the endpoint now takes
+    `Schedule2CheckRequest`; the item-25 cost it checks is the only value it reads, so the payload path reads NOTHING from the database and no longer runs the document assembly at all; the Story 15.1 sweep keeps the stored path (`checkStatusStored`). Added 2026-08-27.
+  - **The closure evidence, reproducible (2026-09-25).**
+    - Backend unit: `cd backend && mvn -B -ntp clean test "-Dtest=Schedule1*,Schedule2*,Schedule3*,CheckStatus*"`
+      — 982 run, 0 failed (947 before the fix).
+    - Backend IT: `cd backend && mvn -B -ntp clean -P integration-test verify "-Dit.test=Schedule1*IT,Schedule2*IT,Schedule3*IT,CheckStatus*IT"`
+      — 375 run, 0 failed (362 before), against Testcontainers Oracle `gvenzl/oracle-free:23.9-slim-faststart`.
+      `Schedule2CheckStatusIT` posts bodies that DISAGREE with Oracle, proves the body wins and that no row or revision
+      token moves; the `schedule2-621-2021` golden in `CheckStatusWireContractIT` is unchanged byte-for-byte, posted with a body that mirrors its stored fixture.
+    - Frontend: `cd frontend && npx vitest run --mode test` — 2212 passed, 0 failed.
+    - E2E run: `cd frontend/e2e && npx playwright test --grep "@check-status-unsaved"` on 2026-09-25 against the local real-data extract DB, branch at `beb1515d` + this change — 190 passed: 178 setup/preflight tests plus all 12 `@check-status-unsaved` scenarios (sch1 S27/S28, sch2 S17/S18, sch3 S12/S25/S26, sch5 ×3, sch11 ×2)
+  - **Test:** `check-status-unsaved.feature` ×2 — `@S17` and `@S18` had ONLY their `@discovered-divergence` tag and
+    `[DISCOVERED …]` title marker removed, both together; no assertion, step or fixture was edited.
 
 ---
 
