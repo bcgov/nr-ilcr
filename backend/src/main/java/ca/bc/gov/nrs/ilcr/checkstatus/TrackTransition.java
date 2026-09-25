@@ -21,7 +21,8 @@ import java.util.Optional;
  *
  * <p>All four are exposed by an endpoint: Submit (Story 15.3), Verify (Story 17.1) and the two
  * admin reversals (Story 18.1). Each added a controller method and a status write, not a second
- * guard.
+ * guard. On Schedule 11, Submit (Story 26.1) and Verify (Story 26.3) are live; the two reversals
+ * are Story 26.5's.
  *
  * <p><strong>The track is a parameter, not a row.</strong> Schedule 11 reuses these same four
  * transitions against {@code MILL_SILVICULTUR_STATUS_CODE}, because legacy did: its guard and its
@@ -44,14 +45,24 @@ public enum TrackTransition {
       Recorded.LICENSEE,
       new Keys("sch1-10SubmittedMsg", "submitNotDraftErrorMsg", GateKeys.GENERIC),
       new Keys("sch11SubmittedMsg", "sch11SubmitNotDraftErrorMsg", GateKeys.GENERIC)),
-  /** Submitted &rarr; Verified: the ministry signs the report off (Story 17.1). */
+  /**
+   * Submitted &rarr; Verified: the ministry signs the report off (Stories 17.1, 26.3).
+   *
+   * <p>Schedule 11's {@code rejectedKey} is legacy's generic {@code reportSubmissionErrorMsg}
+   * because that is the text a refused Schedule 11 verify actually shows: legacy's DAO guard
+   * returned {@code false}, which its service turned into {@code SCHEDULE_NOT_SUBMITTED}, and the
+   * epic keeps it as legacy parity. The service reaches it without this key ({@code refusedVerify}
+   * names no transition, on either track), so naming it here keeps the key and the text shown the
+   * same, rather than declaring a second key nothing reaches beside 1&ndash;10's {@code
+   * verifyNotSubmittedErrorMsg}.
+   */
   VERIFY(
       "S",
       "V",
       "V",
       Recorded.AUDITOR,
       new Keys("sch1-10VerifiedMsg", "verifyNotSubmittedErrorMsg", GateKeys.GENERIC),
-      "Story 26.3"),
+      new Keys("sch11VerifiedMsg", "reportSubmissionErrorMsg", GateKeys.GENERIC)),
   /** Submitted &rarr; Draft: the ministry hands the report back (Story 18.1). */
   SET_TO_DRAFT(
       "S",

@@ -143,4 +143,59 @@ class SetReportStatusAuthorizationIT extends AbstractOracleIT {
 
     assertThat(trackStatus("797")).isEqualTo("S");
   }
+
+  // --- Story 26.3: Schedule 11 verify sits behind the same action
+  // ----------------------------------
+
+  private static final String VERIFY_11 = "/api/v1/check-status/schedule11/verify";
+
+  /** R__59's silviculture-Draft refused-arm mill: written by nothing in any suite. */
+  private static final String SCH11_DRAFT_MILL = "809";
+
+  /** R__59's silviculture-Verified refused-arm mill: written by nothing in any suite. */
+  private static final String SCH11_VERIFIED_MILL = "810";
+
+  private static final String SUBMISSION_ERROR =
+      "An error has been found submitting schedules. The error details have been logged. Please"
+          + " contact ILCR application support.";
+
+  private String silvicultureStatus(String mill) {
+    return jdbc.queryForObject(
+        "SELECT MILL_SILVICULTUR_STATUS_CODE FROM THE.ILCR_MILL_REPORT_STATUS"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        String.class,
+        Integer.valueOf(mill));
+  }
+
+  @Test
+  @DisplayName("26.3 AC 6: a Licensee is denied Schedule 11 Verify — 403, nothing written")
+  void submitterCannotVerifySchedule11() throws Exception {
+    mockMvc
+        .perform(reversal(VERIFY_11, SCH11_DRAFT_MILL).with(canonicalSubmitter()))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+    mockMvc.perform(post(VERIFY_11).with(canonicalSubmitter())).andExpect(status().isForbidden());
+
+    assertThat(silvicultureStatus(SCH11_DRAFT_MILL)).isEqualTo("D");
+  }
+
+  @Test
+  @DisplayName("26.3 AC 6: an unauthenticated caller is denied Schedule 11 Verify")
+  void anonymousCannotVerifySchedule11() throws Exception {
+    mockMvc.perform(reversal(VERIFY_11, SCH11_DRAFT_MILL)).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("26.3 AC 6: an ADMIN reaches the Schedule 11 transition — proven by its 409")
+  void adminReachesTheSchedule11Verify() throws Exception {
+    // The negative control for the two arms above: 810 is already Verified, so the ADMIN gets
+    // past authorization and the context guard and is stopped by the status rule, writing nothing.
+    mockMvc
+        .perform(
+            reversal(VERIFY_11, SCH11_VERIFIED_MILL).with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
+
+    assertThat(silvicultureStatus(SCH11_VERIFIED_MILL)).isEqualTo("V");
+  }
 }

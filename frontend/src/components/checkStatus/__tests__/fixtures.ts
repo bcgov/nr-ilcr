@@ -198,6 +198,8 @@ export const SCH11_ERROR_TEXT = 'location  : Missing Actual - Actual cost: Value
 export const SCH11_SUBMITTED_TEXT = 'Schedule 11 has been successfully submitted.'
 /** Its not-Draft 409 text (`sch11SubmitNotDraftErrorMsg`, deviation (AB)), pinned the same way. */
 export const SCH11_NOT_DRAFT_TEXT = 'Schedule 11 is no longer in Draft and cannot be submitted.'
+/** The Schedule 11 verify's 200 text (`sch11VerifiedMsg`), pinned to the bundle the same way. */
+export const SCH11_VERIFIED_TEXT = 'Schedule 11 status has been updated to verified.'
 
 /** schedule11-617-2021.json */
 export const schedule11Fail: Schedule11CheckStatusResponse = {

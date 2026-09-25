@@ -20,13 +20,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Every report-status transition on the Schedules 1&ndash;10 track, and the Schedule 11 submit. The
- * workflow domain owns these, not any schedule service (AD-5/AD-9): a transition spans a track's
- * categories and belongs to none of them. {@link TrackTransition} is the single rule table &mdash;
- * legacy drove submit, verify and both reversals through one parameterized method ({@code
- * SubmitReportDAO.submitReport}) keyed on the (from, to) pair, and that enum is that logic in full,
- * so Story 18.1's reversals extend this class rather than fork it. Story 17.1 did fork it; this
- * class is the two halves put back.
+ * Every report-status transition on the Schedules 1&ndash;10 track, and the Schedule 11 submit and
+ * verify. The workflow domain owns these, not any schedule service (AD-5/AD-9): a transition spans
+ * a track's categories and belongs to none of them. {@link TrackTransition} is the single rule
+ * table &mdash; legacy drove submit, verify and both reversals through one parameterized method
+ * ({@code SubmitReportDAO.submitReport}) keyed on the (from, to) pair, and that enum is that logic
+ * in full, so Story 18.1's reversals extend this class rather than fork it. Story 17.1 did fork it;
+ * this class is the two halves put back.
  *
  * <p><strong>The two transitions do NOT share a boundary, and that is deliberate on both
  * sides.</strong> Submit locks the status row first and gates inside the write transaction (15.3's
@@ -75,10 +75,11 @@ import org.springframework.transaction.annotation.Transactional;
  * <h2>Verify</h2>
  *
  * <p>Signs a submitted report off for rate setting (UC-CHK-007/012) &mdash; {@code S}&rarr;{@code
- * V} behind the same eleven-schedule gate, recording the acting user as the report's AUDITOR rather
- * than its licensee ({@link TrackTransition.Recorded}). Order is legacy's: read the current codes,
- * run the gate, check the transition is legal, then write. See {@link ReportTransitionWriter} for
- * why the write is a separate bean.
+ * V} behind the track's own gate (eleven verdicts for 1&ndash;10, one for Schedule 11), recording
+ * the acting user as the report's AUDITOR rather than its licensee ({@link
+ * TrackTransition.Recorded}). Order is legacy's: read the current codes, run the gate, check the
+ * transition is legal, then write. See {@link ReportTransitionWriter} for why the write is a
+ * separate bean.
  *
  * <p>Logs mill/year and the failure class only &mdash; never a cost or volume value, never a
  * directory identifier (AD-11).
@@ -295,9 +296,15 @@ public class ReportTrackTransitionService {
   }
 
   /**
-   * Verify a submitted Schedules 1&ndash;10 track: {@code S}&rarr;{@code V}, behind the same
-   * eleven-schedule gate that guards submission, recording the acting user as the report's auditor
-   * and advancing the ten category states. Schedule 11 is never read or written (BR-08).
+   * Verify a submitted track: {@code S}&rarr;{@code V}, behind the same gate that guards that
+   * track's submission, recording the acting user as the report's auditor and advancing the track's
+   * category states. The other track is never read or written (BR-07/BR-08).
+   *
+   * <p>One method for both tracks, because legacy had one: {@code
+   * CheckStatusMB.verifiedSchedule11():208-210} is a single call into the same {@code
+   * submitSchedule11(code)} the Schedule 11 submit uses, and that reaches the same {@code
+   * updateILCRMillReportStatus} as 1&ndash;10. {@code track} selects the status column, how many
+   * verdicts the gate owes, and what the writer names.
    *
    * <p>Not {@code @Transactional}: the gate runs HERE, outside the write, exactly where legacy ran
    * it ({@code CheckStatusMB.submitReport:247-261} gates, {@code :271} calls the DAO). {@link
@@ -307,6 +314,7 @@ public class ReportTrackTransitionService {
    * overwriting a concurrent Set to Draft with the illegal {@code D}&rarr;{@code V} jump. 17.1 left
    * the predicate off because, before 18.1, nothing but another verify could move an {@code S} row.
    *
+   * @param track the track to verify
    * @param millId the mill, already validated as an active context by the caller (AD-4)
    * @param year the reporting year
    * @param actingUser the value for the audit columns, at most 30 characters
@@ -316,39 +324,47 @@ public class ReportTrackTransitionService {
    * @throws ReportTransitionRejectedException 409 with legacy's verbatim {@code
    *     reportSubmissionErrorMsg} &mdash; a no-op, either illegal Draft&harr;Verified jump, or a
    *     stored NULL code
-   * @throws ReportNotSubmittedException 409 &mdash; at least one of the eleven checks fails
+   * @throws ReportNotSubmittedException 409 &mdash; at least one of the track's checks fails
    * @throws ReportSubmissionException 500 &mdash; a write failed or affected no row; rolled back
    */
-  public String verify(long millId, int year, String actingUser, String actorGuid) {
+  public String verify(
+      ScheduleTrack track, long millId, int year, String actingUser, String actorGuid) {
+    Objects.requireNonNull(track, "track");
     TrackStatusCodes codes =
         millContextService
             .findTrackStatusCodes(millId, year)
             .orElseThrow(ScheduleNotFoundException::new);
-    String current = codes.schedules1To10Code();
+    String current =
+        track == ScheduleTrack.SCHEDULE_11 ? codes.schedule11Code() : codes.schedules1To10Code();
 
     // A NULL code is NOT a missing row, and NOT a legality refusal either: legacy dereferenced the
     // status association here and would have thrown NPE straight to the JSF error page
     // (isMillReportStatusValid:451-455). A crash is not portable, and claiming success on a state
-    // nobody can name would be worse, so this stays a refused transition (409). Unreachable in
-    // delivery, whose status columns are NOT NULL (2026-09-16 probe) — defensive only.
+    // nobody can name would be worse, so this stays a refused transition (409). The 1-10 column is
+    // NOT NULL in delivery (2026-09-16 probe); real rows DO carry a NULL silviculture code.
     if (current == null) {
       log.info(
-          "Verify 409: the 1-10 track carries no status code for millId={} year={}", millId, year);
+          "Verify 409: the {} track carries no status code for millId={} year={}",
+          track,
+          millId,
+          year);
       throw new ReportTransitionRejectedException();
     }
 
     // The gate runs BEFORE the write transaction and takes no row lock, as legacy did:
     // CheckStatusMB.submitReport evaluated all eleven validators in the bean and only then called
-    // the service, which delegated to a DAO that opened its own transaction. Ratified 2026-09-16 as
-    // legacy parity; a concurrent schedule save can invalidate the verdict between gate and write.
-    requireTrackPassesValidation(TrackTransition.VERIFY, millId, year);
+    // the service, which delegated to a DAO that opened its own transaction; submitSchedule11 ran
+    // isSchedule11Valid() the same way (:213). Ratified 2026-09-16 as legacy parity; a concurrent
+    // schedule save can invalidate the verdict between gate and write.
+    requireTrackPassesValidation(TrackTransition.VERIFY, track, millId, year);
 
     TrackTransition transition =
         TrackTransition.resolve(current, TrackTransition.VERIFY.to())
             .filter(TrackTransition.VERIFY::equals)
-            .orElseThrow(() -> refusedVerify(current, millId, year));
+            .orElseThrow(() -> refusedVerify(track, current, millId, year));
 
     return writer.write(
+        track,
         millId,
         year,
         transition.from(),
@@ -428,7 +444,7 @@ public class ReportTrackTransitionService {
     // evaluated all eleven validators before calling the service at all (:247-271). A report that
     // fails validation is therefore refused with the transition's own gate text (gateFailedKey,
     // deviation (V)) even when the status transition it asked for was itself illegal.
-    requireTrackPassesValidation(expected, millId, year);
+    requireTrackPassesValidation(expected, ScheduleTrack.SCHEDULES_1_TO_10, millId, year);
 
     TrackTransition transition =
         TrackTransition.resolve(current, expected.to())
@@ -463,18 +479,22 @@ public class ReportTrackTransitionService {
    * DAO without reading the service, and hedges itself as unconfirmed.
    *
    * <p>Naming no transition rather than {@link TrackTransition#VERIFY} is therefore deliberate:
-   * {@link TrackTransition#rejectedKey} carries Story 15.4's more specific wording, which is a
-   * business-ruled DEPARTURE from legacy and belongs to submit. Epic 17's tie-breaker is legacy.
+   * {@link TrackTransition#rejectedKey} carries Story 15.4's more specific wording on 1&ndash;10,
+   * which is a business-ruled DEPARTURE from legacy and belongs to submit. Epic 17's tie-breaker is
+   * legacy, and Epic 26 rules the same text for Schedule 11 (whose VERIFY {@code rejectedKey} names
+   * this generic key, so the two agree).
    *
+   * @param track the track, for the log line only
    * @param current the track's stored status code, for the log line only
    * @param millId the mill
    * @param year the reporting year
    * @return the exception to throw
    */
   private static ReportTransitionRejectedException refusedVerify(
-      String current, long millId, int year) {
+      ScheduleTrack track, String current, long millId, int year) {
     log.info(
-        "Verify 409: transition {}->{} is not legal for millId={} year={}",
+        "Verify 409: {} transition {}->{} is not legal for millId={} year={}",
+        track,
         current,
         TrackTransition.VERIFY.to(),
         millId,
@@ -503,22 +523,29 @@ public class ReportTrackTransitionService {
    * lines distinguish them; inventing a second user-facing text for a state nobody can reach would
    * be worse than reusing this one.
    */
-  private void requireTrackPassesValidation(TrackTransition transition, long millId, int year) {
-    List<ScheduleCheckResult> verdicts =
-        sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, millId, year);
-    if (verdicts.size() != EXPECTED_TRACK_VERDICTS) {
+  private void requireTrackPassesValidation(
+      TrackTransition transition, ScheduleTrack track, long millId, int year) {
+    List<ScheduleCheckResult> verdicts = sweepService.checkTrack(track, millId, year);
+    int expected = expectedVerdicts(track);
+    if (verdicts.size() != expected) {
       log.warn(
-          "{} 409: expected {} schedule verdicts for millId={} year={} but got {}",
+          "{} {} 409: expected {} schedule verdicts for millId={} year={} but got {}",
+          track,
           transition,
-          EXPECTED_TRACK_VERDICTS,
+          expected,
           millId,
           year,
           verdicts.size());
-      throw new ReportNotSubmittedException(transition, ScheduleTrack.SCHEDULES_1_TO_10);
+      throw new ReportNotSubmittedException(transition, track);
     }
     if (!TrackCheckResult.of(null, verdicts).requirementsMet()) {
-      log.info("{} 409: validation gate failed for millId={} year={}", transition, millId, year);
-      throw new ReportNotSubmittedException(transition, ScheduleTrack.SCHEDULES_1_TO_10);
+      log.info(
+          "{} {} 409: validation gate failed for millId={} year={}",
+          track,
+          transition,
+          millId,
+          year);
+      throw new ReportNotSubmittedException(transition, track);
     }
   }
 

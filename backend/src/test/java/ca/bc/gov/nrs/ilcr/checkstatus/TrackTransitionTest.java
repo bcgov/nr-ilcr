@@ -155,6 +155,23 @@ class TrackTransitionTest {
   }
 
   @Test
+  @DisplayName(
+      "Verify on Schedule 11 speaks for Schedule 11, and refuses with legacy's generic text")
+  void schedule11VerifyKeys() {
+    // Legacy CheckStatusMB.verifiedSchedule11:208-210 -> submitSchedule11("V") showed
+    // sch11VerifiedMsg on success and reportNotSubmittedErrorMsg when the gate failed (:235). A
+    // track not at S fell through the DAO guard to reportSubmissionErrorMsg, which the epic keeps
+    // ("legacy parity, not a fix"); naming it here means the key is the text actually shown, with
+    // no second declared-but-unreached key beside verifyNotSubmittedErrorMsg.
+    assertThat(TrackTransition.VERIFY.successKey(ELEVEN)).isEqualTo("sch11VerifiedMsg");
+    assertThat(TrackTransition.VERIFY.rejectedKey(ELEVEN))
+        .isEqualTo(ReportTransitionRejectedException.GENERIC_KEY)
+        .isEqualTo("reportSubmissionErrorMsg");
+    assertThat(TrackTransition.VERIFY.gateFailedKey(ELEVEN))
+        .isEqualTo("reportNotSubmittedErrorMsg");
+  }
+
+  @Test
   @DisplayName("the track is a parameter, not a row: Schedule 11's submit resolves to SUBMIT")
   void schedule11SubmitIsTheSameRow() {
     // D2: legacy's guard and category map never knew which track they were on, so there is no
@@ -166,7 +183,6 @@ class TrackTransitionTest {
   @ParameterizedTest(name = "{0} on Schedule 11 throws, naming {1}")
   @DisplayName("a transition whose Schedule 11 story has not shipped has no Schedule 11 text")
   @CsvSource({
-    "VERIFY, Story 26.3",
     "SET_TO_DRAFT, Story 26.5",
     "SET_TO_SUBMIT, Story 26.5",
   })
@@ -185,13 +201,13 @@ class TrackTransitionTest {
   }
 
   @Test
-  @DisplayName("every transition is defined on 1-10, and only SUBMIT on Schedule 11")
+  @DisplayName("every transition is defined on 1-10, and only SUBMIT and VERIFY on Schedule 11")
   void definedPairs() {
     for (TrackTransition transition : TrackTransition.values()) {
       assertThat(transition.isDefinedOn(ONE_TO_TEN)).as("%s", transition).isTrue();
       assertThat(transition.isDefinedOn(ELEVEN))
           .as("%s", transition)
-          .isEqualTo(transition == TrackTransition.SUBMIT);
+          .isEqualTo(transition == TrackTransition.SUBMIT || transition == TrackTransition.VERIFY);
     }
   }
 

@@ -22,8 +22,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  * {@code /api/v1/check-status} is a new top-level resource rather than a schedule sub-resource —
  * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3, {@code
  * /verify} with Story 17.1, {@code /set-to-draft} and {@code /set-to-submit} with Story 18.1, and
- * {@code /schedule11/submit} with Story 26.1. Every sub-resource DOES follow the POST-sub-resource
- * convention; the GET's departure is the sweep's alone.
+ * {@code /schedule11/submit} with Story 26.1 and {@code /schedule11/verify} with Story 26.3. Every
+ * sub-resource DOES follow the POST-sub-resource convention; the GET's departure is the sweep's
+ * alone.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings on both endpoints, and this is
  * forced, not stylistic: the legacy ERR-001 text ("Please Select Mill and Reporting Year in the
@@ -162,6 +163,37 @@ public interface CheckStatusApi {
    */
   @PostMapping("/verify")
   ResponseEntity<VerifyReportResponse> verifySchedules1To10(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Verify a submitted Schedule 11 track &mdash; the Submitted&rarr;Verified transition of the
+   * silviculture track (UC-CHK-008/013, FR5, Story 26.3). Identical to {@link
+   * #verifySchedules1To10} above in its authorization, its guards, their order and its response
+   * shape; only the track differs. Method authorization runs first: no {@code SET_REPORT_STATUS} →
+   * 403. Then missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS}
+   * row → 404 {@code checkStatusScheduleNotFoundErrorMsg}; mill closed for the year → 409 ERR-002;
+   * the Schedule 11 check failing (a location missing its Actual or Planned Cost) → 409 {@code
+   * reportNotSubmittedErrorMsg}, nothing written; a silviculture track not at Submitted (a no-op,
+   * the Draft&rarr;Verified jump, a stored NULL code, or a verify that lost the race) → 409 {@code
+   * reportSubmissionErrorMsg}, legacy's own text; a write that cannot be persisted, or a missing
+   * category {@code '11'} row → 500 {@code reportSubmissionErrorMsg}, everything rolled back.
+   *
+   * <p>Success → 200 {@code {"trackStatus": "V", "message": {"key": "sch11VerifiedMsg", "text":
+   * …}}} after commit, with the silviculture status at {@code V}, the acting user's assignment (or
+   * NULLs) recorded as the report's auditor &mdash; the pair both tracks share, as in legacy
+   * &mdash; every Schedule 11 location row and its cost details stamped, and category {@code '11'}
+   * at {@code V}. The Schedules 1&ndash;10 status and their ten category rows are never touched.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying both the audit actor and the directory
+   *     GUID the auditor cross-reference is looked up by
+   * @return 200 with the new silviculture status and the verbatim success message
+   */
+  @PostMapping("/schedule11/verify")
+  ResponseEntity<VerifyReportResponse> verifySchedule11(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);

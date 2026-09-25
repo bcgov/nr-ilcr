@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -95,7 +96,7 @@ class ReportTransitionWriterTest {
     givenTenCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    writer.write(MILL, YEAR, "S", "V", "V", USER, GUID);
+    writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
 
     // The ONLY guard against re-inverting this. Delivery derives ILCR_*_AUD.RECORD_STATE_CODE in a
     // BEFORE-UPDATE trigger from the (CATEGORY_STATE_CODE, mill status) pair, and (D,S) is the only
@@ -116,7 +117,7 @@ class ReportTransitionWriterTest {
     givenTenCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    writer.write(MILL, YEAR, "S", "V", "V", USER, GUID);
+    writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
 
     verify(repository).touchReportSummaries(MILL, YEAR, USER);
     verify(repository).touchReportSummaryCostDetails(MILL, YEAR, USER);
@@ -151,7 +152,10 @@ class ReportTransitionWriterTest {
     givenOneCategoryRowIsMissing();
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
   }
 
@@ -162,7 +166,10 @@ class ReportTransitionWriterTest {
     givenNoCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
   }
 
@@ -178,7 +185,10 @@ class ReportTransitionWriterTest {
         .thenReturn(0);
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportTransitionRejectedException.class)
         .hasMessage(ReportTransitionRejectedException.GENERIC_KEY);
     verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
@@ -241,7 +251,8 @@ class ReportTransitionWriterTest {
         .thenReturn(1);
     givenTenCategoryRowsAdvance();
 
-    assertThat(writer.write(MILL, YEAR, "S", "V", "V", USER, null)).isEqualTo("V");
+    assertThat(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, null))
+        .isEqualTo("V");
     // The cross-reference lookup is skipped entirely rather than run with a null key.
     verify(millUserXrefRepository, never()).findAssignment(anyLong(), any());
     verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER);
@@ -255,7 +266,8 @@ class ReportTransitionWriterTest {
         .thenReturn(1);
     givenTenCategoryRowsAdvance();
 
-    assertThat(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+    assertThat(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isEqualTo("V");
     verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER);
   }
 
@@ -267,7 +279,10 @@ class ReportTransitionWriterTest {
     when(repository.touchReportSummaries(MILL, YEAR, USER))
         .thenThrow(new DataIntegrityViolationException("sweep failed"));
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
@@ -391,6 +406,141 @@ class ReportTransitionWriterTest {
 
     assertThatThrownBy(
             () -> writer.writeReversal(REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Story 26.3 — Verify on the Schedule 11 track. Same write half, dispatched by track: the
+  // silviculture status statement, Schedule 11's one row family, category '11' alone.
+  // -----------------------------------------------------------------------------------------------
+
+  private static final ScheduleTrack ELEVEN = ScheduleTrack.SCHEDULE_11;
+  private static final long SCH11_MILL = 807L;
+
+  private void givenTheSilvicultureStatusRowMoves() {
+    when(repository.updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(1);
+  }
+
+  private void givenTheSchedule11AuditorIsAssigned() {
+    when(millUserXrefRepository.findAssignment(SCH11_MILL, GUID))
+        .thenReturn(
+            Optional.of(
+                new MillUserXrefEntity(SCH11_MILL, GUID, null, null, 0, null, null, null, null)));
+  }
+
+  @Test
+  @DisplayName("Schedule 11: silviculture status, then both location touches, then category '11'")
+  void schedule11StatementOrder() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(1);
+
+    assertThat(writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+
+    // Legacy's order (SubmitReportDAO.submitReportSchedule11:161-164). S->V is trigger-indifferent,
+    // but Story 26.5's V->S will reuse this dispatch and is not, so the order is pinned now.
+    InOrder order = inOrder(repository);
+    order
+        .verify(repository)
+        .updateSilvicultureTrackStatusWithAuditor(
+            SCH11_MILL, YEAR, "V", "S", SCH11_MILL, GUID, USER);
+    order.verify(repository).touchBasicSilvicultureReports(SCH11_MILL, YEAR, USER);
+    order.verify(repository).touchBasicSilvicultureCostDetails(SCH11_MILL, YEAR, USER);
+    order.verify(repository).advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER);
+  }
+
+  @Test
+  @DisplayName("Schedule 11 never reaches a 1-10 statement: status, stamps or categories 1-10")
+  void schedule11NeverTouchesTheOtherTrack() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(1);
+
+    writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID);
+
+    verify(repository, never())
+        .updateTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());
+    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
+    verify(repository, never()).touchRoadConstructionCostDetails(anyLong(), anyInt(), anyString());
+    for (String categoryId : CATEGORIES) {
+      verify(repository, never())
+          .advanceCategoryState(anyLong(), anyInt(), eq(categoryId), anyString(), anyString());
+    }
+  }
+
+  @Test
+  @DisplayName("1-10 never reaches a Schedule 11 statement: status, locations or category '11'")
+  void oneToTenNeverTouchesSchedule11() {
+    givenTheStatusRowMoves();
+    givenTenCategoryRowsAdvance();
+    givenTheAuditorIsAssigned();
+
+    writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
+
+    verify(repository, never())
+        .updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), anyString());
+    verify(repository, never()).touchBasicSilvicultureCostDetails(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), eq("11"), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a silviculture status write matching no row is the generic 409")
+  void schedule11LostUpdateIsRefused() {
+    when(repository.updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(0);
+    givenTheSchedule11AuditorIsAssigned();
+
+    assertThatThrownBy(() -> writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class)
+        .hasMessage(ReportTransitionRejectedException.GENERIC_KEY);
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("Schedule 11: no category '11' row fails the transition — its one row, not ten")
+  void schedule11MissingCategoryRowFails() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(0);
+
+    assertThatThrownBy(() -> writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportSubmissionException.class);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: an admin with no cross-reference records NULL in both auditor columns")
+  void schedule11NoXrefRecordsNullAuditor() {
+    when(millUserXrefRepository.findAssignment(SCH11_MILL, GUID)).thenReturn(Optional.empty());
+    when(repository.updateSilvicultureTrackStatusWithAuditor(
+            SCH11_MILL, YEAR, "V", "S", null, null, USER))
+        .thenReturn(1);
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(1);
+
+    assertThat(writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+    verify(repository)
+        .updateSilvicultureTrackStatusWithAuditor(SCH11_MILL, YEAR, "V", "S", null, null, USER);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a persistence failure becomes a 500 and stops before the category")
+  void schedule11PersistenceFailure() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.touchBasicSilvicultureReports(SCH11_MILL, YEAR, USER))
+        .thenThrow(new DataIntegrityViolationException("touch failed"));
+
+    assertThatThrownBy(() -> writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());

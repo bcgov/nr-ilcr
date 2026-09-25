@@ -167,6 +167,7 @@ sense against this directory, `mvn clean` before believing it.
    | Check Status submit (15.3) | **780–783**    | `R__55_check_status_submit_fixtures.sql`      |
    | Schedule 11 submit (26.1) | **784–789**     | `R__57`; locations `9411–9416`, summary `1680`, cost-report details `5800–5812`. **Report year 2021 only** — see below |
    | Schedule 11 correction (26.2) | **801–806** | `R__58`; locations `9421–9430`, cost-report details `5830–5845`, the FIRST seeded `*_AUD` 'S' snapshot rows (BSR audit `1001–1010`, cost audit `2001–2012`). **Report year 2021 only** — see below |
+   | Schedule 11 verify (26.3) | **807–815**     | `R__59`; locations `9431–9440`, summaries `1681–1684`, cost-report details `5846–5869` and `5750–5785` (815's all-met Schedules 1–3, so a 1–10 verify can commit on an S/S mill). **Report year 2021 only** — see below |
    | Reversal transitions (18.1) | **790–799**   | `R__56`; summaries `1650–1671`, cost-report details `3201–3452`. **Report year 2021 only** — see below |
 
    **⚠️ A static id is only free if it is also out of reach of every SEQUENCE.** `R__56`'s

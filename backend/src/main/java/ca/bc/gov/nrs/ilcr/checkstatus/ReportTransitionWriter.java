@@ -1,14 +1,16 @@
 package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The write half of a Schedules 1&ndash;10 status transition: status row, audit sweep, category
- * advance, in one transaction.
+ * The write half of a status transition: status row, audit sweep, category advance, in one
+ * transaction. {@link #write} serves both tracks (Verify on Schedules 1&ndash;10, and on Schedule
+ * 11 since Story 26.3); {@link #writeReversal} is still Schedules 1&ndash;10 only.
  *
  * <p>A separate bean rather than a method on {@link ReportTrackTransitionService} because the
  * boundary has to sit <em>here</em> and nowhere wider. Legacy ran its eleven validators in the
@@ -39,8 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReportTransitionWriter {
 
   /**
-   * The category rows a 1&ndash;10 transition must advance: ten of the eleven a mill/year carries,
-   * because category {@code '11'} is Schedule 11's and never moves with this track.
+   * The category rows a 1&ndash;10 reversal must advance: ten of the eleven a mill/year carries,
+   * because category {@code '11'} is Schedule 11's and never moves with this track. {@link #write}
+   * counts against its track's own {@link ScheduleTrack#categoryIds()} instead.
    */
   static final int EXPECTED_CATEGORY_ROWS = 10;
 
@@ -54,8 +57,13 @@ public class ReportTransitionWriter {
   }
 
   /**
-   * Apply the transition: status row first, then the audit sweep, then the category advance.
+   * Apply the transition on one track: status row first, then the audit sweep, then the category
+   * advance. The track selects all three, exactly as legacy's boolean {@code isSchedule11Submitted}
+   * did ({@code SubmitReportDAO.submitReportSchedule11():161-164} against {@code
+   * submitReport():61-142}): which status column and identity statement, which row family is
+   * stamped, and which category rows advance. Nothing on the other track is named.
    *
+   * @param track the track to transition
    * @param millId the mill
    * @param year the reporting year
    * @param expectedStatus the status code the track must still hold when the write lands
@@ -72,6 +80,7 @@ public class ReportTransitionWriter {
    */
   @Transactional
   public String write(
+      ScheduleTrack track,
       long millId,
       int year,
       String expectedStatus,
@@ -79,6 +88,7 @@ public class ReportTransitionWriter {
       String categoryState,
       String actingUser,
       String actorGuid) {
+    Objects.requireNonNull(track, "track");
     try {
       // Legacy recorded the auditor only when the acting user held an ILCR_MILL_USER_XREF row for
       // the mill, and wrote NULLs otherwise (SubmitReportDAO:405-410). Resolved through the same
@@ -93,14 +103,30 @@ public class ReportTransitionWriter {
       String auditorGuid = auditorMillId == null ? null : actorGuid;
 
       int updated =
-          repository.updateTrackStatusWithAuditor(
-              millId, year, targetStatus, expectedStatus, auditorMillId, auditorGuid, actingUser);
+          track == ScheduleTrack.SCHEDULE_11
+              ? repository.updateSilvicultureTrackStatusWithAuditor(
+                  millId,
+                  year,
+                  targetStatus,
+                  expectedStatus,
+                  auditorMillId,
+                  auditorGuid,
+                  actingUser)
+              : repository.updateTrackStatusWithAuditor(
+                  millId,
+                  year,
+                  targetStatus,
+                  expectedStatus,
+                  auditorMillId,
+                  auditorGuid,
+                  actingUser);
       if (updated != 1) {
         // Zero rows is a REFUSAL, not a failure: the track left expectedStatus between the
         // service's unlocked read and this write. Legacy's generic text, because VERIFY's other
         // refusals carry it too (Epic 17's parity tie-breaker) — null selects it.
         log.info(
-            "Verify 409: the 1-10 track left {} for millId={} year={} before the write",
+            "Verify 409: the {} track left {} for millId={} year={} before the write",
+            track,
             expectedStatus,
             millId,
             year);
@@ -118,11 +144,16 @@ public class ReportTransitionWriter {
       // indifferent (both (A,V) and (V,V) map to 'V'), but D->S is not, and 15.3/Epic 18 extend
       // this component. Advance the category first and submit stamps (A,S)->'A', no 'S' snapshot is
       // ever written, and every original-value indicator silently serves nothing. The test snapshot
-      // has no triggers, so no acceptance test here can catch a re-inversion.
-      int stamped = stampAuditColumns(millId, year, actingUser);
+      // has no triggers, so no acceptance test here can catch a re-inversion. Schedule 11 follows
+      // the same order (legacy submitReportSchedule11:161-164); its S->V is indifferent too, but
+      // Story 26.5's V->S will reuse this dispatch.
+      int stamped =
+          track == ScheduleTrack.SCHEDULE_11
+              ? stampSchedule11AuditColumns(millId, year, actingUser)
+              : stampAuditColumns(millId, year, actingUser);
 
       int categories = 0;
-      for (String categoryId : ScheduleTrack.SCHEDULES_1_TO_10.categoryIds()) {
+      for (String categoryId : track.categoryIds()) {
         categories +=
             repository.advanceCategoryState(millId, year, categoryId, categoryState, actingUser);
       }
@@ -131,20 +162,23 @@ public class ReportTransitionWriter {
       // mill/year enrolled by an interrupted year-open really does carry fewer than eleven rows
       // (ReportingYearService's EnrolmentState.PARTIAL, error.mill.activate.partialrecords). Fail
       // loudly rather than commit a half-transitioned report behind a 200.
-      if (categories != EXPECTED_CATEGORY_ROWS) {
+      int expectedCategories = track.categoryIds().size();
+      if (categories != expectedCategories) {
         log.error(
-            "Verify failed for millId={} year={}: expected {} category rows to advance but {} were"
-                + " updated",
+            "Verify failed for millId={} year={}: expected {} {} category rows to advance but {}"
+                + " were updated",
             millId,
             year,
-            EXPECTED_CATEGORY_ROWS,
+            expectedCategories,
+            track,
             categories);
         throw new ReportSubmissionException();
       }
 
       log.info(
-          "Transitioned millId={} year={} to {}: {} category rows -> {}, {} audit rows stamped,"
-              + " auditor recorded={}",
+          "Transitioned {} for millId={} year={} to {}: {} category rows -> {}, {} audit rows"
+              + " stamped, auditor recorded={}",
+          track,
           millId,
           year,
           targetStatus,

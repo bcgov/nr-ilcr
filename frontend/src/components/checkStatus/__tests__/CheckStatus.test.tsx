@@ -24,6 +24,8 @@ import CheckStatus, {
   CONFIRM_SET_TO_SUBMIT_1_TO_10,
   CONFIRM_SUBMIT_1_TO_10,
   CONFIRM_SUBMIT_11,
+  CONFIRM_VERIFY_1_TO_10,
+  CONFIRM_VERIFY_11,
   HINT_NOT_ADMIN,
   HINT_NOT_ASSIGNED,
   HINT_NOT_DRAFT,
@@ -36,6 +38,7 @@ import CheckStatus, {
   SET_TO_SUBMIT_FAILED,
   SUBMIT_11_FAILED,
   SUBMIT_FAILED,
+  VERIFY_11_FAILED,
   VERIFY_FAILED,
 } from '../index'
 import { LOAD_FAILED } from '../useCheckStatusSweep'
@@ -48,6 +51,7 @@ import {
   SCH11_ERROR_TEXT,
   SCH11_NOT_DRAFT_TEXT,
   SCH11_SUBMITTED_TEXT,
+  SCH11_VERIFIED_TEXT,
   SCH4_EMPTY_LANDING_MET_TEXT,
   SCH5_BLANK_NAME_TEXT,
   SCH5_MET_CAMP_TEXT,
@@ -2289,7 +2293,7 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     await expectSubmits1To10('disabled', HINT_NOT_ASSIGNED)
   })
 
-  test('regression: Verified, Set to Draft and Set to Submit remain inert on all three bars', async () => {
+  test('regression: at Schedule 11 Verified its bar stays unclickable — Verified gated off by legacy’s rule (wired since 26.3), Set to Submit not wired — while the 1–10 pairs are live', async () => {
     server.use(
       millContextWithBothTracks('S', 'V'),
       http.get(SWEEP_URL, () =>
@@ -2303,9 +2307,10 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
     expect(getSpy).toHaveBeenCalled() // the spies see this instance's traffic (positive control)
 
-    // AMENDED TWICE. Story 17.2 made the 1–10 Verified pair a live transition; Story 18.2 made the
-    // 1–10 reversals live too. What is left without a transition behind it is Schedule 11's bar, and
-    // that is now all this regression owns: everything unwired stays unclickable and sends nothing.
+    // AMENDED THREE TIMES. Story 17.2 made the 1–10 Verified pair a live transition; Story 18.2 made
+    // the 1–10 reversals live too; Story 26.3 wired Schedule 11's Verified, which at Schedule 11
+    // VERIFIED is greyed by legacy's own client gate rather than by a missing handler. What this
+    // regression owns is Schedule 11's bar at V: nothing on it is clickable and nothing is sent.
     const bar11 = within(item(SCHEDULE_TITLES['11']))
     const inert = [
       bar11.getByRole('button', { name: 'Verified' }),
@@ -3874,9 +3879,9 @@ describe('Submit Schedule 11 (Story 26.1)', () => {
     expect(hintFor(submit11Button())).toHaveTextContent(HINT_NOT_DRAFT_11)
   })
 
-  // ---- Scope fence: nothing else on the Schedule 11 bar gains a click ---------------------------
+  // ---- Scope fence: of the Schedule 11 bar, only its reversals remain unwired ---------------------
 
-  test('scope: Schedule 11’s Verified keeps the legacy client gate and an inert click; its Set to Draft stays greyed — neither sends anything', async () => {
+  test('scope (rewritten by 26.3, which wired Schedule 11’s Verified): Verified now opens ITS prompt; Set to Draft stays greyed as not wired — and neither sends anything until confirmed', async () => {
     server.use(
       millContextWithBothTracks('D', 'S'),
       http.get(SWEEP_URL, () =>
@@ -3893,11 +3898,500 @@ describe('Submit Schedule 11 (Story 26.1)', () => {
     const verified11 = bar11.getByRole('button', { name: 'Verified' })
     expect(verified11).toBeEnabled() // admin + Schedule 11 Submitted: legacy's own rule
     await user.click(verified11)
+    const prompt = within(await dialog())
+    expect(prompt.getByText(CONFIRM_VERIFY_11)).toBeInTheDocument()
+    await user.click(prompt.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
     const setToDraft11 = bar11.getByRole('button', { name: 'Set to Draft' })
     expect(setToDraft11).toBeDisabled()
     expect(hintFor(setToDraft11)).toHaveTextContent(HINT_NOT_WIRED)
+    await user.click(setToDraft11)
     expect(openDialog()).toBeNull()
     await drainEventLoop()
     expect(postSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ================================================================================================
+// Verify Schedule 11 (Story 26.3 / UC-CHK-008, UC-CHK-013)
+//
+// Legacy's `verifiedSchedule11()` was one line into the same `submitSchedule11(code)` as the Schedule
+// 11 Submit (CheckStatusMB.java:208-210), and its button sat in the Schedule 11 tab with no `rendered=`,
+// greyed by `canUserVerifyReport(true)` — admin at Submitted (checkStatus.xhtml:175-180). Its dialog
+// asked `confirmVerifySch11Msg` and its Yes called the bean (:218-221). These arms hold that shape on
+// the wiring: the one page lock (26.1 D5) now covers this Verified in both directions, and a Schedule
+// 11 verify touches NO success latch — neither 1–10's nor Schedule 11's own (AC 8).
+// ================================================================================================
+
+const VERIFY_11_URL = `${SWEEP_URL}/schedule11/verify`
+const SCH11_VERIFIED_LINE = 'Sch 11 - Status: Verified - Date: 2017-02-02'
+
+/** Schedules 1–10 in Draft, Schedule 11 Submitted: the state the Schedule 11 Verified is enabled in. */
+const SUBMITTED_11_ONLY_SWEEP = sweep({ statusCode11: 'S', canSubmit11: false })
+const VERIFIED_11_SWEEP = sweep({ statusCode11: 'V', canSubmit11: false })
+
+const verify11Ok: Answer = () =>
+  HttpResponse.json({
+    trackStatus: 'V',
+    message: { key: 'sch11VerifiedMsg', text: SCH11_VERIFIED_TEXT },
+  })
+
+/** The Schedule 11 verify POST, answered by `answer` and recorded (count, URLs and bodies). */
+const verify11Handler = (answer: Answer | (() => Promise<Response>)) => {
+  const calls = { count: 0, urls: [] as string[], bodies: [] as string[] }
+  server.use(
+    http.post(VERIFY_11_URL, async ({ request }) => {
+      calls.count += 1
+      calls.urls.push(request.url)
+      calls.bodies.push(await request.text())
+      return answer()
+    }),
+  )
+  return calls
+}
+
+/** The one Verified inside the Schedule 11 tab. */
+const verify11Button = () =>
+  within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Verified' })
+
+const pressVerify11 = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(verify11Button())
+  return within(await dialog())
+}
+const confirmVerify11 = async (user: ReturnType<typeof userEvent.setup>) => {
+  const prompt = await pressVerify11(user)
+  await user.click(prompt.getByRole('button', { name: 'Yes' }))
+}
+
+/** Mount as the administrator and wait for the data tree AND the tombstone's line to settle. */
+const mountAdminSettled = async (line = SCH11_SUBMITTED_LINE) => {
+  renderAsAdmin(<CheckStatus />)
+  expect(declaredRole()).toBe(ILCR_ROLES.admin)
+  expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+  expect(await screen.findByText(line)).toBeInTheDocument()
+}
+
+describe('Verify Schedule 11 (Story 26.3)', () => {
+  // ---- AC 1: the happy path -------------------------------------------------------------------
+
+  test('AC 1: Verified asks legacy’s Schedule 11 question, Yes POSTs once with no body to the Schedule 11 endpoint, the server’s text is the banner and takes focus, and both reads refresh', async () => {
+    const reads = fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    const verify = verify11Handler(() => {
+      reads.state.sweep = json(VERIFIED_11_SWEEP)
+      reads.state.context = json(millContextBody('D', 'V'))
+      return verify11Ok()
+    })
+    const postSpy = vi.spyOn(apiService.getAxiosInstance(), 'post')
+    const user = userEvent.setup()
+    await mountAdminSettled()
+    expect(verify11Button()).toBeEnabled()
+    const before = { ...reads.calls }
+
+    const prompt = await pressVerify11(user)
+    expect(prompt.getByText(CONFIRM_VERIFY_11)).toBeInTheDocument()
+    // Keyed per transition: a mis-paired lookup would still show A prompt — the 1–10 one.
+    expect(prompt.queryByText(CONFIRM_VERIFY_1_TO_10)).toBeNull()
+    expect(verify.count).toBe(0) // opening the prompt touches no server
+    await user.click(prompt.getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
+    expect(screen.getByText('Success')).toBeInTheDocument()
+    expect(verify.count).toBe(1)
+    expect(verify.urls[0]).toBe(`${VERIFY_11_URL}?millId=13050&year=2017`)
+    expect(verify.bodies[0]).toBe('')
+    // Positive control on the client itself: one POST, to Schedule 11's path, with no body argument.
+    expect(postSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy.mock.calls[0]).toEqual([
+      '/v1/check-status/schedule11/verify?millId=13050&year=2017',
+    ])
+    const column = bannerColumn(SCH11_VERIFIED_TEXT)
+    expect(column).not.toBeNull()
+    await waitFor(() => expect(column).toHaveFocus())
+
+    // reloadToken: the sweep AND the working context are read again.
+    expect(await screen.findByText(SCH11_VERIFIED_LINE)).toBeInTheDocument()
+    expect(reads.calls.sweep).toBeGreaterThan(before.sweep)
+    expect(reads.calls.context).toBeGreaterThan(before.context)
+    await waitFor(() => {
+      expect(verify11Button()).toBeDisabled()
+      expect(hintFor(verify11Button())).toHaveTextContent(HINT_NOT_SUBMITTED_11)
+    })
+    expect(verify.count).toBe(1)
+  })
+
+  // ---- AC 3: Cancel -----------------------------------------------------------------------------
+
+  test('AC 3: Cancel, the close control and Escape each close the prompt with NO request, and focus returns to the Schedule 11 Verified', async () => {
+    const reads = fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    const verify = verify11Handler(verify11Ok)
+    const user = userEvent.setup()
+    await mountAdminSettled()
+    const contextCallsAtMount = reads.calls.context
+
+    let prompt = await pressVerify11(user)
+    await user.click(prompt.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
+    expect(verify11Button()).toHaveFocus()
+
+    prompt = await pressVerify11(user)
+    await user.click(prompt.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialog()).toBeNull())
+    expect(verify11Button()).toHaveFocus()
+
+    prompt = await pressVerify11(user)
+    // Escape is handled by the dialog, so it must hold focus — as it does for a user once it opens.
+    prompt.getByRole('button', { name: 'Yes' }).focus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(openDialog()).toBeNull())
+    expect(verify11Button()).toHaveFocus()
+
+    await drainEventLoop()
+    expect(verify.count).toBe(0)
+    expect(reads.calls.sweep).toBe(1)
+    expect(reads.calls.context).toBe(contextCallsAtMount)
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+    expect(verify11Button()).toBeEnabled()
+  })
+
+  // ---- AC 2 / AC 5: the refusals ------------------------------------------------------------------
+
+  test('AC 2 / CHK-008 S03: a 409 from the Schedule 11 gate shows the server’s text and re-sweeps so the failing location is on screen — and Verified STAYS enabled', async () => {
+    const reads = fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    verify11Handler(() => {
+      reads.state.sweep = json(
+        sweep({
+          statusCode11: 'S',
+          canSubmit11: false,
+          overrides: [{ schedule: '11', requirementsMet: false, verdict: schedule11Fail }],
+        }),
+      )
+      return problem(409, NOT_SUBMITTED)
+    })
+    const user = userEvent.setup()
+    await mountAdminSettled()
+    expect(screen.queryByText(SCH11_ERROR_TEXT, verbatim)).not.toBeInTheDocument()
+    const sweepsBefore = reads.calls.sweep
+
+    await confirmVerify11(user)
+
+    expect(await screen.findByText(NOT_SUBMITTED)).toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    await waitFor(() => expect(reads.calls.sweep).toBe(sweepsBefore + 1))
+    // The double space after `location` is the server's, and survives to the screen.
+    expect(await screen.findByText(SCH11_ERROR_TEXT, verbatim)).toBeInTheDocument()
+    // The offer rule never reads validity (BR-01 vs BR-02): an admin on a Submitted-but-failing
+    // Schedule 11 keeps an enabled Verified and gets the server's refusal on the click.
+    await waitFor(() => expect(verify11Button()).toBeEnabled())
+  })
+
+  test('AC 5 / CHK-008 S07: a not-Submitted 409 carries legacy’s generic text and re-sweeps to the truth', async () => {
+    const reads = fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    verify11Handler(() => {
+      reads.state.sweep = json(VERIFIED_11_SWEEP)
+      reads.state.context = json(millContextBody('D', 'V'))
+      return problem(409, SUBMISSION_ERROR)
+    })
+    const user = userEvent.setup()
+    await mountAdminSettled()
+    const sweepsBefore = reads.calls.sweep
+
+    await confirmVerify11(user)
+
+    expect(await screen.findByText(SUBMISSION_ERROR)).toBeInTheDocument()
+    await waitFor(() => expect(reads.calls.sweep).toBe(sweepsBefore + 1))
+    expect(await screen.findByText(SCH11_VERIFIED_LINE)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(verify11Button()).toBeDisabled()
+      expect(hintFor(verify11Button())).toHaveTextContent(HINT_NOT_SUBMITTED_11)
+    })
+  })
+
+  test('AC 5: a 500 shows the server’s persistence text, re-sweeps nothing, and releases the lock so the user can retry', async () => {
+    const reads = fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    const verify = verify11Handler(() => problem(500, SUBMISSION_ERROR))
+    const user = userEvent.setup()
+    await mountAdminSettled()
+    const sweepsBefore = reads.calls.sweep
+
+    await confirmVerify11(user)
+
+    expect(await screen.findByText(SUBMISSION_ERROR)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(reads.calls.sweep).toBe(sweepsBefore)
+    await waitFor(() => expect(verify11Button()).toBeEnabled())
+    await confirmVerify11(user)
+    await waitFor(() => expect(verify.count).toBe(2))
+  })
+
+  test('a failure with no problem+json detail (a 401) falls back to the client’s Schedule 11 text, not the 1–10 one', async () => {
+    fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    verify11Handler(unauthorized)
+    const user = userEvent.setup()
+    await mountAdminSettled()
+
+    await confirmVerify11(user)
+
+    expect(await screen.findByText(VERIFY_11_FAILED)).toBeInTheDocument()
+    expect(screen.queryByText(VERIFY_FAILED)).not.toBeInTheDocument()
+  })
+
+  // ---- Stale context / double Yes -------------------------------------------------------------
+
+  test('stale context: a Schedule 11 verify that lands after the mill/year flips writes nothing AND leaves the new context able to act', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const seen: string[] = []
+    let first = true
+    server.use(
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode11: 'S',
+            canSubmit11: false,
+          }),
+        )
+      }),
+      http.post(VERIFY_11_URL, async ({ request }) => {
+        seen.push(String(new URL(request.url).searchParams.get('millId')))
+        if (first) {
+          first = false
+          await held
+        }
+        return verify11Ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmVerify11(user)
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    // The NEW context must have settled before the old response lands: asserting "no banner" over a
+    // page still LOADING proves nothing, because there is no banner anywhere to find.
+    await waitFor(() => expect(screen.getAllByText(MET_TEXT)).toHaveLength(12))
+    // Still greyed while the old request holds `busyRef`: a live button here would have a dead Yes.
+    expect(verify11Button()).toBeDisabled()
+
+    release()
+    await drainEventLoop()
+
+    expect(screen.queryByText(SCH11_VERIFIED_TEXT)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+
+    // The lock came off — the button AND the ref: gate the release on `isCurrent()` and this second
+    // POST is never sent.
+    await waitFor(() => expect(verify11Button()).toBeEnabled())
+    await confirmVerify11(user)
+    await waitFor(() => expect(seen).toEqual(['13050', '999']))
+    expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
+  })
+
+  test('two Yes presses in ONE tick issue a single POST, and the Yes the lock refuses still closes its prompt', async () => {
+    const reads = fakeReads(SUBMITTED_11_ONLY_SWEEP, json(millContextBody('D', 'S')))
+    const verify = verify11Handler(() => {
+      reads.state.sweep = json(VERIFIED_11_SWEEP)
+      return verify11Ok()
+    })
+    const user = userEvent.setup()
+    await mountAdminSettled()
+
+    const prompt = await pressVerify11(user)
+    const yes = prompt.getByRole('button', { name: 'Yes' })
+    // Both clicks inside ONE `act`, so React cannot re-render between them: the prompt is still
+    // mounted for the second and `verifying` is still false — only the ref can stop it. Two separate
+    // `fireEvent.click` calls would be two acts, and the second would land on a detached button.
+    act(() => {
+      yes.click()
+      yes.click()
+    })
+
+    // The refused Yes did not leave a dialog on screen whose Yes does nothing.
+    expect(openDialog()).toBeNull()
+    await waitFor(() => expect(verify.count).toBe(1))
+    expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(verify.count).toBe(1)
+    expect(screen.getAllByText(SCH11_VERIFIED_TEXT)).toHaveLength(1)
+  })
+
+  // ---- AC 8: one lock, one arm per direction --------------------------------------------------
+  //
+  // Schedule 11 at Submitted, with each 1–10 control in its own legal state. Where the 1–10 Submit is
+  // offered too, the wire's `canSubmit` is answering for a dual-role ADMIN+SUBMITTER: the page reads
+  // only the wire, so the admin render plus that flag IS that caller as far as the lock is concerned.
+  // Schedule 11's own Submit has no row: it is offered only at silviculture Draft and this Verified
+  // only at Submitted, so the two are never live together and a row would assert a greyed button.
+  // Direction A runs first so the 1–10 Submit is not latched by its own success before it is tested.
+
+  test.each([
+    {
+      label: '1–10 Submit',
+      code1To10: 'D',
+      canSubmit1To10: true,
+      url: SUBMIT_URL,
+      ok: submitOk,
+      text: SUBMITTED,
+      press: () => submitButtons1To10()[0],
+    },
+    {
+      label: '1–10 Verified',
+      code1To10: 'S',
+      canSubmit1To10: null,
+      url: VERIFY_URL,
+      ok: () =>
+        HttpResponse.json({
+          trackStatus: 'V',
+          message: { key: 'sch1-10VerifiedMsg', text: VERIFIED_MSG },
+        }),
+      text: VERIFIED_MSG,
+      press: () => verifiedButtons1To10()[0],
+    },
+    {
+      label: 'Set to Draft',
+      code1To10: 'S',
+      canSubmit1To10: null,
+      url: SET_TO_DRAFT_URL,
+      ok: () => reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG),
+      text: DRAFT_MSG,
+      press: () => reversalButtons('Set to Draft')[0],
+    },
+    {
+      label: 'Set to Submit',
+      code1To10: 'V',
+      canSubmit1To10: null,
+      url: SET_TO_SUBMIT_URL,
+      ok: () => reversalOk('S', 'sch1-10SubmittedMsg', RESUBMITTED_MSG),
+      text: RESUBMITTED_MSG,
+      press: () => reversalButtons('Set to Submit')[0],
+    },
+  ])(
+    'AC 8: while a Schedule 11 verify is in flight $label greys — and while $label is in flight the Schedule 11 Verified greys (both directions)',
+    async ({ code1To10, canSubmit1To10, url, ok, text, press }) => {
+      const transitioned = vi.fn()
+      let oneToTenAnswer: Answer | (() => Promise<Response>) = ok
+      server.use(
+        millContextWithBothTracks(code1To10, 'S'),
+        http.get(SWEEP_URL, () =>
+          HttpResponse.json(
+            sweep({ statusCode1To10: code1To10, canSubmit1To10, statusCode11: 'S' }),
+          ),
+        ),
+        http.post(url, async () => {
+          transitioned()
+          return oneToTenAnswer()
+        }),
+      )
+      const first = heldAnswer(verify11Ok)
+      const verify = verify11Handler(first.answer)
+      renderAsAdmin(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.admin)
+      expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+      const user = userEvent.setup()
+      expect(verify11Button()).toBeEnabled() // positive controls: both live before either click
+      expect(press()).toBeEnabled()
+
+      // Direction A: the Schedule 11 verify in flight.
+      await confirmVerify11(user)
+      await waitFor(() => expect(verify.count).toBe(1))
+      await waitFor(() => expect(press()).toBeDisabled())
+      await user.click(press())
+      expect(openDialog()).toBeNull()
+      expect(transitioned).not.toHaveBeenCalled()
+      first.release()
+      expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
+      // Not latched by the other track's success: live again once the refresh settles.
+      await waitFor(() => expect(press()).toBeEnabled())
+
+      // Direction B: now the 1–10 transition in flight. The Schedule 11 verify must not fire again.
+      const second = heldAnswer(ok)
+      oneToTenAnswer = second.answer
+      await user.click(press())
+      await user.click(within(await dialog()).getByRole('button', { name: 'Yes' }))
+      await waitFor(() => expect(transitioned).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(verify11Button()).toBeDisabled())
+      await user.click(verify11Button())
+      expect(openDialog()).toBeNull()
+      expect(verify.count).toBe(1)
+      second.release()
+      expect(await screen.findByText(text, verbatim)).toBeInTheDocument()
+      await waitFor(() => expect(verify11Button()).toBeEnabled())
+    },
+  )
+
+  // ---- AC 8: a Schedule 11 verify touches no success latch -------------------------------------
+  //
+  // Same window as 26.1's P1 arms: a submit answered 200 but its re-sweep FAILED, so the hook keeps
+  // the last good payload and the finished track's Submit is held greyed by its latch alone.
+
+  test('AC 8: a 1–10 submit success whose re-sweep fails stays latched through a Schedule 11 verify — no second 1–10 POST is offered', async () => {
+    const reads = fakeReads(
+      sweep({ canSubmit1To10: true, statusCode11: 'S', canSubmit11: false }),
+      json(millContextBody('D', 'S')),
+    )
+    const oneToTen = submitHandler(() => {
+      reads.state.sweep = () => problem(500, 'sweep down')
+      return submitOk()
+    })
+    const verify = verify11Handler(verify11Ok)
+    const user = userEvent.setup()
+    await mountAdminSettled()
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    await expectSubmits1To10('disabled')
+    // The re-sweep failed and the stale payload still offers the Schedule 11 Verified.
+    await waitFor(() => expect(verify11Button()).toBeEnabled())
+
+    await confirmVerify11(user)
+    expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
+    expect(verify.count).toBe(1)
+    await drainEventLoop()
+    // Still latched: the 1–10 transition happened, whatever the stale payload says.
+    await expectSubmits1To10('disabled')
+    await user.click(submitButtons1To10()[0])
+    expect(openDialog()).toBeNull()
+    expect(oneToTen.count).toBe(1)
+  })
+
+  test('AC 8 (mirror): a Schedule 11 verify success does not release a latched Schedule 11 Submit', async () => {
+    // The fake answers the refresh after the Schedule 11 submit with Submitted AND `canSubmit11:
+    // true` — deliberately inconsistent, so the latch is the ONLY thing holding that Submit greyed
+    // while the Verified beside it is live. A verify that cleared the latch set re-offers it here.
+    const reads = fakeReads(
+      sweep({ statusCode11: 'D', canSubmit11: true }),
+      json(millContextBody('D', 'D')),
+    )
+    const eleven = submit11Handler(() => {
+      reads.state.sweep = json(sweep({ statusCode11: 'S', canSubmit11: true }))
+      reads.state.context = json(millContextBody('D', 'S'))
+      return submit11Ok()
+    })
+    const verify = verify11Handler(() => {
+      reads.state.sweep = () => problem(500, 'sweep down')
+      return verify11Ok()
+    })
+    const user = userEvent.setup()
+    await mountAdminSettled(SCH11_LINE)
+
+    await confirmSubmit11(user)
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    await waitFor(() => expect(verify11Button()).toBeEnabled())
+    expect(submit11Button()).toBeDisabled()
+
+    await confirmVerify11(user)
+    expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
+    expect(verify.count).toBe(1)
+    await drainEventLoop()
+    expect(submit11Button()).toBeDisabled()
+    await user.click(submit11Button())
+    expect(openDialog()).toBeNull()
+    expect(eleven.count).toBe(1)
   })
 })

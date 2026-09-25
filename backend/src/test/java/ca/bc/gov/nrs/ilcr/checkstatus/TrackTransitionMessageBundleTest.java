@@ -91,7 +91,7 @@ class TrackTransitionMessageBundleTest {
   }
 
   @Test
-  @DisplayName("the defined pairs are exactly the four 1-10 rows plus Submit on Schedule 11")
+  @DisplayName("the defined pairs are exactly the four 1-10 rows plus Submit and Verify on 11")
   void definedPairsAreTheShippedOnes() {
     assertThat(definedPairs().map(a -> a.get()[0] + "/" + a.get()[1]))
         .containsExactlyInAnyOrder(
@@ -99,7 +99,15 @@ class TrackTransitionMessageBundleTest {
             "VERIFY/SCHEDULES_1_TO_10",
             "SET_TO_DRAFT/SCHEDULES_1_TO_10",
             "SET_TO_SUBMIT/SCHEDULES_1_TO_10",
-            "SUBMIT/SCHEDULE_11");
+            "SUBMIT/SCHEDULE_11",
+            "VERIFY/SCHEDULE_11");
+  }
+
+  @Test
+  @DisplayName("the undefined pairs are exactly the two Schedule 11 reversals")
+  void undefinedPairsAreTheUnshippedOnes() {
+    assertThat(undefinedPairs().map(a -> a.get()[0] + "/" + a.get()[1]))
+        .containsExactlyInAnyOrder("SET_TO_DRAFT/SCHEDULE_11", "SET_TO_SUBMIT/SCHEDULE_11");
   }
 
   @ParameterizedTest(name = "{0} on {1}")
@@ -115,9 +123,10 @@ class TrackTransitionMessageBundleTest {
   }
 
   @Test
-  @DisplayName("the Schedule 11 confirm prompt the page renders is in the bundle")
+  @DisplayName("the Schedule 11 confirm prompts the page renders are in the bundle")
   void schedule11ConfirmResolves() {
     assertResolves("confirmSubmitSch11Msg");
+    assertResolves("confirmVerifySch11Msg");
   }
 
   @Test

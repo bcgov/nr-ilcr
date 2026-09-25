@@ -112,10 +112,11 @@ export default interface CheckStatusSweepResponse {
 }
 
 /**
- * The reply to `POST /api/v1/check-status/verify`. A shape of its own rather than a field added to the
- * sweep response: pinned sub-shapes are extended, never re-shaped (AD-12).
+ * The reply to `POST /api/v1/check-status/verify` and to `.../schedule11/verify` — one shape for both
+ * tracks, as the server's one verify method returns. A shape of its own rather than a field added to
+ * the sweep response: pinned sub-shapes are extended, never re-shaped (AD-12).
  *
- * `trackStatus` is the Schedules 1–10 code after the transition — always `V` here, since a refused
+ * `trackStatus` is the verified track's code after the transition — always `V` here, since a refused
  * transition answers 409 rather than this body. `message` carries the resolved legacy text with its
  * bundle key, because the API returns final text for the client to render rather than a code to look
  * up (AD-8). Nothing else about the new state travels: the category states, the status description and

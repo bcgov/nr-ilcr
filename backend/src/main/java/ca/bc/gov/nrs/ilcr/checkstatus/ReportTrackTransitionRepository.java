@@ -242,6 +242,63 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       @Param("licenseeUserGuid") String licenseeUserGuid,
       @Param("user") String user);
 
+  /**
+   * The Schedule 11 VERIFY status write &mdash; {@code S}&rarr;{@code V} on {@code
+   * MILL_SILVICULTUR_STATUS_CODE}, recording the acting user as the report's auditor. The Schedule
+   * 11 counterpart of {@link #updateTrackStatusWithAuditor}, and a separate statement for the same
+   * reason {@link #updateSilvicultureTrackStatus} is: a column name cannot be a bind. It never
+   * names {@code ILCR_MILL_REPORT_STATUS_CODE} (BR-07, AD-9).
+   *
+   * <p><strong>The {@code AUDITOR_*} pair is shared by both tracks</strong>, so this overwrites the
+   * record of who verified Schedules 1&ndash;10, and a 1&ndash;10 verify overwrites this one. That
+   * is legacy: {@code updateILCRMillReportStatus():401-412} wrote the auditor pair for any
+   * non-{@code D}, non-{@code S} target BEFORE branching on {@code isSchedule11Submitted} ({@code
+   * :417-423}), and no silviculture-specific auditor column exists. The pair names whoever verified
+   * last, on either track (Story 26.3 D1).
+   *
+   * <p><strong>It also writes NULLs over a recorded pair.</strong> An admin with no {@code
+   * ILCR_MILL_USER_XREF} row for the mill &mdash; the normal case for a ministry user &mdash;
+   * resolves to no auditor, and this statement stores NULL in both columns, erasing whoever the
+   * other track's verify recorded. Legacy did the same: {@code :405} looked the xref up and {@code
+   * :410-412} passed the null miss to {@code setIlcrMillUserXrefAuditor}.
+   *
+   * <p>{@code REVISION_COUNT} is not bumped, as {@link #updateTrackStatusWithAuditor} does not:
+   * each transition keeps its 1&ndash;10 shape on the other track (D3), and the silviculture
+   * submit's bump is deviation (B) of SUBMIT, not a property of the track. The {@code expectedCode}
+   * predicate makes a verify that lost the race to another transition answer zero rows.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param statusCode the silviculture status code to write
+   * @param expectedCode the silviculture status code the row must still hold
+   * @param auditorMillId the auditor cross-reference mill id, or null when the caller has none
+   * @param auditorUserGuid the auditor directory GUID, or null when the caller has none
+   * @param user the audit name
+   * @return rows affected &mdash; 1 on success, 0 when the row is absent or has left {@code
+   *     expectedCode} (a 409 refusal, not a 500)
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_REPORT_STATUS
+         SET MILL_SILVICULTUR_STATUS_CODE = :statusCode,
+             AUDITOR_MILL_ID = :auditorMillId,
+             AUDITOR_USER_GUID = :auditorUserGuid,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND MILL_SILVICULTUR_STATUS_CODE = :expectedCode
+      """)
+  int updateSilvicultureTrackStatusWithAuditor(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("statusCode") String statusCode,
+      @Param("expectedCode") String expectedCode,
+      @Param("auditorMillId") Long auditorMillId,
+      @Param("auditorUserGuid") String auditorUserGuid,
+      @Param("user") String user);
+
   // -----------------------------------------------------------------------------------------------
   // Schedules 1, 2 and 3: the three category summaries and their cost details (legacy
   // getReportSummary/updateReportSummary/updateCostReportDetailSchedule, SubmitReportDAO:357-388).

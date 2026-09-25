@@ -142,7 +142,8 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("764", "2021"))
         .thenReturn(new MillYearContext(764, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(transitionService.verify(764, 2021, "verifyadmin", null)).thenReturn("V");
+    when(transitionService.verify(ScheduleTrack.SCHEDULES_1_TO_10, 764, 2021, "verifyadmin", null))
+        .thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
@@ -156,7 +157,9 @@ class CheckStatusControllerTest {
 
     InOrder order = inOrder(millContextService, transitionService);
     order.verify(millContextService).validateMillYearActive("764", "2021");
-    order.verify(transitionService).verify(764, 2021, "verifyadmin", null);
+    order
+        .verify(transitionService)
+        .verify(ScheduleTrack.SCHEDULES_1_TO_10, 764, 2021, "verifyadmin", null);
   }
 
   @Test
@@ -179,6 +182,42 @@ class CheckStatusControllerTest {
     assertThatThrownBy(() -> controller.verifySchedules1To10(null, "2021", authentication))
         .isInstanceOf(MillYearNotSelectedException.class);
     verifyNoInteractions(transitionService);
+  }
+
+  @Test
+  @DisplayName("verify Schedule 11: same guard, the Schedule 11 track, and Schedule 11's text")
+  void verifySchedule11_guardThenTheSchedule11Track() {
+    when(millContextService.validateMillYearActive("807", "2021"))
+        .thenReturn(new MillYearContext(807, 2021));
+    when(authentication.getName()).thenReturn("verifyadmin");
+    when(transitionService.verify(ScheduleTrack.SCHEDULE_11, 807, 2021, "verifyadmin", null))
+        .thenReturn("V");
+    when(messageSource.getMessage(eq("sch11VerifiedMsg"), any(), any(), any()))
+        .thenReturn("Schedule 11 status has been updated to verified.");
+
+    var response = controller.verifySchedule11("807", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().trackStatus()).isEqualTo("V");
+    assertThat(response.getBody().message().key()).isEqualTo("sch11VerifiedMsg");
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("807", "2021");
+    order
+        .verify(transitionService)
+        .verify(ScheduleTrack.SCHEDULE_11, 807, 2021, "verifyadmin", null);
+  }
+
+  @Test
+  @DisplayName("verify Schedule 11: a missing status row is re-keyed to the Check Status 404")
+  void verifySchedule11_notFoundIsReKeyed() {
+    when(millContextService.validateMillYearActive("807", "2021"))
+        .thenReturn(new MillYearContext(807, 2021));
+    when(authentication.getName()).thenReturn("verifyadmin");
+    when(transitionService.verify(ScheduleTrack.SCHEDULE_11, 807, 2021, "verifyadmin", null))
+        .thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> controller.verifySchedule11("807", "2021", authentication))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -447,7 +486,12 @@ class CheckStatusControllerTest {
             new MockUserPrincipal("mockadmin", "MOCKGUID0000111122223333AAAA0001"), "n/a");
     when(millContextService.validateMillYearActive("764", "2021"))
         .thenReturn(new MillYearContext(764, 2021));
-    when(transitionService.verify(764, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001"))
+    when(transitionService.verify(
+            ScheduleTrack.SCHEDULES_1_TO_10,
+            764,
+            2021,
+            "mockadmin",
+            "MOCKGUID0000111122223333AAAA0001"))
         .thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
@@ -455,7 +499,13 @@ class CheckStatusControllerTest {
     var response = controller.verifySchedules1To10("764", "2021", mockAuth);
 
     assertThat(response.getStatusCode().value()).isEqualTo(200);
-    verify(transitionService).verify(764, 2021, "mockadmin", "MOCKGUID0000111122223333AAAA0001");
+    verify(transitionService)
+        .verify(
+            ScheduleTrack.SCHEDULES_1_TO_10,
+            764,
+            2021,
+            "mockadmin",
+            "MOCKGUID0000111122223333AAAA0001");
   }
 
   @Test
@@ -468,13 +518,14 @@ class CheckStatusControllerTest {
         new UsernamePasswordAuthenticationToken(new MockUserPrincipal("mockadmin", "  "), "n/a");
     when(millContextService.validateMillYearActive("764", "2021"))
         .thenReturn(new MillYearContext(764, 2021));
-    when(transitionService.verify(764, 2021, "mockadmin", null)).thenReturn("V");
+    when(transitionService.verify(ScheduleTrack.SCHEDULES_1_TO_10, 764, 2021, "mockadmin", null))
+        .thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 status has been updated to verified.");
 
     controller.verifySchedules1To10("764", "2021", mockAuth);
 
-    verify(transitionService).verify(764, 2021, "mockadmin", null);
+    verify(transitionService).verify(ScheduleTrack.SCHEDULES_1_TO_10, 764, 2021, "mockadmin", null);
   }
 
   @Test
@@ -485,7 +536,8 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("764", "2021"))
         .thenReturn(new MillYearContext(764, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(transitionService.verify(764, 2021, "verifyadmin", null)).thenReturn("V");
+    when(transitionService.verify(ScheduleTrack.SCHEDULES_1_TO_10, 764, 2021, "verifyadmin", null))
+        .thenReturn("V");
     when(messageSource.getMessage(eq("sch1-10VerifiedMsg"), any(), any(), any()))
         .thenReturn("sch1-10VerifiedMsg");
 
@@ -501,7 +553,7 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("764", "2021"))
         .thenReturn(new MillYearContext(764, 2021));
     when(authentication.getName()).thenReturn("verifyadmin");
-    when(transitionService.verify(764, 2021, "verifyadmin", null))
+    when(transitionService.verify(ScheduleTrack.SCHEDULES_1_TO_10, 764, 2021, "verifyadmin", null))
         .thenThrow(new ScheduleNotFoundException());
 
     assertThatThrownBy(() -> controller.verifySchedules1To10("764", "2021", authentication))
