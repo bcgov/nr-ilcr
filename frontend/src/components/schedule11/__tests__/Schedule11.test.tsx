@@ -24,6 +24,7 @@ vi.mock('@tanstack/react-router', () => ({
 window.HTMLElement.prototype.scrollIntoView = vi.fn()
 
 import Schedule11 from '@/components/schedule11'
+import apiService from '@/service/api-service'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
 import type { IlcrRole } from '@/context/auth/mockUsers'
@@ -2020,7 +2021,16 @@ describe('Schedule 11 original-value indicators', () => {
 // (AD-8).
 // -------------------------------------------------------------------------------------------------
 
-describe('Schedule 11 ministry correction at Submitted (Story 16.3)', () => {
+describe('Schedule 11 ministry correction at Submitted and Verified (Stories 16.3, 26.4)', () => {
+  // The correction arms below are status-agnostic: legacy opened the page to the administrator at S
+  // and at V (UserSessionMB.java:438-444) and nothing after that gate reads the status, so each runs
+  // at both. Parameterised rather than copied, so the two statuses cannot drift apart — and so `'V'`
+  // is SERVED, which is what a matrix narrowed to `['S']` must fail against.
+  const STATUSES = [
+    ['Submitted', 'S'],
+    ['Verified', 'V'],
+  ] as const
+
   // The PINNED 16.1 matrix (`ScheduleEditability`), per track status — here, per SILVICULTURE track
   // status. Submitter edits at Draft only; admin edits at Submitted and Verified and is
   // DELIBERATELY read-only at Draft while the mill still owns the data. Anything else — a dead `O`,
@@ -2029,7 +2039,7 @@ describe('Schedule 11 ministry correction at Submitted (Story 16.3)', () => {
   // Reproduced rather than imported because the real rule lives in Java: this is the wire contract
   // the frontend is entitled to assume, and stating it makes falsification trivial. Each row is
   // load-bearing and was checked: `ILCR_ADMIN: ['D']` fails all nine admin arms; narrowing it to
-  // `['S']` fails the Verified case alone (the hole that existed while no suite served `'V'`); and
+  // `['S']` fails every Verified admin arm (the hole that existed while no suite served `'V'`); and
   // `ILCR_SUBMITTER: []` fails the submitter-at-Draft discriminator alone.
   const EDITABLE_STATUSES: Record<string, readonly string[]> = {
     ILCR_ADMIN: ['S', 'V'],
@@ -2139,122 +2149,136 @@ describe('Schedule 11 ministry correction at Submitted (Story 16.3)', () => {
     }
   }
 
-  test('admin at Submitted corrects a location and saves — one bulk PUT, SUC-001 verbatim', async () => {
-    let captured: LocationSaveAllRequest | null = null
-    server.use(
-      matrixGet(),
-      http.put(LOCATIONS_URL, async ({ request }) => {
-        captured = (await request.json()) as LocationSaveAllRequest
-        // The echo is still Submitted — a correction is not a transition — and its `editable` is
-        // recomputed by the same matrix.
-        return HttpResponse.json(
-          matrixDoc(request, {
-            locations: [{ ...northRidge, actualCost: 31000, totalCost: 41000, revisionCount: 5 }],
-            message: SAVED,
-          }),
-        )
-      }),
-    )
-    renderAsAdmin(<Schedule11 />)
-    const user = userEvent.setup()
+  test.each(STATUSES)(
+    'admin at %s corrects a location and saves — one bulk PUT, SUC-001 verbatim',
+    async (_status, trackStatus) => {
+      let captured: LocationSaveAllRequest | null = null
+      server.use(
+        matrixGet({ trackStatus }),
+        http.put(LOCATIONS_URL, async ({ request }) => {
+          captured = (await request.json()) as LocationSaveAllRequest
+          // The echo keeps the served status — a correction is not a transition — and its `editable` is
+          // recomputed by the same matrix.
+          return HttpResponse.json(
+            matrixDoc(request, {
+              trackStatus,
+              locations: [{ ...northRidge, actualCost: 31000, totalCost: 41000, revisionCount: 5 }],
+              message: SAVED,
+            }),
+          )
+        }),
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
 
-    // Live write surface for an administrator at Submitted — the capability 16.1 granted. The server
-    // said so because the request carried ILCR_ADMIN; the same handler answers the submitter arm
-    // below read-only.
-    const row = await findRow('North Ridge')
-    // This arm declared administrator AND the server was asked as one. Drop the `renderAsAdmin` and
-    // the declaration half fails, even though the fallback would still send an admin header.
-    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
-    expect(actionsHeader()).toBeInTheDocument()
-    const actualCost = within(row).getByLabelText('Actual Cost ($) for North Ridge')
-    expect(actualCost).toBeEnabled()
-    fireEvent.change(actualCost, { target: { value: '31000' } })
-    await user.click(saveButtons()[0])
+      // Live write surface for an administrator at S or V — the capability 16.1 granted. The server
+      // said so because the request carried ILCR_ADMIN; the same handler answers the submitter arm
+      // below read-only.
+      const row = await findRow('North Ridge')
+      // This arm declared administrator AND the server was asked as one. Drop the `renderAsAdmin` and
+      // the declaration half fails, even though the fallback would still send an admin header.
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      expect(actionsHeader()).toBeInTheDocument()
+      const actualCost = within(row).getByLabelText('Actual Cost ($) for North Ridge')
+      expect(actualCost).toBeEnabled()
+      fireEvent.change(actualCost, { target: { value: '31000' } })
+      await user.click(saveButtons()[0])
 
-    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(captured).not.toBeNull()
-    const [item] = captured!.locations
-    expect(item.location.actualCost).toBe(31000)
-    expect(item.location.revisionCount).toBe(4)
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expect(captured).not.toBeNull()
+      const [item] = captured!.locations
+      expect(item.location.actualCost).toBe(31000)
+      expect(item.location.revisionCount).toBe(4)
 
-    // "Saving must not move the status" is not assertable from the DOM: the document's track status
-    // is rendered NOWHERE on any schedule page (the tombstone carries the working context's mill
-    // status, not this document's). Three proxies stand in for it.
-    //
-    // (a) STRUCTURAL — the request body's exact key sets, at every level. It carries rows, flagged
-    // ids, entered fields and the optimistic-lock token only, so the client cannot express a status
-    // change even if it wanted to.
-    expect(Object.keys(captured!).sort()).toEqual(['deletedIds', 'locations'])
-    expect(Object.keys(item).sort()).toEqual(['basicSilvicultureReportId', 'location'])
-    expect(Object.keys(item.location).sort()).toEqual([
-      'actualCost',
-      'biogeoclimaticCatalogueId',
-      'comments',
-      'enhancedIndicator',
-      'location',
-      'netArea',
-      'plannedCost',
-      'revisionCount',
-    ])
-    // (b) MSW is strict (`onUnhandledRequest: 'error'`), so any call to a transition endpoint would
-    // have failed this test rather than passing silently.
-    // (c) BEHAVIOURAL — the Submitted echo leaves the page editable, which also proves the page does
-    // not re-derive editability from the status it was just handed (AD-9).
-    const savedRow = await findRow('North Ridge')
-    expect(within(savedRow).getByRole('button', { name: /^delete$/i })).toBeEnabled()
-    expect(within(savedRow).getByLabelText('Actual Cost ($) for North Ridge')).toHaveValue('31000')
-    expect(actionsHeader()).toBeInTheDocument()
-  })
+      // "Saving must not move the status" is not assertable from the DOM: the document's track status
+      // is rendered NOWHERE on any schedule page (the tombstone carries the working context's mill
+      // status, not this document's). Three proxies stand in for it.
+      //
+      // (a) STRUCTURAL — the request body's exact key sets, at every level. It carries rows, flagged
+      // ids, entered fields and the optimistic-lock token only, so the client cannot express a status
+      // change even if it wanted to.
+      expect(Object.keys(captured!).sort()).toEqual(['deletedIds', 'locations'])
+      expect(Object.keys(item).sort()).toEqual(['basicSilvicultureReportId', 'location'])
+      expect(Object.keys(item.location).sort()).toEqual([
+        'actualCost',
+        'biogeoclimaticCatalogueId',
+        'comments',
+        'enhancedIndicator',
+        'location',
+        'netArea',
+        'plannedCost',
+        'revisionCount',
+      ])
+      // (b) MSW is strict (`onUnhandledRequest: 'error'`), so any call to a transition endpoint would
+      // have failed this test rather than passing silently.
+      // (c) BEHAVIOURAL — the echo at the same status leaves the page editable, which also proves the page does
+      // not re-derive editability from the status it was just handed (AD-9).
+      const savedRow = await findRow('North Ridge')
+      expect(within(savedRow).getByRole('button', { name: /^delete$/i })).toBeEnabled()
+      expect(within(savedRow).getByLabelText('Actual Cost ($) for North Ridge')).toHaveValue(
+        '31000',
+      )
+      expect(actionsHeader()).toBeInTheDocument()
+    },
+  )
 
-  test('admin at Submitted can add a location — the POST path is live too', async () => {
-    let captured: SilvicultureLocationRequest | null = null
-    server.use(
-      matrixGet({ locations: [], totals: {} }),
-      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
-      http.post(LOCATIONS_URL, async ({ request }) => {
-        captured = (await request.json()) as SilvicultureLocationRequest
-        return HttpResponse.json(matrixDoc(request, { message: SAVED }))
-      }),
-    )
-    renderAsAdmin(<Schedule11 />)
-    const user = userEvent.setup()
+  test.each(STATUSES)(
+    'admin at %s can add a location — the POST path is live too',
+    async (_status, trackStatus) => {
+      let captured: SilvicultureLocationRequest | null = null
+      server.use(
+        matrixGet({ trackStatus, locations: [], totals: {} }),
+        http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+        http.post(LOCATIONS_URL, async ({ request }) => {
+          captured = (await request.json()) as SilvicultureLocationRequest
+          return HttpResponse.json(matrixDoc(request, { trackStatus, message: SAVED }))
+        }),
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
 
-    // The Add panel is `editable`-gated as a whole, so its very presence at Submitted is part of the
-    // correction capability the matrix granted this actor.
-    fireEvent.change(await screen.findByLabelText('Location'), { target: { value: 'South Bench' } })
-    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
-    await user.click(await screen.findByRole('option', { name: 'No' }))
-    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
-    fireEvent.change(screen.getByLabelText('NAR(ha)'), { target: { value: '12.5' } })
-    await user.click(screen.getByRole('button', { name: /^add$/i }))
+      // The Add panel is `editable`-gated as a whole, so its very presence at S or V is part of the
+      // correction capability the matrix granted this actor.
+      fireEvent.change(await screen.findByLabelText('Location'), {
+        target: { value: 'South Bench' },
+      })
+      await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+      await user.click(await screen.findByRole('option', { name: 'No' }))
+      await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+      fireEvent.change(screen.getByLabelText('NAR(ha)'), { target: { value: '12.5' } })
+      await user.click(screen.getByRole('button', { name: /^add$/i }))
 
-    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
-    expect(captured).not.toBeNull()
-    expect(captured!.location).toBe('South Bench')
-    // The add body carries no `revisionCount` (create has no token to echo) and, again, no status.
-    expect(Object.keys(captured!).sort()).toEqual([
-      'actualCost',
-      'biogeoclimaticCatalogueId',
-      'comments',
-      'enhancedIndicator',
-      'location',
-      'netArea',
-      'plannedCost',
-    ])
-  })
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      expect(captured).not.toBeNull()
+      expect(captured!.location).toBe('South Bench')
+      // The add body carries no `revisionCount` (create has no token to echo) and, again, no status.
+      expect(Object.keys(captured!).sort()).toEqual([
+        'actualCost',
+        'biogeoclimaticCatalogueId',
+        'comments',
+        'enhancedIndicator',
+        'location',
+        'netArea',
+        'plannedCost',
+      ])
+    },
+  )
 
-  test('submitter at Submitted is read-only — the action column is HIDDEN, not disabled', async () => {
-    // The SAME handler and the SAME Submitted document as the admin arm above. Only the acting
-    // identity differs, and the matrix answers read-only for it. That is the whole point of
-    // computing the flag: swap `renderAsSubmitter` for `renderAsAdmin` here and this arm fails.
-    server.use(matrixGet())
-    renderAsSubmitter(<Schedule11 />)
+  test.each(STATUSES)(
+    'submitter at %s is read-only — the action column is HIDDEN, not disabled',
+    async (_status, trackStatus) => {
+      // The SAME handler and the SAME document as the admin arm above. Only the acting
+      // identity differs, and the matrix answers read-only for it. That is the whole point of
+      // computing the flag: swap `renderAsSubmitter` for `renderAsAdmin` here and this arm fails.
+      server.use(matrixGet({ trackStatus }))
+      renderAsSubmitter(<Schedule11 />)
 
-    const row = await findRow('North Ridge')
-    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
-    expectReadOnly(row)
-  })
+      const row = await findRow('North Ridge')
+      expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+      expectReadOnly(row)
+    },
+  )
 
   test('admin at DRAFT is read-only — the capability 16.1 deliberately removed', async () => {
     // The bidirectional half of the matrix: an administrator may correct a Submitted or Verified
@@ -2304,130 +2328,149 @@ describe('Schedule 11 ministry correction at Submitted (Story 16.3)', () => {
     expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
   })
 
-  test('admin at Submitted deletes behind the verbatim confirm — the flag goes out on Save', async () => {
-    let captured: LocationSaveAllRequest | null = null
-    const put = vi.fn()
-    server.use(
-      matrixGet(),
-      http.put(LOCATIONS_URL, async ({ request }) => {
-        put()
-        captured = (await request.json()) as LocationSaveAllRequest
-        return HttpResponse.json(matrixDoc(request, { locations: [], totals: {}, message: SAVED }))
-      }),
-    )
-    renderAsAdmin(<Schedule11 />)
-    const user = userEvent.setup()
+  test.each(STATUSES)(
+    'admin at %s deletes behind the verbatim confirm — the flag goes out on Save',
+    async (_status, trackStatus) => {
+      let captured: LocationSaveAllRequest | null = null
+      const put = vi.fn()
+      server.use(
+        matrixGet({ trackStatus }),
+        http.put(LOCATIONS_URL, async ({ request }) => {
+          put()
+          captured = (await request.json()) as LocationSaveAllRequest
+          return HttpResponse.json(
+            matrixDoc(request, { trackStatus, locations: [], totals: {}, message: SAVED }),
+          )
+        }),
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
 
-    const row = await findRow('North Ridge')
-    await user.click(within(row).getByRole('button', { name: /^delete$/i }))
-    const dialog = await screen.findByRole('dialog')
-    // Verbatim, per the user ruling that the duplicated confirm modals are not to be touched.
-    expect(within(dialog).getByText(CONFIRM)).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+      const row = await findRow('North Ridge')
+      await user.click(within(row).getByRole('button', { name: /^delete$/i }))
+      const dialog = await screen.findByRole('dialog')
+      // Verbatim, per the user ruling that the duplicated confirm modals are not to be touched.
+      expect(within(dialog).getByText(CONFIRM)).toBeInTheDocument()
+      await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
-    await waitFor(() => expect(queryRow('North Ridge')).toBeNull())
-    // Confirming only flagged it: Submitted data the licensee filed is not destroyed until Save.
-    expect(put).not.toHaveBeenCalled()
-    await user.click(saveButtons()[0])
+      await waitFor(() => expect(queryRow('North Ridge')).toBeNull())
+      // Confirming only flagged it: data the licensee filed is not destroyed until Save.
+      expect(put).not.toHaveBeenCalled()
+      await user.click(saveButtons()[0])
 
-    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
-    expect(put).toHaveBeenCalledTimes(1)
-    expect(captured).toEqual({ locations: [], deletedIds: [9001] })
-  })
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      expect(put).toHaveBeenCalledTimes(1)
+      expect(captured).toEqual({ locations: [], deletedIds: [9001] })
+    },
+  )
 
-  test('admin at Submitted cancels the delete — nothing flagged, nothing sent, document untouched', async () => {
-    // Submitted is where an accidental confirm destroys data the licensee already filed.
-    const put = vi.fn()
-    server.use(
-      matrixGet(),
-      http.put(LOCATIONS_URL, ({ request }) => {
-        put()
-        return HttpResponse.json(matrixDoc(request, { locations: [], totals: {} }))
-      }),
-    )
-    renderAsAdmin(<Schedule11 />)
-    const user = userEvent.setup()
+  test.each(STATUSES)(
+    'admin at %s cancels the delete — nothing flagged, nothing sent, document untouched',
+    async (_status, trackStatus) => {
+      // Past Draft an accidental confirm destroys data the licensee already filed.
+      const put = vi.fn()
+      server.use(
+        matrixGet({ trackStatus }),
+        http.put(LOCATIONS_URL, ({ request }) => {
+          put()
+          return HttpResponse.json(matrixDoc(request, { trackStatus, locations: [], totals: {} }))
+        }),
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
 
-    const row = await findRow('North Ridge')
-    await user.click(within(row).getByRole('button', { name: /^delete$/i }))
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: /^cancel$/i }))
+      const row = await findRow('North Ridge')
+      await user.click(within(row).getByRole('button', { name: /^delete$/i }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: /^cancel$/i }))
 
-    expect(put).not.toHaveBeenCalled()
-    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
-    expect(screen.queryByText(/successfully/i)).not.toBeInTheDocument()
-    // Row and its values survive untouched, and nothing is pending.
-    const kept = await findRow('North Ridge')
-    expect(within(kept).getByLabelText('Actual Cost ($) for North Ridge')).toHaveValue('25000')
-    expect(actionsHeader()).toBeInTheDocument()
-    for (const button of saveButtons()) {
-      expect(button).toBeDisabled()
-    }
-  })
+      expect(put).not.toHaveBeenCalled()
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      expect(screen.queryByText(/successfully/i)).not.toBeInTheDocument()
+      // Row and its values survive untouched, and nothing is pending.
+      const kept = await findRow('North Ridge')
+      expect(within(kept).getByLabelText('Actual Cost ($) for North Ridge')).toHaveValue('25000')
+      expect(actionsHeader()).toBeInTheDocument()
+      for (const button of saveButtons()) {
+        expect(button).toBeDisabled()
+      }
+    },
+  )
 
-  test('Check Status is available at Submitted and mutates nothing', async () => {
-    let gets = 0
-    let posts = 0
-    server.use(
-      http.get(URL, ({ request }) => {
-        gets += 1
-        return HttpResponse.json(matrixDoc(request))
-      }),
-      http.post(CHECK_URL, () => {
-        posts += 1
-        return HttpResponse.json({
-          requirementsMet: true,
-          errors: [],
-          // Schedule 11's met key is `scheduleRequirementsMetMsg` (Schedule11Service.java:68),
-          // read from this service rather than assumed: the met-message key is NOT uniform. It
-          // varies by LEVEL, not by schedule — Schedule 4 emits BOTH, `locationRequirementsMetMsg`
-          // for a per-location result and `scheduleRequirementsMetMsg` for the schedule-level one.
-          // Schedule 11's check is schedule-level, so it is the schedule-level key.
-          requirementsMetMessage: {
-            key: 'scheduleRequirementsMetMsg',
-            text: 'All requirements for this schedule have been met',
-          },
-          message: { key: 'checkStatusMessage', text: 'Status has been checked' },
-        })
-      }),
-    )
-    renderAsAdmin(<Schedule11 />)
-    const user = userEvent.setup()
+  test.each(STATUSES)(
+    'Check Status is available at %s and mutates nothing',
+    async (_status, trackStatus) => {
+      let gets = 0
+      let posts = 0
+      server.use(
+        http.get(URL, ({ request }) => {
+          gets += 1
+          return HttpResponse.json(matrixDoc(request, { trackStatus }))
+        }),
+        http.post(CHECK_URL, () => {
+          posts += 1
+          return HttpResponse.json({
+            requirementsMet: true,
+            errors: [],
+            // Schedule 11's met key is `scheduleRequirementsMetMsg` (Schedule11Service.java:68),
+            // read from this service rather than assumed: the met-message key is NOT uniform. It
+            // varies by LEVEL, not by schedule — Schedule 4 emits BOTH, `locationRequirementsMetMsg`
+            // for a per-location result and `scheduleRequirementsMetMsg` for the schedule-level one.
+            // Schedule 11's check is schedule-level, so it is the schedule-level key.
+            requirementsMetMessage: {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+            message: { key: 'checkStatusMessage', text: 'Status has been checked' },
+          })
+        }),
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
 
-    await findRow('North Ridge')
-    await waitFor(() => expect(gets).toBe(1))
-    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
-    const [button] = checkButtons()
-    // Enabled because the matrix made this document editable for this actor — the page reads only
-    // the flag, never the role or the status itself (AD-9).
-    expect(button).toBeEnabled()
-    await user.click(button)
+      await findRow('North Ridge')
+      await waitFor(() => expect(gets).toBe(1))
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      const [button] = checkButtons()
+      // Enabled because the matrix made this document editable for this actor — the page reads only
+      // the flag, never the role or the status itself (AD-9).
+      expect(button).toBeEnabled()
+      await user.click(button)
 
-    expect(await screen.findByText('Status has been checked')).toBeInTheDocument()
-    expect(screen.getByText('All requirements for this schedule have been met')).toBeInTheDocument()
-    // Read-only: exactly one POST, and NO re-GET. Strict MSW covers the rest: an unhandled PUT/POST
-    // to /locations would error the test.
-    expect(posts).toBe(1)
-    expect(gets).toBe(1)
-    // Document unchanged in the DOM, and still editable.
-    const row = await findRow('North Ridge')
-    expect(within(row).getByLabelText('Actual Cost ($) for North Ridge')).toHaveValue('25000')
-    expect(actionsHeader()).toBeInTheDocument()
-  })
+      expect(await screen.findByText('Status has been checked')).toBeInTheDocument()
+      expect(
+        screen.getByText('All requirements for this schedule have been met'),
+      ).toBeInTheDocument()
+      // Read-only: exactly one POST, and NO re-GET. Strict MSW covers the rest: an unhandled PUT/POST
+      // to /locations would error the test.
+      expect(posts).toBe(1)
+      expect(gets).toBe(1)
+      // Document unchanged in the DOM, and still editable.
+      const row = await findRow('North Ridge')
+      expect(within(row).getByLabelText('Actual Cost ($) for North Ridge')).toHaveValue('25000')
+      expect(actionsHeader()).toBeInTheDocument()
+    },
+  )
 
-  // ---- Story 26.2 AC 7: the indicators reach every viewer at Submitted -----------------------
+  // ---- Story 26.2 AC 7: the indicators reach every viewer at Submitted and at Verified ---------
   //
   // Legacy's indicators were icons beside always-present, merely disabled inputs, so a read-only
-  // viewer saw them too (schedule11.xhtml:214-325; 26.2 D2). Both roles are served the SAME
-  // document by the SAME handler.
-  test.each([
-    ['admin (correcting, live row)', ILCR_ROLES.admin, 'ILCR_ADMIN'],
-    ['submitter (read-only row)', ILCR_ROLES.submitter, 'ILCR_SUBMITTER'],
-  ] as const)(
-    'the original-value indicators render at Submitted for the %s',
-    async (_label, role, header) => {
-      server.use(matrixGet({ locations: [corrected] }))
+  // viewer saw them too (schedule11.xhtml:214-325; 26.2 D2) — and `isSubmit` is true at S AND V
+  // (UserSessionMB.java:541-554). Both roles are served the SAME document by the SAME handler.
+  test.each(
+    STATUSES.flatMap(([status, trackStatus]) =>
+      (
+        [
+          ['admin (correcting, live row)', ILCR_ROLES.admin, 'ILCR_ADMIN'],
+          ['submitter (read-only row)', ILCR_ROLES.submitter, 'ILCR_SUBMITTER'],
+        ] as const
+      ).map(([label, role, header]) => [status, label, role, header, trackStatus] as const),
+    ),
+  )(
+    'the original-value indicators render at %s for the %s',
+    async (_status, _label, role, header, trackStatus) => {
+      server.use(matrixGet({ trackStatus, locations: [corrected] }))
       if (role === ILCR_ROLES.admin) {
         renderAsAdmin(<Schedule11 />)
       } else {
@@ -2451,51 +2494,157 @@ describe('Schedule 11 ministry correction at Submitted (Story 16.3)', () => {
     },
   )
 
-  test('the indicators survive a correction save and a second one — the baseline is the submission', async () => {
-    // Each save's echo re-serves the originals from the submitted snapshot, not from the last save
-    // (26.2 AC 7): the second correction must still be compared with what the licensee filed.
-    let saves = 0
+  test.each(STATUSES)(
+    'at %s, the indicators survive a correction save and a second one — the baseline is the submission',
+    async (_status, trackStatus) => {
+      // Each save's echo re-serves the originals from the submitted snapshot, not from the last save
+      // (26.2 AC 7): the second correction must still be compared with what the licensee filed.
+      let saves = 0
+      server.use(
+        matrixGet({ trackStatus, locations: [corrected] }),
+        http.put(LOCATIONS_URL, async ({ request }) => {
+          saves += 1
+          const body = (await request.json()) as LocationSaveAllRequest
+          return HttpResponse.json(
+            matrixDoc(request, {
+              trackStatus,
+              locations: [
+                {
+                  ...corrected,
+                  actualCost: body.locations[0].location.actualCost,
+                  revisionCount: corrected.revisionCount + saves,
+                },
+              ],
+              message: SAVED,
+            }),
+          )
+        }),
+      )
+      renderAsAdmin(<Schedule11 />)
+      const user = userEvent.setup()
+
+      await findRow('North Ridge Revised')
+      for (const value of ['26000', '27000']) {
+        changeRowField('Actual Cost ($)', 'North Ridge Revised', value)
+        await user.click(saveButtons()[0])
+        await waitFor(() =>
+          expect(screen.getByLabelText('Actual Cost ($) for North Ridge Revised')).toHaveValue(
+            value,
+          ),
+        )
+        await waitFor(() => {
+          for (const button of saveButtons()) {
+            expect(button).toBeDisabled()
+          }
+        })
+        const row = await findRow('North Ridge Revised')
+        expect(within(row).getByTestId('original-value-actualCost')).toHaveAccessibleDescription(
+          'Original Submission Value: 24,000',
+        )
+        expect(within(row).getByTestId('original-value-location')).toBeInTheDocument()
+      }
+      expect(saves).toBe(2)
+    },
+  )
+
+  test('admin at Verified: a confirmed delete sends nothing until Save — S07, spied at the transport', async () => {
+    // MSW's strict mode would already fail an unhandled DELETE; this watches the axios instance the
+    // page actually talks through, so "nothing was sent" is asserted rather than inferred. Positive
+    // control: the same spy sees the one PUT that Save sends, so a spy on the wrong instance fails.
+    const transport = apiService.getAxiosInstance()
+    const putSpy = vi.spyOn(transport, 'put')
+    const deleteSpy = vi.spyOn(transport, 'delete')
+    const postSpy = vi.spyOn(transport, 'post')
     server.use(
-      matrixGet({ locations: [corrected] }),
-      http.put(LOCATIONS_URL, async ({ request }) => {
-        saves += 1
-        const body = (await request.json()) as LocationSaveAllRequest
+      matrixGet({ trackStatus: 'V' }),
+      http.put(LOCATIONS_URL, ({ request }) =>
+        HttpResponse.json(
+          matrixDoc(request, { trackStatus: 'V', locations: [], totals: {}, message: SAVED }),
+        ),
+      ),
+    )
+    renderAsAdmin(<Schedule11 />)
+    const user = userEvent.setup()
+
+    const row = await findRow('North Ridge')
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    await user.click(within(row).getByRole('button', { name: /^delete$/i }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: /^delete$/i }),
+    )
+    await waitFor(() => expect(queryRow('North Ridge')).toBeNull())
+
+    expect(putSpy).not.toHaveBeenCalled()
+    expect(deleteSpy).not.toHaveBeenCalled()
+    expect(postSpy).not.toHaveBeenCalled()
+    // A confirmed delete that is never saved is simply lost on leaving — legacy parity (26.2 fences):
+    // there is no navigation guard to find here, and none should be added.
+
+    await user.click(saveButtons()[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(putSpy).toHaveBeenCalledTimes(1)
+    expect(putSpy.mock.calls[0][1]).toEqual({ locations: [], deletedIds: [9001] })
+    expect(deleteSpy).not.toHaveBeenCalled()
+    putSpy.mockRestore()
+    deleteSpy.mockRestore()
+    postSpy.mockRestore()
+  })
+
+  test('admin at Verified: Add persists at once and keeps a pending edit and a flag (S04/S24)', async () => {
+    const added: SilvicultureLocation = {
+      ...midSlope,
+      locationId: 9004,
+      location: 'Late Bench',
+      revisionCount: 0,
+    }
+    const posts = vi.fn()
+    const bodies: LocationSaveAllRequest[] = []
+    server.use(
+      matrixGet({ trackStatus: 'V', locations: [northRidge, midSlope] }),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, ({ request }) => {
+        posts()
         return HttpResponse.json(
           matrixDoc(request, {
-            locations: [
-              {
-                ...corrected,
-                actualCost: body.locations[0].location.actualCost,
-                revisionCount: corrected.revisionCount + saves,
-              },
-            ],
+            trackStatus: 'V',
+            locations: [northRidge, midSlope, added],
             message: SAVED,
           }),
         )
+      }),
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        bodies.push((await request.json()) as LocationSaveAllRequest)
+        return HttpResponse.json(matrixDoc(request, { trackStatus: 'V', message: SAVED }))
       }),
     )
     renderAsAdmin(<Schedule11 />)
     const user = userEvent.setup()
 
-    await findRow('North Ridge Revised')
-    for (const value of ['26000', '27000']) {
-      changeRowField('Actual Cost ($)', 'North Ridge Revised', value)
-      await user.click(saveButtons()[0])
-      await waitFor(() =>
-        expect(screen.getByLabelText('Actual Cost ($) for North Ridge Revised')).toHaveValue(value),
-      )
-      await waitFor(() => {
-        for (const button of saveButtons()) {
-          expect(button).toBeDisabled()
-        }
-      })
-      const row = await findRow('North Ridge Revised')
-      expect(within(row).getByTestId('original-value-actualCost')).toHaveAccessibleDescription(
-        'Original Submission Value: 24,000',
-      )
-      expect(within(row).getByTestId('original-value-location')).toBeInTheDocument()
-    }
-    expect(saves).toBe(2)
+    await findRow('Mid Slope')
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    changeRowField('NAR(ha)', 'North Ridge', '130')
+    await flagDelete(user, 'Mid Slope')
+
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Late Bench' } })
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'No' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    fireEvent.change(screen.getByLabelText('NAR(ha)'), { target: { value: '4' } })
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    // S04: the Add went out on its own, at once, before any Save.
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(posts).toHaveBeenCalledTimes(1)
+    expect(bodies).toHaveLength(0)
+    // S24: the pending edit and the flag survived the refreshed document.
+    await findRow('Late Bench')
+    expect(screen.getByLabelText('NAR(ha) for North Ridge')).toHaveValue('130')
+    expect(queryRow('Mid Slope')).toBeNull()
+
+    await user.click(saveButtons()[0])
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0].deletedIds).toEqual([9002])
+    expect(bodies[0].locations.map((item) => item.basicSilvicultureReportId)).toEqual([9001])
   })
 
   test.each([

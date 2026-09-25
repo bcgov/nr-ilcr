@@ -105,9 +105,10 @@ public class Schedule11Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (from {@code SchedulePermissions}
-   *     — never inlined, AC7)
-   * @return the document with server-computed BR-08 figures and track-independent editability
+   * @param caller the statuses at which the caller may edit (the role × status matrix of {@code
+   *     ScheduleEditability} — never inlined, AC7)
+   * @return the document with server-computed BR-08 figures and editability by the silviculture
+   *     track's status
    */
   @Transactional(readOnly = true)
   public Schedule11Response getSchedule11(long millId, int year, EditableStatuses caller) {
@@ -463,9 +464,11 @@ public class Schedule11Service {
 
   /**
    * BR-07 Check Status: validate whether every stored Schedule 11 location has both costs.
-   * Read-only — mutates nothing (VIEW-gated, not editability-gated; runs on any status). Zero
-   * locations → vacuously met. SUC-004 "Status has been checked" is returned on every call; SUC-003
-   * only when met.
+   * Read-only — mutates nothing (VIEW-gated, not editability-gated; runs on any status). Legacy's
+   * rule that a read-only caller may not check lived on the button ({@code disabled=}), not on the
+   * server, and it still does: the page greys the button, the endpoint answers anyone who can view.
+   * Zero locations → vacuously met. SUC-004 "Status has been checked" is returned on every call;
+   * SUC-003 only when met.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year

@@ -10,8 +10,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Acceptance test — Story 26.2 AC 7: the original-value indicators read the Licensee's submission
@@ -27,6 +30,13 @@ import org.springframework.test.context.TestPropertySource;
  * application never writing an audit row — the last of which {@code Schedule11CorrectionIT} pins.
  * Nothing here writes; mill 801 is read-only and 802's asserted rows are ones no other test changes
  * the originals of.
+ *
+ * <p><strong>At Verified</strong> ({@code R__61}'s 816, never written) the same views serve the
+ * same baseline: the Licensee's {@code 'S'} submission, not the value in effect when the report was
+ * verified. The delivery trigger stamps a save at {@code V} as {@code 'V'} and the verify touch as
+ * {@code 'V'}, so nothing at Verified can re-baseline; this class proves the read ranks only {@code
+ * 'S'} rows, for either role. 817's baseline after two late corrections is read inside {@code
+ * Schedule11LateCorrectionIT}'s happy path, the one test that writes it.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=false")
 @DisplayName("Schedule 11 — original values from the submitted snapshot, against Oracle (26.2)")
@@ -36,14 +46,22 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
   private final ObjectMapper mapper = new ObjectMapper();
 
   private JsonNode location(long mill, long id) throws Exception {
+    return location(mill, id, null);
+  }
+
+  private JsonNode location(long mill, long id, String groups) throws Exception {
+    MockHttpServletRequestBuilder request =
+        get("/api/v1/schedule11")
+            .param("millId", String.valueOf(mill))
+            .param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON);
+    if (groups != null) {
+      request.header("X-Mock-Groups", groups);
+    }
     JsonNode doc =
         mapper.readTree(
             mockMvc
-                .perform(
-                    get("/api/v1/schedule11")
-                        .param("millId", String.valueOf(mill))
-                        .param("year", "2021")
-                        .accept(MediaType.APPLICATION_JSON))
+                .perform(request)
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -113,5 +131,38 @@ class Schedule11OriginalValuesIT extends AbstractOracleIT {
     // 9423's Actual cost is detail 5833 ('S' snapshot 900). An OLDER detail 5899 for the same
     // location and item also has an 'S' row, with a HIGHER audit id, and 777.
     assertOriginal(location(802, 9423), "actualCost", "900", "900");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"ILCR_ADMIN", "ILCR_SUBMITTER"})
+  @DisplayName("at Verified, every tracked field is still read from the Licensee's submission")
+  void atVerified_theBaselineIsTheSubmission(String groups) throws Exception {
+    JsonNode loc = location(816, 9441, groups);
+
+    assertThat(loc.get("location").asText()).isEqualTo("Late Corrected North");
+    assertOriginal(loc, "location", "Late Submitted North", "Late Submitted North");
+    assertOriginal(loc, "biogeoclimaticCatalogueId", "8802", "CWHvm");
+    assertOriginal(loc, "netArea", "10", "10.0");
+    assertOriginal(loc, "actualCost", "20000", "20,000");
+    assertOriginal(loc, "plannedCost", "14000", "14,000");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"ILCR_ADMIN", "ILCR_SUBMITTER"})
+  @DisplayName(
+      "at Verified, a row the ministry corrected at S still flags against the Licensee's value —"
+          + " its later 'A' and 'V' audit rows never become the baseline")
+  void atVerified_aCorrectionMadeAtSubmittedStillFlags(String groups) throws Exception {
+    // 9442's 'A' (the admin save at S) and 'V' (the verify touch) rows carry the ministry's
+    // values under HIGHER audit ids; ranking before filtering on 'S' would serve them and every
+    // indicator would fall silent.
+    JsonNode loc = location(816, 9442, groups);
+
+    assertThat(loc.get("location").asText()).isEqualTo("Ministry Fixed At S");
+    assertOriginal(loc, "location", "Licensee Filed", "Licensee Filed");
+    assertOriginal(loc, "biogeoclimaticCatalogueId", "8801", "ICHdw1");
+    assertOriginal(loc, "netArea", "6", "6.0");
+    assertOriginal(loc, "actualCost", "650", "650");
+    assertOriginal(loc, "plannedCost", "800", "800");
   }
 }

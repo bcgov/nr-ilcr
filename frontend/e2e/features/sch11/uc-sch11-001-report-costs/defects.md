@@ -200,6 +200,14 @@ location with no costs stores real NULLs (which render as blank, not "0").
     (the indicator only renders once a report has left Draft). S20 covers the non-Draft render but asserts
     only that the Add panel and row actions are absent and Check Status is disabled. `not-applicable
     (E2E, current scope)` in coverage.md; revisit with the submission/review UC (Epic 26).
+    _(UPDATED 2026-09-25, Story 26.4.)_ The five indicators past Draft are now proven below E2E, at
+    **both** Submitted and Verified and for **both** roles: against Oracle's `_S_VW` views by
+    `Schedule11OriginalValuesIT` (26.2 at S; 26.4 adds mill 816 at V, including a row the ministry
+    corrected at S whose later `'A'`/`'V'` audit rows must not become the baseline) and
+    `Schedule11LateCorrectionIT` (the baseline after two late corrections at V), and on the page by
+    `Schedule11.test.tsx`'s correction block, now parameterised over S and V. The browser journey that
+    ends in a late correction at Verified is Story 26.6's; this entry stays open for that and for the
+    decision above.
 
 - **DIV-5 — Check Status judges the SAVED data and ignores unsaved on-screen edits (APP-WIDE, 11 of 12
   schedules).**
@@ -329,7 +337,8 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Status:** CLOSED — covered by Vitest (in CI). `covered (unit)` in coverage.md. SPEC-2 (no slice
     describes sorting) stays open as a BA paperwork item, independent of test coverage.
 
-- **GAP-6 — There is no role-dependent Schedule 11 behaviour to cover yet.** _(REWORDED 2026-08-10 — the
+- **GAP-6 — There is no role-dependent Schedule 11 behaviour to cover yet.** _(**STALE since Story 16.1 —
+  see the 2026-09-25 note at the end of this entry.**)_ _(REWORDED 2026-08-10 — the
   earlier wording said the 403 paths were "blocked (env)" because security is off locally, which implied we
   were failing to cover behaviour that exists. Re-checked against the code: that behaviour does not exist.
   This is the same correction Schedule 1 made to its GAP-1 on 2026-08-07; the original wording here
@@ -358,6 +367,15 @@ location with no costs stores real NULLs (which render as blank, not "0").
     "Not applicable" would wrongly imply never. (Schedule 1's equivalent GAP-1 still reads
     `not-applicable`; this is a deliberate difference in framing, not a contradiction — same facts.)
   - **Test:** none today — `deferred (no role-dependent behaviour yet)` in coverage.md.
+  - **CORRECTED 2026-09-25 (Story 26.4).** The title's premise is false: the `ROLE_ACTIONS` sets are still
+    identical, but Story 16.1 made **editability** role × status dependent (`ScheduleEditability`:
+    SUBMITTER edits at `D`, ADMIN at `S` and `V`), and Schedule 11 applies it to the silviculture track.
+    So there IS role-dependent Schedule 11 behaviour, and it is a **409**, not a 403 — which is why the
+    403 framing above never found it. It is proven below E2E: `Schedule11CorrectionIT` (admin at S, admin
+    refused at D, licensee at D), `Schedule11LateCorrectionIT` (admin at V writes; the licensee at V is
+    refused 409 on Add and Save and still gets Check Status — the page, not the API, greys that button,
+    legacy-exact), and the page arms in `Schedule11.test.tsx`. The licensee half at V also runs green in
+    this suite already (`@S20`). The admin journey through S and V is Story 26.6's, via `seedMockUser`.
 
 - **GAP-7 — Follow-up for the app team: two stale `PROVISIONAL` comments in `validation.ts`.**
   - `components/schedule11/validation.ts` marks two message strings "PROVISIONAL … the exact live-app text
