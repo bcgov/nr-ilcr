@@ -628,7 +628,7 @@ const Schedule8: FC = () => {
 
   const pagesTable = (
     <TableContainer title="Page Summary">
-      <Table aria-label="Page Summary">
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Tree to Truck Pages</TableHeader>
