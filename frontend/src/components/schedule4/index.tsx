@@ -549,6 +549,12 @@ const Schedule4: FC = () => {
     revisionCount: panelMode === 'edit' ? (panelRevision ?? 0) : null,
     name: panelName.trim(),
     comments: panelComments.trim() || null,
+    // Only the categories with something in them are sent, and the server reads the list as the
+    // location's COMPLETE desired state: on an edit it clears every in-scope category that is
+    // missing (#335). So a category the user has just emptied is omitted here and still cleared
+    // there — the same wire shape as one that was never filled in. Do not "fix" this by sending
+    // nulls for cleared categories: the server does not need it, and that would make the payload
+    // depend on this component knowing what is stored.
     categories: ALL_CATEGORIES.flatMap((def) => {
       const value = panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }
       const isDistance = def.kind === 'DISTANCE'

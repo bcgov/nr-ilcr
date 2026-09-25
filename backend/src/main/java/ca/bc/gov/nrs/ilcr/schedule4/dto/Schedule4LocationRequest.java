@@ -20,16 +20,20 @@ import java.util.List;
  * another location → 409 {@code locationAlreadyExists} (ERR-002), enforced server-side.
  *
  * <p>{@code categories} carries only the categories the client entered (S08 — every category is
- * optional; a name-only location sends an empty list). A category present with all-null amounts
- * clears it. Derived {@code perUnit}, {@code kind}, and read-only {@code trackStatus}/{@code
- * editable} are never accepted here — they are recomputed server-side (AD-5).
+ * optional; a name-only location sends an empty list) and is the location's COMPLETE desired state:
+ * on an edit, an in-scope category absent from the list is cleared exactly as one present with
+ * all-null amounts is — a fixed code loses its detail row, a distance code its child report (#335;
+ * legacy wrote every category on every save). A client must therefore send every category it wants
+ * kept. Derived {@code perUnit}, {@code kind}, and read-only {@code trackStatus}/{@code editable}
+ * are never accepted here — they are recomputed server-side (AD-5).
  *
  * @param id the primary report id to edit; null to create
  * @param revisionCount optimistic-lock token from the last GET (null on create)
  * @param name the location description (required, ≤ 30)
  * @param comments free-text per-location comments (nullable, ≤ 3500 — within the {@code
  *     TRANSPORTATION_REPORT.COMMENTS} 4000-char column); stored on the primary report
- * @param categories the entered category amounts (validated per-element + BR-04)
+ * @param categories the entered category amounts (validated per-element + BR-04); on an edit, the
+ *     full set to keep — anything in scope that is missing is cleared
  */
 public record Schedule4LocationRequest(
     Integer id,

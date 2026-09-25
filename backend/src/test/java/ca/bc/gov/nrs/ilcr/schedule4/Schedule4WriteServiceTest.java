@@ -38,7 +38,9 @@ import org.springframework.dao.DataIntegrityViolationException;
  * Unit test for the Schedule 4 location write path (Story 4.2). Mocked repository — no DB, no
  * Spring — so it isolates the family write model: create (insert primary + bump 0→1 + fixed on
  * primary + distance child), edit (bump expected + rename + update-in-place), the
- * delete-when-emptied distance child, server-side name uniqueness (ERR-002), the Draft gate,
+ * delete-when-emptied distance child, the #335 reconciliation (a category the edit does not send is
+ * cleared — fixed detail row deleted, distance child deleted — and an all-null fixed category
+ * deletes rather than inserts), server-side name uniqueness (ERR-002), the Draft gate,
  * optimistic-lock handling, idempotent delete, delete cascade, cross-context (mill/year-scoped)
  * edit rejection, and persistence-failure rollback translation.
  */
@@ -205,6 +207,142 @@ class Schedule4WriteServiceTest {
 
     verify(repository).deleteReport(8002);
     verify(repository, never()).updateReportDistance(anyInt(), any(), anyString());
+  }
+
+  // ---- #335: the request's category list is the location's complete desired state on an edit.
+  // A category the client no longer sends — the user emptied its last value, so `buildRequest`
+  // omits it — must be cleared, not left as it was stored.
+
+  @Test
+  void save_edit_omittedFixedCategory_deletesItsDetailRow() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    // Stored: fixed 40 and 41. Sent: only 41 — the user cleared 40's last value.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(41, bd("7"), 70, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(8001, 41, bd("7"), 70, USER); // the survivor is written
+    verify(repository).deleteDetail(8001, 40); // the omitted one goes
+    verify(repository, never()).deleteDetail(8001, 41); // never the one that was sent
+  }
+
+  @Test
+  void save_edit_omittedDistanceCategory_deletesItsChildReport() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    // Stored: distance child 8002 for code 47. 48 and 52 were never entered, so the reconciliation
+    // finds no child for them (stubbed explicitly: strict stubs would otherwise flag the lookup).
+    when(repository.findDistanceReportId(MILL, YEAR, "Existing Dump", 47))
+        .thenReturn(Optional.of(8002));
+    when(repository.findDistanceReportId(MILL, YEAR, "Existing Dump", 48))
+        .thenReturn(Optional.empty());
+    when(repository.findDistanceReportId(MILL, YEAR, "Existing Dump", 52))
+        .thenReturn(Optional.empty());
+    stubRecompute();
+
+    // Sent: only fixed 40 — the user emptied Truck Barge/Ferry's distance, volume and cost.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001,
+            0,
+            "Existing Dump",
+            null,
+            List.of(new CategoryInput(40, bd("1500"), 60000, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(8001, 40, bd("1500"), 60000, USER);
+    verify(repository).deleteReport(8002); // the omitted distance child goes
+    verify(repository, never()).deleteDetail(8001, 40); // the sent fixed category stays
+    // A never-entered distance code has no child to delete: looked up, nothing found, nothing done.
+    verify(repository).findDistanceReportId(MILL, YEAR, "Existing Dump", 48);
+    verify(repository).findDistanceReportId(MILL, YEAR, "Existing Dump", 52);
+    verify(repository, never()).insertReport(anyLong(), anyInt(), anyString(), any(), anyString());
+  }
+
+  @Test
+  void save_clearFixedCategory_allNull_deletesDetail_neverInsertsAnEmptyRow() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    // A fixed category sent with all-null amounts is the explicit form of "cleared": the same
+    // outcome as omitting it, and never an all-null row (which the read would list as a category).
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(40, null, null, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).deleteDetail(8001, 40);
+    verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
+  }
+
+  @Test
+  void save_edit_partialClear_keepsTheCategoryAndWritesTheNullThrough() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    // The other half of the #335 boundary: Cost emptied, Volume kept. The category is still
+    // sent, so it is upserted with the null — this already worked and must keep working.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(40, bd("400"), null, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(8001, 40, bd("400"), null, USER);
+    verify(repository, never()).deleteDetail(8001, 40);
+  }
+
+  @Test
+  void save_create_doesNotReconcile_nothingIsStoredYet() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.nameExists(MILL, YEAR, "New Dump", null)).thenReturn(false);
+    when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), isNull(), eq(USER)))
+        .thenReturn(9001);
+    when(repository.bumpRevision(9001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            null, null, "New Dump", null, List.of(new CategoryInput(40, bd("1000"), 50000, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(9001, 40, bd("1000"), 50000, USER);
+    verify(repository, never()).deleteDetail(anyInt(), anyInt());
+    verify(repository, never()).deleteReport(anyInt());
+    verify(repository, never()).findDistanceReportId(anyLong(), anyInt(), anyString(), anyInt());
   }
 
   @Test

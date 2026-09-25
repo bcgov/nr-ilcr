@@ -159,6 +159,7 @@ sense against this directory, `mvn clean` before believing it.
    | Schedule 10 write         | **717–723**     | `V20260818`                                  |
    | Schedule 6 correction     | **724–726**     | `V20260822`                                  |
    | Mill Information report   | **730–733**     | `R__40`; 733 is ACT-in-year / CLS-now         |
+   | Schedule 4 clear-category (#335) | **547**  | `R__45`; reports `8070–8071`, cost-report details `8170–8172`; destructive edit, owned by one `Schedule4WriteIT` case |
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |

@@ -29,6 +29,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -445,8 +446,21 @@ public class Schedule4Service {
           repository.renameFamily(millId, year, oldName, name, user);
         }
       }
+      Set<Integer> sent = new HashSet<>();
       for (CategoryInput category : request.categoriesOrEmpty()) {
+        if (category.code() != null) {
+          sent.add(category.code());
+        }
         writeCategory(millId, year, name, primaryId, category, user);
+      }
+      // The request's category list is the location's complete desired state (#335). The client
+      // omits a category with nothing in it — including one the user has just emptied — so on an
+      // edit every in-scope category NOT sent is cleared here: its stored row would otherwise
+      // survive and the old figures come back on reload. Legacy wrote all 15 categories on every
+      // save, so an emptied one was written through; this is the same outcome. Nothing to
+      // reconcile on a create.
+      if (request.id() != null) {
+        clearAbsentCategories(millId, year, name, primaryId, sent, user);
       }
     } catch (DataAccessException ex) {
       // StaleRevisionException (a BusinessException, not a DataAccessException) propagates on its
@@ -661,7 +675,44 @@ public class Schedule4Service {
     if (DISTANCE_CODES.contains(code)) {
       writeDistanceCategory(millId, year, name, code, category, user);
     } else if (FIXED_CODES.contains(code)) {
-      repository.upsertDetail(primaryId, code, category.volume(), category.cost(), user);
+      writeFixedCategory(primaryId, code, category, user);
+    }
+  }
+
+  /**
+   * A fixed category is a single detail row on the primary report. Fully-empty (volume + cost both
+   * null) clears it: the row is deleted if one exists and never inserted (legacy skipped the insert
+   * for an empty category; the read lists only stored rows, so an all-null row would surface as a
+   * category the user had removed — #335). Otherwise upsert, writing a single null through so a
+   * partial clear (Cost emptied, Volume kept) persists.
+   */
+  private void writeFixedCategory(int primaryId, int code, CategoryInput category, String user) {
+    if (category.volume() == null && category.cost() == null) {
+      repository.deleteDetail(primaryId, code);
+      return;
+    }
+    repository.upsertDetail(primaryId, code, category.volume(), category.cost(), user);
+  }
+
+  /**
+   * Clear every in-scope category the edit did not send (#335): a fixed code loses its detail row
+   * on the primary; a distance code loses its child report. Both deletes are no-ops for a category
+   * that was never entered, so this needs no read of what is stored. Sub-page lists (43/46/55) are
+   * separate reports with their own endpoints and are never touched here.
+   */
+  private void clearAbsentCategories(
+      long millId, int year, String name, int primaryId, Set<Integer> sent, String user) {
+    for (int code : FIXED_CODES) {
+      if (!sent.contains(code)) {
+        repository.deleteDetail(primaryId, code);
+      }
+    }
+    for (int code : DISTANCE_CODES) {
+      if (!sent.contains(code)) {
+        repository
+            .findDistanceReportId(millId, year, name, code)
+            .ifPresent(repository::deleteReport);
+      }
     }
   }
 
