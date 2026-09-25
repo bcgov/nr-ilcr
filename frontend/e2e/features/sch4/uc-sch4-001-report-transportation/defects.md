@@ -121,7 +121,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     and the ticket are its only tracking.
   - **Test:** none - see Status.
 
-- **BUG-4 — Once a category holds a saved value you cannot clear it back to empty; the save reports success and the old figure comes back (DATA LOSS).**
+- **BUG-4 - CLOSED 2026-09-25: once a category held a saved value you could not clear it back to empty; the save reported success and the old figure came back (DATA LOSS, #335).**
   - **What's wrong:** enter a Volume or a Cost on a category in the Edit Location panel and save. Come back,
     delete the value, and save again: *"Data saved successfully"* appears, but the old number is still stored
     and reappears on reload. A reporter who entered a figure by mistake has no way to remove it — the only
@@ -173,13 +173,26 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     [#260](https://github.com/bcgov/nr-ilcr/issues/260), which is the CLOSED Schedule 1 precedent cited above.)
   - **Priority / env:** **p0** (data integrity, and a previously-broken behaviour with a closed precedent) ·
     local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to fix when capacity allows; QA
-    re-verifies and closes this entry then. Both `@discovered-bug` tests assert the CORRECT behaviour, so they
-    are RED today and go green on their own when the fix lands, at which point their tags come off. Found
-    2026-08-20 by the QA reviewer in manual testing, not by the suite.
+  - **Status:** CLOSED 2026-09-25 — fixed for [#335](https://github.com/bcgov/nr-ilcr/issues/335), server side.
+    `Schedule4Service.saveLocation` now treats the request's category list as the location's COMPLETE
+    desired state on an edit: every in-scope category not sent is cleared — a fixed code's detail row is
+    deleted, a distance code's child report is deleted (the `writeDistanceCategory` `empty` branch this
+    entry said "simply never runs" now runs for absent categories too). A fixed category sent with all-null
+    amounts deletes its row rather than writing an all-null one. The client is unchanged: omitting an
+    emptied category is now a correct thing for it to do, and `buildRequest` says so. Legacy parity: legacy
+    wrote every category on every save, so an emptied one was written through — same outcome. The partial
+    clear (Cost emptied, Volume kept) keeps working: the category is still sent and the null upserted.
+    Schedules 3, 5 and 8 were checked for the same shape (#260's question): their request builders send
+    the whole form, not a filtered list, so they do not share it. Found 2026-08-20 by the QA reviewer in
+    manual testing, not by the suite.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/update.feature` — "Clearing a distance category
     removes it and leaves the rest of the location intact" and "Clearing a fixed category's amounts persists,
-    one field at a time and then entirely", both `@p0 @discovered-bug`.
+    one field at a time and then entirely", both `@p0`; their `@discovered-bug` tags came off with the fix and
+    they now stand as the regression guard (EXACT-set assertions, so a surviving category fails). Backend:
+    `Schedule4WriteServiceTest` (omitted fixed → detail deleted; omitted distance → child deleted; all-null
+    fixed → deleted, never inserted; partial clear still upserts the null; create does not reconcile) and
+    `Schedule4WriteIT.put_edit_omittedCategories_areCleared` on its own fixture (mill 547, `R__45`), which
+    walks the same partial-then-full boundary against Oracle.
 
 **Divergences:**
 

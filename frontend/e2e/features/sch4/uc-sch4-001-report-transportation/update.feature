@@ -116,18 +116,20 @@ Feature: Schedule 4 — edit a saved location
       | Crew Barge/Ferry  | 9        | 90     | 270  | 3       |
 
   # ---------------------------------------------------------------------------------------------------
-  # BUG-4 — DELIBERATELY RED. See defects.md BUG-4.
+  # BUG-4 (#335) — FIXED 2026-09-25; this scenario is the regression guard. See defects.md BUG-4.
   #
   # Clearing a distance category to fully-empty must DELETE its child report (§Decision 1's write mirror).
-  # It does not: the save reports success and the stored child survives untouched.
+  # Until #335 it did not: the client omitted the emptied category from the PUT and the server wrote only
+  # what was sent, so the save reported success and the stored child survived. The server now treats the
+  # request's category list as the location's complete state and clears whatever is missing.
   #
-  # THIS SCENARIO USED TO PASS, AND SHOULD NOT HAVE. Its assertion was the SUBSET step
+  # THIS SCENARIO USED TO PASS BEFORE THE FIX, AND SHOULD NOT HAVE. Its assertion was the SUBSET step
   # ("the stored Schedule 4 location … is:") listing only the surviving Lakeside Dry Dump row — so a
   # surviving Truck Barge/Ferry was invisible to it and the removal, which is the scenario's whole point,
-  # was never checked. It now uses the EXACT-set step, which fails while the cleared category persists.
+  # was never checked. It uses the EXACT-set step, which fails if the cleared category ever persists again.
   # ---------------------------------------------------------------------------------------------------
-  @p0 @S02 @discovered-bug
-  Scenario: Clearing a distance category removes it and leaves the rest of the location intact [DISCOVERED BUG — a category cleared to empty is silently discarded; defects.md BUG-4 / issue #335]
+  @p0 @S02
+  Scenario: Clearing a distance category removes it and leaves the rest of the location intact (BUG-4 / #335 regression guard)
     Given the Schedule 4 anchor "clear-category" is an editable Draft with no locations
     And the Schedule 4 location "E2E Cleared Category" is already saved with:
       | category          | distance | volume | cost |
@@ -148,19 +150,20 @@ Feature: Schedule 4 — edit a saved location
       | Lakeside Dry Dump |          | 400    | 800  |
 
   # ---------------------------------------------------------------------------------------------------
-  # BUG-4, the FIXED-category half — DELIBERATELY RED. See defects.md BUG-4.
+  # BUG-4 (#335), the FIXED-category half — FIXED 2026-09-25; this scenario is the regression guard.
   #
-  # This walks the bug's BOUNDARY in one journey, because the two halves behave differently and a reader
+  # This walks the bug's BOUNDARY in one journey, because the two halves behaved differently and a reader
   # needs both to understand the defect:
-  #   1. a PARTIAL clear (empty the Cost, leave the Volume) DOES persist — the category still has a value,
-  #      so the client keeps sending it and the server upserts the null. This half passes today.
-  #   2. clearing the LAST value in that category does NOT persist — the client drops the whole category
-  #      from the payload (`buildRequest`'s `if (!anyPresent) return []`) and the server only iterates what
-  #      was sent, so the stored row survives and the reporter's correction is silently lost.
-  # Both halves are asserted here so the fix cannot satisfy one and break the other.
+  #   1. a PARTIAL clear (empty the Cost, leave the Volume) persists — the category still has a value,
+  #      so the client keeps sending it and the server upserts the null. This half always worked.
+  #   2. clearing the LAST value in that category did NOT persist — the client drops the whole category
+  #      from the payload (`buildRequest`'s `if (!anyPresent) return []`) and the server iterated only what
+  #      was sent, so the stored row survived and the reporter's correction was silently lost. The server
+  #      now clears every in-scope category an edit does not send (its detail row is deleted).
+  # Both halves are asserted here so a change cannot satisfy one and break the other.
   # ---------------------------------------------------------------------------------------------------
-  @p0 @S02 @discovered-bug
-  Scenario: Clearing a fixed category's amounts persists, one field at a time and then entirely [DISCOVERED BUG — a category cleared to empty is silently discarded; defects.md BUG-4 / issue #335]
+  @p0 @S02
+  Scenario: Clearing a fixed category's amounts persists, one field at a time and then entirely (BUG-4 / #335 regression guard)
     Given the Schedule 4 anchor "clear-fixed" is an editable Draft with no locations
     And the Schedule 4 location "E2E Clear Fixed" is already saved with:
       | category          | distance | volume | cost |

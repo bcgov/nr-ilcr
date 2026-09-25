@@ -31,8 +31,9 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * <p>Mutating tests use DEDICATED V8 mills so they never clobber the read-only Schedule 4 fixtures
  * (514/515/517): 546 "Existing Dump" (id 8001, distance child 8002) for edit-in-place / duplicate /
  * range / BR-04 / stale (all non-destructive to the family's name+existence), 541 for create, 542
- * (non-Draft) for the write gate, 544 for delete, 545 for rename. Cases read the revision at
- * runtime so they stay order-independent.
+ * (non-Draft) for the write gate, 544 for delete, 545 for rename, 547 ({@code R__45}) for the #335
+ * clear-a-category reconciliation, which deletes rows and so cannot share 546. Cases read the
+ * revision at runtime so they stay order-independent.
  */
 @DisplayName("PUT/DELETE /api/v1/schedule4/locations — location write (Story 4.2)")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -223,6 +224,79 @@ class Schedule4WriteIT extends AbstractOracleIT {
             "TRANSPORTATION_REPORT_ID = 8002 AND ILCR_REPORT_COST_ITEM_ID = 47 "
                 + "AND VOLUME = 250 AND COST = 9000"),
         "distance detail updated in place");
+  }
+
+  // ---- #335: the PUT's category list is the location's complete state — omitted = cleared.
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName(
+      "edit — 547/8070: a partial clear keeps the row with a null; omitting a category then deletes"
+          + " its detail row (fixed) or child report (distance), the survivor untouched (#335)")
+  void put_edit_omittedCategories_areCleared() throws Exception {
+    // Step 1 — PARTIAL clear: empty Lakeside Dry Dump's Cost, keep its Volume. The category is
+    // still sent, so its row stays and the null is written through (this half always worked).
+    int before = revisionOf(8070);
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "547")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    body(
+                        8070,
+                        before,
+                        "Clearable Dump",
+                        cat(40, 400, null, null),
+                        cat(41, 7, 70, null),
+                        cat(47, 100, 500, "20")))
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.message.text", is("Data saved successfully")));
+    assertEquals(
+        1,
+        details(
+            "TRANSPORTATION_REPORT_ID = 8070 AND ILCR_REPORT_COST_ITEM_ID = 40 "
+                + "AND VOLUME = 400 AND COST IS NULL"),
+        "partial clear: the row survives with the Cost nulled");
+    assertEquals(1, reports("TRANSPORTATION_REPORT_ID = 8071"), "distance child still present");
+
+    // Step 2 — FULL clear by omission: the client drops a category with nothing left in it, so
+    // only Water Dump (41) is sent. Lakeside's detail row and Truck Barge/Ferry's child must go;
+    // the primary and the survivor must not.
+    int after = revisionOf(8070);
+    assertEquals(before + 1, after, "step 1 advanced the revision");
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "547")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(8070, after, "Clearable Dump", cat(41, 7, 70, null)))
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.message.text", is("Data saved successfully")))
+        // The echo is the read-back the page reloads from: exactly one category, Water Dump.
+        .andExpect(jsonPath("$.locations[?(@.id == 8070)].categories[*].code", contains(41)));
+
+    assertEquals(
+        0,
+        details("TRANSPORTATION_REPORT_ID = 8070 AND ILCR_REPORT_COST_ITEM_ID = 40"),
+        "the omitted fixed category's detail row is deleted, not left with the old figures");
+    assertEquals(
+        1,
+        details(
+            "TRANSPORTATION_REPORT_ID = 8070 AND ILCR_REPORT_COST_ITEM_ID = 41 "
+                + "AND VOLUME = 7 AND COST = 70"),
+        "the category that was sent is untouched");
+    assertEquals(
+        0, reports("TRANSPORTATION_REPORT_ID = 8071"), "the omitted distance child is deleted");
+    assertEquals(0, details("TRANSPORTATION_REPORT_ID = 8071"), "…with its detail");
+    assertEquals(1, reports("TRANSPORTATION_REPORT_ID = 8070"), "the primary report itself stays");
+    assertEquals(after + 1, revisionOf(8070), "step 2 advanced the revision");
   }
 
   // ---- rename: re-stamps the whole family.

@@ -556,6 +556,23 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("description") String description,
       @Param("user") String user);
 
+  /**
+   * Remove ONE category's detail row from a report — how a fixed category
+   * (40/41/42/44/45/49/50/51/53) on the primary report is cleared (#335). Returns rows affected: 0
+   * when the category had no row, which is the normal case for a category that was never entered,
+   * so callers need not look first. Legacy never created a row for an empty category and the read
+   * lists only stored rows, so "cleared" and "absent" are the same state and the row goes rather
+   * than being nulled.
+   */
+  @Modifying
+  @Query(
+      """
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE TRANSPORTATION_REPORT_ID = :reportId
+         AND ILCR_REPORT_COST_ITEM_ID = :code
+      """)
+  int deleteDetail(@Param("reportId") int reportId, @Param("code") int code);
+
   @Modifying
   @Query("DELETE FROM THE.ILCR_COST_REPORT_DETAIL WHERE TRANSPORTATION_REPORT_ID = :reportId")
   int deleteDetailsByReport(@Param("reportId") int reportId);
