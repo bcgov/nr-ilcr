@@ -4,9 +4,9 @@
 # `POST /api/v1/schedule1/check-status` a body carrying the on-screen values. Schedule 3's DIV-6 holds the
 # full analysis.
 #
-# That is legacy parity: its Check Status was a full JSF postback (`ajax="false"`), so
-# UPDATE_MODEL_VALUES pushed every submitted field into the bean BEFORE the action ran, and the check
-# validated the in-memory schedule.
+# That is legacy parity: legacy's Schedule 1 Check Status described the screen, unsaved edits included
+# (the observed behaviour #359 records). No mechanism is claimed — the same `ajax="false"` markup on
+# legacy Schedule 5 judged the saved record instead (#476).
 #
 # BOTH ARMS ARE KEPT — the defect failed in OPPOSITE directions:
 #   * the false-GREEN arm (S27): an unsaved violation goes unreported, so a schedule looks ready when it is

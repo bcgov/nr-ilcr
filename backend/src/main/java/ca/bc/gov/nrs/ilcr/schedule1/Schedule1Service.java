@@ -940,11 +940,11 @@ public class Schedule1Service {
 
   /**
    * BR-07 Check Status (S14–S18) against the SCREEN — the endpoint's entry point
-   * (bcgov/nr-ilcr#359). Read-only — mutates nothing. Legacy's Check Status was an {@code
-   * ajax="false"} full postback into a {@code @ViewScoped} bean, so it judged what was on screen;
-   * this restores that. The body's lines and shared Other Costs volume replace the stored ones; the
-   * itemized Other Costs rows are never on this screen and stay database-sourced. The rule itself
-   * is {@link #evaluate}, shared with {@link #checkStatusStored}.
+   * (bcgov/nr-ilcr#359). Read-only — mutates nothing. Legacy's Check Status judged what was on
+   * screen, including unsaved edits (the observed behaviour #359 records); this restores that. The
+   * body's lines and shared Other Costs volume replace the stored ones; the itemized Other Costs
+   * rows are never on this screen and stay database-sourced. The rule itself is {@link #evaluate},
+   * shared with {@link #checkStatusStored}.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year

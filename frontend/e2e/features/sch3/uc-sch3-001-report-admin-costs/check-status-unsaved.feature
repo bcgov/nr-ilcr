@@ -4,11 +4,10 @@
 # stored data, not the screen. They went green, unedited, when #359's Schedules 1–3 fix gave
 # `POST /api/v1/schedule3/check-status` a body carrying the on-screen values.
 #
-# That is legacy parity. Its Check Status button was `ajax="false"`
-# (`webapp/schedule3.xhtml:38,421`), i.e. a full form postback: JSF pushed every submitted field —
-# including `overrideTotPopVal`, bound to `#{schedule3MB.schedule3.overrideTotalPop}` (`:323-324`) —
-# into the bean during UPDATE_MODEL_VALUES, and only then ran `checkStatus()`, which validated that
-# in-memory schedule and persisted nothing. So legacy checked what you were looking at.
+# That is legacy parity: legacy's Schedule 3 Check Status (`webapp/schedule3.xhtml:38,421`) described
+# the screen, the unsaved Override (`#{schedule3MB.schedule3.overrideTotalPop}`, `:323-324`) included,
+# and persisted nothing — the observed behaviour #359 records. No mechanism is claimed: the same
+# `ajax="false"` markup on legacy Schedule 5 judged the saved record instead (#476).
 #
 # The body carries the Override and the fixed-line amounts; the Other Acceptable / Unacceptable sub-page
 # rows are not on this screen and stay database-sourced, but the on-screen Override drives their

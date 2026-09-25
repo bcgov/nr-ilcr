@@ -7,11 +7,11 @@ import java.util.List;
  * The Check Status body: every value Schedule 1's check reads that is ON THIS SCREEN
  * (bcgov/nr-ilcr#359).
  *
- * <p>Legacy's Check Status was an {@code ajax="false"} full postback into a {@code @ViewScoped}
- * bean ({@code schedule1.xhtml:38,798}), so JSF applied the on-screen inputs to the model BEFORE
- * {@code Schedule1MB.checkStatus()} evaluated it — the verdict described the screen, and nothing
- * was persisted. The shipped implementation re-read the database instead, so an unsaved edit was
- * invisible to the verdict. This DTO restores the legacy behaviour.
+ * <p>Legacy's Check Status ({@code schedule1.xhtml:38,798}, {@code Schedule1MB.checkStatus()})
+ * described the screen, including unsaved edits, and persisted nothing — the observed behaviour
+ * #359 records. No mechanism is claimed for it: the same button markup on legacy Schedule 5 judged
+ * the saved record (#476). The shipped implementation re-read the database instead, so an unsaved
+ * edit was invisible to the verdict. This DTO restores the legacy behaviour.
  *
  * <p><strong>What it does NOT carry.</strong> The itemized Other Costs rows — and with them the row
  * count and cost subtotal — are edited on the Other Costs sub-page and are never inputs on this

@@ -4,11 +4,11 @@ package ca.bc.gov.nrs.ilcr.schedule2.dto;
  * The Check Status body: the value Schedule 2's check reads, as it is currently ON SCREEN
  * (bcgov/nr-ilcr#359).
  *
- * <p>Legacy's Check Status was an {@code ajax="false"} full postback into a {@code @ViewScoped}
- * bean ({@code schedule2.xhtml:36,173}), so JSF applied the on-screen inputs to the model BEFORE
- * {@code Schedule2MB.checkStatus()} evaluated it — the verdict described the screen, and nothing
- * was persisted. The shipped implementation re-read the database instead, so an unsaved edit was
- * invisible to the verdict. This DTO restores the legacy behaviour.
+ * <p>Legacy's Check Status ({@code schedule2.xhtml:36,173}, {@code Schedule2MB.checkStatus()})
+ * described the screen, including unsaved edits, and persisted nothing — the observed behaviour
+ * #359 records. No mechanism is claimed for it: the same button markup on legacy Schedule 5 judged
+ * the saved record (#476). The shipped implementation re-read the database instead, so an unsaved
+ * edit was invisible to the verdict. This DTO restores the legacy behaviour.
  *
  * <p>Deliberately NOT reusing {@link Schedule2Request}: its {@code revisionCount} is required and
  * exists for writes, and its fields are range-validated. Check Status addresses no stored row,

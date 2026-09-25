@@ -1125,12 +1125,12 @@ public class Schedule3Service {
 
   /**
    * BR-11/BR-03 Check Status (S09–S12) against the SCREEN — the endpoint's entry point
-   * (bcgov/nr-ilcr#359). Read-only — mutates nothing (AD-5). Legacy's Check Status was an {@code
-   * ajax="false"} full postback into a {@code @ViewScoped} bean, so it judged what was on screen;
-   * this restores that. The body's fixed lines, timber volumes and Override replace the stored ones
-   * — and the on-screen Override drives BOTH Harvest&lt;PO&amp;P rules, the fixed-line one and the
-   * item-124 subtotal one. The item-124/38 sub-page rows are never on this screen and stay
-   * database-sourced. The rule itself is {@link #evaluate}, shared with {@link #checkStatusStored}.
+   * (bcgov/nr-ilcr#359). Read-only — mutates nothing (AD-5). Legacy's Check Status judged what was
+   * on screen, including unsaved edits (the observed behaviour #359 records); this restores that.
+   * The body's fixed lines, timber volumes and Override replace the stored ones — and the on-screen
+   * Override drives BOTH Harvest&lt;PO&amp;P rules, the fixed-line one and the item-124 subtotal
+   * one. The item-124/38 sub-page rows are never on this screen and stay database-sourced. The rule
+   * itself is {@link #evaluate}, shared with {@link #checkStatusStored}.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year

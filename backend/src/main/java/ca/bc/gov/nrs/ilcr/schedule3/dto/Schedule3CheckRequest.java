@@ -7,11 +7,11 @@ import java.util.List;
  * The Check Status body: every value Schedule 3's check reads that is ON THIS SCREEN
  * (bcgov/nr-ilcr#359).
  *
- * <p>Legacy's Check Status was an {@code ajax="false"} full postback into a {@code @ViewScoped}
- * bean ({@code schedule3.xhtml:38,421}), so JSF applied the on-screen inputs to the model BEFORE
- * {@code Schedule3MB.checkStatus()} evaluated it — the verdict described the screen, and nothing
- * was persisted. The shipped implementation re-read the database instead, so an unsaved edit was
- * invisible to the verdict. This DTO restores the legacy behaviour.
+ * <p>Legacy's Check Status ({@code schedule3.xhtml:38,421}, {@code Schedule3MB.checkStatus()})
+ * described the screen, including unsaved edits, and persisted nothing — the observed behaviour
+ * #359 records. No mechanism is claimed for it: the same button markup on legacy Schedule 5 judged
+ * the saved record (#476). The shipped implementation re-read the database instead, so an unsaved
+ * edit was invisible to the verdict. This DTO restores the legacy behaviour.
  *
  * <p><strong>The override drives every rule that reads it.</strong> The on-screen Override
  * Harvest/Total PO&amp;P suppresses the Harvest&lt;PO&amp;P check on the fixed lines AND on the
