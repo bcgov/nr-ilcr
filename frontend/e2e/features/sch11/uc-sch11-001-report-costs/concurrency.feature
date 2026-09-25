@@ -1,21 +1,20 @@
 # Per-row optimistic locking — closes GAP-3.
 #
-# NO LEGACY SLICE DESCRIBES THIS (see SPEC-1). Legacy had a single page-level Save and no per-row
-# concurrency concept at all, so there is no `@S<NN>` tag to hang this on — same situation as Schedule 1's
+# NO LEGACY SLICE DESCRIBES THIS (see SPEC-1). Legacy's page-level Save had no optimistic lock at all — the
+# last writer silently won — so there is no `@S<NN>` tag to hang this on; same situation as Schedule 1's
 # `clear-amounts.feature`, and tagged the same way (priority only).
 #
 # WHY THIS EXISTS WHEN AN IT ALREADY COVERS THE ENDPOINT.
-# `Schedule11WriteIT.staleAndMissingRevision()` proves the SERVER returns 409 for a stale token. It says
-# nothing about what the USER sees. That is the risk worth testing: if the app swallowed the 409, someone
-# would believe their correction saved when it had not — the reject arm below is what proves it does not.
-# (That IT *does* run in CI: `analysis.yml` passes `-Dskip.integration.tests=false` — added in dc6c1bb —
-# even though `backend/pom.xml` still defaults the property to true, and the step is path-filtered to
-# `backend/`, so no backend change merges without it. The endpoint is gated; this scenario adds the UI arm.)
+# `Schedule11CorrectionIT.staleRevision_409_writesNothing()` proves the SERVER returns 409 for a stale
+# token. It says nothing about what the USER sees. That is the risk worth testing: if the app swallowed the
+# 409, someone would believe their correction saved when it had not — the reject arm below is what proves it
+# does not.
 #
 # HOW THE CONFLICT IS STAGED without a second browser.
-# `startEdit` copies that row's `revisionCount` into React state the moment Edit is clicked. So: open the
-# editor, change the row through the API (bumping the stored token), then save from the browser — the PUT
-# carries the token captured earlier and is now stale. One context, one API call.
+# The page-level Save sends each edited row with the revisionCount it was served (and edited) at (Story
+# 26.2). So: open the page, change the row through the API (bumping the stored token), then edit and save
+# from the browser — the PUT carries the token from the page load and is now stale. One context, one API
+# call.
 #
 # NO MUTATION SPY HERE, deliberately. Every other rejection in this suite is client-side, so its proof is
 # that NO request was sent. This rejection is the opposite: the stale PUT *is* sent and the SERVER rejects
@@ -23,7 +22,7 @@
 # plus the other session's value surviving the read-back below.
 #
 # SINGLE-OWNER SCENARIO — prove it non-flaky SERIALLY, not in parallel:
-#   npm test -- --grep @concurrency --repeat-each=5 --workers=1     (33/33 on 2026-08-10)
+#   npm test -- --grep @concurrency --repeat-each=5 --workers=1
 # `--repeat-each` WITHOUT `--workers=1` self-collides: every copy seeds the same (location, biogeo) pair on
 # the one anchor and the app's own uniqueness rule rejects the duplicates with
 # 409 "The Biogeo/Subzone/Variant has to be unique for a location." That is the harness colliding with
@@ -31,7 +30,8 @@
 # constraint Schedule 1 records for its single-owner destructive scenarios.
 #
 # The other session's value is asserted as the SURVIVOR. That is the real guarantee: a lost-update bug
-# would silently overwrite it with ours, and asserting only the error message would not catch that.
+# would silently overwrite it with ours, and asserting only the error message would not catch that. And the
+# page keeps OUR pending edit after the refusal (26.2: a refused Save never discards the user's work).
 
 @sch11 @UC-SCH11-001 @concurrency
 Feature: Report Basic Silviculture Costs (Schedule 11) — concurrent edits are rejected, not lost
@@ -43,16 +43,17 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — concurrent edits are 
   Scenario: Saving a row that another session already changed is rejected, and their value survives
     Given the Schedule 11 anchor "stale-edit" has a seeded location "E2E stale edit"
     And I have selected that mill and reporting year on the Home page
+    # Seeded at actual 5000. The page is served the row at its current revisionCount.
     When I open Schedule 11
-    # Seeded at actual 5000. Opening the editor captures this row's revisionCount.
-    And I start editing the Schedule 11 location "E2E stale edit"
     # Someone else saves first — this succeeds and moves the token on.
     And another session changes the Schedule 11 location "E2E stale edit" to actual cost 4242
-    # Our save now carries the token captured before their change.
-    And I change the inline "Actual Cost" to "7777"
-    And I save the inline edit
+    # Our Save now carries the token the page was served before their change.
+    And I change the Schedule 11 location "E2E stale edit" field "Actual Cost" to "7777"
+    And I save Schedule 11
     # Verbatim from the 409 ProblemDetail detail — the app renders the server's text unchanged (AD-8).
     Then I should see the error "This schedule was changed by another user. Please reload and try again."
+    # Our edit is still on the page, for the user to decide on after reloading.
+    And the Schedule 11 row "E2E stale edit" shows "7777" in "Actual Cost ($)"
     # The conflict must NOT be silently swallowed: our value is not stored, theirs is.
     And the Schedule 11 location "E2E stale edit" is persisted as:
       | field       | value |

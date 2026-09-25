@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.LocationSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
@@ -20,9 +21,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -142,23 +145,25 @@ public class Schedule11Service {
 
   /**
    * Assemble the served document for a KNOWN track status. The write methods reuse this with the
-   * {@code D} their editability gate just proved (same transaction) instead of re-running the
+   * status their editability gate just read (same transaction) instead of re-running the
    * track-status query on every mutation.
    */
   private Schedule11Response buildDocument(
       long millId, int year, String trackStatus, EditableStatuses caller) {
-    // Editable = EDIT_SCHEDULE ∧ silviculture track Draft (legacy disableUserInputSchedule11
-    // D+Licensee row; a null code cannot be Draft). The 1–10 track plays no part (S10).
+    // Editable = EDIT_SCHEDULE ∧ the caller's role may write at the SILVICULTURE track's status —
+    // SUBMITTER at D, ADMIN at S and V (legacy disableUserInputSchedule11, UserSessionMB:426-449;
+    // Story 16.1's matrix). A null code is editable by no one. The 1–10 track plays no part (S10).
     boolean editable = caller.allows(trackStatus);
 
     List<SilvicultureLocationEntity> locationRows = repository.findLocations(year, millId);
-    Map<Long, CostPair> costs = unpackCosts(repository.findCostDetails(year, millId));
+    List<SilvicultureCostEntity> costRows = repository.findCostDetails(year, millId);
+    Map<Long, CostPair> costs = unpackCosts(costRows);
 
     // The licensee's submitted figures (Story 16.2, BR-04). Gated on the SILVICULTURE track — a
     // gate reading the 1-10 column here would be silently wrong (AD-9/AR7).
     boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
     Map<Long, Schedule11Repository.LocationSnapshotRow> locationSnapshots = new HashMap<>();
-    Map<Long, Map<Integer, Integer>> costSnapshotsByLocation = new HashMap<>();
+    Map<Long, Integer> submittedCostByDetailId = new HashMap<>();
     if (exposeOriginals && !locationRows.isEmpty()) {
       for (Schedule11Repository.LocationSnapshotRow snap :
           repository.findLocationSnapshots(millId, year)) {
@@ -166,15 +171,20 @@ public class Schedule11Service {
       }
       List<Long> locationIds =
           locationRows.stream().map(SilvicultureLocationEntity::locationId).distinct().toList();
+      // Keyed by the snapshot's OWN detail id, as legacy keyed it: ILCRCostReportDetail.original is
+      // a @OneToOne @PrimaryKeyJoinColumn onto the view (ILCRCostReportDetail.java:118-120), so
+      // each
+      // current cost row reads the snapshot of that same row. A (location, item) bucket would be
+      // order-dependent once one location/item has two 'S' rows — a cost cleared and re-entered
+      // gets a new detail id, and a later re-submission leaves an 'S' row under each.
       for (CostDetailSnapshotRepository.Row r :
           costSnapshots.findBySilvicultureLocations(locationIds)) {
-        if (r.parentId() != null && r.costItemCode() != null) {
-          costSnapshotsByLocation
-              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
-              .putIfAbsent(r.costItemCode(), r.cost());
+        if (r.detailId() != null) {
+          submittedCostByDetailId.put(r.detailId().longValue(), r.cost());
         }
       }
     }
+    Map<Long, Map<Integer, Long>> currentCostDetailIds = currentCostDetailIds(costRows);
 
     List<SilvicultureLocation> locations =
         locationRows.stream()
@@ -186,7 +196,9 @@ public class Schedule11Service {
                         locationOriginals(
                             trackStatus,
                             locationSnapshots.get(row.locationId()),
-                            costSnapshotsByLocation.getOrDefault(row.locationId(), Map.of()))))
+                            submittedCosts(
+                                currentCostDetailIds.getOrDefault(row.locationId(), Map.of()),
+                                submittedCostByDetailId))))
             .toList();
 
     // Document revisionCount is ALWAYS null: no ILCR_REPORT_SUMMARY row exists for this list
@@ -257,59 +269,53 @@ public class Schedule11Service {
   }
 
   /**
-   * Edit one existing Schedule 11 location and return the recomputed document (S03).
-   * Optimistic-lock on the row's {@code REVISION_COUNT} (AR11): a stale token → 409, an unknown id
-   * → 404. Cost edits upsert their child row, or remove it when a cost is cleared to null (clear
-   * semantics).
+   * The page-level Save: delete every location the user flagged and update every other location on
+   * the page, in ONE transaction, and return the recomputed document — legacy {@code
+   * Schedule11MB.save()} → {@code Schedule11DAO.saveSchedule11}, which deleted the flagged rows and
+   * updated the rest before a single commit ({@code Schedule11DAO.java:135-150}). Add is not part
+   * of it: it stays its own immediate POST, as legacy's {@code addLocation()} → {@code save(true)}
+   * was.
+   *
+   * <p>Atomic by construction, as {@code Schedule7aService.saveAllBridges}: the editability gate
+   * runs once, before any write; any refused or failing row rolls the WHOLE request back, so the
+   * user is never left guessing which rows persisted.
+   *
+   * <p><b>Deletes run first.</b> A row that takes over a deleted row's biogeo + location would
+   * otherwise trip {@code BSRPT_BSRPT_UK_UK} inside a request that is, as a whole, valid. Updates
+   * are optimistic-locked per row (AR11): a stale token → 409, an unknown id → 404. Deletes carry
+   * no token (the systemic AR11 DELETE deviation; legacy re-fetched by PK and removed).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param locationId the location id to edit
-   * @param request the entered fields + the required {@code revisionCount} token
+   * @param request the rows to update (each with its {@code revisionCount}) and the ids to delete
    * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document
    */
   @Transactional
-  public Schedule11Response updateLocation(
-      long millId,
-      int year,
-      long locationId,
-      SilvicultureLocationRequest request,
-      EditableStatuses caller,
-      String user) {
+  public Schedule11Response saveAllLocations(
+      long millId, int year, LocationSaveAllRequest request, EditableStatuses caller, String user) {
     final String trackStatus = requireSilvicultureEditable(millId, year, caller);
-    requireValidBiogeo(request.biogeoclimaticCatalogueId());
-    try {
-      int updated =
-          repository.updateLocation(
-              locationId,
-              millId,
-              year,
-              request.revisionCount(),
-              request.location(),
-              request.biogeoclimaticCatalogueId(),
-              request.netArea(),
-              enhancedInd(request.enhancedIndicator()),
-              request.comments(),
-              user);
-      if (updated == 0) {
-        // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate (AC7).
-        if (repository.countLocation(locationId, millId, year) == 0) {
-          throw new SilvicultureLocationNotFoundException();
-        }
-        throw new StaleRevisionException();
+    rejectMalformed(request);
+    Set<Long> knownBiogeo = new HashSet<>();
+    for (LocationSaveAllRequest.Item item : request.locations()) {
+      long biogeoId = item.location().biogeoclimaticCatalogueId();
+      if (knownBiogeo.add(biogeoId)) {
+        requireValidBiogeo(biogeoId);
       }
-      writeCosts(
-          locationId,
-          wholeDollars(request.actualCost()),
-          wholeDollars(request.plannedCost()),
-          user);
+    }
+    try {
+      for (Long locationId : request.deletedIds()) {
+        applyLocationDelete(millId, year, locationId);
+      }
+      for (LocationSaveAllRequest.Item item : request.locations()) {
+        applyLocationUpdate(millId, year, item.basicSilvicultureReportId(), item.location(), user);
+      }
     } catch (DataIntegrityViolationException ex) {
-      throwConflictOrNotSaved(ex, "update", millId, year);
+      throwConflictOrNotSaved(ex, "save", millId, year);
     } catch (DataAccessException ex) {
       log.warn(
-          "Schedule 11 update failed for mill {} year {} [{}]",
+          "Schedule 11 save failed for mill {} year {} [{}]",
           millId,
           year,
           ex.getClass().getSimpleName());
@@ -319,38 +325,67 @@ public class Schedule11Service {
   }
 
   /**
-   * Delete one Schedule 11 location and ALL its cost children (S07 — legacy whole-row removal; a
-   * 23/24-only cascade would orphan other attached items). editability-gated; an unknown id → 404.
-   * Carries NO revision token — the systemic AR11 DELETE deviation (Story 2.1; legacy delete
-   * re-fetches by PK and removes, no lock).
-   *
-   * @param millId the mill id (context already validated)
-   * @param year the reporting year
-   * @param locationId the location id to delete
-   * @param caller the track statuses this caller may edit
-   * @return the recomputed aggregate document (the row and its costs gone; footer refreshed)
+   * Refuse a save that carries nothing, or names one location twice — twice among the updates,
+   * twice among the deletions, or in both. Runs before any write.
    */
-  @Transactional
-  public Schedule11Response deleteLocation(
-      long millId, int year, long locationId, EditableStatuses caller) {
-    final String trackStatus = requireSilvicultureEditable(millId, year, caller);
-    try {
-      // The mill/year-scoped location delete runs FIRST: its 0-rows result is the ownership check,
-      // so the id-scoped cost cascade below can never touch another mill's rows.
-      int deleted = repository.deleteLocation(locationId, millId, year);
-      if (deleted == 0) {
+  private static void rejectMalformed(LocationSaveAllRequest request) {
+    if (request.locations().isEmpty() && request.deletedIds().isEmpty()) {
+      throw new EmptyLocationSaveException();
+    }
+    Set<Long> seen = new HashSet<>();
+    for (Long id : request.deletedIds()) {
+      if (!seen.add(id)) {
+        throw new DuplicateLocationException();
+      }
+    }
+    for (LocationSaveAllRequest.Item item : request.locations()) {
+      if (!seen.add(item.basicSilvicultureReportId())) {
+        throw new DuplicateLocationException();
+      }
+    }
+  }
+
+  /**
+   * Correct one location and its costs (optimistic-locked, AR11). Assumes the editability gate and
+   * the biogeo check have already run for the request. Cost edits upsert their child row, or remove
+   * it when a cost is cleared to null (clear semantics).
+   */
+  private void applyLocationUpdate(
+      long millId, int year, long locationId, SilvicultureLocationRequest request, String user) {
+    int updated =
+        repository.updateLocation(
+            locationId,
+            millId,
+            year,
+            request.revisionCount(),
+            request.location(),
+            request.biogeoclimaticCatalogueId(),
+            request.netArea(),
+            enhancedInd(request.enhancedIndicator()),
+            request.comments(),
+            user);
+    if (updated == 0) {
+      // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate (AC7).
+      if (repository.countLocation(locationId, millId, year) == 0) {
         throw new SilvicultureLocationNotFoundException();
       }
-      repository.deleteCostsForLocation(locationId);
-    } catch (DataAccessException ex) {
-      log.warn(
-          "Schedule 11 delete failed for mill {} year {} [{}]",
-          millId,
-          year,
-          ex.getClass().getSimpleName());
-      throw new ScheduleNotSavedException();
+      throw new StaleRevisionException();
     }
-    return buildDocument(millId, year, trackStatus, caller);
+    writeCosts(
+        locationId, wholeDollars(request.actualCost()), wholeDollars(request.plannedCost()), user);
+  }
+
+  /**
+   * Delete one location and ALL its cost children (S07 — legacy whole-row removal; a 23/24-only
+   * cascade would orphan other attached items). An unknown id → 404.
+   */
+  private void applyLocationDelete(long millId, int year, long locationId) {
+    // The mill/year-scoped location delete runs FIRST: its 0-rows result is the ownership check, so
+    // the id-scoped cost cascade below can never touch another mill's rows.
+    if (repository.deleteLocation(locationId, millId, year) == 0) {
+      throw new SilvicultureLocationNotFoundException();
+    }
+    repository.deleteCostsForLocation(locationId);
   }
 
   /**
@@ -393,12 +428,12 @@ public class Schedule11Service {
   }
 
   /**
-   * The editability-gate for every write: the SILVICULTURE track must be {@code D} (else 409). Keys
-   * on {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext's locked read (AD-9 single owner; the
+   * The editability-gate for every write: the caller's role must be allowed to write at the
+   * SILVICULTURE track's status (SUBMITTER at D, ADMIN at S and V — Story 16.1), else 409. Keys on
+   * {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext's locked read (AD-9 single owner; the
    * {@code FOR UPDATE} holds the status row so a Schedule 11 transition and this write serialize,
-   * Story 15.3 D8) — a Submitted/Verified 1–10 track leaves Schedule 11 writable (AR7 track
-   * independence). Context (400/404/409-mill) is already validated by the controller before this
-   * runs (AD-4).
+   * Story 15.3 D8) — the 1–10 track's status plays no part (AR7 track independence). Context
+   * (400/404/409-mill) is already validated by the controller before this runs (AD-4).
    */
   private String requireSilvicultureEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus =
@@ -502,6 +537,40 @@ public class Schedule11Service {
       byLocation.put(row.basicSilvicultureReportId(), pair);
     }
     return byLocation;
+  }
+
+  /**
+   * The CURRENT detail id of each location's Actual (24) and Planned (23) cost row, chosen exactly
+   * as {@link #unpackCosts} chooses the value — the last row read wins — so the snapshot looked up
+   * for a figure is always the snapshot of the row that figure came from.
+   */
+  private static Map<Long, Map<Integer, Long>> currentCostDetailIds(
+      List<SilvicultureCostEntity> rows) {
+    Map<Long, Map<Integer, Long>> byLocation = new HashMap<>();
+    for (SilvicultureCostEntity row : rows) {
+      if (row.costItemId() == CODE_ACTUAL || row.costItemId() == CODE_PLANNED) {
+        byLocation
+            .computeIfAbsent(row.basicSilvicultureReportId(), id -> new HashMap<>())
+            .put(row.costItemId(), row.costDetailId());
+      }
+    }
+    return byLocation;
+  }
+
+  /**
+   * One location's submitted Actual/Planned costs: for each item, the snapshot of the CURRENT cost
+   * row's own detail id. A current row with no snapshot of its own — added, or cleared and
+   * re-entered since submission — has no submitted figure (null), which is legacy's null {@code
+   * original}. A cost with no current row has none either: legacy walked only the current rows
+   * ({@code Schedule11DAO.java:230-240}), so a cost the ministry cleared shows no original.
+   */
+  private static Map<Integer, Integer> submittedCosts(
+      Map<Integer, Long> currentDetailIds, Map<Long, Integer> submittedCostByDetailId) {
+    Map<Integer, Integer> submitted = new HashMap<>();
+    for (Map.Entry<Integer, Long> entry : currentDetailIds.entrySet()) {
+      submitted.put(entry.getKey(), submittedCostByDetailId.get(entry.getValue()));
+    }
+    return submitted;
   }
 
   /** Map one location row + its cost pair to the wire shape, computing the BR-08 row figures. */
@@ -678,11 +747,13 @@ public class Schedule11Service {
    * non-empty current value — the very thing legacy could never do here. Omitting it is what keeps
    * the behaviour faithful.
    *
-   * <p>The omission is also what reproduces legacy: its own indicator for this field could never
-   * fire, because the DAO read the CURRENT value into {@code enhancedIndicatorOriginalVal} ({@code
-   * Schedule11DAO.java:226}), which always compares equal. Widening the view is delivery-schema
-   * DDL, outside this project's sanctioned scope. Deviation D5, corrected in review of PR #452 —
-   * the story text has been amended to match this.
+   * <p>The omission is a recorded DEVIATION from legacy, not a reproduction of it (Story 26.2 D3,
+   * correcting 16.2 D5's rationale). Legacy's DAO copied the CURRENT persisted value into {@code
+   * enhancedIndicatorOriginalVal} ({@code Schedule11DAO.java:226}) — so its icon did fire, after an
+   * unsaved change and on every row with no snapshot, labelling the last-saved value "Original
+   * Submission Value". That text would misstate what the Licensee submitted, so no indicator is
+   * served. Widening the view to carry the real submitted value is delivery-schema DDL, outside
+   * this project's sanctioned scope.
    *
    * <p>{@code comments} is not wired at all: legacy defines {@code commentsOriginalVal} but no
    * {@code isCommentsOriginalVal} accessor and no indicator in the view, so the licensee's original
@@ -697,9 +768,13 @@ public class Schedule11Service {
     return originalValues
         .forTrack(trackStatus)
         .put("location", location == null ? null : location.location(), OriginalValueFormat.TEXT)
+        // Compared by id (the page compares the selected catalogue id), shown by LABEL — legacy's
+        // tooltip printed the submitted catalogue row's getBiogeoSubZoneVariantPase()
+        // (schedule11.xhtml:251), never its number.
         .put(
             "biogeoclimaticCatalogueId",
             location == null ? null : location.biogeoclimaticCatalogueId(),
+            location == null ? null : submittedBecShown(location),
             OriginalValueFormat.TEXT)
         .put(
             "netArea",
@@ -708,5 +783,17 @@ public class Schedule11Service {
         .put("actualCost", submittedCosts.get(CODE_ACTUAL), OriginalValueFormat.WHOLE)
         .put("plannedCost", submittedCosts.get(CODE_PLANNED), OriginalValueFormat.WHOLE)
         .build();
+  }
+
+  /**
+   * What the BEC tooltip shows for a submitted catalogue id: its label, or the id itself when the
+   * catalogue row is gone (no FK in delivery; the snapshot query LEFT JOINs the catalogue). Legacy
+   * would have thrown here; an indicator whose tooltip names nothing would be worse than the
+   * number.
+   */
+  private static Object submittedBecShown(Schedule11Repository.LocationSnapshotRow location) {
+    String label =
+        becLabel(location.becZoneCode(), location.subzone(), location.variant(), location.phase());
+    return label != null ? label : location.biogeoclimaticCatalogueId();
   }
 }

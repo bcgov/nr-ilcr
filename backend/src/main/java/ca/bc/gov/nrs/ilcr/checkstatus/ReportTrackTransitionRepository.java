@@ -7,10 +7,12 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 /**
- * The one transactional writer of a Schedules 1&ndash;10 status transition (Story 15.3; AD-3 Spring
- * Data JDBC, explicit {@code @Modifying @Query} SQL). It is the modern shape of legacy {@code
- * SubmitReportDAO.submitReport():61-142}: the status row, then an audit-only touch of every
- * Schedule 1&ndash;10 row for the mill/year, then the ten {@code ILCR_REPORT_CATEGORY} rows.
+ * The one transactional writer of a track status transition (Story 15.3; AD-3 Spring Data JDBC,
+ * explicit {@code @Modifying @Query} SQL) &mdash; Schedules 1&ndash;10, and since Story 26.1 the
+ * Schedule 11 submit, whose statements name only its own status column and row family. It is the
+ * modern shape of legacy {@code SubmitReportDAO.submitReport():61-142}: the status row, then an
+ * audit-only touch of every Schedule 1&ndash;10 row for the mill/year, then the ten {@code
+ * ILCR_REPORT_CATEGORY} rows.
  *
  * <p><strong>The touch is not decoration.</strong> In delivery, {@code RECORD_STATE_CODE} on every
  * {@code *_AUD} row is written by a per-table BEFORE INSERT OR UPDATE trigger that reads the track
@@ -194,6 +196,50 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       @Param("year") int year,
       @Param("statusCode") String statusCode,
       @Param("expectedCode") String expectedCode,
+      @Param("user") String user);
+
+  /**
+   * Move the Schedule 11 track's status code and record the submitting Licensee &mdash; the
+   * Schedule 11 counterpart of {@link #updateTrackStatus}, and a separate statement because a
+   * column name cannot be a bind. Legacy {@code updateILCRMillReportStatus():395-426} was ONE
+   * helper that flipped which status column it wrote on the boolean {@code isSchedule11Submitted}
+   * ({@code :417-423}), and wrote the {@code LICENSEE_*} pair for any {@code 'S'} target BEFORE
+   * that branch ({@code :403-413}) &mdash; so the pair is written here too (Story 26.1 D1). It is
+   * the one column pair both tracks share: it names whoever submitted last, on either track, as it
+   * did in legacy. That includes the erase path: a submitter with no resolvable {@code
+   * ILCR_MILL_USER_XREF} row writes NULLs over the pair an assigned licensee recorded on the other
+   * track, exactly as legacy did: {@code :404-408} passed the looked-up xref, null on a miss, to
+   * {@code setIlcrMillUserXrefLicensee}.
+   *
+   * <p>The other track's status column is never named (BR-06, AD-9). {@code REVISION_COUNT} is
+   * bumped as {@link #updateTrackStatus} bumps it (deviation (B), extended), and the {@code
+   * expectedCode} predicate makes a transition that slipped in answer zero rows rather than be
+   * overwritten.
+   *
+   * @return rows affected &mdash; 1 on success, 0 when the row is absent or no longer at {@code
+   *     expectedCode}
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_REPORT_STATUS
+         SET MILL_SILVICULTUR_STATUS_CODE = :newCode,
+             LICENSEE_MILL_ID = :licenseeMillId,
+             LICENSEE_USER_GUID = :licenseeUserGuid,
+             REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND MILL_SILVICULTUR_STATUS_CODE = :expectedCode
+      """)
+  int updateSilvicultureTrackStatus(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedCode") String expectedCode,
+      @Param("newCode") String newCode,
+      @Param("licenseeMillId") Long licenseeMillId,
+      @Param("licenseeUserGuid") String licenseeUserGuid,
       @Param("user") String user);
 
   // -----------------------------------------------------------------------------------------------
@@ -546,6 +592,43 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
                 AND r.ILCR_CATEGORY_ID = '10')
       """)
   int touchRoadConstructionCostDetails(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  // -----------------------------------------------------------------------------------------------
+  // Schedule 11 — the location rows and their cost details (legacy updateBasicSilvicultureReport,
+  // :328-337, which stamped each row and then every child in getIlcrCostReportDetails, :381-386).
+  // Predicate: Schedule11Repository.findLocations / findCostDetails — ILCR_MILL_ID, REPORT_YEAR,
+  // ILCR_CATEGORY_ID = '11', without the read's 23/24 item filter: legacy stamped every child.
+  // Neither legacy entity declared @Version, so REVISION_COUNT does not move.
+  // -----------------------------------------------------------------------------------------------
+
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.BASIC_SILVICULTURE_REPORT
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '11'
+      """)
+  int touchBasicSilvicultureReports(
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE BASIC_SILVICULTURE_REPORT_ID IN (
+             SELECT b.BASIC_SILVICULTURE_REPORT_ID
+               FROM THE.BASIC_SILVICULTURE_REPORT b
+              WHERE b.ILCR_MILL_ID = :millId
+                AND b.REPORT_YEAR = :year
+                AND b.ILCR_CATEGORY_ID = '11')
+      """)
+  int touchBasicSilvicultureCostDetails(
       @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
 
   /**

@@ -4,8 +4,10 @@ import { describe, expect, test } from 'vitest'
 import {
   CONFIRM_SET_TO_DRAFT_1_TO_10,
   CONFIRM_SET_TO_SUBMIT_1_TO_10,
+  CONFIRM_SUBMIT_11,
   CONFIRM_VERIFY_1_TO_10,
 } from '../index'
+import { SCH11_NOT_DRAFT_TEXT, SCH11_SUBMITTED_TEXT } from './fixtures'
 
 /**
  * The transition confirmations are the only user-facing text on this page the client owns: each is
@@ -61,5 +63,24 @@ describe('the Check Status confirm prompt mirrors the message bundle', () => {
 
   test('the bundle carries confirmSubmitBackSche1-10Msg, typo and all', () => {
     expect(Object.keys(bundle)).toContain('confirmSubmitBackSche1-10Msg')
+  })
+
+  // Schedule 11's submit prompt (Story 26.1), legacy key and text verbatim (2.0.4 :111).
+  test('confirmSubmitSch11Msg is byte-identical to the rendered constant', () => {
+    expect(bundle['confirmSubmitSch11Msg']).toBe(CONFIRM_SUBMIT_11)
+  })
+
+  test('the bundle carries confirmSubmitSch11Msg', () => {
+    expect(Object.keys(bundle)).toContain('confirmSubmitSch11Msg')
+  })
+
+  // Not client-owned — the server sends these — but the page suite's MSW fixtures stand in for the
+  // server, and a fixture that says something the server never would makes every banner arm a test
+  // of the mock. Pinned here so the stand-in cannot drift from the real envelope.
+  test('the Schedule 11 success and not-Draft fixtures are the bundle’s own text', () => {
+    expect(Object.keys(bundle)).toContain('sch11SubmittedMsg')
+    expect(Object.keys(bundle)).toContain('sch11SubmitNotDraftErrorMsg')
+    expect(bundle['sch11SubmittedMsg']).toBe(SCH11_SUBMITTED_TEXT)
+    expect(bundle['sch11SubmitNotDraftErrorMsg']).toBe(SCH11_NOT_DRAFT_TEXT)
   })
 })

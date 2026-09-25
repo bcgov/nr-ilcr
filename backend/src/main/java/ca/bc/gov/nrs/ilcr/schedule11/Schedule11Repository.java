@@ -310,23 +310,37 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
    * <p><b>The view carries only these four columns</b>, and that is the root cause of two legacy
    * indicators that can never fire. {@code BASIC_SILVICULTURE_RPRT_AUD} stores {@code ENHANCED_IND}
    * and {@code COMMENTS} but the view selects neither, so legacy's DAO substituted the CURRENT
-   * values ({@code Schedule11DAO.java:226,228}) and its enhanced-indicator comparison is therefore
-   * always equal. Widening the view is DDL on the delivery schema, outside the FAM-only sanction —
-   * so the behaviour is reproduced rather than fixed (deviation D5), and the enhanced-indicator key
-   * stays structurally present but never populated.
+   * values ({@code Schedule11DAO.java:226,228}). Widening the view is DDL on the delivery schema,
+   * outside the FAM-only sanction, so Enhanced and Comments carry no indicator (16.2 D5; Story 26.2
+   * D3 keeps the exemption). The four catalogue parts are the SUBMITTED BEC's, joined for the
+   * label.
    */
   record LocationSnapshotRow(
-      long locationId, String location, Long biogeoclimaticCatalogueId, BigDecimal netArea) {}
+      long locationId,
+      String location,
+      Long biogeoclimaticCatalogueId,
+      BigDecimal netArea,
+      String becZoneCode,
+      String subzone,
+      String variant,
+      String phase) {}
 
-  /** Every submitted silviculture location for a mill/year. */
+  /**
+   * Every submitted silviculture location for a mill/year, with the catalogue parts of its
+   * SUBMITTED Biogeo/Subzone/Variant — legacy's tooltip printed that catalogue row's label, not its
+   * id ({@code schedule11.xhtml:251}, {@code getBiogeoSubZoneVariantPase()}). LEFT JOIN, as {@link
+   * #findLocations} joins: delivery has no FK to the catalogue.
+   */
   @Query(
       value =
           """
-      SELECT BASIC_SILVICULTURE_REPORT_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID,
-             REFORESTED_NET_AREA
-        FROM THE.BASIC_SILVICULTURE_REPORT_S_VW
-       WHERE ILCR_MILL_ID = :millId
-         AND REPORT_YEAR = :year
+      SELECT s.BASIC_SILVICULTURE_REPORT_ID, s.LOCATION, s.BECBIOGEOCLIMATIC_CATALOGUE_ID,
+             s.REFORESTED_NET_AREA, c.BEC_ZONE_CODE, c.SUBZONE, c.VARIANT, c.PHASE
+        FROM THE.BASIC_SILVICULTURE_REPORT_S_VW s
+        LEFT JOIN THE.BIOGEOCLIMATIC_CATALOGUE c
+          ON c.BIOGEOCLIMATIC_CATALOGUE_ID = s.BECBIOGEOCLIMATIC_CATALOGUE_ID
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
       """,
       rowMapperClass = LocationSnapshotRowMapper.class)
   List<LocationSnapshotRow> findLocationSnapshots(
@@ -342,7 +356,11 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
           rs.getLong("BASIC_SILVICULTURE_REPORT_ID"),
           rs.getString("LOCATION"),
           biogeoclimaticCatalogueId,
-          rs.getBigDecimal("REFORESTED_NET_AREA"));
+          rs.getBigDecimal("REFORESTED_NET_AREA"),
+          rs.getString("BEC_ZONE_CODE"),
+          rs.getString("SUBZONE"),
+          rs.getString("VARIANT"),
+          rs.getString("PHASE"));
     }
   }
 }

@@ -95,7 +95,7 @@ class CheckStatusSweepIT extends AbstractOracleIT {
   @Test
   @DisplayName(
       "15.3 AC 9: submitter at Draft -> canSubmit true even though the gate fails (validity ignored);"
-          + " Schedule 11 carries no flag; nothing is mutated")
+          + " Schedule 11's flag is false (514 has a NULL silviculture code); nothing is mutated")
   void sweep_submitterAtDraft_canSubmitTrue_validityIgnored() throws Exception {
     String before = footprint(514, 2021);
 
@@ -105,7 +105,9 @@ class CheckStatusSweepIT extends AbstractOracleIT {
         .andExpect(jsonPath(TRACK_1_TO_10 + ".statusCode", is("D")))
         .andExpect(jsonPath(TRACK_1_TO_10 + ".requirementsMet", is(false)))
         .andExpect(jsonPath(TRACK_1_TO_10 + ".canSubmit", is(true)))
-        .andExpect(jsonPath(TRACK_11 + ".canSubmit").doesNotExist());
+        // Story 26.1 made the flag present on BOTH tracks. Before it this arm pinned the field's
+        // absence; a NULL code is simply not Draft, so the Schedule 11 answer is false.
+        .andExpect(jsonPath(TRACK_11 + ".canSubmit", is(false)));
 
     assertEquals(before, footprint(514, 2021), "computing the offer flag must write nothing");
   }
@@ -128,6 +130,45 @@ class CheckStatusSweepIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath(TRACK_1_TO_10 + ".statusCode", is("D")))
         .andExpect(jsonPath(TRACK_1_TO_10 + ".canSubmit", is(false)));
+  }
+
+  @Test
+  @DisplayName(
+      "26.1 AC 7: submitter, silviculture D -> schedule11.canSubmit true although its gate fails;"
+          + " decided on the silviculture code, not the 1-10 one")
+  void sweep_schedule11_submitterAtDraft_canSubmitTrue() throws Exception {
+    // 785: silviculture D, one location missing a Planned Cost. Offered anyway — validity ignored,
+    // exactly as on 1-10 (legacy canUserSubmitReport(true):510-517).
+    mockMvc
+        .perform(sweep(785, 2021))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(TRACK_11 + ".statusCode", is("D")))
+        .andExpect(jsonPath(TRACK_11 + ".requirementsMet", is(false)))
+        .andExpect(jsonPath(TRACK_11 + ".canSubmit", is(true)));
+  }
+
+  @Test
+  @DisplayName(
+      "26.1 AC 7: submitter, silviculture S with 1-10 at D -> 11 not offered, 1-10 offered")
+  void sweep_schedule11_submitterAtSubmitted_canSubmitFalse() throws Exception {
+    // 786's two codes differ, so a flag computed from the wrong track's code shows here.
+    mockMvc
+        .perform(sweep(786, 2021))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(TRACK_11 + ".statusCode", is("S")))
+        .andExpect(jsonPath(TRACK_11 + ".canSubmit", is(false)))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".statusCode", is("D")))
+        .andExpect(jsonPath(TRACK_1_TO_10 + ".canSubmit", is(true)));
+  }
+
+  @Test
+  @DisplayName("26.1 AC 7: ILCR_ADMIN at silviculture D -> schedule11.canSubmit false")
+  void sweep_schedule11_adminAtDraft_canSubmitFalse() throws Exception {
+    mockMvc
+        .perform(sweep(785, 2021).header("X-Mock-Groups", "ILCR_ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(TRACK_11 + ".statusCode", is("D")))
+        .andExpect(jsonPath(TRACK_11 + ".canSubmit", is(false)));
   }
 
   @Test

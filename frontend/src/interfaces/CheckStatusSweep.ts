@@ -98,7 +98,8 @@ export interface TrackCheckResult {
   /**
    * Whether Submit is OFFERED to the caller for this track — decided by the one server component the
    * submit endpoint also applies (`TrackCheckResult.java:18-23`), so the page never computes it.
-   * Absent (never `false`) on Schedule 11 until Epic 26 gives that track its own verdict.
+   * The sweep sends it on BOTH tracks, each decided against that track's own status code. Typed
+   * optional anyway, and read as `=== true`, so a body without it fails closed to "not offered".
    */
   readonly canSubmit?: boolean
 }

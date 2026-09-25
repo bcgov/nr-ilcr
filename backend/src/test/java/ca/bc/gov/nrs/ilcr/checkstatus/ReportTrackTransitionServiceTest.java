@@ -54,6 +54,8 @@ class ReportTrackTransitionServiceTest {
   private static final int YEAR = 2021;
   private static final String USER = "dev-submitter";
   private static final String GUID = "CANONSUBMITTERBBBBCCCCDDDD000001";
+  private static final ScheduleTrack ONE_TO_TEN = ScheduleTrack.SCHEDULES_1_TO_10;
+  private static final ScheduleTrack ELEVEN = ScheduleTrack.SCHEDULE_11;
 
   @Mock private MillContextService millContextService;
   @Mock private CheckStatusSweepService sweepService;
@@ -98,12 +100,16 @@ class ReportTrackTransitionServiceTest {
         .thenReturn(Optional.of(new TrackStatusCodes(code, "D")));
   }
 
+  /**
+   * All eleven 1-10 verdicts, 7A carrying {@code met}. Eleven since Story 26.1, which made submit
+   * require the count as verify and the reversals already did — three stand-ins would now be
+   * refused as a short list, which is exactly the guard's job.
+   */
   private void gate(boolean met) {
     List<ScheduleCheckResult> verdicts =
-        List.of(
-            new ScheduleCheckResult("1", true, Map.of()),
-            new ScheduleCheckResult("7A", met, Map.of()),
-            new ScheduleCheckResult("10", true, Map.of()));
+        List.of("1", "2", "3", "4", "5", "6", "7A", "7B", "8", "9", "10").stream()
+            .map(id -> new ScheduleCheckResult(id, !"7A".equals(id) || met, Map.of()))
+            .toList();
     when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR)).thenReturn(verdicts);
   }
 
@@ -134,7 +140,7 @@ class ReportTrackTransitionServiceTest {
     assigned();
     writesSucceed();
 
-    String key = service.submit(MILL, YEAR, submitter, USER);
+    String key = service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER);
 
     assertThat(key).isEqualTo("sch1-10SubmittedMsg");
     InOrder order = inOrder(millContextService, sweepService, repository);
@@ -180,7 +186,7 @@ class ReportTrackTransitionServiceTest {
     when(millUserXrefRepository.findAssignment(MILL, GUID)).thenReturn(Optional.empty());
     writesSucceed();
 
-    service.submit(MILL, YEAR, submitter, USER);
+    service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER);
 
     verify(repository).updateTrackStatus(MILL, YEAR, "D", "S", null, null, USER);
   }
@@ -203,7 +209,7 @@ class ReportTrackTransitionServiceTest {
     assigned();
     writesSucceed();
 
-    service.submit(MILL, YEAR, real, "IDIR\\JSMITH");
+    service.submit(ONE_TO_TEN, MILL, YEAR, real, "IDIR\\JSMITH");
 
     verify(millUserXrefRepository).findAssignment(MILL, GUID);
     verify(repository).updateTrackStatus(MILL, YEAR, "D", "S", MILL, GUID, "IDIR\\JSMITH");
@@ -220,7 +226,7 @@ class ReportTrackTransitionServiceTest {
     gate(true);
     writesSucceed();
 
-    service.submit(MILL, YEAR, opaque, "someone");
+    service.submit(ONE_TO_TEN, MILL, YEAR, opaque, "someone");
 
     verifyNoInteractions(millUserXrefRepository);
     verify(repository)
@@ -234,7 +240,7 @@ class ReportTrackTransitionServiceTest {
     when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
     gate(false);
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOfSatisfying(
             ReportNotSubmittedException.class,
             ex -> {
@@ -249,7 +255,7 @@ class ReportTrackTransitionServiceTest {
   void notDraft_409_neverRunsTheGate() {
     trackAt("S");
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOfSatisfying(
             ReportTransitionRejectedException.class,
             ex -> {
@@ -260,12 +266,29 @@ class ReportTrackTransitionServiceTest {
   }
 
   @Test
-  @DisplayName("a row with a NULL 1-10 code is a 409, not a 404 — the row exists")
+  @DisplayName(
+      "a row with a NULL 1-10 code is a 409, not a 404 — with legacy's generic text, since the"
+          + " track was never in Draft (26.1 review 1a); nothing checked or written")
   void nullCode_409() {
     trackAt(null);
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
-        .isInstanceOf(ReportTransitionRejectedException.class);
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(sweepService, repository, reportSubmission);
+  }
+
+  @Test
+  @DisplayName("26.1 review 1a: a NULL silviculture code is the same generic 409 on Schedule 11")
+  void schedule11_nullCode_409_genericText() {
+    codes("D", null);
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(sweepService, repository, reportSubmission);
   }
 
   @Test
@@ -273,7 +296,7 @@ class ReportTrackTransitionServiceTest {
   void noStatusRow_scheduleNotFound() {
     when(millContextService.lockTrackStatusCodes(MILL, YEAR)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOf(ScheduleNotFoundException.class);
     verifyNoInteractions(sweepService, repository);
   }
@@ -291,7 +314,7 @@ class ReportTrackTransitionServiceTest {
     when(repository.touchCamps(MILL, YEAR, USER))
         .thenThrow(new DataAccessResourceFailureException("ORA-00060: deadlock detected"));
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOfSatisfying(
             ReportSubmissionException.class,
             ex -> {
@@ -309,7 +332,7 @@ class ReportTrackTransitionServiceTest {
     when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR))
         .thenThrow(new DataAccessResourceFailureException("validation read failed"));
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOfSatisfying(
             ReportSubmissionException.class,
             ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
@@ -325,7 +348,7 @@ class ReportTrackTransitionServiceTest {
     when(millUserXrefRepository.findAssignment(MILL, GUID))
         .thenThrow(new DataAccessResourceFailureException("assignment read failed"));
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOfSatisfying(
             ReportSubmissionException.class,
             ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
@@ -347,7 +370,7 @@ class ReportTrackTransitionServiceTest {
         .thenReturn(1);
     when(repository.advanceCategoryState(MILL, YEAR, "7", "A", USER)).thenReturn(0);
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never()).advanceCategoryState(MILL, YEAR, "8", "A", USER);
   }
@@ -363,8 +386,234 @@ class ReportTrackTransitionServiceTest {
             anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
         .thenReturn(0);
 
-    assertThatThrownBy(() -> service.submit(MILL, YEAR, submitter, USER))
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), any());
+  }
+
+  // --- Schedule 11 (Story 26.1): the same method, the other track --------------------------------
+
+  private void codes(String schedules1To10, String schedule11) {
+    when(millContextService.lockTrackStatusCodes(MILL, YEAR))
+        .thenReturn(Optional.of(new TrackStatusCodes(schedules1To10, schedule11)));
+  }
+
+  private void gate11(List<ScheduleCheckResult> verdicts) {
+    when(sweepService.checkTrack(ELEVEN, MILL, YEAR)).thenReturn(verdicts);
+  }
+
+  private static List<ScheduleCheckResult> verdict11(boolean met) {
+    return List.of(new ScheduleCheckResult("11", met, Map.of()));
+  }
+
+  private void schedule11WritesSucceed() {
+    when(repository.updateSilvicultureTrackStatus(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(1);
+    when(repository.advanceCategoryState(MILL, YEAR, "11", "A", USER)).thenReturn(1);
+  }
+
+  @Test
+  @DisplayName(
+      "26.1 AC 1: lock, Schedule 11 gate, silviculture S, BSR rows, their cost details, category"
+          + " '11' A — in that order, and nothing of 1-10")
+  void schedule11_happyPath_statementOrder() {
+    // 1-10 at S and Schedule 11 at D: the codes differ, so reading the wrong one would refuse.
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(verdict11(true));
+    assigned();
+    schedule11WritesSucceed();
+
+    String key = service.submit(ELEVEN, MILL, YEAR, submitter, USER);
+
+    assertThat(key).isEqualTo("sch11SubmittedMsg");
+    InOrder order = inOrder(millContextService, sweepService, repository);
+    order.verify(millContextService).lockTrackStatusCodes(MILL, YEAR);
+    order.verify(sweepService).checkTrack(ELEVEN, MILL, YEAR);
+    // D1: the LICENSEE pair is written on the Schedule 11 submit, as legacy's shared helper did.
+    order.verify(repository).updateSilvicultureTrackStatus(MILL, YEAR, "D", "S", MILL, GUID, USER);
+    // Status first, stamps second, category last — the only order in which the delivery trigger
+    // writes the 'S' snapshot BASIC_SILVICULTURE_REPORT_S_VW reads. The test schema has no
+    // triggers, so this is the only guard on a re-inversion.
+    order.verify(repository).touchBasicSilvicultureReports(MILL, YEAR, USER);
+    order.verify(repository).touchBasicSilvicultureCostDetails(MILL, YEAR, USER);
+    order.verify(repository).advanceCategoryState(MILL, YEAR, "11", "A", USER);
+    // BR-06: the 1-10 gate, status column, row families and categories are never named.
+    verify(sweepService, never()).checkTrack(ONE_TO_TEN, MILL, YEAR);
+    verify(repository, never())
+        .updateTrackStatus(anyLong(), anyInt(), any(), any(), any(), any(), any());
+    verifyNoMoreInteractions(repository);
+  }
+
+  @Test
+  @DisplayName("26.1 AC 8: the 1-10 submit never names a Schedule 11 statement (the mirror)")
+  void oneToTen_neverTouchesSchedule11() {
+    codes("D", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate(true);
+    assigned();
+    writesSucceed();
+
+    service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER);
+
+    verify(sweepService, never()).checkTrack(ELEVEN, MILL, YEAR);
+    verify(repository, never())
+        .updateSilvicultureTrackStatus(anyLong(), anyInt(), any(), any(), any(), any(), any());
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), any());
+    verify(repository, never()).touchBasicSilvicultureCostDetails(anyLong(), anyInt(), any());
+    verify(repository, never()).advanceCategoryState(anyLong(), anyInt(), eq("11"), any(), any());
+  }
+
+  @Test
+  @DisplayName("26.1 AC 5: Schedule 11 not at Draft -> 409 in Schedule 11's words, before the gate")
+  void schedule11_notDraft_409_neverRunsTheGate() {
+    // 1-10 at D, Schedule 11 at S: a service that read the 1-10 code would proceed.
+    codes("D", "S");
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> {
+              assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+              assertThat(ex.getMessageKey()).isEqualTo("sch11SubmitNotDraftErrorMsg");
+            });
+    verifyNoInteractions(sweepService, repository, millUserXrefRepository);
+  }
+
+  @Test
+  @DisplayName("26.1 AC 6: Submit not offered at the Schedule 11 code -> 409, nothing run")
+  void schedule11_notOffered_409() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(false);
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("sch11SubmitNotDraftErrorMsg"));
+    verifyNoInteractions(sweepService, repository);
+  }
+
+  @Test
+  @DisplayName("26.1 AC 2: Schedule 11 gate fails -> 409 reportNotSubmittedErrorMsg, no write")
+  void schedule11_gateFails_409_writesNothing() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(verdict11(false));
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> {
+              assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+              assertThat(ex.getMessageKey()).isEqualTo("reportNotSubmittedErrorMsg");
+            });
+    verifyNoInteractions(repository, millUserXrefRepository);
+  }
+
+  @Test
+  @DisplayName("26.1 trap 4: an EMPTY Schedule 11 verdict list is refused, not rolled up as met")
+  void schedule11_noVerdict_409() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(List.of());
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOf(ReportNotSubmittedException.class);
+    verifyNoInteractions(repository, millUserXrefRepository);
+  }
+
+  @Test
+  @DisplayName("26.1 trap 4: two Schedule 11 verdicts (a mis-tracked adapter) are refused too")
+  void schedule11_twoVerdicts_409() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(
+        List.of(
+            new ScheduleCheckResult("11", true, Map.of()),
+            new ScheduleCheckResult("10", true, Map.of())));
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOf(ReportNotSubmittedException.class);
+    verifyNoInteractions(repository);
+  }
+
+  @Test
+  @DisplayName("the 1-10 submit also refuses a short verdict list rather than submitting it")
+  void oneToTen_shortVerdictList_409() {
+    codes("D", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    when(sweepService.checkTrack(ONE_TO_TEN, MILL, YEAR))
+        .thenReturn(List.of(new ScheduleCheckResult("1", true, Map.of())));
+
+    assertThatThrownBy(() -> service.submit(ONE_TO_TEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportNotSubmittedErrorMsg"));
+    verifyNoInteractions(repository);
+  }
+
+  @Test
+  @DisplayName("26.1 AC 5: no category '11' row -> 500 reportSubmissionErrorMsg")
+  void schedule11_missingCategoryRow_500() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(verdict11(true));
+    assigned();
+    when(repository.updateSilvicultureTrackStatus(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(1);
+    when(repository.advanceCategoryState(MILL, YEAR, "11", "A", USER)).thenReturn(0);
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOfSatisfying(
+            ReportSubmissionException.class,
+            ex -> {
+              assertThat(ex.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+              assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg");
+            });
+  }
+
+  @Test
+  @DisplayName("26.1 AC 5: a silviculture status UPDATE affecting no row -> 500, nothing stamped")
+  void schedule11_statusRowMoved_500() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(verdict11(true));
+    assigned();
+    when(repository.updateSilvicultureTrackStatus(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(0);
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), any());
+    verify(repository, never()).advanceCategoryState(anyLong(), anyInt(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("26.1 AC 5: a DataAccessException stamping Schedule 11 -> 500, category untouched")
+  void schedule11_persistenceFailure_500() {
+    codes("S", "D");
+    when(reportSubmission.canSubmit(submitter, "D")).thenReturn(true);
+    gate11(verdict11(true));
+    assigned();
+    when(repository.updateSilvicultureTrackStatus(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(1);
+    when(repository.touchBasicSilvicultureCostDetails(MILL, YEAR, USER))
+        .thenThrow(new DataAccessResourceFailureException("ORA-00060: deadlock detected"));
+
+    assertThatThrownBy(() -> service.submit(ELEVEN, MILL, YEAR, submitter, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never()).advanceCategoryState(anyLong(), anyInt(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("there is no default track: a null track is refused before anything is read")
+  void nullTrack_isRefused() {
+    assertThatThrownBy(() -> service.submit(null, MILL, YEAR, submitter, USER))
+        .isInstanceOf(NullPointerException.class);
+    verifyNoInteractions(millContextService, sweepService, repository);
   }
 }
