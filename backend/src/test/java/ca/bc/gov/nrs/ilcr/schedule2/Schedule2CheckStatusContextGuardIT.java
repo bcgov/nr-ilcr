@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 
 /**
  * Acceptance test — check-status mill/year context guards (AD-4). Security OFF (mock ILCR_SUBMITTER
@@ -20,6 +21,13 @@ import org.junit.jupiter.api.Test;
 class Schedule2CheckStatusContextGuardIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2/check-status";
+
+  /**
+   * Since #359 an absent body is ALSO a 400, so it is supplied here: every 400/404/409 below must
+   * be for the context guard, not the missing body.
+   */
+  private static final String BODY = "{\"purchasedLogCostCost\":null}";
+
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final int SEEDED_YEAR = 2021;
 
@@ -27,7 +35,11 @@ class Schedule2CheckStatusContextGuardIT extends AbstractOracleIT {
   @DisplayName("missing millId -> 400 ProblemDetail")
   void missingMillId_returns400() throws Exception {
     mockMvc
-        .perform(post(ENDPOINT).param("year", String.valueOf(SEEDED_YEAR)))
+        .perform(
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("year", String.valueOf(SEEDED_YEAR)))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
   }
@@ -36,7 +48,12 @@ class Schedule2CheckStatusContextGuardIT extends AbstractOracleIT {
   @DisplayName("non-numeric millId -> 400 ProblemDetail")
   void nonNumericMillId_returns400() throws Exception {
     mockMvc
-        .perform(post(ENDPOINT).param("millId", "abc").param("year", String.valueOf(SEEDED_YEAR)))
+        .perform(
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("millId", "abc")
+                .param("year", String.valueOf(SEEDED_YEAR)))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
   }
@@ -46,7 +63,11 @@ class Schedule2CheckStatusContextGuardIT extends AbstractOracleIT {
   void unknownMill_returns404() throws Exception {
     mockMvc
         .perform(
-            post(ENDPOINT).param("millId", "999999").param("year", String.valueOf(SEEDED_YEAR)))
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("millId", "999999")
+                .param("year", String.valueOf(SEEDED_YEAR)))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
   }
@@ -55,7 +76,12 @@ class Schedule2CheckStatusContextGuardIT extends AbstractOracleIT {
   @DisplayName("mill closed (CLS) for year -> 409 verbatim not-active message")
   void millClosedForYear_returns409() throws Exception {
     mockMvc
-        .perform(post(ENDPOINT).param("millId", "516").param("year", String.valueOf(SEEDED_YEAR)))
+        .perform(
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("millId", "516")
+                .param("year", String.valueOf(SEEDED_YEAR)))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(

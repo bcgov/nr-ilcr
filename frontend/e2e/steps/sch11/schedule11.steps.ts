@@ -10,6 +10,8 @@ import {
   BEC_POPULATED_PREFIX,
   CANCEL_DELETE_ANCHOR,
   CHECK_MET_ANCHOR,
+  CHECK_NEEDS_SAVE,
+  ALL_FLAGGED_TEXT,
   CHECK_UNSAVED_FIX_ANCHOR,
   CHECK_UNSAVED_VIOLATION_ANCHOR,
   CHECK_MISSING_ACTUAL_ANCHOR,
@@ -31,7 +33,7 @@ import {
   VALIDATION_ANCHOR,
   millOptionText,
 } from '../../fixtures/sch11/schedule11-test-data';
-import { type Sch11Column } from '../../pages/sch11/schedule11Page';
+import { type Sch11Column, type Sch11RowField } from '../../pages/sch11/schedule11Page';
 import {
   type Sch11Document,
   type Sch11Location,
@@ -392,55 +394,49 @@ When('I click Add', async ({ schedule11Page }) => {
   await schedule11Page.clickAdd();
 });
 
-When('I start editing the Schedule 11 location {string}', async ({ schedule11Page }, marker) => {
-  await schedule11Page.startEdit(marker);
-});
+/** The Gherkin field names for a live row's controls → the page's control. */
+const ROW_TEXT_FIELDS: Record<string, Sch11RowField> = {
+  Location: 'Location',
+  'NAR(ha)': 'NAR(ha)',
+  'Actual Cost': 'Actual Cost ($)',
+  'Planned Cost': 'Planned Cost ($)',
+  Comments: 'Comments',
+};
 
-When('I change the inline {string} to {string}', async ({ schedule11Page }, field, value) => {
-  switch (field) {
-    case 'Location':
-      await schedule11Page.editLocation.fill(value);
-      break;
-    case 'NAR(ha)':
-      await schedule11Page.editNetArea.fill(value);
-      break;
-    case 'Actual Cost':
-      await schedule11Page.editActualCost.fill(value);
-      break;
-    case 'Planned Cost':
-      await schedule11Page.editPlannedCost.fill(value);
-      break;
-    case 'Comments':
-      await schedule11Page.editComments.fill(value);
-      break;
-    case 'Enhanced':
-      await schedule11Page.setEditEnhanced(value as 'Yes' | 'No');
-      break;
-    case 'Biogeo':
-      await schedule11Page.setEditBec(becByToken(value));
-      break;
-    default:
-      throw new Error(`unknown inline field "${field}"`);
-  }
-});
+When(
+  'I change the Schedule 11 location {string} field {string} to {string}',
+  async ({ schedule11Page }, marker, field, value) => {
+    // Every row is a live input (Story 26.2): no Edit mode to enter, and nothing is written until Save.
+    if (field === 'Enhanced') {
+      await schedule11Page.setRowEnhanced(marker, value as 'Yes' | 'No');
+      return;
+    }
+    if (field === 'Biogeo') {
+      await schedule11Page.setRowBec(marker, becByToken(value));
+      return;
+    }
+    const control = ROW_TEXT_FIELDS[field];
+    expect(control, `unknown Schedule 11 row field "${field}"`).toBeTruthy();
+    await schedule11Page.rowField(marker, control).fill(value);
+  },
+);
 
 When(
   'another session changes the Schedule 11 location {string} to actual cost {int}',
   async ({ request, world }, marker, cost: number) => {
-    // GAP-3: mutate the row through the API while the browser holds an OPEN editor. `startEdit` already
-    // captured the row's revisionCount into React state, so this write bumps the stored token and the
-    // browser's pending save becomes stale — exactly the two-user conflict, without needing a second
-    // browser context.
+    // GAP-3: mutate the row through the API while the browser holds the row as it was served. The page
+    // sends the revision each row was edited AGAINST, so this write makes the browser's pending save
+    // stale — exactly the two-user conflict, without needing a second browser context.
     await editLocationAsAnotherSession(request, claimedKey(world), marker, { actualCost: cost });
   },
 );
 
-When('I save the inline edit', async ({ schedule11Page }) => {
-  await schedule11Page.saveEdit();
+When('I save Schedule 11', async ({ schedule11Page }) => {
+  await schedule11Page.save();
 });
 
-When('I cancel the inline edit', async ({ schedule11Page }) => {
-  await schedule11Page.cancelEdit();
+When('I save Schedule 11 from the bottom of the page', async ({ schedule11Page }) => {
+  await schedule11Page.saveFromBottom();
 });
 
 When('I delete the Schedule 11 location {string}', async ({ schedule11Page }, marker) => {
@@ -543,19 +539,48 @@ Then('the Add New Location panel is not rendered', async ({ schedule11Page }) =>
 Then('the Schedule 11 row actions are not rendered', async ({ schedule11Page }) => {
   await expect(schedule11Page.actionsHeader).toHaveCount(0);
   await expect(
-    schedule11Page.table.getByRole('button', { name: 'Edit', exact: true }),
-  ).toHaveCount(0);
-  await expect(
     schedule11Page.table.getByRole('button', { name: 'Delete', exact: true }),
   ).toHaveCount(0);
+  // Read-only rows are text, not controls.
+  await expect(schedule11Page.table.getByRole('textbox')).toHaveCount(0);
 });
 
-Then('the Check Status button is disabled', async ({ schedule11Page }) => {
-  await expect(schedule11Page.checkStatusButton).toBeDisabled();
+Then('both Check Status buttons are disabled', async ({ schedule11Page }) => {
+  await expect(schedule11Page.checkStatusButtons).toHaveCount(2);
+  for (const button of await schedule11Page.checkStatusButtons.all()) {
+    await expect(button).toBeDisabled();
+  }
 });
 
-Then('the Check Status button is enabled', async ({ schedule11Page }) => {
-  await expect(schedule11Page.checkStatusButton).toBeEnabled();
+Then('both Check Status buttons are enabled', async ({ schedule11Page }) => {
+  await expect(schedule11Page.checkStatusButtons).toHaveCount(2);
+  for (const button of await schedule11Page.checkStatusButtons.all()) {
+    await expect(button).toBeEnabled();
+  }
+});
+
+Then(
+  'both Check Status buttons are disabled until the change is saved',
+  async ({ schedule11Page }) => {
+    // Story 26.2 D7(a): the check reads what is STORED, so it waits for the Save — and says why, since a
+    // disabled button cannot take focus.
+    await expect(schedule11Page.checkStatusButtons).toHaveCount(2);
+    for (const button of await schedule11Page.checkStatusButtons.all()) {
+      await expect(button).toBeDisabled();
+      await expect(button).toHaveAccessibleDescription(CHECK_NEEDS_SAVE);
+    }
+  },
+);
+
+Then('both Save buttons are disabled', async ({ schedule11Page }) => {
+  await expect(schedule11Page.saveButtons).toHaveCount(2);
+  for (const button of await schedule11Page.saveButtons.all()) {
+    await expect(button).toBeDisabled();
+  }
+});
+
+Then('the Schedule 11 table shows every location marked for deletion', async ({ schedule11Page }) => {
+  await expect(schedule11Page.emptyPlaceholder(ALL_FLAGGED_TEXT)).toBeVisible();
 });
 
 Then('the Schedule 11 table is empty', async ({ schedule11Page }) => {
@@ -677,7 +702,7 @@ Then(
 Then(
   'no Schedule 11 location mutation should have been sent',
   async ({ page, schedule11MutationSpy }) => {
-    // The proof that a rejection is client-side: the Add/inline-edit gate returns BEFORE the request,
+    // The proof that a rejection is client-side: the Add/Save gate returns BEFORE the request,
     // so the mutating endpoint is never called. Asserting only the inline error would also pass if a
     // request HAD been sent and rejected server-side, which is a materially different behaviour.
     //
@@ -686,7 +711,7 @@ Then(
     await settleBeforeReadingSpy(page);
     expect(
       schedule11MutationSpy.mutations,
-      'a rejected entry must fire NO POST/PUT/DELETE on /schedule11/locations',
+      'a rejected entry, or a Delete that only flags, must fire NO POST/PUT on /schedule11/locations',
     ).toBe(0);
   },
 );

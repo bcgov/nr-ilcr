@@ -1,11 +1,16 @@
 package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
 
 /**
@@ -37,31 +42,85 @@ class TrackTransitionMessageBundleTest {
     return source;
   }
 
-  @ParameterizedTest(name = "{0}")
-  @EnumSource(TrackTransition.class)
-  @DisplayName("every success key carries the legacy text")
-  void successKeysResolve(TrackTransition transition) {
-    assertResolves(transition.successKey());
+  /**
+   * Every (transition, track) pair that carries message keys. Driven by {@link
+   * TrackTransition#isDefinedOn}, so a later story defining a Schedule 11 pair without adding its
+   * bundle entries turns this class red rather than shipping the key as its own text.
+   */
+  static Stream<Arguments> definedPairs() {
+    return Arrays.stream(TrackTransition.values())
+        .flatMap(
+            transition ->
+                Arrays.stream(ScheduleTrack.values())
+                    .filter(transition::isDefinedOn)
+                    .map(track -> Arguments.of(transition, track)));
   }
 
-  @ParameterizedTest(name = "{0}")
-  @EnumSource(TrackTransition.class)
+  /** The complement of {@link #definedPairs()}: the pairs whose accessors must throw. */
+  static Stream<Arguments> undefinedPairs() {
+    return Arrays.stream(TrackTransition.values())
+        .flatMap(
+            transition ->
+                Arrays.stream(ScheduleTrack.values())
+                    .filter(track -> !transition.isDefinedOn(track))
+                    .map(track -> Arguments.of(transition, track)));
+  }
+
+  @ParameterizedTest(name = "{0} on {1}")
+  @MethodSource("definedPairs")
+  @DisplayName("every success key carries the legacy text")
+  void successKeysResolve(TrackTransition transition, ScheduleTrack track) {
+    assertResolves(transition.successKey(track));
+  }
+
+  @ParameterizedTest(name = "{0} on {1}")
+  @MethodSource("definedPairs")
   @DisplayName("every rejection key carries its text, including the one no endpoint reaches")
-  void rejectedKeysResolve(TrackTransition transition) {
+  void rejectedKeysResolve(TrackTransition transition, ScheduleTrack track) {
     // verifyNotSubmittedErrorMsg is declared but unreached — Story 17.1 ruled VERIFY back onto
     // legacy's generic message. It is asserted anyway: the key is live the moment that ruling is
     // revisited, and an unreachable key is exactly the one nothing else would notice going missing.
-    assertResolves(transition.rejectedKey());
+    assertResolves(transition.rejectedKey(track));
   }
 
-  @ParameterizedTest(name = "{0}")
-  @EnumSource(TrackTransition.class)
+  @ParameterizedTest(name = "{0} on {1}")
+  @MethodSource("definedPairs")
   @DisplayName("every validation-gate key carries its text")
-  void gateFailedKeysResolve(TrackTransition transition) {
-    assertResolves(transition.gateFailedKey());
+  void gateFailedKeysResolve(TrackTransition transition, ScheduleTrack track) {
+    assertResolves(transition.gateFailedKey(track));
   }
 
-  @org.junit.jupiter.api.Test
+  @Test
+  @DisplayName("the defined pairs are exactly the four 1-10 rows plus Submit on Schedule 11")
+  void definedPairsAreTheShippedOnes() {
+    assertThat(definedPairs().map(a -> a.get()[0] + "/" + a.get()[1]))
+        .containsExactlyInAnyOrder(
+            "SUBMIT/SCHEDULES_1_TO_10",
+            "VERIFY/SCHEDULES_1_TO_10",
+            "SET_TO_DRAFT/SCHEDULES_1_TO_10",
+            "SET_TO_SUBMIT/SCHEDULES_1_TO_10",
+            "SUBMIT/SCHEDULE_11");
+  }
+
+  @ParameterizedTest(name = "{0} on {1}")
+  @MethodSource("undefinedPairs")
+  @DisplayName("every undefined pair throws rather than falling back to another track's text")
+  void undefinedPairsThrow(TrackTransition transition, ScheduleTrack track) {
+    assertThatThrownBy(() -> transition.successKey(track))
+        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> transition.rejectedKey(track))
+        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> transition.gateFailedKey(track))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  @DisplayName("the Schedule 11 confirm prompt the page renders is in the bundle")
+  void schedule11ConfirmResolves() {
+    assertResolves("confirmSubmitSch11Msg");
+  }
+
+  @Test
   @DisplayName("the generic fallback the refusals share also resolves")
   void genericFallbackResolves() {
     assertResolves(ReportTransitionRejectedException.GENERIC_KEY);

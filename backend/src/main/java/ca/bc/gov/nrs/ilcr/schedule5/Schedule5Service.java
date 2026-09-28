@@ -18,6 +18,8 @@ import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryEntry;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest.CampEntry;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
@@ -918,27 +920,65 @@ public class Schedule5Service {
    * <p>The service emits bundle KEYS with null text; {@link Schedule5CheckStatusResolver} resolves
    * and composes (AD-8).
    *
+   * <p>{@code request} carries the camp panel currently ON SCREEN (#476) — a sanctioned divergence
+   * from the legacy Schedule 5 screen, which judges the last SAVED record unlike legacy's other
+   * schedules; the business area ruled in September 2026 that Schedule 5 match the others. It
+   * OVERLAYS the stored camps; see {@link Schedule5CheckRequest} for why it carries one camp rather
+   * than all of them. The itemized sub-list rows are never on this screen and are read from the
+   * database on both paths.
+   *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
+   * @param request the camp panel on screen, if any
    * @return the MET/ISSUES result with key-only messages for the controller to resolve
    */
   @Transactional(readOnly = true)
-  public Schedule5CheckStatusResponse checkStatus(long millId, int year) {
-    List<CampRow> campRows = repository.findCamps(millId, year);
-    Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
+  public Schedule5CheckStatusResponse checkStatus(
+      long millId, int year, Schedule5CheckRequest request) {
+    return evaluate(overlay(storedCandidates(millId, year), request));
+  }
 
+  /**
+   * Is the SAVED Schedule 5 complete? The stored-data counterpart of {@link #checkStatus}, for
+   * report-level callers (Story 15.0/15.1) that have no screen to describe.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * {@code POST /schedule5/check-status} answers "is what I'm LOOKING AT complete?"; this answers
+   * "is what is SAVED complete?". They can legitimately disagree — legacy's own consolidated Check
+   * Status page read stored data while its per-schedule button read the screen. Named apart from
+   * {@link #checkStatus} on purpose: with both called {@code checkStatus} a future caller picks the
+   * wrong one by autocomplete and the failure is SILENT, either a sweep that reads a screen or an
+   * endpoint that ignores one. Schedule 6 names them apart for the same reason.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the MET/ISSUES result with key-only messages for the resolver to compose
+   */
+  @Transactional(readOnly = true)
+  public Schedule5CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedCandidates(millId, year));
+  }
+
+  /**
+   * The verdict, source-agnostic: identical for an overlaid camp and a stored one, which is the
+   * whole point of routing both through {@link CheckCandidate}. Neither {@link #checkStatus} nor
+   * {@link #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the camps to judge, already in their contractual order
+   * @return the MET banner alone, or the per-camp results
+   */
+  private Schedule5CheckStatusResponse evaluate(List<CheckCandidate> candidates) {
     List<CampCheckResult> camps = new ArrayList<>();
     boolean schedulePasses = true;
-    for (CampRow row : campRows) {
-      CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
+    for (CheckCandidate candidate : candidates) {
       List<CampCheckMessage> issues =
-          evaluateCamp(row, details.otherCampRows(), details.otherAccessRows());
+          evaluateCamp(candidate.row(), candidate.otherCampRows(), candidate.otherAccessRows());
       boolean met = issues.isEmpty();
       schedulePasses = schedulePasses && met;
       camps.add(
           new CampCheckResult(
-              row.campId(),
-              row.campName(),
+              candidate.campId(),
+              candidate.row().campName(),
               met,
               met ? List.of(new CampCheckMessage(MSG_CAMP_MET, null, null)) : issues));
     }
@@ -948,6 +988,117 @@ public class Schedule5Service {
           CheckStatusOutcome.MET, List.of(new MessageInfo(MSG_SCHEDULE_MET, null)), List.of());
     }
     return new Schedule5CheckStatusResponse(CheckStatusOutcome.ISSUES, List.of(), camps);
+  }
+
+  /**
+   * The stored source: one candidate per camp row, in {@code CAMP_REPORT_ID} order, each carrying
+   * its own itemized sub-list rows.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the stored camps as candidates
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    // Preserve the original check-status read order. Under Oracle READ COMMITTED each statement can
+    // see a newer commit, so reading details first could pair a newly visible camp with an older,
+    // incomplete detail snapshot and change the stored-path verdict during a concurrent save.
+    List<CampRow> campRows = repository.findCamps(millId, year);
+    Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (CampRow row : campRows) {
+      CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
+      candidates.add(
+          new CheckCandidate(
+              row.campId(), row, details.otherCampRows(), details.otherAccessRows()));
+    }
+    return candidates;
+  }
+
+  /**
+   * Write the on-screen panel over the stored camps — the whole of what the payload path adds.
+   *
+   * <p>Three cases, and the third is the one that is easy to get wrong:
+   *
+   * <ul>
+   *   <li>no panel open ({@code request} or its {@code camp} is null) → the stored camps,
+   *       unchanged;
+   *   <li>the panel holds a STORED camp → that candidate's descriptors are replaced in place, so it
+   *       keeps its position and its sub-list rows (which the screen does not carry and cannot have
+   *       changed);
+   *   <li>the panel holds an UNSAVED camp — a new one, a copy, or one another session deleted — →
+   *       APPENDED as an additional candidate. It is on screen, so legacy evaluated it, and
+   *       omitting it would report "requirements met" over a camp with four missing fields. Its
+   *       sub-lists are necessarily empty: an unsaved camp owns no rows yet, and both sub-list
+   *       conditions pass vacuously on an empty list, exactly as they do for a saved camp with no
+   *       itemized rows.
+   * </ul>
+   *
+   * <p>The descriptors are taken from the payload VERBATIM, nulls included. The check is a null
+   * test, so coercing a missing value to zero here would turn every missing descriptor into a pass.
+   *
+   * @param stored the stored candidates, in order
+   * @param request the body, possibly null
+   * @return the candidates to judge
+   */
+  private static List<CheckCandidate> overlay(
+      List<CheckCandidate> stored, Schedule5CheckRequest request) {
+    CampEntry entry = request == null ? null : request.camp();
+    if (entry == null) {
+      return stored;
+    }
+    List<CheckCandidate> result = new ArrayList<>(stored);
+    for (int i = 0; i < result.size(); i++) {
+      CheckCandidate candidate = result.get(i);
+      if (entry.campId() != null && entry.campId() == candidate.row().campId()) {
+        result.set(i, candidate.withScreenValues(entry));
+        return result;
+      }
+    }
+    // campId NULL, not a synthetic 0: this camp has no CAMP_REPORT_ID yet, and 0 would read as a
+    // real persisted id to a client correlating the verdict back to a row (PR #504 review).
+    result.add(new CheckCandidate(null, screenRow(entry), new ArrayList<>(), new ArrayList<>()));
+    return result;
+  }
+
+  /**
+   * One camp to judge, from either source. Carries the row shape {@link #evaluateCamp} already
+   * takes, so the rule itself needs no variant and no re-statement (AD-5).
+   *
+   * @param row the camp's checked descriptors
+   * @param otherCampRows the itemized Other Camp expense rows, always from the database
+   * @param otherAccessRows the itemized Other Access expense rows, always from the database
+   */
+  private record CheckCandidate(
+      Integer campId, CampRow row, List<DetailRow> otherCampRows, List<DetailRow> otherAccessRows) {
+
+    /**
+     * The same camp with the screen's descriptors written over the stored ones — keeping its stored
+     * {@code campId}, because overlaying a panel does not make the camp unsaved.
+     */
+    CheckCandidate withScreenValues(CampEntry entry) {
+      return new CheckCandidate(campId, screenRow(entry), otherCampRows, otherAccessRows);
+    }
+  }
+
+  /**
+   * A {@link CampRow} carrying the screen's four checked descriptors. The fields the check never
+   * reads — {@code campId}, {@code isolatedCampInd}, {@code comments}, {@code revisionCount} — are
+   * left null/zero rather than sourced, because reading them would imply this row is usable for
+   * something other than the verdict. It is not: it reaches no write path and is never served.
+   */
+  private static CampRow screenRow(CampEntry entry) {
+    return new CampRow(
+        // Unused: the reported id travels on CheckCandidate, and evaluateCamp reads only the four
+        // descriptors below. CampRow.campId is a primitive int, which is the whole reason the
+        // nullable id cannot live here.
+        0,
+        entry.campName(),
+        entry.roadDistanceToOperatingArea(),
+        entry.sizeOfCamp(),
+        entry.associatedCampVolume(),
+        null,
+        null,
+        0);
   }
 
   /**

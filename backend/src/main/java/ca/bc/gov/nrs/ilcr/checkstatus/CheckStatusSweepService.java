@@ -96,17 +96,19 @@ public class CheckStatusSweepService {
     this.millContextService = millContextService;
     this.checks =
         List.of(
+            // Schedules 1-3 (#359), like 5 and 6 below: the stored-data path. Their endpoints judge
+            // the posted screen instead, so this sweep is each checkStatusStored's only caller.
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_1,
-                schedule1Service::checkSchedule1Status,
+                schedule1Service::checkStatusStored,
                 Schedule1CheckStatusResponse::requirementsMet),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_2,
-                schedule2::checkStatus,
+                schedule2::checkStatusStored,
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_3,
-                schedule3Service::checkSchedule3Status,
+                schedule3Service::checkStatusStored,
                 Schedule3CheckStatusResponse::requirementsMet),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_4,
@@ -114,7 +116,7 @@ public class CheckStatusSweepService {
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_5,
-                schedule5::checkStatus,
+                schedule5::checkStatusStored,
                 response -> outcomeMet(response.outcome())),
             // The stored-data path: Schedule 6's endpoint validates the posted screen instead, so
             // this sweep is checkStatusStored's only caller.

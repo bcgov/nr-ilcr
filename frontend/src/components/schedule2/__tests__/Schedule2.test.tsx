@@ -565,6 +565,35 @@ describe('Schedule2 page', () => {
     ).toBeInTheDocument()
   })
 
+  test.each(detailLessFailures)(
+    'a Save failure carrying no detail falls back to the generic Save message and keeps the entries — %s (AC3, #332)',
+    async (_shape, respond) => {
+      // The 4xx test above proves the verbatim half of `extractDetail(err) || fallback`; this is the
+      // other half, run over the same four shapes as load/delete (#298) so the blank-detail shape
+      // guards `save` against a `??` swap too.
+      server.use(
+        http.get(URL, () => HttpResponse.json(schedule2Doc)),
+        http.put(URL, respond),
+      )
+      render(<Schedule2 />)
+      const user = userEvent.setup()
+
+      const cost = await screen.findByLabelText('Purchased Log Cost cost')
+      await user.clear(cost)
+      await user.type(cost, '61000')
+      await user.click(actionBarButtons(/^save$/i, 2)[0]!)
+
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          { kind: 'error', title: 'Action failed', subtitle: 'Schedule could not be saved.' },
+        ]),
+      )
+      // The typed value survives for a retry, and the in-flight lock released on the error path.
+      expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('61,000')
+      await waitFor(() => actionBarButtons(/^save$/i, 2).forEach((b) => expect(b).toBeEnabled()))
+    },
+  )
+
   test('a never-saved Schedule 2 disables Delete and leaves Save / Check Status usable (defect #292)', async () => {
     // The served body of a mill/year that has never had a Schedule 2 saved: 200, EDITABLE, every
     // figure blank, and NO `revisionCount` key. There is nothing to delete, so Delete must be
@@ -979,6 +1008,34 @@ describe('Schedule2 page', () => {
       await screen.findByText('Purchased/Private Log Costs - Cost: Value Required'),
     ).toBeInTheDocument()
   })
+
+  test.each(detailLessFailures)(
+    'a Check Status failure carrying no detail falls back to the generic check message — %s (AC5, #332)',
+    async (_shape, respond) => {
+      // `checkStatus` goes through the same `useScheduleBanners.run` as save/delete, so the
+      // `fallback: 'Unable to check status.'` arm is asserted over the same four shapes.
+      server.use(
+        http.get(URL, () => HttpResponse.json(schedule2Doc)),
+        http.post(CHECK_URL, respond),
+      )
+      render(<Schedule2 />)
+      const user = userEvent.setup()
+
+      await screen.findByLabelText('Purchased Log Cost cost')
+      await user.click(actionBarButtons(/check status/i, 2)[0]!)
+
+      // The whole set: no status banner beside the error, and severity carried by kind + title.
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          { kind: 'error', title: 'Action failed', subtitle: 'Unable to check status.' },
+        ]),
+      )
+      // The in-flight lock released on the error path, so the check can be retried.
+      await waitFor(() =>
+        actionBarButtons(/check status/i, 2).forEach((b) => expect(b).toBeEnabled()),
+      )
+    },
+  )
 
   test('409 mill-closed shows verbatim detail under its own title, form suppressed', async () => {
     const detail =
@@ -1636,3 +1693,144 @@ const StaleRaceHarness = () => {
     </>
   )
 }
+
+/**
+ * The screen-aware check (#359): legacy's Check Status was a full postback that judged the SCREEN,
+ * so the request must carry the on-screen item-25 cost. These cases pin the two halves that can
+ * each fail silently — the body actually CARRIES the keystroke state (blank as null, never 0), and a
+ * verdict never outlives the screen it described.
+ */
+describe('Schedule2 Check Status judges the screen (#359)', () => {
+  /** Let pending microtasks and the MSW response settle. */
+  const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 50))
+  const MET_TEXT = 'All requirements for this schedule have been met'
+  const metResponse = () => ({
+    outcome: 'MET',
+    messages: [{ key: 'scheduleRequirementsMetMsg', text: MET_TEXT }],
+  })
+  const checkButton = () => actionBarButtons(/check status/i, 2)[0]!
+  const costInput = () => screen.getByLabelText('Purchased Log Cost cost')
+
+  /** Capture every check-status request body, whatever it is, including its nulls. */
+  const captureCheckBodies = () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule2Doc)),
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    return bodies
+  }
+
+  test('the request carries the cost as typed, not as stored', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Purchased Log Cost cost'))
+    await user.type(costInput(), '40000')
+    // No blur: the keystroke state is what legacy's postback submitted.
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({ purchasedLogCostCost: 40000 })
+  })
+
+  test('the stored cost is sent untouched when nothing was edited', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({ purchasedLogCostCost: 50000 })
+  })
+
+  /**
+   * The false-GREEN guard. The server's check is a pure NULL test — a stored `0` passes — so a
+   * `?? 0` anywhere on the send path would turn a cleared cost into a pass.
+   */
+  test('a CLEARED cost is sent as null, never coerced to 0', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Purchased Log Cost cost'))
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({ purchasedLogCostCost: null })
+  })
+
+  test('invalid text blocks the check with the Save gate, and NO request is sent', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Purchased Log Cost cost'))
+    await user.type(costInput(), '12x')
+    await user.click(checkButton())
+
+    expect(
+      await screen.findByText('Please correct the highlighted fields before checking status.'),
+    ).toBeInTheDocument()
+    expect(costInput()).toHaveAttribute('aria-invalid', 'true')
+    await flushAsync()
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('editing the checked cost clears the shown verdict', async () => {
+    captureCheckBodies()
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    await user.click(checkButton())
+    expect(await screen.findByText(MET_TEXT)).toBeVisible()
+
+    await user.type(costInput(), '1')
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('editing an UNCHECKED field leaves the verdict alone', async () => {
+    captureCheckBodies()
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    await user.click(checkButton())
+    expect(await screen.findByText(MET_TEXT)).toBeVisible()
+
+    await user.type(screen.getByLabelText('Less Log Sales volume'), '1')
+    expect(screen.getByText(MET_TEXT)).toBeVisible()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule2Doc)),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    await user.click(checkButton())
+    await waitFor(() => expect(checkButton()).toBeDisabled())
+    await user.clear(costInput())
+
+    releaseCheck()
+    await flushAsync()
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+})

@@ -357,7 +357,7 @@ const SubPage: FC<SubPageProps> = ({
       )}
 
       <TableContainer title={def.label} className="schedule-4__grid schedule-4__subpage-table">
-        <Table aria-label={`${def.label} rows`}>
+        <Table>
           <TableHead>
             <TableRow>
               {sortHeader('description', 'Description')}

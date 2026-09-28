@@ -19,8 +19,9 @@ import java.util.List;
  * the legacy button rule {@code UserSessionMB.canUserSubmitReport():502-509}: holds the submit
  * action AND the track is at Draft, validity ignored (the click reveals a failing gate, exactly as
  * legacy). It is decided by one server component ({@code security.ReportSubmission}) that the
- * submit endpoint also applies, so the page never computes it. Null — and therefore absent from the
- * JSON — on the Schedule 11 track until Epic 26 adds that track's rule.
+ * submit endpoint also applies, so the page never computes it. The sweep endpoint decides it for
+ * both tracks, each against its own status code; it is null only on a result the sweep service
+ * built and the endpoint has not yet decided.
  *
  * @param statusCode the track's persisted status code; null when none
  * @param requirementsMet true iff EVERY schedule on the track is met — the gate Story 15.3 re-runs

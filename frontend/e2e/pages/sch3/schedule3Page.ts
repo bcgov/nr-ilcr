@@ -25,9 +25,9 @@ import {
  * PLAIN TEXT cells, so they are read positionally within their row rather than by id — see `lineCells`.
  *
  * The two tables are addressed by their accessible name. The cost table's `TableContainer` carries no
- * title, so its `aria-label` ("Administration Costs") is the name; the overhead table's container title
- * and `aria-label` are the SAME string, so it resolves either way (the app-wide
- * title-overrides-aria-label defect, bcgov/nr-ilcr#321, cannot bite here).
+ * title, so its `aria-label` ("Administration Costs") is the name; the overhead table is named by its
+ * container title, which Carbon wires to the table through `aria-labelledby` (its redundant
+ * `aria-label` — the app-wide title-overrides-aria-label defect, bcgov/nr-ilcr#321 — was removed).
  */
 export class Schedule3Page {
   constructor(private readonly page: Page) {}

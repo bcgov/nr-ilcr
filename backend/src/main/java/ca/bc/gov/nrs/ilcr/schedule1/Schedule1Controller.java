@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.api.Schedule1Api;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
@@ -105,8 +106,9 @@ public class Schedule1Controller implements Schedule1Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule1CheckStatusResponse> checkStatus(
-      long millId, int year, Authentication authentication) {
+      long millId, int year, Schedule1CheckRequest request, Authentication authentication) {
+    // Read-only (AD-5). The body carries the screen (#359); the service judges it.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(schedule1Service.checkSchedule1Status(millId, year));
+    return ResponseEntity.ok(schedule1Service.checkStatus(millId, year, request));
   }
 }

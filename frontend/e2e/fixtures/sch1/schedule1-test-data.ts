@@ -287,7 +287,9 @@ export const MSG_CHECK_STATUS_MET = 'All requirements for this schedule have bee
 
 /**
  * Read-only Check Status anchors (S14–S16), discovered 2026-07-30 against the seeded delivery DB via
- * `POST /api/v1/schedule1/check-status?millId=&year=`. Each is a stable, editable Draft that NO
+ * `POST /api/v1/schedule1/check-status?millId=&year=`. Since #359 that endpoint REQUIRES a JSON body —
+ * the on-screen `{lineItems, otherCostsVolume}` (`Schedule1CheckRequest`); a bodiless POST is a 400 — so
+ * re-probing by hand means posting the anchor's stored values as that body. Each is a stable, editable Draft that NO
  * scenario mutates — Check Status is a POST that changes nothing, so these need no restore/cleanup and
  * stay parallel-safe. Mill option text = `${millNumber} - ${millName}` (GET /api/v1/mills). The exact
  * check-status signature each yields is noted so a re-extract that shifts the data fails a re-ground,

@@ -187,4 +187,116 @@ class CheckStatusSubmitAuthorizationIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.schedules1To10.canSubmit", is(true)));
   }
+
+  // --- Schedule 11 submit (Story 26.1 AC 6): the same action, the same Submit-specific scope
+  // ------
+
+  private static final String SCHEDULE_11_ENDPOINT = "/api/v1/check-status/schedule11/submit";
+
+  /**
+   * R__57's silviculture-Draft mill whose gate fails: a request that got through writes nothing.
+   */
+  private static final long SCHEDULE_11_DRAFT_ANCHOR = 785L;
+
+  private static final String SCHEDULE_11_NOT_DRAFT =
+      "Schedule 11 is no longer in Draft and cannot be submitted.";
+
+  private static MockHttpServletRequestBuilder submitSchedule11(long mill) {
+    return post(SCHEDULE_11_ENDPOINT).param("millId", String.valueOf(mill)).param("year", "2021");
+  }
+
+  private String silvicultureStatusOf(long mill) {
+    return jdbc.queryForObject(
+        "SELECT MILL_SILVICULTUR_STATUS_CODE || '/' || REVISION_COUNT || '/' || UPDATE_USERID"
+            + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = 2021",
+        String.class,
+        mill);
+  }
+
+  @Test
+  @DisplayName("26.1: ADMIN-only caller -> 403 on the Schedule 11 submit, nothing written")
+  void schedule11_admin_returns403_writesNothing() throws Exception {
+    String before = silvicultureStatusOf(SCHEDULE_11_DRAFT_ANCHOR);
+
+    mockMvc
+        .perform(submitSchedule11(SCHEDULE_11_DRAFT_ANCHOR).with(admin()))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+
+    assertThat(silvicultureStatusOf(SCHEDULE_11_DRAFT_ANCHOR)).isEqualTo(before).startsWith("D/0/");
+  }
+
+  @Test
+  @DisplayName("26.1: ILCR_SUBMITTER not associated to the mill -> 403 on the Schedule 11 submit")
+  void schedule11_unassociatedSubmitter_returns403() throws Exception {
+    String before = silvicultureStatusOf(SCHEDULE_11_DRAFT_ANCHOR);
+
+    mockMvc
+        .perform(submitSchedule11(SCHEDULE_11_DRAFT_ANCHOR).with(unassociatedSubmitter()))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+
+    assertThat(silvicultureStatusOf(SCHEDULE_11_DRAFT_ANCHOR)).isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("26.1: dual-role caller without a submitter assignment -> 403 on Schedule 11 too")
+  void schedule11_unassociatedDualRole_returns403() throws Exception {
+    String before = silvicultureStatusOf(SCHEDULE_11_DRAFT_ANCHOR);
+
+    mockMvc
+        .perform(
+            submitSchedule11(SCHEDULE_11_DRAFT_ANCHOR)
+                .with(dualRole("UNASSOCIATEDSUBMITTERXXXX0000001")))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+
+    assertThat(silvicultureStatusOf(SCHEDULE_11_DRAFT_ANCHOR)).isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName(
+      "26.1: the associated submitter and dual-role caller both REACH the Schedule 11 transition"
+          + " (786 is already S -> its own 409, not a 403)")
+  void schedule11_associatedCallers_reachTheTransition() throws Exception {
+    mockMvc
+        .perform(submitSchedule11(786).with(canonicalSubmitter()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is(SCHEDULE_11_NOT_DRAFT)));
+    mockMvc
+        .perform(submitSchedule11(786).with(dualRole(CANONICAL_SUBMITTER_GUID)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is(SCHEDULE_11_NOT_DRAFT)));
+  }
+
+  @Test
+  @DisplayName(
+      "26.1 AC 7: schedule11.canSubmit follows the same scope — offered to the assigned dual-role"
+          + " caller, not to the unassigned one, never to ADMIN alone")
+  void schedule11_canSubmitFollowsTheSubmitScope() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/check-status")
+                .param("millId", String.valueOf(SCHEDULE_11_DRAFT_ANCHOR))
+                .param("year", "2021")
+                .with(dualRole(CANONICAL_SUBMITTER_GUID)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.schedule11.canSubmit", is(true)));
+    mockMvc
+        .perform(
+            get("/api/v1/check-status")
+                .param("millId", String.valueOf(SCHEDULE_11_DRAFT_ANCHOR))
+                .param("year", "2021")
+                .with(dualRole("UNASSOCIATEDSUBMITTERXXXX0000001")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.schedule11.canSubmit", is(false)));
+    mockMvc
+        .perform(
+            get("/api/v1/check-status")
+                .param("millId", String.valueOf(SCHEDULE_11_DRAFT_ANCHOR))
+                .param("year", "2021")
+                .with(admin()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.schedule11.canSubmit", is(false)));
+  }
 }

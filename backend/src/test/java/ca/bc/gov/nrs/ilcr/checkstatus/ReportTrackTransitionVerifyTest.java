@@ -165,7 +165,8 @@ class ReportTrackTransitionVerifyTest {
     givenTrackAt("V");
     givenGatePasses();
 
-    // TrackTransition.VERIFY.rejectedKey() is "verifyNotSubmittedErrorMsg" — 15.4's ruled
+    // TrackTransition.VERIFY.rejectedKey(SCHEDULES_1_TO_10) is "verifyNotSubmittedErrorMsg" —
+    // 15.4's ruled
     // DEPARTURE from legacy, which belongs to submit. Verify answers what legacy answered.
     assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
         .isInstanceOfSatisfying(

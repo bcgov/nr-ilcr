@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { getDefaultNormalizer } from '@testing-library/react'
 import {
+  act,
   declaredRole,
   fireEvent,
   render,
@@ -22,7 +23,9 @@ import CheckStatus, {
   CONFIRM_SET_TO_DRAFT_1_TO_10,
   CONFIRM_SET_TO_SUBMIT_1_TO_10,
   CONFIRM_SUBMIT_1_TO_10,
+  CONFIRM_SUBMIT_11,
   HINT_NOT_ADMIN,
+  HINT_NOT_ASSIGNED,
   HINT_NOT_DRAFT,
   HINT_NOT_DRAFT_11,
   HINT_NOT_SUBMITTED,
@@ -31,6 +34,7 @@ import CheckStatus, {
   HINT_NOT_WIRED,
   SET_TO_DRAFT_FAILED,
   SET_TO_SUBMIT_FAILED,
+  SUBMIT_11_FAILED,
   SUBMIT_FAILED,
   VERIFY_FAILED,
 } from '../index'
@@ -42,6 +46,8 @@ import {
   SCH1_WARNING_TEXT,
   SCH11_CHECKED_TEXT,
   SCH11_ERROR_TEXT,
+  SCH11_NOT_DRAFT_TEXT,
+  SCH11_SUBMITTED_TEXT,
   SCH4_EMPTY_LANDING_MET_TEXT,
   SCH5_BLANK_NAME_TEXT,
   SCH5_MET_CAMP_TEXT,
@@ -194,7 +200,11 @@ describe('Check Status page (Story 15.2)', () => {
         const params = new URL(request.url).searchParams
         expect(params.get('millId')).toBe('13050')
         expect(params.get('year')).toBe('2017')
-        return HttpResponse.json(sweep({ statusCode11: 'D', canSubmit1To10: true }))
+        // canSubmit11 since Story 26.1 (AC 7): Schedule 11's Submit reads the server's own verdict,
+        // as 1–10's always has; before it, this arm leaned on the retired client rule.
+        return HttpResponse.json(
+          sweep({ statusCode11: 'D', canSubmit1To10: true, canSubmit11: true }),
+        )
       }),
     )
     render(<CheckStatus />)
@@ -751,8 +761,17 @@ describe('Check Status page (Story 15.2)', () => {
     asSubmitter()
     server.use(
       millContextWithBothTracks('S', 'D'),
+      // Each track carries its own server verdict since Story 26.1 (AC 7), and they disagree here —
+      // which is the point: each Submit must read only its own.
       http.get(SWEEP_URL, () =>
-        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+        HttpResponse.json(
+          sweep({
+            statusCode1To10: 'S',
+            statusCode11: 'D',
+            canSubmit1To10: false,
+            canSubmit11: true,
+          }),
+        ),
       ),
     )
     render(<CheckStatus />)
@@ -2058,17 +2077,27 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
       'enabled',
       undefined,
     ],
+    // AMENDED by Story 26.1 review (decision 2a): these two pinned "Available while Schedules 1-10
+    // are in Draft" beside a track that IS in Draft — untrue on its face. A submitter the server does
+    // not offer Submit at Draft is out of that action's mill scope, and the hint now says so.
     [
-      'submitter, canSubmit false at Draft → disabled with the status hint (the hint still selects on role/status)',
+      'submitter, canSubmit false at Draft → disabled with the not-assigned hint (26.1 review 2a; was the Draft hint, untrue at Draft)',
       'submitter',
       { statusCode1To10: 'D', canSubmit1To10: false },
       'disabled',
-      HINT_NOT_DRAFT,
+      HINT_NOT_ASSIGNED,
     ],
     [
-      'submitter, canSubmit absent at Draft → disabled',
+      'submitter, canSubmit absent at Draft → disabled with the not-assigned hint (26.1 review 2a)',
       'submitter',
       { statusCode1To10: 'D' },
+      'disabled',
+      HINT_NOT_ASSIGNED,
+    ],
+    [
+      'submitter, canSubmit false at Submitted → disabled with the status hint (the branch the old arm meant to pin)',
+      'submitter',
+      { statusCode1To10: 'S', canSubmit1To10: false },
       'disabled',
       HINT_NOT_DRAFT,
     ],
@@ -2114,12 +2143,16 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
 
   // ---- D7: the in-flight lock ------------------------------------------------------------------
 
-  test('D7: while the POST is in flight both 1–10 Submits are disabled and further clicks issue nothing; Schedule 11’s own Submit is untouched', async () => {
+  // AMENDED by Story 26.1 D5. This arm used to pin the opposite — "the lock is the track's, not the
+  // page's" — which was safe only while Schedule 11's Submit was inert. Wired, a live Schedule 11
+  // Submit beside a 1–10 submit in flight is the 18.2 defect shape: a Yes the shared `busyRef` would
+  // swallow. What survives from the old arm is the other half: a 1–10 SUCCESS does not latch it.
+  test('D7 (amended, 26.1 D5): while the POST is in flight every Submit on the page is disabled and further clicks issue nothing; a 1–10 success latches only the 1–10 pair', async () => {
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    fakeReads(sweep({ canSubmit1To10: true, statusCode11: 'D' }))
+    fakeReads(sweep({ canSubmit1To10: true, statusCode11: 'D', canSubmit11: true }))
     const submit = submitHandler(async () => {
       await held
       return submitOk()
@@ -2137,9 +2170,10 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     for (const button of buttons) {
       expect(button).toBeDisabled()
     }
-    expect(submit11()).toBeEnabled() // the lock is the track's, not the page's
+    expect(submit11()).toBeDisabled() // one lock for the page (D5)
     await user.click(buttons[0])
     await user.click(buttons[1])
+    await user.click(submit11())
     expect(openDialog()).toBeNull()
     expect(submit.count).toBe(1)
 
@@ -2149,6 +2183,8 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
     // A 200 completes the transition. Even if this deliberately stale fake still says Draft, the
     // successful action stays locked while the server-sourced refresh catches up (or fails).
     await expectSubmits1To10('disabled')
+    // ...but only ITS action: once the refresh settles, the other track's Submit is offered again.
+    await waitFor(() => expect(submit11()).toBeEnabled())
   })
 
   // ---- Stale context -------------------------------------------------------------------------
@@ -2230,20 +2266,27 @@ describe('Submit Schedules 1–10 (Story 15.4)', () => {
 
   // ---- D10 / regression: nothing else on the three bars gains a click -----------------------
 
-  test('D10: Schedule 11’s Submit keeps the client gate and stays inert — enabled at Draft, but a click opens no dialog and issues no request', async () => {
+  // REWRITTEN by Story 26.1, which retired deviation (I) for Submit. This arm pinned D10's seam: a
+  // Schedule 11 Submit ENABLED by the client rule (submitter + Draft) and inert. The rule is gone —
+  // the same submitter at the same Draft, with no server verdict, is now greyed, and the click path
+  // lives in the Schedule 11 suite below. The hint is the not-assigned one (26.1 review 2a): at Draft,
+  // the Draft hint would be untrue.
+  test('D10 (retired, 26.1 AC 7): Schedule 11’s Submit no longer keeps the client gate — a submitter at Draft without the server’s canSubmit is greyed and sends nothing', async () => {
     server.use(http.get(SWEEP_URL, () => HttpResponse.json(sweep({ statusCode11: 'D' }))))
     const postSpy = vi.spyOn(apiService.getAxiosInstance(), 'post')
     const user = userEvent.setup()
     renderAsSubmitter(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.submitter)
     expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
 
     const submit11 = within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Submit' })
-    expect(submit11).toBeEnabled()
+    expect(submit11).toBeDisabled()
+    expect(hintFor(submit11)).toHaveTextContent(HINT_NOT_ASSIGNED)
     await user.click(submit11)
     expect(openDialog()).toBeNull()
     expect(postSpy).not.toHaveBeenCalled()
     // The 1–10 pair reads the wire: canSubmit absent → greyed, whatever Schedule 11 says.
-    await expectSubmits1To10('disabled', HINT_NOT_DRAFT)
+    await expectSubmits1To10('disabled', HINT_NOT_ASSIGNED)
   })
 
   test('regression: Verified, Set to Draft and Set to Submit remain inert on all three bars', async () => {
@@ -3305,5 +3348,556 @@ describe('Reversal actions on the Schedules 1–10 track (Story 18.2)', () => {
       within(item(SCHEDULE_TITLES['11'])).queryByRole('button', { name: 'Set to Draft' }),
     ).toBeNull()
     expect(screen.getByText('Sch 11 - Status: Verified - Date: 2017-02-02')).toBeInTheDocument()
+  })
+})
+
+// ================================================================================================
+// Submit Schedule 11 (Story 26.1 / UC-CHK-003)
+//
+// Legacy's Schedule 11 tab carried its own Submit (checkStatus.xhtml:169-174), offered while the
+// silviculture track was Draft to a licensee, asking its own `Confirmation Required` question
+// (:214-217) and calling the same DAO shape as 1–10 on the other status column. These arms hold that
+// shape on the new wiring: the offer is the server's `schedule11.canSubmit`, the click POSTs
+// `/schedule11/submit`, and — the part legacy never needed — every wired control on the page shares
+// ONE lock (D5), pinned here one arm per direction.
+// ================================================================================================
+
+const SUBMIT_11_URL = `${SWEEP_URL}/schedule11/submit`
+const SCH11_SUBMITTED_LINE = 'Sch 11 - Status: Submitted - Date: 2017-02-02'
+
+/** Both tracks at Draft, only Schedule 11 offered: the licensee who has finished silviculture first. */
+const DRAFT_11_SWEEP = sweep({ statusCode11: 'D', canSubmit11: true })
+const SUBMITTED_11_SWEEP = sweep({ statusCode11: 'S', canSubmit11: false })
+
+const submit11Ok: Answer = () =>
+  HttpResponse.json({ message: { key: 'sch11SubmittedMsg', text: SCH11_SUBMITTED_TEXT } })
+
+/** The Schedule 11 submit POST, answered by `answer` and recorded (count + URLs). */
+const submit11Handler = (answer: Answer | (() => Promise<Response>)) => {
+  const calls = { count: 0, urls: [] as string[] }
+  server.use(
+    http.post(SUBMIT_11_URL, ({ request }) => {
+      calls.count += 1
+      calls.urls.push(request.url)
+      return answer()
+    }),
+  )
+  return calls
+}
+
+/** The one Submit inside the Schedule 11 tab (legacy placed its row under that tab's result). */
+const submit11Button = () =>
+  within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Submit' })
+
+const pressSubmit11 = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(submit11Button())
+  return within(await dialog())
+}
+const confirmSubmit11 = async (user: ReturnType<typeof userEvent.setup>) => {
+  const prompt = await pressSubmit11(user)
+  await user.click(prompt.getByRole('button', { name: 'Yes' }))
+}
+
+const heldAnswer = (answer: Answer) => {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return {
+    answer: async () => {
+      await held
+      return answer()
+    },
+    release: () => release(),
+  }
+}
+
+describe('Submit Schedule 11 (Story 26.1)', () => {
+  // ---- AC 1: the happy path -------------------------------------------------------------------
+
+  test('AC 1: Submit asks legacy’s own question, Yes POSTs once to the Schedule 11 endpoint, the server’s text is the banner and takes focus, and both reads refresh', async () => {
+    const reads = fakeReads(DRAFT_11_SWEEP)
+    const submit = submit11Handler(() => {
+      reads.state.sweep = json(SUBMITTED_11_SWEEP)
+      reads.state.context = json(millContextBody('D', 'S'))
+      return submit11Ok()
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    expect(await screen.findByText(SCH11_LINE)).toBeInTheDocument()
+    expect(submit11Button()).toBeEnabled()
+    const before = { ...reads.calls }
+
+    const prompt = await pressSubmit11(user)
+    expect(prompt.getByText(CONFIRM_SUBMIT_11)).toBeInTheDocument()
+    // The lookup is keyed per transition: a mis-paired prompt would still show A prompt.
+    expect(prompt.queryByText(CONFIRM_SUBMIT_1_TO_10)).toBeNull()
+    expect(prompt.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(submit.count).toBe(0) // opening the prompt touches no server
+    await user.click(prompt.getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    expect(screen.getByText('Success')).toBeInTheDocument()
+    expect(submit.count).toBe(1)
+    expect(submit.urls[0]).toBe(`${SUBMIT_11_URL}?millId=13050&year=2017`)
+    const column = bannerColumn(SCH11_SUBMITTED_TEXT)
+    expect(column).not.toBeNull()
+    await waitFor(() => expect(column).toHaveFocus())
+
+    // reloadToken: the sweep AND the working context are read again, so the status line and the
+    // offer both come from the server's new state.
+    expect(await screen.findByText(SCH11_SUBMITTED_LINE)).toBeInTheDocument()
+    expect(reads.calls.sweep).toBeGreaterThan(before.sweep)
+    expect(reads.calls.context).toBeGreaterThan(before.context)
+    await waitFor(() => {
+      expect(submit11Button()).toBeDisabled()
+      expect(hintFor(submit11Button())).toHaveTextContent(HINT_NOT_DRAFT_11)
+    })
+    expect(submit.count).toBe(1)
+  })
+
+  // ---- AC 3: Cancel -----------------------------------------------------------------------------
+
+  test('AC 3: Cancel closes the prompt, sends nothing, and puts focus back on the Schedule 11 Submit', async () => {
+    fakeReads(DRAFT_11_SWEEP)
+    const submit = submit11Handler(submit11Ok)
+    const user = userEvent.setup()
+    await mountSettled()
+
+    const prompt = await pressSubmit11(user)
+    await user.click(prompt.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(openDialog()).toBeNull())
+    expect(submit11Button()).toHaveFocus()
+    await drainEventLoop()
+    expect(submit.count).toBe(0)
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+  })
+
+  // ---- AC 2 / AC 5: the refusals ------------------------------------------------------------------
+
+  test('AC 2: a 409 from the Schedule 11 gate shows the server’s text and re-sweeps, so the failing location is on screen; Schedule 11 stays offered', async () => {
+    const reads = fakeReads(DRAFT_11_SWEEP)
+    submit11Handler(() => {
+      // What the server now knows: the location lacks a cost, the track is still Draft.
+      reads.state.sweep = json(
+        sweep({
+          statusCode11: 'D',
+          canSubmit11: true,
+          overrides: [{ schedule: '11', requirementsMet: false, verdict: schedule11Fail }],
+        }),
+      )
+      return problem(409, NOT_SUBMITTED)
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+    expect(screen.queryByText(SCH11_ERROR_TEXT, verbatim)).not.toBeInTheDocument()
+    const sweepsBefore = reads.calls.sweep
+
+    await confirmSubmit11(user)
+
+    expect(await screen.findByText(NOT_SUBMITTED)).toBeInTheDocument()
+    expect(screen.getByText('Action failed')).toBeInTheDocument()
+    await waitFor(() => expect(reads.calls.sweep).toBe(sweepsBefore + 1))
+    // The double space after `location` is the server's, and survives to the screen.
+    expect(await screen.findByText(SCH11_ERROR_TEXT, verbatim)).toBeInTheDocument()
+    await waitFor(() => expect(submit11Button()).toBeEnabled())
+  })
+
+  test('AC 5 / (AB): a not-Draft 409 shows Schedule 11’s own text and re-sweeps to the Submitted truth', async () => {
+    const reads = fakeReads(DRAFT_11_SWEEP)
+    submit11Handler(() => {
+      reads.state.sweep = json(SUBMITTED_11_SWEEP)
+      reads.state.context = json(millContextBody('D', 'S'))
+      return problem(409, SCH11_NOT_DRAFT_TEXT)
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+
+    await confirmSubmit11(user)
+
+    expect(await screen.findByText(SCH11_NOT_DRAFT_TEXT)).toBeInTheDocument()
+    expect(await screen.findByText(SCH11_SUBMITTED_LINE)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(submit11Button()).toBeDisabled()
+      expect(hintFor(submit11Button())).toHaveTextContent(HINT_NOT_DRAFT_11)
+    })
+  })
+
+  test('AC 5: a 500 shows the server’s persistence text, re-sweeps nothing, and releases the lock so the user can retry', async () => {
+    const reads = fakeReads(DRAFT_11_SWEEP)
+    const submit = submit11Handler(() => problem(500, SUBMISSION_ERROR))
+    const user = userEvent.setup()
+    await mountSettled()
+    const sweepsBefore = reads.calls.sweep
+
+    await confirmSubmit11(user)
+
+    expect(await screen.findByText(SUBMISSION_ERROR)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(reads.calls.sweep).toBe(sweepsBefore)
+    await waitFor(() => expect(submit11Button()).toBeEnabled())
+    await confirmSubmit11(user)
+    await waitFor(() => expect(submit.count).toBe(2))
+  })
+
+  test('a failure with no problem+json detail (a 401) falls back to the client’s Schedule 11 text, not the 1–10 one', async () => {
+    fakeReads(DRAFT_11_SWEEP)
+    submit11Handler(unauthorized)
+    const user = userEvent.setup()
+    await mountSettled()
+
+    await confirmSubmit11(user)
+
+    expect(await screen.findByText(SUBMIT_11_FAILED)).toBeInTheDocument()
+    expect(screen.queryByText(SUBMIT_FAILED)).not.toBeInTheDocument()
+  })
+
+  // ---- Stale context / double Yes -------------------------------------------------------------
+
+  test('stale context: a Schedule 11 submit that lands after the mill/year flips writes nothing AND leaves the new context able to act', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const seen: string[] = []
+    let first = true
+    server.use(
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        return HttpResponse.json(
+          sweep({
+            millId: Number(params.get('millId')),
+            year: Number(params.get('year')),
+            statusCode11: 'D',
+            canSubmit11: true,
+          }),
+        )
+      }),
+      http.post(SUBMIT_11_URL, async ({ request }) => {
+        seen.push(String(new URL(request.url).searchParams.get('millId')))
+        if (first) {
+          first = false
+          await held
+        }
+        return submit11Ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsSubmitter(<ContextSwitchHarness />)
+    expect(declaredRole()).toBe(ILCR_ROLES.submitter)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmSubmit11(user)
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    // The NEW context must have settled before the old response lands: asserting "no banner" over a
+    // page still LOADING proves nothing, because there is no banner anywhere to find.
+    await waitFor(() => expect(screen.getAllByText(MET_TEXT)).toHaveLength(12))
+    // Still greyed while the old request holds `busyRef`: a live button here would have a dead Yes.
+    expect(submit11Button()).toBeDisabled()
+
+    release()
+    await drainEventLoop()
+
+    expect(screen.queryByText(SCH11_SUBMITTED_TEXT)).not.toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+
+    // The lock came off — the button AND the ref: gate the release on `isCurrent()` and this second
+    // POST is never sent.
+    await waitFor(() => expect(submit11Button()).toBeEnabled())
+    await confirmSubmit11(user)
+    await waitFor(() => expect(seen).toEqual(['13050', '999']))
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+  })
+
+  test('two Yes presses in ONE tick issue a single POST — the synchronous busyRef, not the disabled button', async () => {
+    const reads = fakeReads(DRAFT_11_SWEEP)
+    const submit = submit11Handler(() => {
+      reads.state.sweep = json(SUBMITTED_11_SWEEP)
+      return submit11Ok()
+    })
+    const user = userEvent.setup()
+    await mountSettled()
+
+    const prompt = await pressSubmit11(user)
+    const yes = prompt.getByRole('button', { name: 'Yes' })
+    // Both clicks inside ONE `act`, so React cannot re-render between them: the prompt is still
+    // mounted for the second and `saving` is still false — only the ref can stop it. Two separate
+    // `fireEvent.click` calls do NOT prove this: each is its own `act`, the first unmounts the prompt,
+    // and the second lands on a detached button (measured — that shape survived deleting the ref check).
+    act(() => {
+      yes.click()
+      yes.click()
+    })
+
+    await waitFor(() => expect(submit.count).toBe(1))
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(submit.count).toBe(1)
+    expect(screen.getAllByText(SCH11_SUBMITTED_TEXT)).toHaveLength(1)
+  })
+
+  // ---- AC 9 / D5: one lock, one arm per direction --------------------------------------------
+
+  test('AC 9: while a Schedule 11 submit is in flight both 1–10 Submits grey too; its success then latches ONLY its own Submit', async () => {
+    const { answer, release } = heldAnswer(submit11Ok)
+    fakeReads(sweep({ canSubmit1To10: true, statusCode11: 'D', canSubmit11: true }))
+    const submit = submit11Handler(answer)
+    const oneToTen = submitHandler(submitOk)
+    const user = userEvent.setup()
+    await mountSettled()
+    await expectSubmits1To10('enabled') // positive control: both tracks live before the click
+
+    await confirmSubmit11(user)
+    await waitFor(() => expect(submit.count).toBe(1))
+    await expectSubmits1To10('disabled')
+    expect(submit11Button()).toBeDisabled()
+    await user.click(submitButtons1To10()[0])
+    expect(openDialog()).toBeNull()
+    expect(oneToTen.count).toBe(0)
+
+    release()
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    // The fake still says Draft on purpose: Schedule 11's own Submit stays latched on its success,
+    // while the 1–10 pair — whose transition did not happen — is offered again once the refresh lands.
+    await expectSubmits1To10('enabled')
+    expect(submit11Button()).toBeDisabled()
+  })
+
+  // At Submitted an admin is offered Verified and Set to Draft, at Verified Set to Submit; a server that
+  // also offers Schedule 11's Submit is answering for a dual-role ADMIN+SUBMITTER assigned to the mill.
+  // The page reads only the wire, so the admin render plus that flag IS that caller as far as the lock
+  // is concerned. Every wired 1–10 control has a row: the table is only as good as its missing one.
+
+  test.each([
+    {
+      label: 'Verified',
+      code1To10: 'S',
+      url: VERIFY_URL,
+      ok: () =>
+        HttpResponse.json({
+          trackStatus: 'V',
+          message: { key: 'sch1-10VerifiedMsg', text: VERIFIED_MSG },
+        }),
+      text: VERIFIED_MSG,
+      press: () => verifiedButtons1To10()[0],
+    },
+    {
+      label: 'Set to Draft',
+      code1To10: 'S',
+      url: SET_TO_DRAFT_URL,
+      ok: () => reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG),
+      text: DRAFT_MSG,
+      press: () => reversalButtons('Set to Draft')[0],
+    },
+    {
+      label: 'Set to Submit',
+      code1To10: 'V',
+      url: SET_TO_SUBMIT_URL,
+      ok: () => reversalOk('S', 'sch1-10SubmittedMsg', RESUBMITTED_MSG),
+      text: RESUBMITTED_MSG,
+      press: () => reversalButtons('Set to Submit')[0],
+    },
+  ])(
+    'AC 9: while $label is in flight the Schedule 11 Submit greys — and while a Schedule 11 submit is in flight, $label greys (both directions)',
+    async ({ code1To10, url, ok, text, press }) => {
+      // Direction 1: the 1–10 transition in flight.
+      const first = heldAnswer(ok)
+      const transitioned = vi.fn()
+      server.use(
+        millContextWithBothTracks(code1To10, 'D'),
+        http.get(SWEEP_URL, () =>
+          HttpResponse.json(
+            sweep({ statusCode1To10: code1To10, statusCode11: 'D', canSubmit11: true }),
+          ),
+        ),
+        http.post(url, async () => {
+          transitioned()
+          return first.answer()
+        }),
+      )
+      const submit = submit11Handler(submit11Ok)
+      renderAsAdmin(<CheckStatus />)
+      expect(declaredRole()).toBe(ILCR_ROLES.admin)
+      expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+      const user = userEvent.setup()
+      expect(submit11Button()).toBeEnabled() // positive control
+      expect(press()).toBeEnabled()
+
+      await user.click(press())
+      await user.click(within(await dialog()).getByRole('button', { name: 'Yes' }))
+      await waitFor(() => expect(transitioned).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(submit11Button()).toBeDisabled())
+      await user.click(submit11Button())
+      expect(openDialog()).toBeNull()
+      expect(submit.count).toBe(0)
+
+      first.release()
+      expect(await screen.findByText(text, verbatim)).toBeInTheDocument()
+      // Not latched by the other track's success: live again once the refresh settles.
+      await waitFor(() => expect(submit11Button()).toBeEnabled())
+
+      // Direction 2: now the Schedule 11 submit in flight. `transitioned` must not fire again.
+      const second = heldAnswer(submit11Ok)
+      submit11Handler(second.answer)
+      await confirmSubmit11(user)
+      await waitFor(() => expect(press()).toBeDisabled())
+      await user.click(press())
+      expect(openDialog()).toBeNull()
+      expect(transitioned).toHaveBeenCalledTimes(1)
+      second.release()
+      expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+      await waitFor(() => expect(press()).toBeEnabled())
+    },
+  )
+
+  // ---- review patch 1: the success latch is per track, and not the banner's -----------------------
+  //
+  // The window these arms open: a submit that answered 200 but whose re-sweep FAILED. The hook then
+  // keeps the last good payload — still Draft, `canSubmit` still true — so the finished track's
+  // Submit is held greyed by its latch alone. When that latch lived in the banner, the OTHER track's
+  // Yes cleared the banner and re-offered a Submit the server could only refuse with a 409.
+
+  test('review P1: a 1–10 success whose re-sweep fails stays latched through a Schedule 11 submit — no second 1–10 POST is offered', async () => {
+    const reads = fakeReads(sweep({ canSubmit1To10: true, statusCode11: 'D', canSubmit11: true }))
+    const oneToTen = submitHandler(() => {
+      reads.state.sweep = () => problem(500, 'sweep down')
+      return submitOk()
+    })
+    const eleven = submit11Handler(submit11Ok)
+    const user = userEvent.setup()
+    await mountSettled()
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    await expectSubmits1To10('disabled')
+    // The re-sweep failed and the stale payload still offers Schedule 11 — as the server would.
+    await waitFor(() => expect(submit11Button()).toBeEnabled())
+
+    await confirmSubmit11(user)
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    expect(eleven.count).toBe(1)
+    await drainEventLoop()
+    // Still latched: the 1–10 transition happened, whatever the stale payload says.
+    await expectSubmits1To10('disabled')
+    await user.click(submitButtons1To10()[0])
+    expect(openDialog()).toBeNull()
+    expect(oneToTen.count).toBe(1)
+  })
+
+  test('review P1 (mirror): a Schedule 11 success whose re-sweep fails stays latched through a 1–10 submit', async () => {
+    const reads = fakeReads(sweep({ canSubmit1To10: true, statusCode11: 'D', canSubmit11: true }))
+    const eleven = submit11Handler(() => {
+      reads.state.sweep = () => problem(500, 'sweep down')
+      return submit11Ok()
+    })
+    const oneToTen = submitHandler(submitOk)
+    const user = userEvent.setup()
+    await mountSettled()
+
+    await confirmSubmit11(user)
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    await expectSubmits1To10('enabled')
+    expect(submit11Button()).toBeDisabled()
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    expect(oneToTen.count).toBe(1)
+    await drainEventLoop()
+    expect(submit11Button()).toBeDisabled()
+    await user.click(submit11Button())
+    expect(openDialog()).toBeNull()
+    expect(eleven.count).toBe(1)
+  })
+
+  test('review P1: a later 1–10 transition releases the 1–10 latch — Set to Draft puts the track back where its Submit is offered', async () => {
+    // Admin render, and the wire offers the 1–10 Submit at Draft: the server answering a dual-role
+    // caller. Draft → Submit → Set to Draft → Draft again, all in one visit.
+    let code = 'D'
+    server.use(
+      http.get(MILL_CONTEXT, () => HttpResponse.json(millContextBody(code))),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: code, canSubmit1To10: code === 'D' })),
+      ),
+      http.post(SUBMIT_URL, () => {
+        code = 'S'
+        return submitOk()
+      }),
+      http.post(SET_TO_DRAFT_URL, () => {
+        code = 'D'
+        return reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG)
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    await waitFor(() => expect(reversalButtons('Set to Draft')).toHaveLength(2))
+    await waitFor(() => expect(reversalButtons('Set to Draft')[0]).toBeEnabled())
+
+    await confirmReversal(user, 'Set to Draft')
+    expect(await screen.findByText(DRAFT_MSG, verbatim)).toBeInTheDocument()
+    // Without the release the pair would stay greyed for the rest of the visit, on a Draft track.
+    await expectSubmits1To10('enabled')
+  })
+
+  test('review 2a: a submitter at Schedule 11 Draft whom the server does not offer Submit is told why — not "Available while … in Draft"', async () => {
+    server.use(
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode11: 'D', canSubmit11: false })),
+      ),
+    )
+    renderAsSubmitter(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.submitter)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    const submit11 = submit11Button()
+    expect(submit11).toBeDisabled()
+    expect(hintFor(submit11)).toHaveTextContent(HINT_NOT_ASSIGNED)
+    expect(hintFor(submit11)).not.toHaveTextContent(HINT_NOT_DRAFT_11)
+  })
+
+  test('review 2a: off Draft the status hint still answers — Schedule 11 Submitted keeps "Available while Schedule 11 is in Draft"', async () => {
+    server.use(
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode11: 'S', canSubmit11: false })),
+      ),
+    )
+    renderAsSubmitter(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.submitter)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    expect(hintFor(submit11Button())).toHaveTextContent(HINT_NOT_DRAFT_11)
+  })
+
+  // ---- Scope fence: nothing else on the Schedule 11 bar gains a click ---------------------------
+
+  test('scope: Schedule 11’s Verified keeps the legacy client gate and an inert click; its Set to Draft stays greyed — neither sends anything', async () => {
+    server.use(
+      millContextWithBothTracks('D', 'S'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode11: 'S', canSubmit11: false })),
+      ),
+    )
+    const postSpy = vi.spyOn(apiService.getAxiosInstance(), 'post')
+    const user = userEvent.setup()
+    renderAsAdmin(<CheckStatus />)
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    const bar11 = within(item(SCHEDULE_TITLES['11']))
+    const verified11 = bar11.getByRole('button', { name: 'Verified' })
+    expect(verified11).toBeEnabled() // admin + Schedule 11 Submitted: legacy's own rule
+    await user.click(verified11)
+    const setToDraft11 = bar11.getByRole('button', { name: 'Set to Draft' })
+    expect(setToDraft11).toBeDisabled()
+    expect(hintFor(setToDraft11)).toHaveTextContent(HINT_NOT_WIRED)
+    expect(openDialog()).toBeNull()
+    await drainEventLoop()
+    expect(postSpy).not.toHaveBeenCalled()
   })
 })

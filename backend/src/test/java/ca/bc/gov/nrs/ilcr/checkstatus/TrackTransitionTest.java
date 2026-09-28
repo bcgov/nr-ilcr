@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,9 @@ import org.junit.jupiter.params.provider.CsvSource;
  * all refused. Stories 17.1 and 18.1 add a controller method, not a second guard.
  */
 class TrackTransitionTest {
+
+  private static final ScheduleTrack ONE_TO_TEN = ScheduleTrack.SCHEDULES_1_TO_10;
+  private static final ScheduleTrack ELEVEN = ScheduleTrack.SCHEDULE_11;
 
   @ParameterizedTest(name = "{0} -> {1} is {2}, category state {3}")
   @DisplayName("the four transitions legacy could commit resolve, with legacy's category state")
@@ -85,12 +89,13 @@ class TrackTransitionTest {
   @Test
   @DisplayName("both submit-target transitions reuse legacy's one success key")
   void successKeys() {
-    assertThat(TrackTransition.SUBMIT.successKey()).isEqualTo("sch1-10SubmittedMsg");
-    assertThat(TrackTransition.VERIFY.successKey()).isEqualTo("sch1-10VerifiedMsg");
-    assertThat(TrackTransition.SET_TO_DRAFT.successKey()).isEqualTo("sch1-10DraftMsg");
+    assertThat(TrackTransition.SUBMIT.successKey(ONE_TO_TEN)).isEqualTo("sch1-10SubmittedMsg");
+    assertThat(TrackTransition.VERIFY.successKey(ONE_TO_TEN)).isEqualTo("sch1-10VerifiedMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.successKey(ONE_TO_TEN)).isEqualTo("sch1-10DraftMsg");
     // Legacy reused sch1-10SubmittedMsg for Set to Submit (CheckStatusMB.submitReport():281-283):
     // there is no distinct "verification reversed" text to port.
-    assertThat(TrackTransition.SET_TO_SUBMIT.successKey()).isEqualTo("sch1-10SubmittedMsg");
+    assertThat(TrackTransition.SET_TO_SUBMIT.successKey(ONE_TO_TEN))
+        .isEqualTo("sch1-10SubmittedMsg");
   }
 
   @Test
@@ -99,11 +104,13 @@ class TrackTransitionTest {
   void gateFailedKeys() {
     // Deviation (V), BA-ratified 2026-09-21. The GATE is unchanged for all four — only the
     // sentence differs, and only where legacy's was wrong about what the user had clicked.
-    assertThat(TrackTransition.SUBMIT.gateFailedKey()).isEqualTo("reportNotSubmittedErrorMsg");
-    assertThat(TrackTransition.VERIFY.gateFailedKey()).isEqualTo("reportNotSubmittedErrorMsg");
-    assertThat(TrackTransition.SET_TO_DRAFT.gateFailedKey())
+    assertThat(TrackTransition.SUBMIT.gateFailedKey(ONE_TO_TEN))
+        .isEqualTo("reportNotSubmittedErrorMsg");
+    assertThat(TrackTransition.VERIFY.gateFailedKey(ONE_TO_TEN))
+        .isEqualTo("reportNotSubmittedErrorMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.gateFailedKey(ONE_TO_TEN))
         .isEqualTo("setToDraftNotValidErrorMsg");
-    assertThat(TrackTransition.SET_TO_SUBMIT.gateFailedKey())
+    assertThat(TrackTransition.SET_TO_SUBMIT.gateFailedKey(ONE_TO_TEN))
         .isEqualTo("setToSubmitNotValidErrorMsg");
   }
 
@@ -113,21 +120,86 @@ class TrackTransitionTest {
     // The two refusals a user can actually hit on one button. Collapsing them would tell someone
     // whose report has ERRORS that the track has moved on, or vice versa.
     for (TrackTransition transition : TrackTransition.values()) {
-      assertThat(transition.gateFailedKey())
-          .as("%s", transition)
-          .isNotEqualTo(transition.rejectedKey());
+      for (ScheduleTrack track : ScheduleTrack.values()) {
+        if (transition.isDefinedOn(track)) {
+          assertThat(transition.gateFailedKey(track))
+              .as("%s on %s", transition, track)
+              .isNotEqualTo(transition.rejectedKey(track));
+        }
+      }
     }
   }
 
   @Test
   @DisplayName("each transition names the message for a track that has already left its start")
   void rejectedKeys() {
-    assertThat(TrackTransition.SUBMIT.rejectedKey()).isEqualTo("submitNotDraftErrorMsg");
-    assertThat(TrackTransition.VERIFY.rejectedKey()).isEqualTo("verifyNotSubmittedErrorMsg");
-    assertThat(TrackTransition.SET_TO_DRAFT.rejectedKey())
+    assertThat(TrackTransition.SUBMIT.rejectedKey(ONE_TO_TEN)).isEqualTo("submitNotDraftErrorMsg");
+    assertThat(TrackTransition.VERIFY.rejectedKey(ONE_TO_TEN))
+        .isEqualTo("verifyNotSubmittedErrorMsg");
+    assertThat(TrackTransition.SET_TO_DRAFT.rejectedKey(ONE_TO_TEN))
         .isEqualTo("setToDraftNotSubmittedErrorMsg");
-    assertThat(TrackTransition.SET_TO_SUBMIT.rejectedKey())
+    assertThat(TrackTransition.SET_TO_SUBMIT.rejectedKey(ONE_TO_TEN))
         .isEqualTo("setToSubmitNotVerifiedErrorMsg");
+  }
+
+  @Test
+  @DisplayName("Submit on Schedule 11 speaks for Schedule 11, with legacy's one gate text")
+  void schedule11SubmitKeys() {
+    // Legacy CheckStatusMB.submitSchedule11:212-239 showed sch11SubmittedMsg on success and the
+    // same reportNotSubmittedErrorMsg as 1-10 when the gate failed (:235). The not-Draft text is
+    // new, deviation (AB): legacy fell through to "contact ILCR application support".
+    assertThat(TrackTransition.SUBMIT.successKey(ELEVEN)).isEqualTo("sch11SubmittedMsg");
+    assertThat(TrackTransition.SUBMIT.rejectedKey(ELEVEN)).isEqualTo("sch11SubmitNotDraftErrorMsg");
+    assertThat(TrackTransition.SUBMIT.gateFailedKey(ELEVEN))
+        .isEqualTo("reportNotSubmittedErrorMsg");
+  }
+
+  @Test
+  @DisplayName("the track is a parameter, not a row: Schedule 11's submit resolves to SUBMIT")
+  void schedule11SubmitIsTheSameRow() {
+    // D2: legacy's guard and category map never knew which track they were on, so there is no
+    // second D->S row that SUBMIT could shadow.
+    assertThat(TrackTransition.resolve("D", "S")).contains(TrackTransition.SUBMIT);
+    assertThat(TrackTransition.values()).hasSize(4);
+  }
+
+  @ParameterizedTest(name = "{0} on Schedule 11 throws, naming {1}")
+  @DisplayName("a transition whose Schedule 11 story has not shipped has no Schedule 11 text")
+  @CsvSource({
+    "VERIFY, Story 26.3",
+    "SET_TO_DRAFT, Story 26.5",
+    "SET_TO_SUBMIT, Story 26.5",
+  })
+  void undefinedSchedule11PairsThrow(TrackTransition transition, String owner) {
+    assertThat(transition.isDefinedOn(ELEVEN)).isFalse();
+    // Loud, never a silent fallback to the 1-10 sentence on a Schedule 11 screen.
+    assertThatThrownBy(() -> transition.successKey(ELEVEN))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(owner);
+    assertThatThrownBy(() -> transition.rejectedKey(ELEVEN))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(owner);
+    assertThatThrownBy(() -> transition.gateFailedKey(ELEVEN))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(owner);
+  }
+
+  @Test
+  @DisplayName("every transition is defined on 1-10, and only SUBMIT on Schedule 11")
+  void definedPairs() {
+    for (TrackTransition transition : TrackTransition.values()) {
+      assertThat(transition.isDefinedOn(ONE_TO_TEN)).as("%s", transition).isTrue();
+      assertThat(transition.isDefinedOn(ELEVEN))
+          .as("%s", transition)
+          .isEqualTo(transition == TrackTransition.SUBMIT);
+    }
+  }
+
+  @Test
+  @DisplayName("there is no default track: a null track is refused")
+  void nullTrackIsRefused() {
+    assertThatThrownBy(() -> TrackTransition.SUBMIT.successKey(null))
+        .isInstanceOf(NullPointerException.class);
   }
 
   @Test

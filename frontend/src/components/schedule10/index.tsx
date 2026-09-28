@@ -580,7 +580,7 @@ const Schedule10: FC = () => {
 
         <Column sm={4} md={8} lg={16}>
           <TableContainer title="Page Summary" className="schedule-10__section">
-            <Table aria-label="Construction pages">
+            <Table>
               <TableHead>
                 <TableRow>
                   <TableHeader>New Road Construction Pages</TableHeader>

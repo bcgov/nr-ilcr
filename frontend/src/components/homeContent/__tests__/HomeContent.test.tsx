@@ -165,6 +165,15 @@ describe('Content Editing (Story 24.2)', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
+  test('a load failure carrying no detail falls back to the generic load message (#332)', async () => {
+    // An empty-bodied 500 carries no ProblemDetail.detail, so the page's own fallback text renders.
+    server.use(http.get(ENDPOINT, () => new HttpResponse(null, { status: 500 })))
+    render(<HomeContent />)
+
+    expect(await screen.findByText('Unable to load the Home content.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
   test('a 400 with per-field messages shows each verbatim (deduped)', async () => {
     server.use(
       http.get(ENDPOINT, () => HttpResponse.json(SEED)),

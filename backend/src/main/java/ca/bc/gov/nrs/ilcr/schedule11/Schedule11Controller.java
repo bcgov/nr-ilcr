@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule11.api.Schedule11Api;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.LocationSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
@@ -22,16 +23,15 @@ import org.springframework.web.bind.annotation.RestController;
  * Schedule 11 endpoints. Authorizes by naming the action (AD-7) — {@code VIEW_SCHEDULE} for the
  * read and check-status, {@code EDIT_SCHEDULE} for the writes — delegates ALL mill/year validation
  * to {@link MillContextService} as its first line (AD-4, the list-schedule guard, verbatim ERR-001
- * on a missing/blank/non-numeric param), and never touches repositories directly (AD-1). The Draft
- * write gate (silviculture track, AD-9), derivations, and success/error message composition live in
- * {@link Schedule11Service}; success text on a mutation echo is resolved verbatim from the bundle
- * here (AD-8).
+ * on a missing/blank/non-numeric param), and never touches repositories directly (AD-1). The write
+ * gate (role x silviculture status, AD-9, Story 16.1), derivations, and success/error message
+ * composition live in {@link Schedule11Service}; success text on a mutation echo is resolved
+ * verbatim from the bundle here (AD-8).
  */
 @RestController
 public class Schedule11Controller implements Schedule11Api {
 
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
-  private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 
   private final MillContextService millContextService;
   private final Schedule11Service schedule11Service;
@@ -87,33 +87,17 @@ public class Schedule11Controller implements Schedule11Api {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
-  public ResponseEntity<Schedule11Response> updateLocation(
-      long id,
-      String millId,
-      String year,
-      SilvicultureLocationRequest request,
-      Authentication authentication) {
+  public ResponseEntity<Schedule11Response> saveAllLocations(
+      String millId, String year, LocationSaveAllRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc =
-        schedule11Service.updateLocation(
+        schedule11Service.saveAllLocations(
             context.millId(),
             context.year(),
-            id,
             request,
             editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
-  }
-
-  @Override
-  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
-  public ResponseEntity<Schedule11Response> deleteLocation(
-      long id, String millId, String year, Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule11Response doc =
-        schedule11Service.deleteLocation(
-            context.millId(), context.year(), id, editability.forCaller(authentication));
-    return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 
   @Override

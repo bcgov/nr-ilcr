@@ -261,4 +261,43 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     await user.click(within(dialog).getByRole('button', { name: /continue/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1' })
   })
+
+  // Issue #332: `useEditableCostRows` falls back to the page's configured `loadError` / `saveError`
+  // when the failure carries no ProblemDetail `detail` — an EMPTY 500 body, unlike `problemBody`
+  // above, which always supplies one.
+  describe('detail-less error fallbacks (#332)', () => {
+    const detailLess = () => new HttpResponse(null, { status: 500 })
+
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(URL, detailLess))
+      render(<OtherCostsPage />)
+
+      expect(await screen.findByText('Unable to load Other Costs.')).toBeInTheDocument()
+      // The document is suppressed with it: no list, no Save.
+      expect(screen.queryByText('Existing Row A')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Save failure falls back to the generic save message and keeps the edit', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc)),
+        http.put(URL, detailLess),
+      )
+      render(<OtherCostsPage />)
+      const user = userEvent.setup()
+
+      await screen.findByDisplayValue('Existing Row A')
+      const cost = within(rowOf('Existing Row A')).getByLabelText('Edit cost')
+      await user.clear(cost)
+      await user.type(cost, '4000')
+      await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+      expect(await screen.findByText('Action failed')).toBeInTheDocument()
+      expect(screen.getByText('Other cost could not be saved.')).toBeInTheDocument()
+      // The edit survives for a retry (re-grouped on the blur that Save triggered) and Save is live.
+      expect(within(rowOf('Existing Row A')).getByLabelText('Edit cost')).toHaveValue('4,000')
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+  })
 })

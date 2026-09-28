@@ -21,9 +21,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  * so the verb is right, but it departs from the "actions are POST sub-resources" convention. And
  * {@code /api/v1/check-status} is a new top-level resource rather than a schedule sub-resource —
  * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3, {@code
- * /verify} with Story 17.1, and {@code /set-to-draft} and {@code /set-to-submit} with Story 18.1.
- * All four sub-resources DO follow the POST-sub-resource convention; the GET's departure is the
- * sweep's alone.
+ * /verify} with Story 17.1, {@code /set-to-draft} and {@code /set-to-submit} with Story 18.1, and
+ * {@code /schedule11/submit} with Story 26.1. Every sub-resource DOES follow the POST-sub-resource
+ * convention; the GET's departure is the sweep's alone.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings on both endpoints, and this is
  * forced, not stylistic: the legacy ERR-001 text ("Please Select Mill and Reporting Year in the
@@ -48,8 +48,8 @@ public interface CheckStatusApi {
    * the caller holds {@code SUBMIT_REPORT}, remains within that action's SUBMITTER mill scope, and
    * the track is at Draft — the legacy button rule, with validity ignored, so a Licensee whose
    * schedules still fail is offered the button and learns from the click (409 {@code
-   * reportNotSubmittedErrorMsg}) exactly as in legacy. {@code schedule11.canSubmit} is absent until
-   * Epic 26.
+   * reportNotSubmittedErrorMsg}) exactly as in legacy. {@code schedule11.canSubmit} is the same
+   * rule against the silviculture status code, and is always present.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
@@ -88,6 +88,35 @@ public interface CheckStatusApi {
    */
   @PostMapping("/submit")
   ResponseEntity<MessageResponse> submit(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Submit the Schedule 11 track for the silviculture audit — Draft → Submitted on {@code
+   * MILL_SILVICULTUR_STATUS_CODE} alone (UC-CHK-003 S01–S06, FR5). The same contract as {@link
+   * #submit} in every respect but the track: no body; no {@code SUBMIT_REPORT} → 403, and a
+   * dual-role ADMIN+SUBMITTER only within the SUBMITTER role's active mill assignment; then
+   * missing/blank/non-numeric params → 400 ERR-001, a mill outside the caller's scope → 403, no
+   * {@code ILCR_MILL_REPORT_STATUS} row → 404 {@code checkStatusScheduleNotFoundErrorMsg}, mill
+   * closed for the year → 409 ERR-002. Inside ONE write transaction that locks the status row
+   * first: track not at Draft → 409 {@code sch11SubmitNotDraftErrorMsg} ("Schedule 11 is no longer
+   * in Draft and cannot be submitted." — the Schedule 11 counterpart of the 1–10 departure); the
+   * Schedule 11 check failing → 409 {@code reportNotSubmittedErrorMsg}, nothing written; a
+   * persistence failure → 500 {@code reportSubmissionErrorMsg}, rolled back. Success → 200 {@code
+   * {"message": {"key": "sch11SubmittedMsg", "text": …}}} after commit, with the silviculture
+   * status at {@code S}, the submitting user's assignment recorded as the report's licensee (the
+   * one pair both tracks share, as in legacy), every Schedule 11 location row and its cost details
+   * stamped, and category {@code '11'} at {@code A}. The Schedules 1–10 status and their ten
+   * category rows are never touched.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the caller, for the status guard, the audit name and the licensee
+   * @return 200 with the legacy success message
+   */
+  @PostMapping("/schedule11/submit")
+  ResponseEntity<MessageResponse> submitSchedule11(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);

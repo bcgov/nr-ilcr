@@ -34,10 +34,15 @@ const VERIFIED = 'V'
 export const HINT_NOT_SUBMITTER = "Submitting is the licensee's action"
 // Schedule 11's reversals only. Legacy rendered a Set to Draft / Set to Submit inside the Schedule 11
 // tab too (checkStatus.xhtml:155-168, gated by `showSch11SetToDraft/Submit`) and both worked there;
-// that track's transitions are Epic 26's, so ITS buttons keep legacy's `rendered=` presence but ship
-// GREYED with this hint rather than live and silently inert, exactly as Schedule 11's own Submit and
-// Verified do. The Schedules 1-10 pair no longer uses it: Story 18.2 supplied their transition.
+// those two transitions have not shipped for that track, so ITS buttons keep legacy's `rendered=`
+// presence but ship GREYED with this hint rather than live and silently inert. Schedule 11's Verified
+// is the one control still live-and-inert: it keeps the legacy client gate and an inert click until
+// its transition ships. The Schedules 1-10 pair no longer uses this hint: Story 18.2 wired them.
 export const HINT_NOT_WIRED = 'This action is not available yet'
+// The track IS in Draft and the caller IS a submitter, yet the server does not offer Submit: an
+// ADMIN+SUBMITTER without an active assignment to this mill (ReportSubmission's Submit-specific
+// scope). Not legacy — legacy had no dual role, so no text for it; the Draft hint would be untrue.
+export const HINT_NOT_ASSIGNED = "Submitting is for this mill's assigned licensee"
 export const HINT_NOT_DRAFT = 'Available while Schedules 1-10 are in Draft'
 export const HINT_NOT_DRAFT_11 = 'Available while Schedule 11 is in Draft'
 export const HINT_NOT_ADMIN = "Verifying is an administrator's action"
@@ -66,8 +71,15 @@ export const CONFIRM_SET_TO_DRAFT_1_TO_10 =
   "Please confirm you'd like to set Schedules 1-10 to DRAFT?"
 export const CONFIRM_SET_TO_SUBMIT_1_TO_10 =
   "Please confirm you'd like to set Schedules 1-10 to SUBMIT?"
+/**
+ * Schedule 11's submit confirmation, verbatim (messages.properties:111, resolved in the view by
+ * checkStatus.xhtml:214-217). Pinned against the backend bundle like the others.
+ */
+export const CONFIRM_SUBMIT_11 = "Please confirm you'd like to SUBMIT Schedule 11?"
 /** Client fallback for a submit failure that carries no ProblemDetail `detail` (network, a 401). */
 export const SUBMIT_FAILED = 'Unable to submit Schedules 1-10.'
+/** The same, for the Schedule 11 submit. */
+export const SUBMIT_11_FAILED = 'Unable to submit Schedule 11.'
 /** The same, for verify: shown only when a failure carries no problem+json body of its own. */
 export const VERIFY_FAILED = 'The report could not be verified.'
 /** The same again, per reversal. Keyed on a MISSING `detail`, never on "was this a network error?":
@@ -75,16 +87,26 @@ export const VERIFY_FAILED = 'The report could not be verified.'
 export const SET_TO_DRAFT_FAILED = 'Schedules 1-10 could not be set to Draft.'
 export const SET_TO_SUBMIT_FAILED = 'Schedules 1-10 could not be set to Submit.'
 
-/** Which transition a prompt is asking about. One mount serves all four; only one can be pending. */
-type Pending = 'submit' | 'verify' | 'setToDraft' | 'setToSubmit'
+/** Which transition a prompt is asking about. One mount serves all five; only one can be pending. */
+type Pending = 'submit' | 'submit11' | 'verify' | 'setToDraft' | 'setToSubmit'
 
 /** The prompt each pending transition asks, so the modal reads one lookup instead of a ternary chain. */
 const CONFIRM_PROMPTS: Record<Pending, string> = {
   submit: CONFIRM_SUBMIT_1_TO_10,
+  submit11: CONFIRM_SUBMIT_11,
   verify: CONFIRM_VERIFY_1_TO_10,
   setToDraft: CONFIRM_SET_TO_DRAFT_1_TO_10,
   setToSubmit: CONFIRM_SET_TO_SUBMIT_1_TO_10,
 }
+
+/**
+ * The two submits differ only in their path and fallback: one service method on the server, the
+ * track its only parameter (`CheckStatusApi.java` `/submit` and `/schedule11/submit`).
+ */
+const SUBMITS = {
+  submit: { path: 'submit', fallback: SUBMIT_FAILED },
+  submit11: { path: 'schedule11/submit', fallback: SUBMIT_11_FAILED },
+} as const
 
 /** The two reversals differ only in these three values (`CheckStatusApi.java:181-220`). */
 const REVERSALS = {
@@ -111,6 +133,11 @@ type Outcome = {
   readonly text: string
 }
 
+/** The two submits, which differ only in their track (`SUBMITS`). */
+type SubmitKind = 'submit' | 'submit11'
+
+const NO_SUBMITS: ReadonlySet<SubmitKind> = new Set()
+
 /**
  * How one wired transition button behaves — Verified and, since Story 18.2, both Schedules 1-10
  * reversals. `busy` greys it from the click until the page is showing post-transition truth — the
@@ -119,8 +146,8 @@ type Outcome = {
  * an instant where the screen said "verified" while the button still offered to verify. Ours reads
  * the status from a SECOND request, and between the two the sweep still answers the old code, so
  * without this the button re-enables and a second POST is reachable — which the server then refuses
- * with a 409, painting over the success the user just earned. A track with no wiring keeps an inert
- * click, which is Schedule 11's until Epic 26.
+ * with a 409, painting over the success the user just earned. A Verified with no wiring keeps an
+ * inert click — Schedule 11's, until that track's verify ships.
  */
 type TransitionWiring = {
   readonly onClick: () => void
@@ -138,6 +165,14 @@ const INERT: TransitionWiring = { onClick: () => undefined, busy: false }
 type ReversalWiring = {
   readonly setToDraft?: TransitionWiring
   readonly setToSubmit?: TransitionWiring
+}
+
+/** The latch set without the Schedules 1-10 submit — the same set when it was not there. */
+const withoutOneToTenSubmit = (done: ReadonlySet<SubmitKind>): ReadonlySet<SubmitKind> => {
+  if (!done.has('submit')) return done
+  const next = new Set(done)
+  next.delete('submit')
+  return next
 }
 
 /** A 409 is the protocol's own "your view of the state is stale" — the one status that warrants a re-read. */
@@ -201,17 +236,16 @@ type TrackActions = {
 }
 
 /**
- * How one track's Submit is offered. The two tracks read different sources until Epic 26: Schedules
- * 1–10 take the server's `canSubmit` off the sweep, Schedule 11 still evaluates the legacy client rule
- * — which is why the gate is a PARAMETER of the shared helper rather than a line inside it.
+ * How one track's Submit is offered. Both tracks take the server's own `canSubmit` off the sweep; the
+ * gate stays a PARAMETER of the shared helper because each track's Submit has its own click and its
+ * own success latch.
  */
 type SubmitGate = {
   /** Whether Submit is offered at all. Authorization lives on the server; this only greys a button. */
   readonly offered: boolean
-  /** The click. Absent while the track's transition story has not shipped, and the button stays greyed. */
-  readonly onClick?: () => void
-  /** True while a request is in flight: both bars grey together, so a second click cannot race the first. */
-  readonly busy?: boolean
+  readonly onClick: () => void
+  /** True while any transition is in flight, or this track's own submit has just succeeded. */
+  readonly busy: boolean
 }
 
 /**
@@ -239,8 +273,8 @@ const trackActions = (
   const canVerify = isAdmin && track.statusCode === SUBMITTED
   // One reversal, built only inside its own `rendered=` state below — so the admin half of legacy's
   // rule has already passed and no not-an-admin hint is reachable here. Wired, the button is live and
-  // greys only while its own POST and the re-sweep behind it are in flight; unwired (Schedule 11,
-  // until Epic 26) it keeps legacy's presence but stays greyed and says why.
+  // greys only while ANY transition and the re-sweep behind it are in flight; unwired (Schedule 11's,
+  // until that track's reversals ship) it keeps legacy's presence but stays greyed and says why.
   const reversal = (wiring: TransitionWiring | undefined): TrackAction =>
     wiring === undefined
       ? // `enabled: false` AND no handler. The bar disables on either one
@@ -260,10 +294,12 @@ const trackActions = (
       // Display text, not authorization: the wire decided `offered`; this only says why not.
       disabledReason: submitGate.offered
         ? undefined
-        : isSubmitter
-          ? hints.notDraft
-          : HINT_NOT_SUBMITTER,
-      onClick: submitGate.onClick ?? (() => undefined),
+        : !isSubmitter
+          ? HINT_NOT_SUBMITTER
+          : track.statusCode === DRAFT
+            ? HINT_NOT_ASSIGNED
+            : hints.notDraft,
+      onClick: submitGate.onClick,
     },
     verify: {
       enabled: canVerify && !verifyWiring.busy,
@@ -280,7 +316,8 @@ const trackActions = (
  * were. Both track status lines come from the tombstone's /mill-context read; the sweep's status
  * codes drive only the action gates.
  *
- * Submit, Verified and the two admin reversals (Schedules 1–10) are the live transitions: each asks
+ * Submit on both tracks, and Verified and the two admin reversals on Schedules 1–10, are the live
+ * transitions: each asks
  * legacy's `Confirmation Required`
  * question first, POSTs once, and renders the server's answer as a banner where legacy's
  * `p:messages` sat — first in the panel, above the top button row (checkStatus.xhtml:31-33) — then
@@ -312,6 +349,12 @@ const CheckStatus: FC = () => {
   // re-sweep lands, or it offers to undo a change the screen has not shown yet.
   const [reversing, setReversing] = useState(false)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
+  // Which submits have completed in this context. A 200 means that track's transition is done, so
+  // its Submit stays locked even when the re-sweep behind it FAILS and the hook deliberately keeps
+  // the last good (Draft) payload, whose `canSubmit` is still true. Held apart from `outcome` on
+  // purpose: the banner is cleared by the next action on EITHER track, and a latch that lived in it
+  // was released by the other track's Yes — re-offering a Submit the server would 409.
+  const [submitted, setSubmitted] = useState<ReadonlySet<SubmitKind>>(NO_SUBMITS)
 
   // Every piece of action state above belongs to ONE working context. mill/year lives in a provider,
   // so a context change does NOT remount this page — the sweep re-issues in place, which is what
@@ -327,6 +370,7 @@ const CheckStatus: FC = () => {
     setActionContext(contextKey)
     setConfirming(null)
     setOutcome(null)
+    setSubmitted(NO_SUBMITS)
     // `reversing` is deliberately NOT reset here, and neither is `verifying`. Clearing it would
     // un-grey the new context's buttons while `busyRef` is still held by the old request, and
     // `busyRef` is what the confirm handlers actually check — so the control would be live and its
@@ -376,9 +420,9 @@ const CheckStatus: FC = () => {
     setConfirming(which)
   }
 
-  const requestSubmit = () => {
+  const requestSubmit = (which: SubmitKind) => () => {
     if (saving) return
-    openPrompt('submit')
+    openPrompt(which)
   }
 
   const requestVerify = () => {
@@ -401,22 +445,32 @@ const CheckStatus: FC = () => {
     launcherRef.current?.focus()
   }
 
-  const confirmSubmit = () => {
+  // Both submits, which differ only in their path and fallback (`SUBMITS`). Since the second Submit
+  // arrived they check the same synchronous `busyRef` as every other transition: a dual-role user can
+  // have Schedules 1-10 Verified and Schedule 11 Submit live at once, and a Yes the lock swallows must
+  // never be reachable from a prompt still on screen — so the prompt closes first, as verify's does.
+  const confirmSubmit = (which: SubmitKind) => () => {
     setConfirming(null)
+    if (busyRef.current) {
+      return
+    }
+    busyRef.current = true
     setOutcome(null)
     setSaving(true)
     focusOutcomeRef.current = true
+    const { path, fallback } = SUBMITS[which]
     apiService
       .getAxiosInstance()
-      .post<SubmitResponse>(`/v1/check-status/submit?millId=${millId}&year=${year}`)
+      .post<SubmitResponse>(`/v1/check-status/${path}?millId=${millId}&year=${year}`)
       .then((response) => {
         if (!isCurrent()) return
         setOutcome({ kind: 'success', text: response.data.message.text })
+        setSubmitted((done) => new Set(done).add(which))
         setReloadToken((token) => token + 1)
       })
       .catch((error: unknown) => {
         if (!isCurrent()) return
-        setOutcome({ kind: 'error', text: extractDetail(error) || SUBMIT_FAILED })
+        setOutcome({ kind: 'error', text: extractDetail(error) || fallback })
         if (isConflict(error)) {
           setReloadToken((token) => token + 1)
         }
@@ -426,6 +480,7 @@ const CheckStatus: FC = () => {
         // the context moved while the POST was in flight, and the new context's Submit pair stays
         // greyed for the life of the mount. The two branches above are what must not write across a
         // context change; the lock is the opposite — it must always come off.
+        busyRef.current = false
         setSaving(false)
       })
   }
@@ -451,6 +506,9 @@ const CheckStatus: FC = () => {
       .then((response) => {
         if (!isCurrent()) return
         setOutcome({ kind: 'success', text: response.data.message.text })
+        // A later 1-10 transition supersedes the 1-10 submit's completion: Set to Draft puts the
+        // track back where its Submit must be offered again. Schedule 11's latch is not 1-10's to lift.
+        setSubmitted(withoutOneToTenSubmit)
         setReloadToken((token) => token + 1)
       })
       .catch((error: unknown) => {
@@ -497,6 +555,9 @@ const CheckStatus: FC = () => {
         // legacy reused that key and minted no "verification reversed" message, so there is none to
         // send (UC-CHK-018.md:135). It reads like a copy/paste slip and is parity.
         setOutcome({ kind: 'success', text: response.data.message.text })
+        // A later 1-10 transition supersedes the 1-10 submit's completion: Set to Draft puts the
+        // track back where its Submit must be offered again. Schedule 11's latch is not 1-10's to lift.
+        setSubmitted(withoutOneToTenSubmit)
         setReloadToken((token) => token + 1)
       })
       .catch((error: unknown) => {
@@ -517,12 +578,15 @@ const CheckStatus: FC = () => {
 
   const isSubmitter = hasRole(ILCR_ROLES.submitter)
   const isAdmin = hasRole(ILCR_ROLES.admin)
-  // Verified and the two reversals share ONE lock, because they share `busyRef` and — since Story
-  // 18.2 — they share a status: at Submitted an administrator is offered both Verified and Set to
-  // Draft. A per-button flag left the other one live during a transition, where its Yes hit the
-  // `busyRef` guard and did nothing, and then, once the track had moved underneath it, sent a
+  // EVERY wired transition on the page shares ONE lock, because they share `busyRef` and, pairwise,
+  // they share what is on screen at once: at Submitted an administrator is offered both Verified and
+  // Set to Draft (Story 18.2), and a dual-role user can hold Schedules 1-10 Verified and Schedule 11
+  // Submit together. A per-button flag left the other one live during a transition, where its Yes hit
+  // the `busyRef` guard and did nothing, and then, once the track had moved underneath it, sent a
   // request the server could only refuse with a 409 that painted over the success just earned.
-  const transitionInFlight = verifying || reversing || isReloading
+  // `isReloading` keeps them greyed across the refresh window too, so nothing is pressed against a
+  // status the screen has not caught up to yet.
+  const anyTransitionInFlight = saving || verifying || reversing || isReloading
   const actions1To10 = trackActions(
     data.schedules1To10,
     isSubmitter,
@@ -531,27 +595,28 @@ const CheckStatus: FC = () => {
     // `=== true`: the field is ABSENT (never `false`) where the server has no verdict to give.
     {
       offered: data.schedules1To10.canSubmit === true,
-      onClick: requestSubmit,
-      // A 200 means this transition is complete. Keep the pair locked even if the re-sweep is still
-      // in flight or fails and the hook deliberately preserves the last good (Draft) payload.
-      busy: saving || outcome?.kind === 'success',
+      onClick: requestSubmit('submit'),
+      busy: anyTransitionInFlight || submitted.has('submit'),
     },
-    { onClick: requestVerify, busy: transitionInFlight },
-    // ONE in-flight term across all three, not one per button. `isReloading` keeps them greyed across
-    // the refresh window, so the reversal that APPEARS after a successful one cannot be pressed
-    // against a status the screen has not caught up to yet.
+    { onClick: requestVerify, busy: anyTransitionInFlight },
     {
-      setToDraft: { onClick: requestReversal('setToDraft'), busy: transitionInFlight },
-      setToSubmit: { onClick: requestReversal('setToSubmit'), busy: transitionInFlight },
+      setToDraft: { onClick: requestReversal('setToDraft'), busy: anyTransitionInFlight },
+      setToSubmit: { onClick: requestReversal('setToSubmit'), busy: anyTransitionInFlight },
     },
   )
+  // Schedule 11's Submit reads the server's own verdict, exactly as 1-10's does. Its Verified keeps
+  // the legacy client gate and the default inert click, and its reversals stay greyed, until those
+  // transitions ship for this track.
   const actions11 = trackActions(
     data.schedule11,
     isSubmitter,
     isAdmin,
     { notDraft: HINT_NOT_DRAFT_11, notSubmitted: HINT_NOT_SUBMITTED_11 },
-    // Schedule 11 keeps the legacy client rule, and no click, until Epic 26 ships its own verdict.
-    { offered: isSubmitter && data.schedule11.statusCode === DRAFT },
+    {
+      offered: data.schedule11.canSubmit === true,
+      onClick: requestSubmit('submit11'),
+      busy: anyTransitionInFlight || submitted.has('submit11'),
+    },
   )
 
   return (
@@ -592,7 +657,8 @@ const CheckStatus: FC = () => {
           cancelLabel="Cancel"
           onConfirm={
             {
-              submit: confirmSubmit,
+              submit: confirmSubmit('submit'),
+              submit11: confirmSubmit('submit11'),
               verify: confirmVerify,
               setToDraft: confirmReversal('setToDraft'),
               setToSubmit: confirmReversal('setToSubmit'),

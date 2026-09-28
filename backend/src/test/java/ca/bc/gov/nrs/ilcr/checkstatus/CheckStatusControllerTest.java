@@ -51,6 +51,8 @@ class CheckStatusControllerTest {
   private static final Authentication SUBMITTER =
       new TestingAuthenticationToken("dev-submitter", "N/A", "SUBMITTER");
 
+  private static final ScheduleTrack ONE_TO_TEN = ScheduleTrack.SCHEDULES_1_TO_10;
+
   @Mock private MillContextService millContextService;
   @Mock private CheckStatusSweepService sweepService;
   @Mock private ReportTrackTransitionService transitionService;
@@ -302,21 +304,66 @@ class CheckStatusControllerTest {
 
   @Test
   @DisplayName(
-      "15.3 AC 9: canSubmit is the offer rule's answer for the 1-10 status; Schedule 11 carries none")
-  void sweep_carriesCanSubmitOnTheOneToTenTrackOnly() {
+      "26.1 AC 7: canSubmit is decided per track, each against its OWN status code, never shared")
+  void sweep_decidesCanSubmitPerTrackAgainstItsOwnCode() {
+    // The two codes differ on purpose: with equal codes a swapped argument would pass unseen.
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514, 2021));
-    when(sweepService.sweep(514, 2021)).thenReturn(emptySweep());
+    when(sweepService.sweep(514, 2021))
+        .thenReturn(
+            new CheckStatusSweepResponse(
+                514,
+                2021,
+                TrackCheckResult.of("S", List.of()),
+                TrackCheckResult.of("D", List.of())));
+    when(reportSubmission.canSubmit(SUBMITTER, "S", 514)).thenReturn(false);
     when(reportSubmission.canSubmit(SUBMITTER, "D", 514)).thenReturn(true);
 
     CheckStatusSweepResponse body = controller.checkStatus("514", "2021", SUBMITTER).getBody();
 
     assertThat(body).isNotNull();
-    assertThat(body.schedules1To10().canSubmit()).isTrue();
-    assertThat(body.schedules1To10().statusCode()).isEqualTo("D");
-    assertThat(body.schedule11().canSubmit()).isNull();
+    assertThat(body.schedules1To10().statusCode()).isEqualTo("S");
+    assertThat(body.schedules1To10().canSubmit()).isFalse();
+    assertThat(body.schedule11().statusCode()).isEqualTo("D");
+    assertThat(body.schedule11().canSubmit()).isTrue();
+    verify(reportSubmission).canSubmit(SUBMITTER, "S", 514);
     verify(reportSubmission).canSubmit(SUBMITTER, "D", 514);
-    verify(reportSubmission, never()).canSubmit(any(), isNull(), anyLong());
+  }
+
+  @Test
+  @DisplayName("26.1 AC 7: the mirror — 1-10 at Draft offered, Schedule 11 at Submitted not")
+  void sweep_decidesCanSubmitPerTrack_mirror() {
+    when(millContextService.validateMillYearActive("514", "2021"))
+        .thenReturn(new MillYearContext(514, 2021));
+    when(sweepService.sweep(514, 2021))
+        .thenReturn(
+            new CheckStatusSweepResponse(
+                514,
+                2021,
+                TrackCheckResult.of("D", List.of()),
+                TrackCheckResult.of("S", List.of())));
+    when(reportSubmission.canSubmit(SUBMITTER, "D", 514)).thenReturn(true);
+    when(reportSubmission.canSubmit(SUBMITTER, "S", 514)).thenReturn(false);
+
+    CheckStatusSweepResponse body = controller.checkStatus("514", "2021", SUBMITTER).getBody();
+
+    assertThat(body).isNotNull();
+    assertThat(body.schedules1To10().canSubmit()).isTrue();
+    assertThat(body.schedule11().canSubmit()).isFalse();
+  }
+
+  @Test
+  @DisplayName("26.1 AC 7: a Schedule 11 track with no code is still decided — false, never absent")
+  void sweep_schedule11CanSubmitIsAlwaysPresent() {
+    when(millContextService.validateMillYearActive("514", "2021"))
+        .thenReturn(new MillYearContext(514, 2021));
+    when(sweepService.sweep(514, 2021)).thenReturn(emptySweep());
+
+    CheckStatusSweepResponse body = controller.checkStatus("514", "2021", SUBMITTER).getBody();
+
+    assertThat(body).isNotNull();
+    assertThat(body.schedule11().canSubmit()).isFalse();
+    verify(reportSubmission).canSubmit(eq(SUBMITTER), isNull(), eq(514L));
   }
 
   @Test
@@ -325,7 +372,7 @@ class CheckStatusControllerTest {
   void submit_guardRunsBeforeTheTransition() {
     when(millContextService.validateMillYearActive("760", "2021"))
         .thenReturn(new MillYearContext(760, 2021));
-    when(transitionService.submit(760, 2021, SUBMITTER, "dev-submitter"))
+    when(transitionService.submit(ONE_TO_TEN, 760, 2021, SUBMITTER, "dev-submitter"))
         .thenReturn("sch1-10SubmittedMsg");
     when(messageSource.getMessage(
             eq("sch1-10SubmittedMsg"), isNull(), eq("sch1-10SubmittedMsg"), any(Locale.class)))
@@ -341,7 +388,7 @@ class CheckStatusControllerTest {
     InOrder order = inOrder(millContextService, reportSubmission, transitionService);
     order.verify(millContextService).validateMillYearActive("760", "2021");
     order.verify(reportSubmission).validateSubmitterMillAccess(SUBMITTER, 760);
-    order.verify(transitionService).submit(760, 2021, SUBMITTER, "dev-submitter");
+    order.verify(transitionService).submit(ONE_TO_TEN, 760, 2021, SUBMITTER, "dev-submitter");
     verifyNoInteractions(sweepService);
   }
 
@@ -467,7 +514,7 @@ class CheckStatusControllerTest {
   void submit_notFoundInsideTheTransaction_isTheCheckStatusNotFound() {
     when(millContextService.validateMillYearActive("760", "2021"))
         .thenReturn(new MillYearContext(760, 2021));
-    when(transitionService.submit(760, 2021, SUBMITTER, "dev-submitter"))
+    when(transitionService.submit(ONE_TO_TEN, 760, 2021, SUBMITTER, "dev-submitter"))
         .thenThrow(new ScheduleNotFoundException());
 
     assertThatThrownBy(() -> controller.submit("760", "2021", SUBMITTER))
@@ -479,10 +526,63 @@ class CheckStatusControllerTest {
   void submit_transitionRefusalsPassThrough() {
     when(millContextService.validateMillYearActive("515", "2021"))
         .thenReturn(new MillYearContext(515, 2021));
-    when(transitionService.submit(515, 2021, SUBMITTER, "dev-submitter"))
+    when(transitionService.submit(ONE_TO_TEN, 515, 2021, SUBMITTER, "dev-submitter"))
         .thenThrow(new ReportNotSubmittedException());
 
     assertThatThrownBy(() -> controller.submit("515", "2021", SUBMITTER))
         .isInstanceOf(ReportNotSubmittedException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "26.1 D4: Schedule 11 submit runs the same guard and mill scope, then names SCHEDULE_11")
+  void submitSchedule11_guardThenScopeThenTheSchedule11Track() {
+    when(millContextService.validateMillYearActive("784", "2021"))
+        .thenReturn(new MillYearContext(784, 2021));
+    when(transitionService.submit(ScheduleTrack.SCHEDULE_11, 784, 2021, SUBMITTER, "dev-submitter"))
+        .thenReturn("sch11SubmittedMsg");
+    when(messageSource.getMessage(
+            eq("sch11SubmittedMsg"), isNull(), eq("sch11SubmittedMsg"), any(Locale.class)))
+        .thenReturn("Schedule 11 has been successfully submitted.");
+
+    var response = controller.submitSchedule11("784", "2021", SUBMITTER);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody()).isNotNull();
+    assertThat(response.getBody().message().key()).isEqualTo("sch11SubmittedMsg");
+    assertThat(response.getBody().message().text())
+        .isEqualTo("Schedule 11 has been successfully submitted.");
+    InOrder order = inOrder(millContextService, reportSubmission, transitionService);
+    order.verify(millContextService).validateMillYearActive("784", "2021");
+    order.verify(reportSubmission).validateSubmitterMillAccess(SUBMITTER, 784);
+    order
+        .verify(transitionService)
+        .submit(ScheduleTrack.SCHEDULE_11, 784, 2021, SUBMITTER, "dev-submitter");
+    verify(transitionService, never())
+        .submit(eq(ScheduleTrack.SCHEDULES_1_TO_10), anyLong(), anyInt(), any(), any());
+    verifyNoInteractions(sweepService);
+  }
+
+  @Test
+  @DisplayName("26.1 AC 4: a Schedule 11 not-found inside the transaction is re-keyed too")
+  void submitSchedule11_notFound_isTheCheckStatusNotFound() {
+    when(millContextService.validateMillYearActive("784", "2021"))
+        .thenReturn(new MillYearContext(784, 2021));
+    when(transitionService.submit(ScheduleTrack.SCHEDULE_11, 784, 2021, SUBMITTER, "dev-submitter"))
+        .thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> controller.submitSchedule11("784", "2021", SUBMITTER))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("26.1 AC 4: a Schedule 11 submit whose context guard refuses reaches no service")
+  void submitSchedule11_guardRefusal_neverReachesTheService() {
+    when(millContextService.validateMillYearActive(null, "2021"))
+        .thenThrow(new MillYearNotSelectedException());
+
+    assertThatThrownBy(() -> controller.submitSchedule11(null, "2021", SUBMITTER))
+        .isInstanceOf(MillYearNotSelectedException.class);
+    verifyNoInteractions(transitionService, reportSubmission);
   }
 }

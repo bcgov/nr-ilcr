@@ -362,7 +362,7 @@ class ReportTransitionWriterTest {
 
     assertThatThrownBy(() -> writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
         .isInstanceOf(ReportTransitionRejectedException.class)
-        .hasMessage(transition.rejectedKey());
+        .hasMessage(transition.rejectedKey(ScheduleTrack.SCHEDULES_1_TO_10));
     verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());

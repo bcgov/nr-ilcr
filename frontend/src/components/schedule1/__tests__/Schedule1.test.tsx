@@ -610,6 +610,23 @@ describe('Schedule1 editable page', () => {
     expect(attempts).toBe(2)
   })
 
+  test('a Save failure carrying no detail falls back to the generic Save message (#332)', async () => {
+    // The 500 case above sends the fallback wording AS the server detail, so it exercises the
+    // verbatim arm. An EMPTY 500 body is what reaches the right-hand side of
+    // `extractDetail(error) || fallback` — the situation the fallback exists for.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.put(URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
   test('Save and Check Status sit above AND below; Delete only below (schedule1.xhtml:35-38 vs :796-803)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
     render(<Schedule1 />)
@@ -659,6 +676,27 @@ describe('Schedule1 editable page', () => {
         screen.queryByLabelText('Standing Tree to Loaded Truck volume'),
       ).not.toBeInTheDocument(),
     )
+  })
+
+  test('a DELETE failure carrying no detail falls back to the generic delete message and keeps the record (#332)', async () => {
+    // `remove`'s `fallback: 'Unable to delete Schedule 1.'` had no coverage: every delete fixture in
+    // this file answers 200. An empty-bodied 500 is what makes that arm the text the user sees.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.delete(URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText('Unable to delete Schedule 1.')).toBeInTheDocument()
+    // `onSuccess` never ran: the schedule is NOT emptied, and no success banner appears.
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck volume')).toBeInTheDocument()
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
   })
 
   test('409 mill-closed shows verbatim ERR-002, form suppressed (AC / S20)', async () => {
@@ -954,6 +992,26 @@ describe('Schedule1 Check Status (Story 2.7)', () => {
     expect(
       await screen.findByText('This schedule cannot be edited in its current status.'),
     ).toBeInTheDocument()
+  })
+
+  test('a check failure carrying no detail falls back to the generic check message (#332)', async () => {
+    // The test above proves the verbatim half of `extractDetail(err) || fallback`; this is the other:
+    // an empty-bodied 500 has no detail, so `fallback: 'Unable to check status.'` is what renders.
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock released on the error path, so the check can be retried.
+    await waitFor(() =>
+      screen
+        .getAllByRole('button', { name: /check status/i })
+        .forEach((b) => expect(b).toBeEnabled()),
+    )
   })
 })
 
@@ -1707,5 +1765,177 @@ describe('Schedule1 ministry correction at Submitted (Story 16.3)', () => {
     screen
       .getAllByRole('button', { name: /check status/i })
       .forEach((button) => expect(button).toBeDisabled())
+  })
+})
+
+/**
+ * The screen-aware check (#359): legacy's Check Status was a full postback that judged the SCREEN,
+ * so the request must carry every checked value as typed. These cases pin the halves that can each
+ * fail silently — the body actually CARRIES the keystroke state (blank as null, never 0), invalid
+ * text never reaches the server as a false "Value Required", and a verdict never outlives the screen
+ * it described.
+ */
+describe('Schedule1 Check Status judges the screen (#359)', () => {
+  const CHECK_URL = 'http://localhost:3000/api/v1/schedule1/check-status'
+  const MET_TEXT = 'All requirements for this schedule have been met'
+  const metResponse = () => ({
+    requirementsMet: true,
+    errors: [],
+    warnings: [],
+    message: { key: 'scheduleRequirementsMetMsg', text: MET_TEXT },
+  })
+  const checkButton = () => screen.getAllByRole('button', { name: /check status/i })[0]
+  const standingTreeVolume = () => screen.getByLabelText('Standing Tree to Loaded Truck volume')
+
+  /** Capture every check-status request body, whatever it is, including its nulls. */
+  const captureCheckBodies = (doc: unknown = schedule1Doc) => {
+    const bodies: unknown[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    return bodies
+  }
+
+  /** The body for `schedule1Doc` as served: absent lines are blank on screen, so they are null. */
+  const servedBody = (
+    overrides: Record<number, { volume?: number | null; cost?: number | null }>,
+  ) => {
+    const served: Record<number, { volume: number | null; cost: number | null }> = {
+      12: { volume: 1000, cost: 50000 },
+      1: { volume: 500, cost: 20000 },
+      139: { volume: 55, cost: null },
+    }
+    const line = (code: number) => ({
+      costItemCode: code,
+      volume: null,
+      cost: null,
+      ...served[code],
+      ...overrides[code],
+    })
+    return {
+      lineItems: [12, 13, 14, 15, 16, 17, 18, 1, 2, 143, 144, 139, 140].map(line),
+      otherCostsVolume: 8000,
+    }
+  }
+
+  test('the request carries every checked value as typed, not as stored', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.type(standingTreeVolume(), '2500')
+    // No blur: the keystroke state is what legacy's postback submitted.
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual(servedBody({ 12: { volume: 2500 } }))
+  })
+
+  /**
+   * The false-GREEN guard. The server's check is a pure NULL test — a stored `0` passes — so a
+   * `?? 0` anywhere on the send path would turn a cleared field into a pass.
+   */
+  test('a CLEARED field is sent as null, never coerced to 0', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.clear(screen.getByLabelText('Subtotal Other Costs volume'))
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({
+      ...servedBody({ 12: { volume: null } }),
+      otherCostsVolume: null,
+    })
+  })
+
+  test('a volume the GET pre-filled from the crown volume is sent — it is on screen', async () => {
+    const bodies = captureCheckBodies(prefillDoc)
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    const body = bodies[0] as { lineItems: { costItemCode: number; volume: number | null }[] }
+    expect(body.lineItems.map((l) => l.volume)).toEqual(Array(13).fill(7777))
+  })
+
+  test('invalid text blocks the check with the Save gate, and NO request is sent', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.type(standingTreeVolume(), '12x')
+    await user.click(checkButton())
+
+    expect(
+      await screen.findByText('Please correct the highlighted fields before checking status.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('an out-of-range value blocks the check too', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.type(standingTreeVolume(), '99999999')
+    await user.click(checkButton())
+
+    expect(
+      await screen.findByText('Please correct the highlighted fields before checking status.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('editing a checked field clears the shown verdict', async () => {
+    captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(checkButton())
+    expect(await screen.findByText(MET_TEXT)).toBeVisible()
+
+    await user.type(screen.getByLabelText('Subtotal Other Costs volume'), '1')
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(checkButton())
+    await waitFor(() => expect(checkButton()).toBeDisabled())
+    await user.clear(standingTreeVolume())
+
+    releaseCheck()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
   })
 })

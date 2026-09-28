@@ -787,3 +787,67 @@ describe('stale-context safety', () => {
     expect(screen.queryByDisplayValue('Generator Fuel')).not.toBeInTheDocument()
   })
 })
+
+describe('detail-less error fallbacks (#332)', () => {
+  // Each mutation passes its own fallback to `runMutation`/`save`, and the load has one of its own;
+  // all apply only when the failure carries no ProblemDetail.detail. A bare 500 with an EMPTY body is
+  // that shape. The literals are typed here, not imported from the page.
+  const detailLess = () => new HttpResponse(null, { status: 500 })
+
+  test('a load failure with no detail falls back to the generic load message instead of the grid', async () => {
+    server.use(http.get(CAMP_URL, () => detailLess()))
+    renderSubPage('CAMP')
+
+    expect(await screen.findByText('Unable to load the expense list.')).toBeInTheDocument()
+    expect(screen.queryByText('Totals:')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less Add falls back to the add message and keeps the add form filled', async () => {
+    seedCamp(describedCampDoc())
+    server.use(http.put(CAMP_URL, () => detailLess()))
+    const user = userEvent.setup()
+    renderSubPage('CAMP')
+
+    await screen.findByText('Other Camp Expenses')
+    await user.type(screen.getByLabelText('Description:'), 'Chainsaw Fuel')
+    await user.type(screen.getByLabelText('Cost $:'), '750')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(await screen.findByText('Unable to add the expense.')).toBeInTheDocument()
+    // The add form is only cleared by a successful echo, so the entry is still there to retry.
+    expect(screen.getByLabelText('Description:')).toHaveValue('Chainsaw Fuel')
+  })
+
+  test('a detail-less Save falls back to the save-list message and keeps the grid edit', async () => {
+    seedCamp(describedCampDoc())
+    server.use(http.put(CAMP_URL, () => detailLess()))
+    const user = userEvent.setup()
+    renderSubPage('CAMP')
+
+    const descriptions = await rowInputs(/^Description$/)
+    await user.clear(descriptions[0])
+    await user.type(descriptions[0], 'Kept On Failure')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Unable to save the expense list.')).toBeInTheDocument()
+    expect((await rowInputs(/^Description$/))[0]).toHaveValue('Kept On Failure')
+  })
+
+  test('a detail-less row Delete falls back to the delete message and keeps the row', async () => {
+    seedCamp()
+    server.use(http.delete(`${CAMP_URL}/:rowId`, () => detailLess()))
+    const user = userEvent.setup()
+    renderSubPage('CAMP')
+
+    const deletes = await screen.findAllByRole('button', { name: 'Delete' })
+    await user.click(deletes[0])
+    await user.click(
+      within(
+        confirmDialog('This will delete the current record. Do you want to continue?'),
+      ).getByRole('button', { name: 'Yes' }),
+    )
+
+    expect(await screen.findByText('Unable to delete the expense.')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Generator Fuel')).toBeInTheDocument()
+  })
+})

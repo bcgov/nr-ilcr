@@ -99,7 +99,7 @@ See GAP-1.
 | Every rejection persists NOTHING | BR-02, S13–S27 | client gate; server 400 | every validation scenario (spy = 0 + read-back) | covered | — |
 | Location Name > 30 chars → server 400 | `@Size(max=30)` | unreachable from the UI (`maxLength={30}`) | happy-path `@S09 @p2` proves the input truncates | not-applicable (UI) | — |
 | Comments ≤ 3500 chars | slices Field Reference; `@Size(max=3500)` | `TextArea maxCount={COMMENTS_MAX}` | — | not-applicable | slices excluded it ("no distinct behaviour at the boundary"); the counter is cosmetic |
-| ERR-003 and the other four Schedule 4 error fallbacks | technical ERR-003 `[UNKNOWN]`; legacy `scheduleNotSavedErrorMsg` (`messages.properties:67`) | 5 sites: `index.tsx:356` save, `:406` delete-location, `:421` check-status, `SubPage.tsx:159`/`:203` row-save, `:257` delete-row. The save handler's `detail` arm IS covered (duplicate-name S14 + `Schedule4.test.tsx:605`); no detail-less arm is | — | deferred | GAP-2 |
+| ERR-003 and the other four Schedule 4 error fallbacks | technical ERR-003 `[UNKNOWN]`; legacy `scheduleNotSavedErrorMsg` (`messages.properties:67`) | 5 sites: `index.tsx:356` save, `:406` delete-location, `:421` check-status, `SubPage.tsx:159`/`:203` row-save, `:257` delete-row. The save handler's `detail` arm was already covered (duplicate-name S14 + `Schedule4.test.tsx`); the detail-less arm of all five sites is now covered too | `Schedule4.test.tsx` — the six `(#332)` cases: *"a detail-less save failure falls back to the generic save message and keeps the panel open"*, *"…delete failure…"*, *"…Check Status failure…"*, *"…add-row failure…keeps the draft"*, *"…row-edit Save failure…"*, *"…row delete failure…"* — each fails its request with an empty-bodied 500 and asserts the exact fallback | `covered (unit)` | ex-**GAP-2**, closed 2026-09-24 by [#332](https://github.com/bcgov/nr-ilcr/issues/332) |
 | Stale optimistic-lock token → 409, and the other session's value survives | `scheduleRevisionConflictErrorMsg`; §Decision 3's optimistic lock | `bumpRevision` returns 0 → `StaleRevisionException` | concurrency `@S02 @p1` | covered | — |
 | ALT-001 browser `alert()` | technical ALT-001 | none — no `alert()` in the app | — | not-applicable | legacy had none either |
 | ASY-001 async/job | technical ASY-001 | none — all synchronous | — | not-applicable | legacy had none either |
@@ -135,7 +135,7 @@ See GAP-1.
 | STA-001 Copy/Delete disabled | S18, BR-03 | `disabled={!editable \|\| saving}` | render-states `@S18 @p0` outline | covered (mechanism re-grounded: disabled, not omitted) | — |
 | STA-001 the panel renders read-only (values as text, no inputs) | S18 | `readOnlyPanel` branches | render-states `@S18 @p0` outline | covered | — |
 | STA-001 the sub-page loses its add-row form and per-row Delete | S18 + Story 10.6 AC5 | `editable &&` guards in `SubPage.tsx` | render-states `@S18 @p0` outline | covered | — |
-| STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | disabled — `disabled={!editable \|\| saving}` (`index.tsx:879`), fixed 2026-08-24 | render-states `@S18` | covered | ex-DIV-1 — tag retired; #322 stays open for **Schedule 8** |
+| STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | disabled — `disabled={!editable \|\| saving}` (`index.tsx:879`), fixed 2026-08-24 | render-states `@S18` | covered | ex-DIV-1 — tag retired; Schedule 8's half fixed 2026-09-14 (#464), #322 closed |
 | The empty-list state | S01 precondition | `data.locations.length === 0` branch | render-states `@S01 @p2` | covered | — |
 | NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | DIV-6 (CLOSED, not a defect) |
 | NAV-005 row-delete confirm text | NAV-005 | `CONFIRM_DELETE_ROW` in `SubPage.tsx` | subpage-rows `@S11 @p0` | covered | — |
@@ -157,14 +157,14 @@ count columns. That leaves **82 coverage-eligible rows**.
 |---|---|---|
 | **P0** | 100% | **100%** — 19 of 19 eligible P0 rows covered, 0 gaps. Every core journey (S01 create, S02 edit, S03/S04 sub-page entry, S07 copy, S10 delete, S11 row delete, S18 read-only ×2 codes, S28 Check Status) is covered by a passing or deliberately-red scenario. |
 | **P1** | ≥ 90% (floor 80%) | **100%** — 37 of 37 eligible P1-tagged rows covered, 0 gaps. |
-| **Overall** | ≥ 80% | **96.3%** — 79 of 82 eligible rows covered; 3 counted gaps, all named below (GAP-3 closed 2026-08-20). |
+| **Overall** | ≥ 80% | **97.6%** — 80 of 82 eligible rows covered; 2 counted gaps, all named below (GAP-3 closed 2026-08-20, GAP-2 closed 2026-09-24). |
 
-The three counted gaps (each filed in `defects.md`, none of them an app fault). GAP-3 is listed too, as CLOSED, because its id is cited elsewhere:
+The two counted gaps (each filed in `defects.md`, none of them an app fault). GAP-2 and GAP-3 are listed too, as CLOSED, because their ids are cited elsewhere:
 
 | Gap | Kind | Why it counts against coverage |
 |---|---|---|
 | GAP-1 | `blocked` | role-gated behaviour cannot be produced under single-role mock auth, and the two `ROLE_ACTIONS` sets do not yet diverge. Endpoint enforcement is covered by the backend's `Schedule4WriteAuthorizationIT`; owned by the cross-cutting deferral in `deferred-work.md`, so a gate should treat it as **waived**. |
-| GAP-2 | `deferred` | Schedule 4's five error-fallback strings (a failure carrying no `detail`) are unexercised. NOT dead code and not unknown text: ERR-003's string is legacy's own `scheduleNotSavedErrorMsg`, and the save handler's other arm is covered at both layers. Belongs in Vitest cases rather than E2E interception scenarios; part of an app-wide gap (54 of 73 fallbacks) tracked in issue #332, where Schedule 4 is group 1. |
+| GAP-2 | `covered (unit)` | CLOSED 2026-09-24 — Schedule 4's five error-fallback strings are now asserted by six Vitest cases in `Schedule4.test.tsx` ([#332](https://github.com/bcgov/nr-ilcr/issues/332), the app-wide fallback sweep). Unit rather than E2E, as the entry always said: pure client-side branches, and Vitest gates in CI where this suite does not. |
 | GAP-3 | `covered` | CLOSED 2026-08-20 — the stale-token conflict is now covered by `concurrency.feature` `@p1 @S02` (the 409 renders verbatim AND the other session's value is asserted as the survivor). The earlier "needs two browser contexts" reason was wrong; one context plus one API save stages it. |
 | GAP-4 | `deferred` | the validation-error axe sweep is skipped by the project's cross-cutting convention (`deferred-work.md`, app-wide WCAG 4.1.2), so Schedule 4's error state is genuinely unswept. |
 
@@ -220,7 +220,7 @@ see where they went:
 
 | Ex-red | Entry | Fixed |
 |---|---|---|
-| render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) — Schedule 4 half only; **#322 stays open for Schedule 8**, still `disabled={saving}` at `schedule8/index.tsx:792` |
+| render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) for Schedule 4; Schedule 8 followed 2026-09-14 (#464, `schedule8/index.tsx:837` + `SamplePage.tsx:670`), so #322 is closed |
 | nav-and-recompute `@S01 @S02` | DIV-4 | issue #291's fix (`6e86d7a`) — the panel shows the recomputed $/m³ without a reopen |
 | check-status `@S28` | DIV-2 | issue #326's fix (2026-09-18) named the field; the scenario was then REMOVED the same day when #465 (DIV-9) removed the cost finding it labelled — Vitest covers the labelling |
 | check-status-unsaved `@S33 @S34` | DIV-8 | REMOVED 2026-09-18, not fixed: #465 (DIV-9) left Schedule 4 with no saved state Check Status can flag, so neither arm is producible. #359 stays open on sch1/sch2/sch3/sch11 |
