@@ -322,13 +322,15 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
     expect(JSON.stringify(flat)).not.toMatch(/897[234]/)
   })
 
-  test('Schedule 8: a verdict stored before #461 (no labels) is attributed positionally; MET keeps `pages` populated', () => {
+  test('Schedule 8: the no-samples page case is attributed to its page label; MET keeps `pages` populated', () => {
     const noSamples = flattenVerdict({
       schedule: '8',
       requirementsMet: false,
       verdict: schedule8NoSamples,
     })
-    expect(texts(noSamples.errors)).toEqual([`Page # 1 - Sample: ${SCH8_NO_SAMPLE_TEXT}`])
+    expect(texts(noSamples.errors)).toEqual([
+      `${SCH8_PAGE_1_LABEL} - Sample: ${SCH8_NO_SAMPLE_TEXT}`,
+    ])
     const met = flattenVerdict({ schedule: '8', requirementsMet: true, verdict: schedule8Met })
     expect(met.errors).toEqual([])
     expect(met.requirementsMetMessage?.text).toBe(MET_TEXT)

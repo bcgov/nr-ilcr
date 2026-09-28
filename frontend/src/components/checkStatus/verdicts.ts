@@ -132,24 +132,19 @@ const attribute = (where: string, issue: CheckFieldIssue): MessageInfo => ({
  * Schedule 8 ships the bare text, a human field label and, since #461, the legacy page title
  * ("Page # 1  -TSA: TSA5 -CP: cp123") and sample title ("Sample # 1 - CMET") per page/sample — the
  * same text the Schedule 8 screen shows, so a line here names the page the way the summary does.
- * A verdict STORED before #461 carries neither, so attribution falls back to the POSITIONAL ordinal
- * (pages arrive in the order the Schedule 8 page numbers them). The raw id is never rendered. `pages`
- * is populated on MET too, so the branch is on `outcome`, never on the list.
+ * The raw id is never rendered. `pages` is populated on MET too, so the branch is on `outcome`,
+ * never on the list.
  */
 const flattenSchedule8 = (verdict: Schedule8CheckStatusResponse): FlatVerdict => {
   if (verdict.outcome === 'MET') {
     return flat(true, NONE, metLine(verdict))
   }
-  const errors = verdict.pages.flatMap((page, pageIndex) => {
-    const pageLabel = page.pageLabel ?? `Page # ${String(pageIndex + 1)}`
-    return [
-      ...page.issues.map((issue) => attribute(pageLabel, issue)),
-      ...page.samples.flatMap((sample, sampleIndex) => {
-        const sampleLabel = sample.sampleLabel ?? `Sample # ${String(sampleIndex + 1)}`
-        return sample.issues.map((issue) => attribute(`${pageLabel} - ${sampleLabel}`, issue))
-      }),
-    ]
-  })
+  const errors = verdict.pages.flatMap((page) => [
+    ...page.issues.map((issue) => attribute(page.pageLabel, issue)),
+    ...page.samples.flatMap((sample) =>
+      sample.issues.map((issue) => attribute(`${page.pageLabel} - ${sample.sampleLabel}`, issue)),
+    ),
+  ])
   return flat(false, errors, null)
 }
 

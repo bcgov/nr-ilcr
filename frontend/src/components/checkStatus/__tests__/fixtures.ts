@@ -511,17 +511,15 @@ export const schedule8Issues: Schedule8CheckStatusResponse = {
 
 export const SCH8_NO_SAMPLE_TEXT = 'Please create a TtT sample data record for this page'
 
-/**
- * schedule8-602-2021.json — a page-level issue and no samples. Deliberately WITHOUT the #461
- * `pageNumber`/`pageLabel`: it stands in for a verdict stored before those fields existed, which the
- * Check Status page still has to attribute — positionally.
- */
+/** schedule8-602-2021.json — a page-level issue and no samples. */
 export const schedule8NoSamples: Schedule8CheckStatusResponse = {
   outcome: 'ISSUES',
   messages: [],
   pages: [
     {
       id: 8975,
+      pageNumber: 1,
+      pageLabel: SCH8_PAGE_1_LABEL,
       met: false,
       issues: [
         {

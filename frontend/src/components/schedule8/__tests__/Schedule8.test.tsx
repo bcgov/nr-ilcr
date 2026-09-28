@@ -820,11 +820,15 @@ describe('Schedule8 sample level', () => {
           pages: [
             {
               id: 8001,
+              pageNumber: 1,
+              pageLabel: 'Page # 1  -TSA: TSA1 -CP: CP1',
               met: false,
               issues: [],
               samples: [
                 {
                   id: 8101,
+                  sampleNumber: 1,
+                  sampleLabel: 'Sample # 1 - C-1',
                   met: false,
                   issues: [
                     {
@@ -847,9 +851,11 @@ describe('Schedule8 sample level', () => {
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText('Total value must be greater than 0.')).toBeInTheDocument()
-    // This mock carries no #461 labels (a verdict shaped before them), so the notice falls back to the
-    // positional ordinals rather than dropping the where.
-    expect(screen.getByText('Page # 1 — Sample # 1 — Actual Harvested')).toBeInTheDocument()
+    // #461: the notice names the page and sample by their wire labels. (The DOM collapses the label's
+    // double space.)
+    expect(
+      screen.getByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 1 - C-1 — Actual Harvested'),
+    ).toBeInTheDocument()
   })
 
   test('Back from a dirty sample editor confirms before leaving (S13)', async () => {

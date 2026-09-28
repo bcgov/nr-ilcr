@@ -507,7 +507,7 @@ describe('Check Status page (Story 15.2)', () => {
       ),
     )
     render(<CheckStatus />)
-    await screen.findByText(`Page # 1 - Sample: ${SCH8_NO_SAMPLE_TEXT}`)
+    await screen.findByText(shown(`${SCH8_PAGE_1_LABEL} - Sample: ${SCH8_NO_SAMPLE_TEXT}`))
     expect(linesIn(item(SCHEDULE_TITLES['8']))).toHaveLength(1)
   })
 

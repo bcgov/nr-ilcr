@@ -15,8 +15,12 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
  * ({@code schedule8/index.tsx} {@code pageLabel}/{@code sampleLabel}), with two null-guards legacy
  * lacked: a null TSA renders as empty rather than {@code "null"}, and a blank cutting permit as
  * {@code " - "}. This class mirrors THAT composition, so a Check Status line names a page exactly
- * as the summary row above it does. (The CSV extract's {@code Schedule8Section.pageTitle} keeps
- * legacy's unguarded TSA on purpose.)
+ * as the summary row above it does.
+ *
+ * <p>The CSV extract's {@code Schedule8Section.pageTitle} is deliberately NOT shared: it keeps
+ * legacy's unguarded TSA ({@code "TSA: null"}) and treats only an EMPTY cutting permit as absent,
+ * where the screen — and so this class, via {@code isBlank()} — also treats a whitespace-only one
+ * as absent. Both differences are legacy parity on the extract side and screen parity here.
  *
  * <p>Row numbers are 1-based positions in the document's page order (ascending report id) and in
  * the page's sample order — the same ordinals the screen numbers them with.
