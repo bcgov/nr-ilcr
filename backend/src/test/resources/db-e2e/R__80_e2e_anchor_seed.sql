@@ -578,7 +578,14 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- ROAD_MAINTENANCE_REPORT_ID is registered in `parentsByColumn` in
 -- preflight/ci-seed-parity.setup.ts in this same change, or these detail rows would
 -- be reported as parentless — the gate's own header named this as the next FK.
+--
+-- SUPPLY BLOCK 01B IS SEEDED HERE because the test snapshot's code table carries
+-- only 01A for TSA 01 (V20260821), and every sch6 TSA-path scenario (S01, S12-S16)
+-- picks "Arrow TSA Block B" — the delivery description — from the Add panel's
+-- Supply Block list. Without the row the option is never offered. The dates take
+-- the table's 1900/9999 defaults, so the block is in every year's window.
 -- ----------------------------------------------------------------------------
+INSERT INTO THE.TSB_NUMBER_CODE (TSB_NUMBER_CODE, DESCRIPTION) VALUES ('01B', 'Arrow TSA Block B');
 INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (3100, 2024, 24051, '6', '01', '01B', NULL, 'E2E S17 read-only schedule general comment.', 0, 'E2E_SEED', SYSDATE, 'E2E_SEED', SYSDATE);
 INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) VALUES (3101, 2024, 24051, '6', NULL, NULL, '48', 'E2E S17 read-only schedule general comment.', 0, 'E2E_SEED', SYSDATE, 'E2E_SEED', SYSDATE);
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4320, NULL, 3100, 69, 10000, 30000, 'E2E S17 read-only TSA record', NULL, 'E2E_SEED');
