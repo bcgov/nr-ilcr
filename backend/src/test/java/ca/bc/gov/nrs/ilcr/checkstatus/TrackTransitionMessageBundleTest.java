@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 import java.util.Locale;
@@ -43,26 +42,15 @@ class TrackTransitionMessageBundleTest {
   }
 
   /**
-   * Every (transition, track) pair that carries message keys. Driven by {@link
-   * TrackTransition#isDefinedOn}, so a later story defining a Schedule 11 pair without adding its
-   * bundle entries turns this class red rather than shipping the key as its own text.
+   * Every (transition, track) pair. All eight carry keys since Schedule 11's reversals shipped, so
+   * a transition or track added without its bundle entries turns this class red rather than
+   * shipping the key as its own text.
    */
   static Stream<Arguments> definedPairs() {
     return Arrays.stream(TrackTransition.values())
         .flatMap(
             transition ->
                 Arrays.stream(ScheduleTrack.values())
-                    .filter(transition::isDefinedOn)
-                    .map(track -> Arguments.of(transition, track)));
-  }
-
-  /** The complement of {@link #definedPairs()}: the pairs whose accessors must throw. */
-  static Stream<Arguments> undefinedPairs() {
-    return Arrays.stream(TrackTransition.values())
-        .flatMap(
-            transition ->
-                Arrays.stream(ScheduleTrack.values())
-                    .filter(track -> !transition.isDefinedOn(track))
                     .map(track -> Arguments.of(transition, track)));
   }
 
@@ -91,7 +79,7 @@ class TrackTransitionMessageBundleTest {
   }
 
   @Test
-  @DisplayName("the defined pairs are exactly the four 1-10 rows plus Submit and Verify on 11")
+  @DisplayName("the defined pairs are all four transitions on both tracks")
   void definedPairsAreTheShippedOnes() {
     assertThat(definedPairs().map(a -> a.get()[0] + "/" + a.get()[1]))
         .containsExactlyInAnyOrder(
@@ -100,26 +88,9 @@ class TrackTransitionMessageBundleTest {
             "SET_TO_DRAFT/SCHEDULES_1_TO_10",
             "SET_TO_SUBMIT/SCHEDULES_1_TO_10",
             "SUBMIT/SCHEDULE_11",
-            "VERIFY/SCHEDULE_11");
-  }
-
-  @Test
-  @DisplayName("the undefined pairs are exactly the two Schedule 11 reversals")
-  void undefinedPairsAreTheUnshippedOnes() {
-    assertThat(undefinedPairs().map(a -> a.get()[0] + "/" + a.get()[1]))
-        .containsExactlyInAnyOrder("SET_TO_DRAFT/SCHEDULE_11", "SET_TO_SUBMIT/SCHEDULE_11");
-  }
-
-  @ParameterizedTest(name = "{0} on {1}")
-  @MethodSource("undefinedPairs")
-  @DisplayName("every undefined pair throws rather than falling back to another track's text")
-  void undefinedPairsThrow(TrackTransition transition, ScheduleTrack track) {
-    assertThatThrownBy(() -> transition.successKey(track))
-        .isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> transition.rejectedKey(track))
-        .isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> transition.gateFailedKey(track))
-        .isInstanceOf(IllegalStateException.class);
+            "VERIFY/SCHEDULE_11",
+            "SET_TO_DRAFT/SCHEDULE_11",
+            "SET_TO_SUBMIT/SCHEDULE_11");
   }
 
   @Test
@@ -127,6 +98,8 @@ class TrackTransitionMessageBundleTest {
   void schedule11ConfirmResolves() {
     assertResolves("confirmSubmitSch11Msg");
     assertResolves("confirmVerifySch11Msg");
+    assertResolves("confirmSch11DraftMsg");
+    assertResolves("confirmSch11SubmitBackMsg");
   }
 
   @Test

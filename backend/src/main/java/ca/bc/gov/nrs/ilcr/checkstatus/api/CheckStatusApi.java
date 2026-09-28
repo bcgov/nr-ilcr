@@ -22,9 +22,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  * {@code /api/v1/check-status} is a new top-level resource rather than a schedule sub-resource —
  * the root is spoken for by the epic family: {@code /submit} arrived with Story 15.3, {@code
  * /verify} with Story 17.1, {@code /set-to-draft} and {@code /set-to-submit} with Story 18.1, and
- * {@code /schedule11/submit} with Story 26.1 and {@code /schedule11/verify} with Story 26.3. Every
- * sub-resource DOES follow the POST-sub-resource convention; the GET's departure is the sweep's
- * alone.
+ * the four Schedule 11 counterparts under {@code /schedule11/}: {@code submit}, {@code verify},
+ * {@code set-to-draft} and {@code set-to-submit}. Every sub-resource DOES follow the
+ * POST-sub-resource convention; the GET's departure is the sweep's alone.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings on both endpoints, and this is
  * forced, not stylistic: the legacy ERR-001 text ("Please Select Mill and Reporting Year in the
@@ -276,6 +276,64 @@ public interface CheckStatusApi {
    */
   @PostMapping("/set-to-submit")
   ResponseEntity<SetTrackStatusResponse> setSchedules1To10ToSubmit(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Send a submitted Schedule 11 track back to the Licensee &mdash; Submitted&rarr;Draft on {@code
+   * MILL_SILVICULTUR_STATUS_CODE} alone (UC-CHK-017, FR5). The same contract as {@link
+   * #setSchedules1To10ToDraft} in its authorization, its guards, their order and its response
+   * shape; the track and three texts differ.
+   *
+   * <p>Method authorization runs first: no {@code SET_REPORT_STATUS} → 403. Then
+   * missing/blank/non-numeric params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404
+   * {@code checkStatusScheduleNotFoundErrorMsg}; mill not {@code ACT} for the year → 409 ERR-002.
+   * The Schedule 11 check failing (a location missing its Actual or Planned Cost) → 409 {@code
+   * reportNotSubmittedErrorMsg}, legacy's own text ({@code CheckStatusMB.submitSchedule11():235});
+   * a silviculture track not at Submitted (a no-op, Set to Draft at Verified, a stored NULL code,
+   * or a reversal that lost the race) → 409 {@code reportSubmissionErrorMsg}, legacy's own text; a
+   * write that cannot be persisted, or a missing category {@code '11'} row → 500 {@code
+   * reportSubmissionErrorMsg}, everything rolled back. Unlike 1&ndash;10, legacy had no specific
+   * Schedule 11 reversal texts, so none are invented.
+   *
+   * <p>Success → 200 {@code {"trackStatus": "D", "message": {"key": "sch11DraftMsg", "text": …}}}
+   * after commit, with the silviculture status at {@code D}, every Schedule 11 location row and its
+   * cost details stamped, and category {@code '11'} at {@code D}. Neither identity pair is written
+   * (legacy skipped the block for a {@code 'D'} target). The Schedules 1&ndash;10 status and their
+   * ten category rows are never touched.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying the audit name
+   * @return 200 with the new silviculture status and the verbatim legacy success message
+   */
+  @PostMapping("/schedule11/set-to-draft")
+  ResponseEntity<SetTrackStatusResponse> setSchedule11ToDraft(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Withdraw a Schedule 11 verification &mdash; Verified&rarr;Submitted on {@code
+   * MILL_SILVICULTUR_STATUS_CODE} alone (UC-CHK-019, FR5). Identical to {@link
+   * #setSchedule11ToDraft} above except the values that differ: a silviculture track not at
+   * Verified → 409 {@code reportSubmissionErrorMsg}; success → 200 {@code {"trackStatus": "S",
+   * "message": {"key": "sch11SubmittedMsg", "text": …}}}, legacy's submit text reused, with
+   * category {@code '11'} at {@code A}.
+   *
+   * <p>Neither identity pair is written, and here that is deviation (S), extended to this track.
+   * Legacy wrote the LICENSEE pair from the acting admin's {@code ILCR_MILL_USER_XREF} row ({@code
+   * SubmitReportDAO:405-409}), and on Schedule 11 that pair is the one both tracks share, so the
+   * write would also have overwritten the record of who submitted Schedules 1&ndash;10.
+   *
+   * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
+   * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
+   * @param authentication the acting principal, supplying the audit name
+   * @return 200 with the new silviculture status and the verbatim legacy success message
+   */
+  @PostMapping("/schedule11/set-to-submit")
+  ResponseEntity<SetTrackStatusResponse> setSchedule11ToSubmit(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);

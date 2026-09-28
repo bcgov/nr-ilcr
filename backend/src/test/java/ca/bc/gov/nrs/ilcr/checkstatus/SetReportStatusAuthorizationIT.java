@@ -198,4 +198,56 @@ class SetReportStatusAuthorizationIT extends AbstractOracleIT {
 
     assertThat(silvicultureStatus(SCH11_VERIFIED_MILL)).isEqualTo("V");
   }
+
+  // --- The two Schedule 11 reversals sit behind the same action
+  // ----------------------------------
+
+  private static final String SET_TO_DRAFT_11 = "/api/v1/check-status/schedule11/set-to-draft";
+  private static final String SET_TO_SUBMIT_11 = "/api/v1/check-status/schedule11/set-to-submit";
+
+  /** R__62's silviculture-Draft refused-arm mill: written by nothing in any suite. */
+  private static final String SCH11_REVERSAL_DRAFT_MILL = "827";
+
+  @Test
+  @DisplayName(
+      "a Licensee is denied both Schedule 11 reversals — 403 before parameters, nothing written")
+  void submitterCannotReverseSchedule11() throws Exception {
+    for (String endpoint : List.of(SET_TO_DRAFT_11, SET_TO_SUBMIT_11)) {
+      mockMvc
+          .perform(reversal(endpoint, SCH11_REVERSAL_DRAFT_MILL).with(canonicalSubmitter()))
+          .andExpect(status().isForbidden())
+          .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+      mockMvc.perform(post(endpoint).with(canonicalSubmitter())).andExpect(status().isForbidden());
+    }
+
+    assertThat(silvicultureStatus(SCH11_REVERSAL_DRAFT_MILL)).isEqualTo("D");
+  }
+
+  @Test
+  @DisplayName("an unauthenticated caller is denied both Schedule 11 reversals")
+  void anonymousCannotReverseSchedule11() throws Exception {
+    mockMvc
+        .perform(reversal(SET_TO_DRAFT_11, SCH11_REVERSAL_DRAFT_MILL))
+        .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(reversal(SET_TO_SUBMIT_11, SCH11_REVERSAL_DRAFT_MILL))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("an ADMIN reaches both Schedule 11 reversals — proven by their 409s")
+  void adminReachesTheSchedule11Reversals() throws Exception {
+    // The negative control: 827's silviculture track is at Draft, so both reversals get past
+    // authorization and the context guard and are stopped by the status rule, writing nothing.
+    for (String endpoint : List.of(SET_TO_DRAFT_11, SET_TO_SUBMIT_11)) {
+      mockMvc
+          .perform(
+              reversal(endpoint, SCH11_REVERSAL_DRAFT_MILL)
+                  .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+          .andExpect(status().isConflict())
+          .andExpect(jsonPath("$.detail", is(SUBMISSION_ERROR)));
+    }
+
+    assertThat(silvicultureStatus(SCH11_REVERSAL_DRAFT_MILL)).isEqualTo("D");
+  }
 }

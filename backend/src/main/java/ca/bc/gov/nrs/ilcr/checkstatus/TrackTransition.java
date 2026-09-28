@@ -19,10 +19,8 @@ import java.util.Optional;
  * rejections plus every pair the map does not name (the dead {@code O} status included). Same
  * observable outcome &mdash; an error and no transition &mdash; without the partial write.
  *
- * <p>All four are exposed by an endpoint: Submit (Story 15.3), Verify (Story 17.1) and the two
- * admin reversals (Story 18.1). Each added a controller method and a status write, not a second
- * guard. On Schedule 11, Submit (Story 26.1) and Verify (Story 26.3) are live; the two reversals
- * are Story 26.5's.
+ * <p>All four are exposed by an endpoint on both tracks: Submit, Verify and the two admin
+ * reversals. Each added a controller method and a status write, not a second guard.
  *
  * <p><strong>The track is a parameter, not a row.</strong> Schedule 11 reuses these same four
  * transitions against {@code MILL_SILVICULTUR_STATUS_CODE}, because legacy did: its guard and its
@@ -32,9 +30,14 @@ import java.util.Optional;
  * track-independent and {@link #resolve} takes no track. What does differ per track is the wording
  * &mdash; legacy's bean picked {@code sch11*} or {@code sch1-10*} texts ({@code
  * CheckStatusMB:212-239} vs {@code :245-296}) &mdash; so every message accessor takes a {@link
- * ScheduleTrack}, and there is no default. A transition whose Schedule 11 story has not shipped
- * carries no Schedule 11 keys at all and throws when asked for one, rather than lending that track
- * the 1&ndash;10 sentence.
+ * ScheduleTrack}, and there is no default. Every transition carries both tracks' keys, so a
+ * Schedule 11 screen can never borrow the 1&ndash;10 sentence.
+ *
+ * <p>The two tracks' reversal refusals read differently, and that is intended. Schedules 1&ndash;10
+ * say which status the track has left and which button that rules out (deviations (T) and (V)).
+ * Schedule 11 keeps legacy's generic texts, as its Submit gate and its Verify refusal already do:
+ * legacy had no Schedule 11 reversal error of its own ({@code CheckStatusMB:234-235}, {@code
+ * ILCSException:50}).
  */
 public enum TrackTransition {
   /** Draft &rarr; Submitted: the Licensee hands the report to the ministry (Stories 15.3, 26.1). */
@@ -63,18 +66,22 @@ public enum TrackTransition {
       Recorded.AUDITOR,
       new Keys("sch1-10VerifiedMsg", "verifyNotSubmittedErrorMsg", GateKeys.GENERIC),
       new Keys("sch11VerifiedMsg", "reportSubmissionErrorMsg", GateKeys.GENERIC)),
-  /** Submitted &rarr; Draft: the ministry hands the report back (Story 18.1). */
+  /**
+   * Submitted &rarr; Draft: the ministry hands the report back. Schedule 11's success text is
+   * legacy's {@code sch11DraftMsg} ({@code CheckStatusMB:226-227}).
+   */
   SET_TO_DRAFT(
       "S",
       "D",
       "D",
       Recorded.NONE,
       new Keys("sch1-10DraftMsg", "setToDraftNotSubmittedErrorMsg", "setToDraftNotValidErrorMsg"),
-      "Story 26.5"),
+      new Keys("sch11DraftMsg", "reportSubmissionErrorMsg", GateKeys.GENERIC)),
   /**
-   * Verified &rarr; Submitted: the ministry withdraws a verification (Story 18.1). Its {@link
-   * Recorded#NONE} was argued for Schedules 1&ndash;10 (deviation (S)); whether Schedule 11 follows
-   * is Story 26.5's to decide when it defines this row's Schedule 11 keys.
+   * Verified &rarr; Submitted: the ministry withdraws a verification. {@link Recorded#NONE} on both
+   * tracks (deviation (S)); on Schedule 11 legacy's LICENSEE write would also have overwritten the
+   * record of who submitted Schedules 1&ndash;10, because the two tracks share that pair. Both
+   * tracks reuse their submit success text, as legacy did.
    */
   SET_TO_SUBMIT(
       "V",
@@ -83,10 +90,11 @@ public enum TrackTransition {
       Recorded.NONE,
       new Keys(
           "sch1-10SubmittedMsg", "setToSubmitNotVerifiedErrorMsg", "setToSubmitNotValidErrorMsg"),
-      "Story 26.5");
+      new Keys("sch11SubmittedMsg", "reportSubmissionErrorMsg", GateKeys.GENERIC));
 
   /**
-   * Legacy's one gate-failure text, kept by the two transitions for which it is accurate.
+   * Legacy's one gate-failure text, kept by Submit and Verify on both tracks and by both Schedule
+   * 11 reversals.
    *
    * <p>On a nested type rather than a field of this enum because a field declared after the
    * constants is an <em>illegal forward reference</em> from their initializers (JLS 8.3.3), and a
@@ -140,9 +148,7 @@ public enum TrackTransition {
   private final Recorded recorded;
   private final Keys schedules1To10Keys;
   private final Keys schedule11Keys;
-  private final String schedule11Owner;
 
-  /** A transition live on both tracks. */
   TrackTransition(
       String from,
       String to,
@@ -150,35 +156,12 @@ public enum TrackTransition {
       Recorded recorded,
       Keys schedules1To10Keys,
       Keys schedule11Keys) {
-    this(from, to, categoryState, recorded, schedules1To10Keys, schedule11Keys, null);
-  }
-
-  /** A transition live on Schedules 1&ndash;10 only, naming who owns its Schedule 11 texts. */
-  TrackTransition(
-      String from,
-      String to,
-      String categoryState,
-      Recorded recorded,
-      Keys schedules1To10Keys,
-      String schedule11Owner) {
-    this(from, to, categoryState, recorded, schedules1To10Keys, null, schedule11Owner);
-  }
-
-  TrackTransition(
-      String from,
-      String to,
-      String categoryState,
-      Recorded recorded,
-      Keys schedules1To10Keys,
-      Keys schedule11Keys,
-      String schedule11Owner) {
     this.from = from;
     this.to = to;
     this.categoryState = categoryState;
     this.recorded = recorded;
     this.schedules1To10Keys = schedules1To10Keys;
     this.schedule11Keys = schedule11Keys;
-    this.schedule11Owner = schedule11Owner;
   }
 
   /**
@@ -219,24 +202,7 @@ public enum TrackTransition {
     return recorded;
   }
 
-  /**
-   * Whether this transition carries message keys on the track &mdash; i.e. whether any endpoint may
-   * perform it there.
-   *
-   * @param track the track
-   * @return true when {@link #successKey}, {@link #rejectedKey} and {@link #gateFailedKey} answer
-   *     for it
-   */
-  public boolean isDefinedOn(ScheduleTrack track) {
-    return Objects.requireNonNull(track, "track") == ScheduleTrack.SCHEDULES_1_TO_10
-        || schedule11Keys != null;
-  }
-
-  /**
-   * The legacy bundle key of the success message on this track.
-   *
-   * @throws IllegalStateException the transition is not defined on the track ({@link #isDefinedOn})
-   */
+  /** The legacy bundle key of the success message on this track. */
   public String successKey(ScheduleTrack track) {
     return keys(track).success();
   }
@@ -249,9 +215,7 @@ public enum TrackTransition {
    * colleague had just submitted, nothing about what happened. Named per transition so each says
    * which status the track has left and which action that rules out (Story 15.4, ruled by the
    * business 2026-09-17), and per track so it names the right schedules (deviation (AB) for
-   * Schedule 11).
-   *
-   * @throws IllegalStateException the transition is not defined on the track ({@link #isDefinedOn})
+   * Schedule 11). Schedule 11's Verify and reversals keep legacy's generic text instead.
    */
   public String rejectedKey(ScheduleTrack track) {
     return keys(track).rejected();
@@ -267,26 +231,23 @@ public enum TrackTransition {
    * simply true &mdash; on both tracks, and legacy used it on both ({@code CheckStatusMB:235},
    * {@code :294}) &mdash; and Story 17.1 ruled verify back onto legacy parity.
    *
-   * <p>The two reversals do not, and that is a deliberate improvement ratified by the BA 2026-09-21
-   * (deviation (V)). Legacy reused the same text there, so a ministry user clicking <em>Set to
-   * Draft</em> on a report with errors was told their <em>submission</em> had failed &mdash; naming
-   * neither the action they took nor the remedy. <strong>The gate itself is correct and
-   * unchanged:</strong> a Submitted report can only acquire errors because a ministry user
+   * <p>The two 1&ndash;10 reversals do not, and that is a deliberate improvement ratified by the BA
+   * 2026-09-21 (deviation (V)). Legacy reused the same text there, so a ministry user clicking
+   * <em>Set to Draft</em> on a report with errors was told their <em>submission</em> had failed
+   * &mdash; naming neither the action they took nor the remedy. <strong>The gate itself is correct
+   * and unchanged:</strong> a Submitted report can only acquire errors because a ministry user
    * introduced them, and ADMIN edit rights at Submitted ({@code ScheduleEditability.java:63-64})
    * let that user correct them in place and retry, so nothing is stranded. Only the wording
-   * changes. Same split as deviation (T).
-   *
-   * @throws IllegalStateException the transition is not defined on the track ({@link #isDefinedOn})
+   * changes. Same split as deviation (T). Schedule 11's reversals keep legacy's text, as its Submit
+   * and Verify do.
    */
   public String gateFailedKey(ScheduleTrack track) {
     return keys(track).gateFailed();
   }
 
   private Keys keys(ScheduleTrack track) {
-    if (!isDefinedOn(track)) {
-      throw new IllegalStateException(
-          this + " is not defined on " + track + "; its texts belong to " + schedule11Owner);
-    }
-    return track == ScheduleTrack.SCHEDULES_1_TO_10 ? schedules1To10Keys : schedule11Keys;
+    return Objects.requireNonNull(track, "track") == ScheduleTrack.SCHEDULES_1_TO_10
+        ? schedules1To10Keys
+        : schedule11Keys;
   }
 }

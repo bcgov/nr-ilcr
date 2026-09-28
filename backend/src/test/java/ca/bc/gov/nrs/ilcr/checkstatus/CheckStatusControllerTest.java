@@ -230,7 +230,8 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("790", "2021"))
         .thenReturn(new MillYearContext(790, 2021));
     when(authentication.getName()).thenReturn("reversaladmin");
-    when(transitionService.reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
+    when(transitionService.reverse(
+            ONE_TO_TEN, 790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
         .thenReturn("D");
     when(messageSource.getMessage(eq("sch1-10DraftMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 have been set back to draft.");
@@ -247,7 +248,7 @@ class CheckStatusControllerTest {
     order.verify(millContextService).validateMillYearActive("790", "2021");
     order
         .verify(transitionService)
-        .reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin");
+        .reverse(ONE_TO_TEN, 790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin");
   }
 
   @Test
@@ -256,7 +257,8 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("791", "2021"))
         .thenReturn(new MillYearContext(791, 2021));
     when(authentication.getName()).thenReturn("reversaladmin");
-    when(transitionService.reverse(791, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin"))
+    when(transitionService.reverse(
+            ONE_TO_TEN, 791, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin"))
         .thenReturn("S");
     // Legacy minted no "verification reversed" message — CheckStatusMB.submitReport:281-283
     // branches on the TARGET code, so V->S lands on the same key a fresh submit does.
@@ -273,7 +275,7 @@ class CheckStatusControllerTest {
     order.verify(millContextService).validateMillYearActive("791", "2021");
     order
         .verify(transitionService)
-        .reverse(791, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin");
+        .reverse(ONE_TO_TEN, 791, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin");
   }
 
   @Test
@@ -309,7 +311,7 @@ class CheckStatusControllerTest {
         .thenReturn(new MillYearContext(790, 2021));
     when(authentication.getName()).thenReturn("reversaladmin");
     when(transitionService.reverse(
-            eq(790L), eq(2021), any(TrackTransition.class), eq("reversaladmin")))
+            eq(ONE_TO_TEN), eq(790L), eq(2021), any(TrackTransition.class), eq("reversaladmin")))
         .thenThrow(new ScheduleNotFoundException());
 
     assertThatThrownBy(() -> controller.setSchedules1To10ToDraft("790", "2021", authentication))
@@ -324,7 +326,8 @@ class CheckStatusControllerTest {
     when(millContextService.validateMillYearActive("790", "2021"))
         .thenReturn(new MillYearContext(790, 2021));
     when(authentication.getName()).thenReturn("reversaladmin");
-    when(transitionService.reverse(790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
+    when(transitionService.reverse(
+            ONE_TO_TEN, 790, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
         .thenReturn("D");
     when(messageSource.getMessage(eq("sch1-10DraftMsg"), any(), any(), any()))
         .thenReturn("Schedules 1-10 have been set back to draft.");
@@ -339,6 +342,80 @@ class CheckStatusControllerTest {
     // No getPrincipal() call either — with Recorded.NONE on both reversals there is no identity
     // pair to write and therefore no GUID to resolve.
     verify(authentication, never()).getPrincipal();
+  }
+
+  @Test
+  @DisplayName("Schedule 11 set-to-draft: same guard, the Schedule 11 track, sch11DraftMsg")
+  void schedule11SetToDraft_guardThenTheSchedule11Track() {
+    when(millContextService.validateMillYearActive("823", "2021"))
+        .thenReturn(new MillYearContext(823, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(
+            ScheduleTrack.SCHEDULE_11, 823, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin"))
+        .thenReturn("D");
+    when(messageSource.getMessage(eq("sch11DraftMsg"), any(), any(), any()))
+        .thenReturn("Schedule 11 has been set back to draft.");
+
+    var response = controller.setSchedule11ToDraft("823", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().trackStatus()).isEqualTo("D");
+    assertThat(response.getBody().message().key()).isEqualTo("sch11DraftMsg");
+    assertThat(response.getBody().message().text())
+        .isEqualTo("Schedule 11 has been set back to draft.");
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("823", "2021");
+    order
+        .verify(transitionService)
+        .reverse(
+            ScheduleTrack.SCHEDULE_11, 823, 2021, TrackTransition.SET_TO_DRAFT, "reversaladmin");
+    verifyNoInteractions(reportSubmission);
+  }
+
+  @Test
+  @DisplayName("Schedule 11 set-to-submit: the Schedule 11 track and its submit text, reused")
+  void schedule11SetToSubmit_guardThenTheSchedule11Track() {
+    when(millContextService.validateMillYearActive("824", "2021"))
+        .thenReturn(new MillYearContext(824, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(
+            ScheduleTrack.SCHEDULE_11, 824, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin"))
+        .thenReturn("S");
+    when(messageSource.getMessage(eq("sch11SubmittedMsg"), any(), any(), any()))
+        .thenReturn("Schedule 11 has been successfully submitted.");
+
+    var response = controller.setSchedule11ToSubmit("824", "2021", authentication);
+
+    assertThat(response.getStatusCode().value()).isEqualTo(200);
+    assertThat(response.getBody().trackStatus()).isEqualTo("S");
+    assertThat(response.getBody().message().key()).isEqualTo("sch11SubmittedMsg");
+    verify(authentication, never()).getPrincipal();
+  }
+
+  @Test
+  @DisplayName("Schedule 11 reversals: closed mill and a missing status row, as on 1-10")
+  void schedule11Reversals_guardFailures() {
+    when(millContextService.validateMillYearActive("796", "2021"))
+        .thenThrow(new MillClosedException());
+    when(millContextService.validateMillYearActive("823", "2021"))
+        .thenReturn(new MillYearContext(823, 2021));
+    when(authentication.getName()).thenReturn("reversaladmin");
+    when(transitionService.reverse(
+            eq(ScheduleTrack.SCHEDULE_11),
+            eq(823L),
+            eq(2021),
+            any(TrackTransition.class),
+            eq("reversaladmin")))
+        .thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> controller.setSchedule11ToDraft("796", "2021", authentication))
+        .isInstanceOf(MillClosedException.class);
+    assertThatThrownBy(() -> controller.setSchedule11ToSubmit("796", "2021", authentication))
+        .isInstanceOf(MillClosedException.class);
+    assertThatThrownBy(() -> controller.setSchedule11ToDraft("823", "2021", authentication))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
+    assertThatThrownBy(() -> controller.setSchedule11ToSubmit("823", "2021", authentication))
+        .isInstanceOf(CheckStatusScheduleNotFoundException.class);
   }
 
   @Test

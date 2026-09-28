@@ -8,10 +8,10 @@ import org.springframework.data.repository.query.Param;
 
 /**
  * The one transactional writer of a track status transition (Story 15.3; AD-3 Spring Data JDBC,
- * explicit {@code @Modifying @Query} SQL) &mdash; Schedules 1&ndash;10, and since Story 26.1 the
- * Schedule 11 submit, whose statements name only its own status column and row family. It is the
- * modern shape of legacy {@code SubmitReportDAO.submitReport():61-142}: the status row, then an
- * audit-only touch of every Schedule 1&ndash;10 row for the mill/year, then the ten {@code
+ * explicit {@code @Modifying @Query} SQL) &mdash; Schedules 1&ndash;10, and the Schedule 11
+ * transitions, whose statements name only their own status column and row family. It is the modern
+ * shape of legacy {@code SubmitReportDAO.submitReport():61-142}: the status row, then an audit-only
+ * touch of every Schedule 1&ndash;10 row for the mill/year, then the ten {@code
  * ILCR_REPORT_CATEGORY} rows.
  *
  * <p><strong>The touch is not decoration.</strong> In delivery, {@code RECORD_STATE_CODE} on every
@@ -297,6 +297,49 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
       @Param("expectedCode") String expectedCode,
       @Param("auditorMillId") Long auditorMillId,
       @Param("auditorUserGuid") String auditorUserGuid,
+      @Param("user") String user);
+
+  /**
+   * The Schedule 11 reversal status write &mdash; {@code S}&rarr;{@code D} and {@code
+   * V}&rarr;{@code S} on {@code MILL_SILVICULTUR_STATUS_CODE}. The Schedule 11 counterpart of
+   * {@link #updateTrackStatusWithoutIdentity}, and a separate statement because a column name
+   * cannot be a bind. It never names {@code ILCR_MILL_REPORT_STATUS_CODE} (BR-07, AD-9).
+   *
+   * <p>It names no identity column. For Set to Draft that is legacy: {@code
+   * updateILCRMillReportStatus():403} skipped the association block for a {@code 'D'} target. For
+   * Set to Submit it is deviation (S), extended to this track: legacy wrote the LICENSEE pair from
+   * the acting admin's cross-reference ({@code :405-409}), and on Schedule 11 that pair is the one
+   * both tracks share, so the write would also have overwritten the record of who submitted
+   * Schedules 1&ndash;10, or erased it when the admin has no assignment for the mill.
+   *
+   * <p>{@code REVISION_COUNT} is not bumped, as the 1&ndash;10 reversal statement does not. The
+   * {@code expectedCode} predicate makes a reversal that lost the race answer zero rows, which the
+   * caller refuses with 409 (deviation (U)).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param statusCode the silviculture status code to write
+   * @param expectedCode the silviculture status code the row must still hold
+   * @param user the audit name
+   * @return rows affected &mdash; 1 on success, 0 when the row is absent or has left {@code
+   *     expectedCode}
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_REPORT_STATUS
+         SET MILL_SILVICULTUR_STATUS_CODE = :statusCode,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND MILL_SILVICULTUR_STATUS_CODE = :expectedCode
+      """)
+  int updateSilvicultureTrackStatusWithoutIdentity(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("statusCode") String statusCode,
+      @Param("expectedCode") String expectedCode,
       @Param("user") String user);
 
   // -----------------------------------------------------------------------------------------------
