@@ -265,6 +265,17 @@ jobs:
           export ORACLE_DSN="$DB_USER/$DB_PASS@localhost:1525/ILCR"
           npm run test:gate -- --workers=4
 
+      # The backend runs in the background with its output in backend.log, so
+      # a 500 in the suite otherwise surfaces only as the generic problem
+      # detail ("Schedule could not be saved.") with the cause left behind on
+      # the runner. On failure, echo the backend's warnings and errors here and
+      # ship the whole log with the Playwright report.
+      - name: Backend log (on failure)
+        if: failure()
+        run: |
+          grep -nE ' (WARN|ERROR) |ORA-[0-9]{5}' "$RUNNER_TEMP/backend.log" | tail -n 200 || true
+          cp "$RUNNER_TEMP/backend.log" ./frontend/e2e/playwright-report/backend.log || true
+
       - uses: actions/upload-artifact@v7
         if: (! cancelled())
         name: upload results
