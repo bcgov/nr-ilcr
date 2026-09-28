@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3Api;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
@@ -106,8 +107,9 @@ public class Schedule3Controller implements Schedule3Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule3CheckStatusResponse> checkStatus(
-      long millId, int year, Authentication authentication) {
+      long millId, int year, Schedule3CheckRequest request, Authentication authentication) {
+    // Read-only (AD-5). The body carries the screen (#359); the service judges it.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(schedule3Service.checkSchedule3Status(millId, year));
+    return ResponseEntity.ok(schedule3Service.checkStatus(millId, year, request));
   }
 }

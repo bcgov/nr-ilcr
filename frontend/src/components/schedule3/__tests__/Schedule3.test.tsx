@@ -1543,3 +1543,153 @@ describe('Schedule3 detail-less error fallbacks (#332)', () => {
     screen.getAllByRole('button', { name: /check status/i }).forEach((b) => expect(b).toBeEnabled())
   })
 })
+
+/**
+ * The screen-aware check (#359): legacy's Check Status was a full postback that judged the SCREEN,
+ * so the request must carry every checked value as typed — the Override included, since on screen
+ * it drives both Harvest≥PO&P rules. These cases pin the halves that can each fail silently — the
+ * body actually CARRIES the keystroke state (blank as null, never 0), invalid text never reaches the
+ * server as a false "Value Required", and a verdict never outlives the screen it described.
+ */
+describe('Schedule3 Check Status judges the screen (#359)', () => {
+  const MET_TEXT = 'All requirements for this schedule have been met'
+  const metResponse = () => ({
+    requirementsMet: true,
+    errors: [],
+    warnings: [],
+    message: { key: 'scheduleRequirementsMetMsg', text: MET_TEXT },
+  })
+  const checkButton = () => screen.getAllByRole('button', { name: /check status/i })[0]
+  const officeHarvest = () => screen.getByLabelText('Office Expense Harvest')
+  const HARVEST_ONLY = new Set([29, 33, 37])
+
+  /** Capture every check-status request body, whatever it is, including its nulls. */
+  const captureCheckBodies = () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule3Doc)),
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    return bodies
+  }
+
+  /** The body for `schedule3Doc` as served; PO&P travels only for the both-columns lines. */
+  const servedBody = (overrides: Record<number, { harvest?: number | null }> = {}) => ({
+    overrideHarvestTotalPop: 'N',
+    lineItems: schedule3Doc.lineItems.map((l) => ({
+      costItemCode: l.costItemCode,
+      harvest: l.harvest,
+      pop: HARVEST_ONLY.has(l.costItemCode) ? null : l.pop,
+      ...overrides[l.costItemCode],
+    })),
+    popTimberVolume: 5000,
+    crownTimberVolume: 7000,
+  })
+
+  test('the request carries every checked value as typed, not as stored', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Wages/Salaries, incl Benefits Harvest'))
+    await user.type(screen.getByLabelText('Wages/Salaries, incl Benefits Harvest'), '60000')
+    // No blur: the keystroke state is what legacy's postback submitted.
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual(servedBody({ 30: { harvest: 60000 } }))
+  })
+
+  /**
+   * The false-GREEN guard. The server's check is a pure NULL test — a stored `0` passes — so a
+   * `?? 0` anywhere on the send path would turn a cleared field into a pass.
+   */
+  test('a CLEARED field is sent as null, never coerced to 0', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Office Expense Harvest'))
+    await user.clear(screen.getByLabelText('Crown Timber Harvest Volume'))
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({
+      ...servedBody({ 32: { harvest: null } }),
+      crownTimberVolume: null,
+    })
+  })
+
+  test('the on-screen Override is sent, unsaved', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await user.selectOptions(await screen.findByLabelText('Override Harvest ⁄ Total PO&P $'), 'Y')
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({ ...servedBody(), overrideHarvestTotalPop: 'Y' })
+  })
+
+  test('invalid text blocks the check with the Save gate, and NO request is sent', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Office Expense Harvest'))
+    await user.type(officeHarvest(), '12x')
+    await user.click(checkButton())
+
+    expect(
+      await screen.findByText('Please correct the highlighted fields before checking status.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('editing a checked field clears the shown verdict — the Override included', async () => {
+    captureCheckBodies()
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Office Expense Harvest')
+    await user.click(checkButton())
+    expect(await screen.findByText(MET_TEXT)).toBeVisible()
+    await user.type(officeHarvest(), '1')
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+
+    await user.click(checkButton())
+    expect(await screen.findByText(MET_TEXT)).toBeVisible()
+    await user.selectOptions(screen.getByLabelText('Override Harvest ⁄ Total PO&P $'), 'Y')
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule3Doc)),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Office Expense Harvest')
+    await user.click(checkButton())
+    await waitFor(() => expect(checkButton()).toBeDisabled())
+    await user.clear(officeHarvest())
+
+    releaseCheck()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+})

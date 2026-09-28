@@ -14,6 +14,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
@@ -148,10 +149,11 @@ class Schedule3ControllerTest {
   @Test
   void checkStatus_delegates_andReturnsServiceResult() {
     Schedule3CheckStatusResponse result = mock(Schedule3CheckStatusResponse.class);
-    when(schedule3Service.checkSchedule3Status(MILL_ID, YEAR)).thenReturn(result);
+    Schedule3CheckRequest request = new Schedule3CheckRequest("N", null, null, null);
+    when(schedule3Service.checkStatus(MILL_ID, YEAR, request)).thenReturn(result);
 
     ResponseEntity<Schedule3CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(result, response.getBody());

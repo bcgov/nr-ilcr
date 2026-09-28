@@ -2,8 +2,9 @@ import type { FC } from 'react'
 import type Schedule1Response from '@/interfaces/Schedule1Response'
 import type { LineItem } from '@/interfaces/Schedule1Response'
 import type Schedule1Request from '@/interfaces/Schedule1Request'
+import type { Schedule1CheckRequest } from '@/interfaces/Schedule1Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -122,6 +123,31 @@ function buildRequest(doc: Schedule1Response, form: FieldValues): Schedule1Reque
   }
 }
 
+// The volume-only lines the check reads a volume from; their costs are pulled or derived, never
+// entered, so they are sent as null and the server never tests them.
+const CHECK_VOLUME_ONLY_CODES = [143, 144, 139, 140] as const
+
+// The Check Status body (#359): every checked value as it is ON SCREEN — `form`, the keystroke state,
+// not the blur-committed snapshot, because that is what legacy's full postback submitted. A volume
+// the GET pre-filled from the crown volume is on screen, so it is sent like any other. `toNum`
+// returns null for a blank field and that null is carried through deliberately: the server's check
+// is a pure null test (a stored `0` passes), so a `?? 0` here would turn a missing value into a pass.
+// The itemized Other Costs rows are not on this screen and are not sent.
+function buildCheckRequest(form: FieldValues): Schedule1CheckRequest {
+  const entry = (code: number, withCost: boolean) => ({
+    costItemCode: code,
+    volume: toNum(form[`vol-${code}`] ?? ''),
+    cost: withCost ? toNum(form[`cost-${code}`] ?? '') : null,
+  })
+  return {
+    lineItems: [
+      ...[...WRITABLE_LINE_ITEM_CODES, 1, 2].map((code) => entry(code, true)),
+      ...CHECK_VOLUME_ONLY_CODES.map((code) => entry(code, false)),
+    ],
+    otherCostsVolume: toNum(form['otherCostsVolume'] ?? ''),
+  }
+}
+
 const PAGE_HEADER = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
 
 const Schedule1: FC = () => {
@@ -150,6 +176,15 @@ const Schedule1: FC = () => {
   const [confirmNavOpen, setConfirmNavOpen] = useState(false)
   const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
 
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever a
+  // checked field changes, so an older response cannot repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
   const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule1Response>({
       path: '/v1/schedule1',
@@ -167,6 +202,16 @@ const Schedule1: FC = () => {
   // because it drives the inputs, `committed` advances only when a field loses focus. Re-seeds
   // whenever `data` is replaced (load / Save echo / Delete reset).
   const { committed, commit } = useCommittedValues(form, data)
+
+  // Every numeric input on this page is a checked field (the comments are not), so an edit to any of
+  // them makes a shown Check Status verdict stale.
+  const setCheckedField = (fieldKey: string) => {
+    const set = setField(fieldKey)
+    return (event: Parameters<typeof set>[0]) => {
+      invalidateCheckResult()
+      set(event)
+    }
+  }
 
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
@@ -274,11 +319,31 @@ const Schedule1: FC = () => {
     if (!data || saving) {
       return
     }
+    // Legacy Check Status is validateClient="true": invalid entered values block the action with the
+    // same FLD-* messages Save uses. Without this gate `toNum` would send `12x` as null and the
+    // verdict would misreport a typo as "Value Required" (#359).
+    // Gated on `editable`, exactly as `fieldErrors` is: a read-only page highlights nothing, so a stored
+    // value failing the client range check must not block the check silently.
+    if (data.editable && Object.keys(validateSchedule1(form)).length > 0) {
+      setSaveMessage(null)
+      setCheckResult(null)
+      setSaveError('Please correct the highlighted fields before checking status.')
+      return
+    }
     clearBanners() // don't leave a stale Save success banner beside a new check result
-    checkStatus<CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // The body carries the screen (#359); nothing is persisted (AD-5).
+    checkStatus<CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
+      },
+      buildCheckRequest(form),
+    )
   }
 
   const handleOtherCosts = () => {
@@ -368,7 +433,7 @@ const Schedule1: FC = () => {
           hideLabel
           size="sm"
           value={form[fieldKey] ?? ''}
-          onChange={setField(fieldKey)}
+          onChange={setCheckedField(fieldKey)}
           onBlur={commitField(fieldKey)}
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
@@ -527,7 +592,7 @@ const Schedule1: FC = () => {
             hideLabel
             size="sm"
             value={form['otherCostsVolume'] ?? ''}
-            onChange={setField('otherCostsVolume')}
+            onChange={setCheckedField('otherCostsVolume')}
             onBlur={commitField('otherCostsVolume')}
             invalid={Boolean(fieldErrors['otherCostsVolume'])}
             invalidText={fieldErrors['otherCostsVolume']}
