@@ -109,6 +109,18 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8Response getSchedule8(long millId, int year, EditableStatuses caller) {
+    return assembleSchedule8(millId, year, caller);
+  }
+
+  /**
+   * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
+   * (both Check Status scopes and the five write paths, which each echo the recomputed document)
+   * reach it directly instead of self-invoking the annotated entry point. A {@code this} call
+   * bypasses the Spring proxy, so the annotation never applied on those paths anyway (sonar
+   * java:S6809, raised on PR #513); the read joins the transaction the caller already opened, which
+   * is the behaviour they had. Mirrors {@code Schedule4Service.assembleSchedule4}.
+   */
+  private Schedule8Response assembleSchedule8(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     final boolean editable = caller.allows(trackStatus);
 
@@ -361,7 +373,7 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, caller);
+    return assembleSchedule8(millId, year, caller);
   }
 
   /**
@@ -501,7 +513,7 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, caller);
+    return assembleSchedule8(millId, year, caller);
   }
 
   /**
@@ -533,7 +545,7 @@ public class Schedule8Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule8(millId, year, caller);
+    return assembleSchedule8(millId, year, caller);
   }
 
   /**
@@ -612,7 +624,7 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, caller);
+    return assembleSchedule8(millId, year, caller);
   }
 
   /**
@@ -645,7 +657,7 @@ public class Schedule8Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule8(millId, year, caller);
+    return assembleSchedule8(millId, year, caller);
   }
 
   /** Map a nullable request Boolean to the legacy Y/N indicator column value (null stays null). */
@@ -669,7 +681,7 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
-    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages(), null);
+    return evaluate(assembleSchedule8(millId, year, EditableStatuses.NONE).pages(), null);
   }
 
   /**
@@ -686,7 +698,7 @@ public class Schedule8Service {
   public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
     // The full document goes in, not a pre-filtered one, so the page keeps its position in the
     // Page Summary (page 2 is "Page # 2" in its notices, #461); evaluate() skips the others.
-    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages(), pageId);
+    return evaluate(assembleSchedule8(millId, year, EditableStatuses.NONE).pages(), pageId);
   }
 
   /**
