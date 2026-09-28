@@ -128,7 +128,7 @@ const DELIBERATELY_ABSENT = new Map<AnchorKey, string>([
   [
     '23050/2024',
     'sch6 "not-found" (S08, "Schedule not found." -> 404). CARVED, like sch5\'s below: the sch6 patch '
-      + 'opens reporting year 2024 for six mills and skips this one precisely so a 404 anchor exists '
+      + 'opens reporting year 2024 for sixteen mills and skips this one precisely so a 404 anchor exists '
       + "inside sch6's own minted year. Mill 23050 IS seeded (ACT) and holds rows for 2017-2023, so "
       + 'the mill resolves and only the YEAR is missing — which is what makes the GET 404 rather than '
       + 'fail on an unknown mill. Seeding it would delete the fixture, not fix it.',
@@ -574,6 +574,7 @@ const EXPLICIT_ID_COLUMNS: Record<string, string> = {
   ILCR_COST_REPORT_DETAIL: 'ILCR_COST_REPORT_DETAIL_ID',
   TRANSPORTATION_REPORT: 'TRANSPORTATION_REPORT_ID',
   CAMP_REPORT: 'CAMP_REPORT_ID',
+  ROAD_MAINTENANCE_REPORT: 'ROAD_MAINTENANCE_REPORT_ID',
   BASIC_SILVICULTURE_REPORT: 'BASIC_SILVICULTURE_REPORT_ID',
   BIOGEOCLIMATIC_CATALOGUE: 'BIOGEOCLIMATIC_CATALOGUE_ID',
 };

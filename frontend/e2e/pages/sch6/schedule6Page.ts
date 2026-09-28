@@ -316,6 +316,10 @@ export class Schedule6Page {
    * index.tsx:479 says so at the point where it works around the consequence. So `toHaveValue` on a
    * row field passes on a collapsed row: it asserts DOM state, not what the reporter can see. Every
    * row assertion therefore goes through here first, and waits on VISIBILITY rather than presence.
+   *
+   * IDEMPOTENT, because the header click TOGGLES: S17 expands the same records once to assert they
+   * are disabled and again to read their figures, and a blind second click would collapse them. So an
+   * already-expanded panel (`aria-expanded="true"`) is left as it is.
    */
   async expandRecord(ordinal: number, recordId: number): Promise<void> {
     const header = this.recordAccordion(ordinal);
@@ -324,7 +328,9 @@ export class Schedule6Page {
       `no accordion titled "Road Maintenance report Id: ${ordinal}" — the ordinal is the 1-based `
         + 'position in roadRecords[], not the recordId',
     ).toBeVisible();
-    await header.click();
+    if ((await header.getAttribute('aria-expanded')) !== 'true') {
+      await header.click();
+    }
     await expect(byId(this.page, rowField(recordId).volume)).toBeVisible();
   }
 
