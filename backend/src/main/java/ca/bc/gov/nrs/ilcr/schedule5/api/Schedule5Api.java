@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule5.api;
 
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
@@ -140,9 +141,17 @@ public interface Schedule5Api {
       Authentication authentication);
 
   /**
-   * Check Status for Schedule 5 (S06, S20) — read-only readiness validation. Mutates nothing, takes
-   * NO request body, and is NOT editability-gated: {@code VIEW_SCHEDULE} only, the 2.6 precedent,
-   * so a Submitted mill can still be checked.
+   * Check Status for Schedule 5 (S06, S20) — read-only readiness validation. Mutates nothing and is
+   * NOT editability-gated: {@code VIEW_SCHEDULE} only, the 2.6 precedent, so a Submitted mill can
+   * still be checked.
+   *
+   * <p>{@code request} carries the camp panel currently ON SCREEN (#476). This is a sanctioned
+   * divergence from the legacy Schedule 5 screen, which judges the last SAVED record while legacy's
+   * other schedules judge the screen — a legacy inconsistency the business area ruled out in
+   * September 2026, directing that Schedule 5 match the others. The body overlays the stored camps
+   * — see {@link Schedule5CheckRequest} for why it carries one camp rather than all of them, unlike
+   * Schedule 6's equivalent. {@code camp} is null when no panel is open, which evaluates the stored
+   * camps alone.
    *
    * <p>Returns either {@code MET} with the single schedule banner and NO per-camp results
    * (deviation (C) — legacy's all-met branch emits {@code scheduleRequirementsMetMsg} alone,
@@ -152,6 +161,7 @@ public interface Schedule5Api {
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
+   * @param request the camp panel on screen, if any
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -159,6 +169,7 @@ public interface Schedule5Api {
   ResponseEntity<Schedule5CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule5CheckRequest request,
       Authentication authentication);
 
   // ===============================================================================================

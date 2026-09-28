@@ -45,13 +45,14 @@ const SUBORDINATE: Record<string, string> = {
   // Panel / table heading — 1rem, matching CSP's EditableLineItemsTable heading.
   'sub-panel__title': '1rem',
   'schedule-8__subheading': '1rem',
+  // Every road-detail heading, column and in-column alike: legacy gives all seven one `header`
+  // class, so the four sub-headings sit at 1rem beside the three above them rather than a tier
+  // lower (#440 item 6). There is no longer a `schedule-10__detail-subheading`.
   'schedule-10__detail-heading': '1rem',
   'schedule-5-sub-page__panel-heading': '1rem',
   // The two p:panel headings the extract page reproduces ("Select Report Data" / "Selected Report
   // Data Summary") — panel headings, so the same 1rem tier as their siblings above.
   'data-extract__panel-heading': '1rem',
-  // One tier lower again — 0.875rem, matching CSP's Invoice subsection heading.
-  'schedule-10__detail-subheading': '0.875rem',
 }
 
 /**

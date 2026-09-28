@@ -156,6 +156,20 @@ public class OriginalValues {
      * @param format the legacy converter rule for this field's tooltip
      */
     public Builder put(String field, Object submitted, OriginalValueFormat format) {
+      return put(field, submitted, submitted, format);
+    }
+
+    /**
+     * As {@link #put(String, Object, OriginalValueFormat)}, for a field whose compared value is not
+     * what the user reads — a code the page compares by id while legacy's tooltip printed its label
+     * (Schedule 11's Biogeo/Subzone/Variant, {@code schedule11.xhtml:251}).
+     *
+     * @param field the owning object's own field name
+     * @param submitted the value the client compares against the current one; null when none
+     * @param shown what the tooltip prints for it; ignored when {@code submitted} is null
+     * @param format the legacy converter rule for the tooltip
+     */
+    public Builder put(String field, Object submitted, Object shown, OriginalValueFormat format) {
       if (!exposed) {
         return this;
       }
@@ -164,7 +178,9 @@ public class OriginalValues {
         return this;
       }
       values.put(
-          field, new OriginalValue(canonical(submitted), label + " " + format.render(submitted)));
+          field,
+          new OriginalValue(
+              canonical(submitted), label + " " + (shown == null ? "" : format.render(shown))));
       return this;
     }
 

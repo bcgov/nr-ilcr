@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
@@ -127,10 +128,23 @@ class DraftGateLockIT extends AbstractOracleIT {
     }
   }
 
-  /** One converted gate = one DELETE of a nonexistent id, mill/year as request params. */
-  record Gate(String name, String path, GateRepository repository, Track track) {
+  /**
+   * One converted gate = one write naming a nonexistent id, mill/year as request params: a DELETE
+   * of that id, or — where the schedule has no per-row DELETE — a PUT whose {@code body} names it
+   * (Schedule 11's page-level save since Story 26.2, deleting {@code 999999}). Either way the gate
+   * takes its lock first and the write then finds nothing: 404.
+   */
+  record Gate(String name, String path, GateRepository repository, Track track, String body) {
+    Gate(String name, String path, GateRepository repository, Track track) {
+      this(name, path, repository, track, null);
+    }
+
     MockHttpServletRequestBuilder request() {
-      return delete(path)
+      MockHttpServletRequestBuilder builder =
+          body == null
+              ? delete(path)
+              : put(path).contentType(MediaType.APPLICATION_JSON).content(body);
+      return builder
           .param("millId", String.valueOf(MILL))
           .param("year", String.valueOf(YEAR))
           .accept(MediaType.APPLICATION_JSON);
@@ -201,9 +215,10 @@ class DraftGateLockIT extends AbstractOracleIT {
                 Track.SCHEDULES_1_TO_10),
             new Gate(
                 "Schedule 11 (requireSilvicultureEditable)",
-                "/api/v1/schedule11/locations/999999",
+                "/api/v1/schedule11/locations",
                 GateRepository.SCHEDULE_11,
-                Track.SCHEDULE_11))
+                Track.SCHEDULE_11,
+                "{\"locations\":[],\"deletedIds\":[999999]}"))
         .map(gate -> Arguments.of(gate.name(), gate));
   }
 

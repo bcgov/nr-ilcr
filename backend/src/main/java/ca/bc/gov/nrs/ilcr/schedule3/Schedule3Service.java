@@ -24,6 +24,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
@@ -1123,14 +1124,72 @@ public class Schedule3Service {
   }
 
   /**
-   * BR-11/BR-03 Check Status (S09–S12): validate whether the stored Schedule 3 meets all
-   * requirements. Read-only — mutates nothing (AD-5). A field is missing when its stored value is
-   * null (0 is present). BR-03 (Harvest ≥ PO&P) applies to the eight both-required lines and the
-   * Other-Acceptable subtotal. BR-10: Override = "Y" suppresses BR-03 on ALL lines (legacy {@code
-   * Schedule3CheckStatus.isHarvestCostGreaterThanPopCost}). Verbatim labels/messages, legacy field
-   * order (AD-8).
+   * BR-11/BR-03 Check Status (S09–S12) against the SCREEN — the endpoint's entry point
+   * (bcgov/nr-ilcr#359). Read-only — mutates nothing (AD-5). Legacy's Check Status judged what was
+   * on screen, including unsaved edits (the observed behaviour #359 records); this restores that.
+   * The body's fixed lines, timber volumes and Override replace the stored ones — and the on-screen
+   * Override drives BOTH Harvest&lt;PO&amp;P rules, the fixed-line one and the item-124 subtotal
+   * one. The item-124/38 sub-page rows are never on this screen and stay database-sourced. The rule
+   * itself is {@link #evaluate}, shared with {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the on-screen values
+   * @return the check-status result with verbatim messages
    */
-  public Schedule3CheckStatusResponse checkSchedule3Status(long millId, int year) {
+  public Schedule3CheckStatusResponse checkStatus(
+      long millId, int year, Schedule3CheckRequest request) {
+    SummaryRow summary = repository.findSummary(millId, year).orElse(null);
+    List<DetailRow> details =
+        summary == null ? List.of() : repository.findDetails(summary.summaryId());
+    PartitionedDetails partitioned = partitionDetails(details);
+
+    Map<Integer, Integer> harvestByCode = new HashMap<>();
+    Map<Integer, Integer> popByCode = new HashMap<>();
+    if (request.lineItems() != null) {
+      for (Schedule3CheckRequest.LineEntry line : request.lineItems()) {
+        // First entry per code wins, as partitionDetails does for stored rows. Values are taken
+        // VERBATIM, nulls included — the check is a null test, so a coerced 0 would be a pass.
+        if (line != null
+            && line.costItemCode() != null
+            && !harvestByCode.containsKey(line.costItemCode())) {
+          harvestByCode.put(line.costItemCode(), line.harvest());
+          popByCode.put(line.costItemCode(), line.pop());
+        }
+      }
+    }
+    boolean override = OVERRIDE_YES.equals(normalizeOverride(request.overrideHarvestTotalPop()));
+    return evaluate(
+        new CheckCandidate(
+            override,
+            harvestByCode,
+            popByCode,
+            request.popTimberVolume(),
+            request.crownTimberVolume(),
+            partitioned.acceptable(),
+            partitioned.unacceptable()));
+  }
+
+  /**
+   * BR-11/BR-03 Check Status (S09–S12): validate whether the STORED Schedule 3 meets all
+   * requirements — the stored-data counterpart of {@link #checkStatus}, for report-level callers
+   * (Story 15.0/15.1) that have no screen to describe. Read-only — mutates nothing (AD-5). A field
+   * is missing when its stored value is null (0 is present). BR-03 (Harvest ≥ PO&P) applies to the
+   * eight both-required lines and the Other-Acceptable subtotal. BR-10: Override = "Y" suppresses
+   * BR-03 on ALL lines (legacy {@code Schedule3CheckStatus.isHarvestCostGreaterThanPopCost}).
+   * Verbatim labels/messages, legacy field order (AD-8).
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". They can legitimately disagree. Named apart from {@link #checkStatus} on purpose:
+   * with both called {@code checkStatus} a future caller picks the wrong one by autocomplete and
+   * the failure is SILENT. Schedules 5 and 6 name them apart for the same reason.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the check-status result with verbatim messages
+   */
+  public Schedule3CheckStatusResponse checkStatusStored(long millId, int year) {
     // Never 404s since defect #296, matching Schedule 2: an unsaved schedule is checkable, and
     // every
     // mandatory field is reported missing — which is the honest answer, not an error.
@@ -1139,24 +1198,68 @@ public class Schedule3Service {
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     boolean override = summary != null && OVERRIDE_YES.equals(summary.location());
 
-    Map<Integer, DetailRow> byCode = partitionDetails(details).byCode();
+    PartitionedDetails partitioned = partitionDetails(details);
+    Map<Integer, DetailRow> byCode = partitioned.byCode();
+    Map<Integer, Integer> harvestByCode = new HashMap<>();
+    Map<Integer, Integer> popByCode = new HashMap<>();
+    for (CheckLine line : CHECK_LINES) {
+      harvestByCode.put(line.code(), costOf(byCode.get(line.code())));
+      if (line.hasPop()) {
+        popByCode.put(line.code(), costOf(byCode.get(line.popCode())));
+      }
+    }
+    return evaluate(
+        new CheckCandidate(
+            override,
+            harvestByCode,
+            popByCode,
+            volumeOf(byCode.get(CODE_POP_TIMBER)),
+            volumeOf(byCode.get(CODE_CROWN_TIMBER)),
+            partitioned.acceptable(),
+            partitioned.unacceptable()));
+  }
 
+  /**
+   * The Schedule 3 values one check judges, from either source.
+   *
+   * @param override whether Override Harvest/Total PO&amp;P is "Y" — suppresses BOTH BR-03 rules
+   * @param harvestByCode each fixed line's Harvest Total, by its Harvest cost-item code
+   * @param popByCode each both-columns line's PO&amp;P, by its HARVEST cost-item code
+   * @param popTimberVolume PO&amp;P Timber (item 118) volume
+   * @param crownTimberVolume Crown Timber (item 119) volume
+   * @param otherAcceptableRows the item-124 rows, always from the database
+   * @param unacceptableRows the item-38 rows, always from the database
+   */
+  private record CheckCandidate(
+      boolean override,
+      Map<Integer, Integer> harvestByCode,
+      Map<Integer, Integer> popByCode,
+      BigDecimal popTimberVolume,
+      BigDecimal crownTimberVolume,
+      List<DetailRow> otherAcceptableRows,
+      List<DetailRow> unacceptableRows) {}
+
+  /**
+   * The BR-11/BR-03 verdict, source-agnostic. Neither {@link #checkStatus} nor {@link
+   * #checkStatusStored} may restate any part of it (AD-5).
+   */
+  private Schedule3CheckStatusResponse evaluate(CheckCandidate candidate) {
     List<MessageInfo> errors = new ArrayList<>();
-    appendFixedLineCheckErrors(byCode, override, errors);
+    appendFixedLineCheckErrors(candidate, errors);
 
     // Rendered legacy order (checkStatusSchedule3.xhtml): the Total Overhead (timber) volume checks
     // at lines 75/78 precede the Subtotal Other Costs (81) and Included Unacceptable (90) sub-page
     // checks.
-    if (volumeOf(byCode.get(CODE_POP_TIMBER)) == null) {
+    if (candidate.popTimberVolume() == null) {
       errors.add(valueRequired(LABEL_POP_TIMBER));
     }
-    if (volumeOf(byCode.get(CODE_CROWN_TIMBER)) == null) {
+    if (candidate.crownTimberVolume() == null) {
       errors.add(valueRequired(LABEL_CROWN_TIMBER));
     }
 
     // Sub-page checks (Story 4.4).
-    appendOtherAcceptableCheckErrors(details, override, errors);
-    appendUnacceptableCheckErrors(details, errors);
+    appendOtherAcceptableCheckErrors(candidate.otherAcceptableRows(), candidate.override(), errors);
+    appendUnacceptableCheckErrors(candidate.unacceptableRows(), errors);
 
     boolean requirementsMet = errors.isEmpty();
     MessageInfo message =
@@ -1168,26 +1271,24 @@ public class Schedule3Service {
 
   /**
    * BR-11 (missing Harvest/PO&amp;P) + BR-03 (Harvest ≥ PO&amp;P, suppressed under Override) checks
-   * for the eleven fixed cost lines, in legacy field order (extracted from {@link
-   * #checkSchedule3Status}).
+   * for the eleven fixed cost lines, in legacy field order (extracted from {@link #evaluate}).
    */
-  private void appendFixedLineCheckErrors(
-      Map<Integer, DetailRow> byCode, boolean override, List<MessageInfo> errors) {
+  private void appendFixedLineCheckErrors(CheckCandidate candidate, List<MessageInfo> errors) {
     for (CheckLine line : CHECK_LINES) {
-      Integer harvest = costOf(byCode.get(line.code()));
+      Integer harvest = candidate.harvestByCode().get(line.code());
       if (harvest == null) {
         errors.add(valueRequired(line.name() + " (Harvest Total $)"));
       }
       if (!line.hasPop()) {
         continue;
       }
-      Integer pop = costOf(byCode.get(line.popCode()));
+      Integer pop = candidate.popByCode().get(line.code());
       if (pop == null) {
         // Verbatim legacy label "<name> (PO&P $)" (checkStatusSchedule3.xhtml:14,21,31,…), not
         // "Total".
         errors.add(valueRequired(line.name() + " (PO&P $)"));
       }
-      if (!override && harvest != null && pop != null && harvest < pop) {
+      if (!candidate.override() && harvest != null && pop != null && harvest < pop) {
         errors.add(harvestNotGreaterThanPop(line.name() + " (Harvest Total $)"));
       }
     }

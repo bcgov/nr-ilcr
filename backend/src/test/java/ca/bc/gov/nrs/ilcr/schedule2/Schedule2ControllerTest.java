@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -41,6 +42,7 @@ class Schedule2ControllerTest {
 
   private static final long MILL_ID = 514L;
   private static final int YEAR = 2021;
+  private static final Schedule2CheckRequest REQUEST = new Schedule2CheckRequest(500000);
 
   @Mock private MillContextService millContextService;
 
@@ -154,13 +156,13 @@ class Schedule2ControllerTest {
     Schedule2CheckStatusResponse serviceResult =
         new Schedule2CheckStatusResponse(
             "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)));
-    when(schedule2Service.checkStatus(MILL_ID, YEAR)).thenReturn(serviceResult);
+    when(schedule2Service.checkStatus(REQUEST)).thenReturn(serviceResult);
     when(messageSource.getMessage(
             eq("scheduleRequirementsMetMsg"), any(), any(), any(Locale.class)))
         .thenReturn("All requirements for this schedule have been met");
 
     ResponseEntity<Schedule2CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, REQUEST, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertEquals("MET", response.getBody().outcome());
@@ -179,12 +181,12 @@ class Schedule2ControllerTest {
             "ISSUES",
             List.of(
                 new MessageInfo("missingRequiredFieldMsg", "Purchased/Private Log Costs - Cost")));
-    when(schedule2Service.checkStatus(MILL_ID, YEAR)).thenReturn(serviceResult);
+    when(schedule2Service.checkStatus(REQUEST)).thenReturn(serviceResult);
     when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Value Required");
 
     ResponseEntity<Schedule2CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, REQUEST, authentication);
 
     assertEquals("ISSUES", response.getBody().outcome());
     MessageInfo msg = response.getBody().messages().get(0);

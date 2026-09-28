@@ -375,7 +375,13 @@ class SnapshotRowMapperTest {
             "BECBIOGEOCLIMATIC_CATALOGUE_ID",
             77,
             "REFORESTED_NET_AREA",
-            "12.5");
+            "12.5",
+            "BEC_ZONE_CODE",
+            "CWH",
+            "SUBZONE",
+            "vm",
+            "VARIANT",
+            "1");
 
     Schedule11Repository.LocationSnapshotRow row =
         new Schedule11Repository.LocationSnapshotRowMapper().mapRow(rs, 1);
@@ -384,6 +390,11 @@ class SnapshotRowMapperTest {
     assertThat(row.location()).isEqualTo("Block 4");
     assertThat(row.biogeoclimaticCatalogueId()).isEqualTo(77L);
     assertThat(row.netArea()).isEqualByComparingTo("12.5");
+    // The SUBMITTED catalogue row's parts, for the tooltip label (legacy schedule11.xhtml:251).
+    assertThat(row.becZoneCode()).isEqualTo("CWH");
+    assertThat(row.subzone()).isEqualTo("vm");
+    assertThat(row.variant()).isEqualTo("1");
+    assertThat(row.phase()).isNull();
   }
 
   @Test

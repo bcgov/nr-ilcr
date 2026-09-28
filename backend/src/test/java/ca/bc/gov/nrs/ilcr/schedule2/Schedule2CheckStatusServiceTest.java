@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
@@ -10,6 +12,7 @@ import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
@@ -75,7 +78,7 @@ class Schedule2CheckStatusServiceTest {
         List.of(
             new DetailRow(25, null, 500000), new DetailRow(26, new BigDecimal("2000"), 100000)));
 
-    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", status.outcome());
     assertEquals(1, status.messages().size());
@@ -91,7 +94,7 @@ class Schedule2CheckStatusServiceTest {
         Optional.of(new SummaryRow(1028, "c", 3)),
         List.of(new DetailRow(26, new BigDecimal("500"), 25000)));
 
-    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("ISSUES", status.outcome());
     assertEquals(1, status.messages().size());
@@ -103,7 +106,7 @@ class Schedule2CheckStatusServiceTest {
     // No category-"2" summary at all (unsaved) -> no item-25 cost -> ISSUES (never 404).
     stubCrossScheduleAbsent("D", Optional.empty(), List.of());
 
-    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("ISSUES", status.outcome());
     assertEquals("missingRequiredFieldMsg", status.messages().get(0).key());
@@ -116,7 +119,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent(
         "D", Optional.of(new SummaryRow(1002, "c", 0)), List.of(new DetailRow(25, null, 0)));
 
-    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", status.outcome());
     assertEquals("scheduleRequirementsMetMsg", status.messages().get(0).key());
@@ -129,7 +132,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent(
         "D", Optional.of(new SummaryRow(1002, "c", 0)), List.of(new DetailRow(25, null, null)));
 
-    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("ISSUES", status.outcome());
     assertEquals("missingRequiredFieldMsg", status.messages().get(0).key());
@@ -142,8 +145,60 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent(
         "S", Optional.of(new SummaryRow(1002, "c", 4)), List.of(new DetailRow(25, null, 400000)));
 
-    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", status.outcome());
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The payload path (#359): the endpoint judges the SCREEN. It reads nothing — the one checked
+  // value is on the page — so every case also proves the database was never consulted.
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  void payload_clearedCost_isIssues_withoutReadingTheDatabase() {
+    // S17: the stored item-25 cost is present, but the screen's is blank -> the unsaved violation.
+    Schedule2CheckStatusResponse status = service.checkStatus(new Schedule2CheckRequest(null));
+
+    assertEquals("ISSUES", status.outcome());
+    assertEquals(1, status.messages().size());
+    assertEquals("missingRequiredFieldMsg", status.messages().get(0).key());
+    assertEquals("Purchased/Private Log Costs - Cost", status.messages().get(0).text());
+    verifyNoInteractions(repository, schedule3Service, schedule1CostDerivation);
+  }
+
+  @Test
+  void payload_suppliedCost_isMet_withoutReadingTheDatabase() {
+    // S18: the stored cost is missing, but 40000 is typed on screen -> the unsaved fix.
+    Schedule2CheckStatusResponse status = service.checkStatus(new Schedule2CheckRequest(40000));
+
+    assertEquals("MET", status.outcome());
+    assertEquals(1, status.messages().size());
+    assertEquals("scheduleRequirementsMetMsg", status.messages().get(0).key());
+    assertNull(status.messages().get(0).text());
+    verifyNoInteractions(repository, schedule3Service, schedule1CostDerivation);
+  }
+
+  @Test
+  void payload_zeroCost_isMet() {
+    // Null test, not truthiness: a typed 0 is PRESENT, exactly as a stored 0 is.
+    Schedule2CheckStatusResponse status = service.checkStatus(new Schedule2CheckRequest(0));
+
+    assertEquals("MET", status.outcome());
+  }
+
+  @Test
+  void payload_andStored_agreeWhenTheScreenMirrorsTheRecord() {
+    // One evaluator, two sources: the same item-25 value yields byte-identical verdicts.
+    stubCrossScheduleAbsent(
+        "D", Optional.of(new SummaryRow(1002, "c", 0)), List.of(new DetailRow(25, null, 500000)));
+
+    assertEquals(
+        service.checkStatusStored(MILL, YEAR),
+        service.checkStatus(new Schedule2CheckRequest(500000)));
+    stubCrossScheduleAbsent("D", Optional.empty(), List.of());
+    assertEquals(
+        service.checkStatusStored(MILL, YEAR),
+        service.checkStatus(new Schedule2CheckRequest(null)));
   }
 }

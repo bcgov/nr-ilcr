@@ -94,6 +94,8 @@ export interface Schedule3SubPageConfig<
   descriptionMaxLength: number
   loadError: string
   saveError: string
+  /** Optional fallback for a failed Remove; without it a failed Remove reports {@code saveError}. */
+  deleteError?: string
   /** Optional intro paragraph shown above the add fields. */
   intro?: string
   /** Optional read-only figure (e.g. Annual Rents S111) shown above the table. */
@@ -131,6 +133,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     fieldKeys,
     loadError: config.loadError,
     saveError: config.saveError,
+    deleteError: config.deleteError,
     rowsFromDoc: (doc) =>
       config.rows(doc).map((r) => ({
         id: r.id,
@@ -263,7 +266,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                   // 999,999,999 in Total $ moved the footer to a figure the server can never produce.
                   //
                   // Validate HERE rather than reading `rowErrors`: that map is populated only by
-                  // `persist` (useEditableCostRows.ts:204), i.e. on a Save attempt, so it is still
+                  // `persist` in useEditableCostRows.ts, i.e. on a Save attempt, so it is still
                   // empty during the entry this gate has to catch. `errs` below is right for the
                   // field's `invalid` styling and wrong as a commit gate.
                   const next = { ...row.values, [field.key]: grouped }

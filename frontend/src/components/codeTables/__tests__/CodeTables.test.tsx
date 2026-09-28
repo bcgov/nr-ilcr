@@ -298,4 +298,50 @@ describe('Table Maintenance (Story 24.3)', () => {
       expiryDate: '2030-12-31',
     })
   })
+
+  // #332: every request site falls back to a hardcoded message when the failure carries no
+  // ProblemDetail.detail. An empty-bodied 500 is the detail-less shape.
+  describe('detail-less error fallbacks (#332)', () => {
+    test('a table-list load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(BASE, () => new HttpResponse(null, { status: 500 })))
+      render(<CodeTables />)
+
+      expect(await screen.findByText('Unable to load the code tables.')).toBeInTheDocument()
+    })
+
+    test('an entries load failure carrying no detail falls back to the generic entries message', async () => {
+      server.use(
+        http.get(BASE, () => HttpResponse.json(TABLES)),
+        http.get(UNIT_ENTRIES, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<CodeTables />)
+      await userEvent.click(await screen.findByRole('combobox', { name: 'Code List' }))
+      await userEvent.click(await screen.findByRole('option', { name: 'Unit Codes' }))
+
+      expect(await screen.findByText('Unable to load entries.')).toBeInTheDocument()
+      // The grid stays empty apart from the add row — no stale rows from a previous table.
+      expect(screen.queryByText('M3')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less save failure falls back to the generic save message and keeps the draft', async () => {
+      server.use(
+        ...listHandlers(),
+        http.put(UNIT_ENTRIES, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<CodeTables />)
+      await selectUnitCodes()
+
+      await userEvent.type(screen.getByLabelText('Code'), 'ZZ')
+      await userEvent.type(screen.getByLabelText('Description'), 'Zed')
+      fireEvent.change(screen.getByLabelText('Effective Date'), { target: { value: '2020-01-01' } })
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      expect(await screen.findByText('The entry could not be saved.')).toBeInTheDocument()
+      // The draft is retained for a retry and the action is re-enabled; nothing reads as saved.
+      expect(screen.getByLabelText('Code')).toHaveValue('ZZ')
+      expect(screen.getByLabelText('Description')).toHaveValue('Zed')
+      expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument()
+    })
+  })
 })

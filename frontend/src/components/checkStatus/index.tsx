@@ -14,6 +14,7 @@ import NotificationColumn from '@/components/core/NotificationColumn'
 import type {
   MessageInfo,
   ScheduleCheckResult,
+  SetTrackStatusResponse,
   TrackCheckResult,
   VerifyReportResponse,
 } from '@/interfaces/CheckStatusSweep'
@@ -31,12 +32,17 @@ const VERIFIED = 'V'
 // Client-authored hints beside a greyed button (legacy greyed with no explanation). Chosen here, by
 // which half of the legacy rule failed, and passed down — the bar itself knows nothing about roles.
 export const HINT_NOT_SUBMITTER = "Submitting is the licensee's action"
-// Set to Draft / Set to Submit render by legacy's own `rendered=` rules and legacy had them working;
-// only the transition is deferred (Epic 18). Until it lands the button is GREYED with this hint
-// rather than left live and silently inert: Story 17.2 is what first makes Verified reachable from
-// inside the app, so `Set to Submit` is now on the screen an administrator lands on immediately
-// after a successful verify, where a dead control reads as a broken one.
+// Schedule 11's reversals only. Legacy rendered a Set to Draft / Set to Submit inside the Schedule 11
+// tab too (checkStatus.xhtml:155-168, gated by `showSch11SetToDraft/Submit`) and both worked there;
+// those two transitions have not shipped for that track, so ITS buttons keep legacy's `rendered=`
+// presence but ship GREYED with this hint rather than live and silently inert. Schedule 11's Verified
+// is the one control still live-and-inert: it keeps the legacy client gate and an inert click until
+// its transition ships. The Schedules 1-10 pair no longer uses this hint: Story 18.2 wired them.
 export const HINT_NOT_WIRED = 'This action is not available yet'
+// The track IS in Draft and the caller IS a submitter, yet the server does not offer Submit: an
+// ADMIN+SUBMITTER without an active assignment to this mill (ReportSubmission's Submit-specific
+// scope). Not legacy — legacy had no dual role, so no text for it; the Draft hint would be untrue.
+export const HINT_NOT_ASSIGNED = "Submitting is for this mill's assigned licensee"
 export const HINT_NOT_DRAFT = 'Available while Schedules 1-10 are in Draft'
 export const HINT_NOT_DRAFT_11 = 'Available while Schedule 11 is in Draft'
 export const HINT_NOT_ADMIN = "Verifying is an administrator's action"
@@ -55,10 +61,58 @@ export const CONFIRM_SUBMIT_1_TO_10 = "Please confirm you'd like to SUBMIT Sched
  * `__tests__/confirmText.test.ts`, so the two cannot drift apart unnoticed.
  */
 export const CONFIRM_VERIFY_1_TO_10 = "Please confirm you'd like to set Schedules 1-10 to VERIFIED?"
+/**
+ * The two admin reversals' confirmations, verbatim (messages.properties:104-105, resolved in the view
+ * by checkStatus.xhtml:189 and :193). Client-owned and pinned against the backend bundle for the same
+ * reason as the verify prompt. Note the second says SUBMIT, not SUBMITTED, and that legacy's key names
+ * carry a `Sche` typo the bundle preserves; the rendered text does not.
+ */
+export const CONFIRM_SET_TO_DRAFT_1_TO_10 =
+  "Please confirm you'd like to set Schedules 1-10 to DRAFT?"
+export const CONFIRM_SET_TO_SUBMIT_1_TO_10 =
+  "Please confirm you'd like to set Schedules 1-10 to SUBMIT?"
+/**
+ * Schedule 11's submit confirmation, verbatim (messages.properties:111, resolved in the view by
+ * checkStatus.xhtml:214-217). Pinned against the backend bundle like the others.
+ */
+export const CONFIRM_SUBMIT_11 = "Please confirm you'd like to SUBMIT Schedule 11?"
 /** Client fallback for a submit failure that carries no ProblemDetail `detail` (network, a 401). */
 export const SUBMIT_FAILED = 'Unable to submit Schedules 1-10.'
+/** The same, for the Schedule 11 submit. */
+export const SUBMIT_11_FAILED = 'Unable to submit Schedule 11.'
 /** The same, for verify: shown only when a failure carries no problem+json body of its own. */
 export const VERIFY_FAILED = 'The report could not be verified.'
+/** The same again, per reversal. Keyed on a MISSING `detail`, never on "was this a network error?":
+ *  a 401 answers with Boot's `{timestamp,status,error,path}`, which has no `detail` either. */
+export const SET_TO_DRAFT_FAILED = 'Schedules 1-10 could not be set to Draft.'
+export const SET_TO_SUBMIT_FAILED = 'Schedules 1-10 could not be set to Submit.'
+
+/** Which transition a prompt is asking about. One mount serves all five; only one can be pending. */
+type Pending = 'submit' | 'submit11' | 'verify' | 'setToDraft' | 'setToSubmit'
+
+/** The prompt each pending transition asks, so the modal reads one lookup instead of a ternary chain. */
+const CONFIRM_PROMPTS: Record<Pending, string> = {
+  submit: CONFIRM_SUBMIT_1_TO_10,
+  submit11: CONFIRM_SUBMIT_11,
+  verify: CONFIRM_VERIFY_1_TO_10,
+  setToDraft: CONFIRM_SET_TO_DRAFT_1_TO_10,
+  setToSubmit: CONFIRM_SET_TO_SUBMIT_1_TO_10,
+}
+
+/**
+ * The two submits differ only in their path and fallback: one service method on the server, the
+ * track its only parameter (`CheckStatusApi.java` `/submit` and `/schedule11/submit`).
+ */
+const SUBMITS = {
+  submit: { path: 'submit', fallback: SUBMIT_FAILED },
+  submit11: { path: 'schedule11/submit', fallback: SUBMIT_11_FAILED },
+} as const
+
+/** The two reversals differ only in these three values (`CheckStatusApi.java:181-220`). */
+const REVERSALS = {
+  setToDraft: { path: 'set-to-draft', fallback: SET_TO_DRAFT_FAILED },
+  setToSubmit: { path: 'set-to-submit', fallback: SET_TO_SUBMIT_FAILED },
+} as const
 
 /** The submit endpoint's 200 body: the server's message and nothing else (MessageResponse.java). */
 type SubmitResponse = {
@@ -79,22 +133,47 @@ type Outcome = {
   readonly text: string
 }
 
+/** The two submits, which differ only in their track (`SUBMITS`). */
+type SubmitKind = 'submit' | 'submit11'
+
+const NO_SUBMITS: ReadonlySet<SubmitKind> = new Set()
+
 /**
- * How a track's Verified button behaves. `busy` greys it from the click until the page is showing
- * post-transition truth — the POST AND the refresh that follows it, not just the POST. Legacy needed
- * no such flag: its one ajax round trip delivered the message and the re-rendered, re-gated button
- * together, so there was never an instant where the screen said "verified" while the button still
- * offered to verify. Ours reads the status from a SECOND request, and between the two the sweep
- * still answers Submitted, so without this the button re-enables and a second POST is reachable —
- * which the server then refuses with the support-escalation 409, painting over the success the user
- * just earned. A track with no wiring keeps an inert click, which is Schedule 11's until Epic 26.
+ * How one wired transition button behaves — Verified and, since Story 18.2, both Schedules 1-10
+ * reversals. `busy` greys it from the click until the page is showing post-transition truth — the
+ * POST AND the refresh that follows it, not just the POST. Legacy needed no such flag: its one ajax
+ * round trip delivered the message and the re-rendered, re-gated button together, so there was never
+ * an instant where the screen said "verified" while the button still offered to verify. Ours reads
+ * the status from a SECOND request, and between the two the sweep still answers the old code, so
+ * without this the button re-enables and a second POST is reachable — which the server then refuses
+ * with a 409, painting over the success the user just earned. A Verified with no wiring keeps an
+ * inert click — Schedule 11's, until that track's verify ships.
  */
-type VerifyWiring = {
+type TransitionWiring = {
   readonly onClick: () => void
   readonly busy: boolean
 }
 
-const INERT: VerifyWiring = { onClick: () => undefined, busy: false }
+const INERT: TransitionWiring = { onClick: () => undefined, busy: false }
+
+/**
+ * The two reversals' wiring, absent on a track whose transitions have not shipped. Absent is NOT the
+ * same as `INERT`: an inert `onClick` is still a function, which would leave the button live and
+ * silently doing nothing. Absent leaves `onClick` undefined, which is `CheckStatusActions`' own
+ * "no handler ⇒ disabled" contract, and the hint beside it says so.
+ */
+type ReversalWiring = {
+  readonly setToDraft?: TransitionWiring
+  readonly setToSubmit?: TransitionWiring
+}
+
+/** The latch set without the Schedules 1-10 submit — the same set when it was not there. */
+const withoutOneToTenSubmit = (done: ReadonlySet<SubmitKind>): ReadonlySet<SubmitKind> => {
+  if (!done.has('submit')) return done
+  const next = new Set(done)
+  next.delete('submit')
+  return next
+}
 
 /** A 409 is the protocol's own "your view of the state is stale" — the one status that warrants a re-read. */
 const isConflict = (error: unknown): boolean =>
@@ -157,17 +236,16 @@ type TrackActions = {
 }
 
 /**
- * How one track's Submit is offered. The two tracks read different sources until Epic 26: Schedules
- * 1–10 take the server's `canSubmit` off the sweep, Schedule 11 still evaluates the legacy client rule
- * — which is why the gate is a PARAMETER of the shared helper rather than a line inside it.
+ * How one track's Submit is offered. Both tracks take the server's own `canSubmit` off the sweep; the
+ * gate stays a PARAMETER of the shared helper because each track's Submit has its own click and its
+ * own success latch.
  */
 type SubmitGate = {
   /** Whether Submit is offered at all. Authorization lives on the server; this only greys a button. */
   readonly offered: boolean
-  /** The click. Absent while the track's transition story has not shipped, and the button stays greyed. */
-  readonly onClick?: () => void
-  /** True while a request is in flight: both bars grey together, so a second click cannot race the first. */
-  readonly busy?: boolean
+  readonly onClick: () => void
+  /** True while any transition is in flight, or this track's own submit has just succeeded. */
+  readonly busy: boolean
 }
 
 /**
@@ -175,9 +253,9 @@ type SubmitGate = {
  * CheckStatusMB.java:162-192): Verified = that track Submitted AND the user is NOT the licensee
  * (ILCR_ADMIN); Set to Draft is RENDERED only for an admin while the track is Submitted, Set to
  * Submit only for an admin while it is Verified (legacy enabled both whenever rendered —
- * `canUserSetToDraft/Submit` is the same admin test; ours greys them until Epic 18 supplies the
- * transition, see `reversal`). Submit's gate is passed in (see `SubmitGate`), Verified's wiring too
- * (see `VerifyWiring`). Validity is not part of any of them — the eleven-schedule gate fires on the
+ * `canUserSetToDraft/Submit` is the same admin test, so once the object is built at all the user has
+ * already passed it). Submit's gate is passed in (see `SubmitGate`), Verified's and the reversals'
+ * wiring too. Validity is not part of any of them — the eleven-schedule gate fires on the
  * click, server-side, and an administrator on a Submitted-but-failing report gets an enabled button
  * and the server's verbatim refusal. Display state only; the server is the authorization. The
  * role/status expressions that remain here choose only the hint text beside a greyed button — which
@@ -189,30 +267,39 @@ const trackActions = (
   isAdmin: boolean,
   hints: { readonly notDraft: string; readonly notSubmitted: string },
   submitGate: SubmitGate,
-  verifyWiring: VerifyWiring = INERT,
+  verifyWiring: TransitionWiring = INERT,
+  reversals: ReversalWiring = {},
 ): TrackActions => {
   const canVerify = isAdmin && track.statusCode === SUBMITTED
-  // Legacy rendered these ENABLED for an admin and they worked. Ours has no transition behind it
-  // until Epic 18, so it ships greyed: `onClick` absent is exactly the "no handler ⇒ disabled"
-  // contract TrackAction documents, which means Epic 18 enables the button by supplying a handler
-  // and changes nothing here. `enabled` still carries legacy's own rule so that is a one-line move.
-  const reversal: TrackAction = {
-    enabled: isAdmin,
-    disabledReason: isAdmin ? HINT_NOT_WIRED : HINT_NOT_ADMIN,
-    onClick: undefined,
-  }
+  // One reversal, built only inside its own `rendered=` state below — so the admin half of legacy's
+  // rule has already passed and no not-an-admin hint is reachable here. Wired, the button is live and
+  // greys only while ANY transition and the re-sweep behind it are in flight; unwired (Schedule 11's,
+  // until that track's reversals ship) it keeps legacy's presence but stays greyed and says why.
+  const reversal = (wiring: TransitionWiring | undefined): TrackAction =>
+    wiring === undefined
+      ? // `enabled: false` AND no handler. The bar disables on either one
+        // (`CheckStatusActions.tsx:41`), but saying it twice is not redundancy: a reader — or a
+        // future simplification of `ActionButton` — that trusts `enabled` alone would otherwise turn
+        // Schedule 11's dead reversals into live-and-inert buttons, which is the one outcome this
+        // branch exists to prevent.
+        { enabled: false, disabledReason: HINT_NOT_WIRED, onClick: undefined }
+      : { enabled: !wiring.busy, onClick: wiring.onClick }
   return {
-    setToDraft: isAdmin && track.statusCode === SUBMITTED ? reversal : undefined,
-    setToSubmit: isAdmin && track.statusCode === VERIFIED ? reversal : undefined,
+    setToDraft:
+      isAdmin && track.statusCode === SUBMITTED ? reversal(reversals.setToDraft) : undefined,
+    setToSubmit:
+      isAdmin && track.statusCode === VERIFIED ? reversal(reversals.setToSubmit) : undefined,
     submit: {
       enabled: submitGate.offered && !submitGate.busy,
       // Display text, not authorization: the wire decided `offered`; this only says why not.
       disabledReason: submitGate.offered
         ? undefined
-        : isSubmitter
-          ? hints.notDraft
-          : HINT_NOT_SUBMITTER,
-      onClick: submitGate.onClick ?? (() => undefined),
+        : !isSubmitter
+          ? HINT_NOT_SUBMITTER
+          : track.statusCode === DRAFT
+            ? HINT_NOT_ASSIGNED
+            : hints.notDraft,
+      onClick: submitGate.onClick,
     },
     verify: {
       enabled: canVerify && !verifyWiring.busy,
@@ -229,7 +316,9 @@ const trackActions = (
  * were. Both track status lines come from the tombstone's /mill-context read; the sweep's status
  * codes drive only the action gates.
  *
- * Submit and Verified (Schedules 1–10) are the live transitions: each asks legacy's `Confirmation Required`
+ * Submit on both tracks, and Verified and the two admin reversals on Schedules 1–10, are the live
+ * transitions: each asks
+ * legacy's `Confirmation Required`
  * question first, POSTs once, and renders the server's answer as a banner where legacy's
  * `p:messages` sat — first in the panel, above the top button row (checkStatus.xhtml:31-33) — then
  * re-reads both the sweep and the working context so everything on the page is the server's new
@@ -252,10 +341,20 @@ const CheckStatus: FC = () => {
 
   // Which transition is awaiting its answer, if any — one mount serves both prompts, because only
   // one can be pending and the page renders the 1–10 bar twice from the same action object.
-  const [confirming, setConfirming] = useState<'submit' | 'verify' | null>(null)
+  const [confirming, setConfirming] = useState<Pending | null>(null)
   const [saving, setSaving] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  // One flag for both reversals: they can never render together (one needs Submitted, the other
+  // Verified), and after a transition the OTHER one appears — which must stay greyed until the
+  // re-sweep lands, or it offers to undo a change the screen has not shown yet.
+  const [reversing, setReversing] = useState(false)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
+  // Which submits have completed in this context. A 200 means that track's transition is done, so
+  // its Submit stays locked even when the re-sweep behind it FAILS and the hook deliberately keeps
+  // the last good (Draft) payload, whose `canSubmit` is still true. Held apart from `outcome` on
+  // purpose: the banner is cleared by the next action on EITHER track, and a latch that lived in it
+  // was released by the other track's Yes — re-offering a Submit the server would 409.
+  const [submitted, setSubmitted] = useState<ReadonlySet<SubmitKind>>(NO_SUBMITS)
 
   // Every piece of action state above belongs to ONE working context. mill/year lives in a provider,
   // so a context change does NOT remount this page — the sweep re-issues in place, which is what
@@ -271,6 +370,12 @@ const CheckStatus: FC = () => {
     setActionContext(contextKey)
     setConfirming(null)
     setOutcome(null)
+    setSubmitted(NO_SUBMITS)
+    // `reversing` is deliberately NOT reset here, and neither is `verifying`. Clearing it would
+    // un-grey the new context's buttons while `busyRef` is still held by the old request, and
+    // `busyRef` is what the confirm handlers actually check — so the control would be live and its
+    // Yes would be swallowed with no explanation. The unconditional `.finally` releases both
+    // together a moment later; until it does, greying is the honest thing to show.
   }
 
   // Synchronous, unlike the state flag: two clicks inside one tick would both see `verifying` false.
@@ -309,20 +414,29 @@ const CheckStatus: FC = () => {
   // was `confirmSubmit.show()` / `confirmVerify.show()` (checkStatus.xhtml:51-62). The launching
   // button is recorded so declining can put focus back on it — either 1–10 bar can open either
   // prompt, so the active element is the only honest source of "which button opened this".
-  const openPrompt = (which: 'submit' | 'verify') => {
+  const openPrompt = (which: Pending) => {
     launcherRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     setConfirming(which)
   }
 
-  const requestSubmit = () => {
+  const requestSubmit = (which: SubmitKind) => () => {
     if (saving) return
-    openPrompt('submit')
+    openPrompt(which)
   }
 
   const requestVerify = () => {
     setOutcome(null)
     openPrompt('verify')
+  }
+
+  // Follows verify, not submit: the outcome clears when the prompt OPENS. The two shipped handlers
+  // disagree (`requestSubmit` leaves the previous banner standing) and verify's is the one that
+  // survived review — a stale success sitting under a fresh question reads as though the question
+  // has already been answered. Harmonising `requestSubmit` is deliberately out of this story (D3).
+  const requestReversal = (which: 'setToDraft' | 'setToSubmit') => () => {
+    setOutcome(null)
+    openPrompt(which)
   }
 
   // Legacy's Cancel was `type="button"` with no action: close the dialog, touch nothing else.
@@ -331,22 +445,32 @@ const CheckStatus: FC = () => {
     launcherRef.current?.focus()
   }
 
-  const confirmSubmit = () => {
+  // Both submits, which differ only in their path and fallback (`SUBMITS`). Since the second Submit
+  // arrived they check the same synchronous `busyRef` as every other transition: a dual-role user can
+  // have Schedules 1-10 Verified and Schedule 11 Submit live at once, and a Yes the lock swallows must
+  // never be reachable from a prompt still on screen — so the prompt closes first, as verify's does.
+  const confirmSubmit = (which: SubmitKind) => () => {
     setConfirming(null)
+    if (busyRef.current) {
+      return
+    }
+    busyRef.current = true
     setOutcome(null)
     setSaving(true)
     focusOutcomeRef.current = true
+    const { path, fallback } = SUBMITS[which]
     apiService
       .getAxiosInstance()
-      .post<SubmitResponse>(`/v1/check-status/submit?millId=${millId}&year=${year}`)
+      .post<SubmitResponse>(`/v1/check-status/${path}?millId=${millId}&year=${year}`)
       .then((response) => {
         if (!isCurrent()) return
         setOutcome({ kind: 'success', text: response.data.message.text })
+        setSubmitted((done) => new Set(done).add(which))
         setReloadToken((token) => token + 1)
       })
       .catch((error: unknown) => {
         if (!isCurrent()) return
-        setOutcome({ kind: 'error', text: extractDetail(error) || SUBMIT_FAILED })
+        setOutcome({ kind: 'error', text: extractDetail(error) || fallback })
         if (isConflict(error)) {
           setReloadToken((token) => token + 1)
         }
@@ -356,6 +480,7 @@ const CheckStatus: FC = () => {
         // the context moved while the POST was in flight, and the new context's Submit pair stays
         // greyed for the life of the mount. The two branches above are what must not write across a
         // context change; the lock is the opposite — it must always come off.
+        busyRef.current = false
         setSaving(false)
       })
   }
@@ -365,12 +490,15 @@ const CheckStatus: FC = () => {
   // request's own context. Every branch re-checks that the context has not moved underneath it before
   // it writes to state, and the lock is released unconditionally — a conditional reset strands it.
   const confirmVerify = () => {
+    // Closed BEFORE the guard returns. Story 18.2 put a second wired transition on the same status,
+    // so this early return is now reachable from a prompt the user is looking at; leaving the dialog
+    // mounted would give them a Yes that silently does nothing.
+    setConfirming(null)
     if (busyRef.current) {
       return
     }
     busyRef.current = true
     focusOutcomeRef.current = true
-    setConfirming(null)
     setVerifying(true)
     apiService
       .getAxiosInstance()
@@ -378,6 +506,9 @@ const CheckStatus: FC = () => {
       .then((response) => {
         if (!isCurrent()) return
         setOutcome({ kind: 'success', text: response.data.message.text })
+        // A later 1-10 transition supersedes the 1-10 submit's completion: Set to Draft puts the
+        // track back where its Submit must be offered again. Schedule 11's latch is not 1-10's to lift.
+        setSubmitted(withoutOneToTenSubmit)
         setReloadToken((token) => token + 1)
       })
       .catch((error: unknown) => {
@@ -397,8 +528,65 @@ const CheckStatus: FC = () => {
       })
   }
 
+  // The two admin reversals, built from one factory because they differ only in their path, their
+  // fallback text and the status they are offered at (CheckStatusApi.java:181-220 says as much of the
+  // server halves). Shaped on `confirmVerify` and not on `confirmSubmit`: the synchronous `busyRef`
+  // is what stops two clicks inside one tick from both passing a state flag that is still false, and
+  // the unconditional release is what stops a context change mid-flight from stranding the lock.
+  // Legacy hung its action on the dialog's Yes and hid the dialog in the same breath
+  // (checkStatus.xhtml:190, :194); `setConfirming(null)` first is that, exactly.
+  const confirmReversal = (which: 'setToDraft' | 'setToSubmit') => () => {
+    setConfirming(null)
+    if (busyRef.current) {
+      return
+    }
+    busyRef.current = true
+    focusOutcomeRef.current = true
+    setReversing(true)
+    const { path, fallback } = REVERSALS[which]
+    apiService
+      .getAxiosInstance()
+      .post<SetTrackStatusResponse>(
+        `/v1/check-status/${path}?millId=${data.millId}&year=${data.year}`,
+      )
+      .then((response) => {
+        if (!isCurrent()) return
+        // The server's own words. A successful Set to Submit renders legacy's SUBMIT success text —
+        // legacy reused that key and minted no "verification reversed" message, so there is none to
+        // send (UC-CHK-018.md:135). It reads like a copy/paste slip and is parity.
+        setOutcome({ kind: 'success', text: response.data.message.text })
+        // A later 1-10 transition supersedes the 1-10 submit's completion: Set to Draft puts the
+        // track back where its Submit must be offered again. Schedule 11's latch is not 1-10's to lift.
+        setSubmitted(withoutOneToTenSubmit)
+        setReloadToken((token) => token + 1)
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent()) return
+        // A banner, never `renderScheduleLoadState`: a refused transition must not blank a page whose
+        // verdicts are still good. The branch is on the STATUS, never on the text — an error body
+        // carries only RFC 7807 `detail`, with no key to read.
+        setOutcome({ kind: 'error', text: extractDetail(error) || fallback })
+        if (isConflict(error)) {
+          setReloadToken((token) => token + 1)
+        }
+      })
+      .finally(() => {
+        busyRef.current = false
+        setReversing(false)
+      })
+  }
+
   const isSubmitter = hasRole(ILCR_ROLES.submitter)
   const isAdmin = hasRole(ILCR_ROLES.admin)
+  // EVERY wired transition on the page shares ONE lock, because they share `busyRef` and, pairwise,
+  // they share what is on screen at once: at Submitted an administrator is offered both Verified and
+  // Set to Draft (Story 18.2), and a dual-role user can hold Schedules 1-10 Verified and Schedule 11
+  // Submit together. A per-button flag left the other one live during a transition, where its Yes hit
+  // the `busyRef` guard and did nothing, and then, once the track had moved underneath it, sent a
+  // request the server could only refuse with a 409 that painted over the success just earned.
+  // `isReloading` keeps them greyed across the refresh window too, so nothing is pressed against a
+  // status the screen has not caught up to yet.
+  const anyTransitionInFlight = saving || verifying || reversing || isReloading
   const actions1To10 = trackActions(
     data.schedules1To10,
     isSubmitter,
@@ -407,20 +595,28 @@ const CheckStatus: FC = () => {
     // `=== true`: the field is ABSENT (never `false`) where the server has no verdict to give.
     {
       offered: data.schedules1To10.canSubmit === true,
-      onClick: requestSubmit,
-      // A 200 means this transition is complete. Keep the pair locked even if the re-sweep is still
-      // in flight or fails and the hook deliberately preserves the last good (Draft) payload.
-      busy: saving || outcome?.kind === 'success',
+      onClick: requestSubmit('submit'),
+      busy: anyTransitionInFlight || submitted.has('submit'),
     },
-    { onClick: requestVerify, busy: verifying || isReloading },
+    { onClick: requestVerify, busy: anyTransitionInFlight },
+    {
+      setToDraft: { onClick: requestReversal('setToDraft'), busy: anyTransitionInFlight },
+      setToSubmit: { onClick: requestReversal('setToSubmit'), busy: anyTransitionInFlight },
+    },
   )
+  // Schedule 11's Submit reads the server's own verdict, exactly as 1-10's does. Its Verified keeps
+  // the legacy client gate and the default inert click, and its reversals stay greyed, until those
+  // transitions ship for this track.
   const actions11 = trackActions(
     data.schedule11,
     isSubmitter,
     isAdmin,
     { notDraft: HINT_NOT_DRAFT_11, notSubmitted: HINT_NOT_SUBMITTED_11 },
-    // Schedule 11 keeps the legacy client rule, and no click, until Epic 26 ships its own verdict.
-    { offered: isSubmitter && data.schedule11.statusCode === DRAFT },
+    {
+      offered: data.schedule11.canSubmit === true,
+      onClick: requestSubmit('submit11'),
+      busy: anyTransitionInFlight || submitted.has('submit11'),
+    },
   )
 
   return (
@@ -454,10 +650,20 @@ const CheckStatus: FC = () => {
         <ConfirmActionModal
           open
           heading="Confirmation Required"
-          message={confirming === 'submit' ? CONFIRM_SUBMIT_1_TO_10 : CONFIRM_VERIFY_1_TO_10}
+          // Lookups, not a four-branch ternary chain: a mis-paired prompt and handler is the one
+          // defect this block can carry, and a chain is where it would hide.
+          message={CONFIRM_PROMPTS[confirming]}
           confirmLabel="Yes"
           cancelLabel="Cancel"
-          onConfirm={confirming === 'submit' ? confirmSubmit : confirmVerify}
+          onConfirm={
+            {
+              submit: confirmSubmit('submit'),
+              submit11: confirmSubmit('submit11'),
+              verify: confirmVerify,
+              setToDraft: confirmReversal('setToDraft'),
+              setToSubmit: confirmReversal('setToSubmit'),
+            }[confirming]
+          }
           onCancel={cancelConfirm}
         />
       )}

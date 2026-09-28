@@ -191,10 +191,11 @@ Then('Schedule 3 tells me to save first', async ({ schedule3Page }) => {
   ).toBeVisible();
 });
 
-// DIV-7. Legacy words the two gates DIFFERENTLY — `schedule3.xhtml:293` for the Included Unacceptable
-// link, `:267` for Other Costs. The app has one string for both, so this asserts the legacy guarantee and
-// is RED until the second wording is restored. Deliberately a separate step: reusing the one above would
-// have let S19 pass against the wrong message, which is exactly how this went unnoticed.
+// Ex-DIV-7, FIXED 2026-09-18 (#373). Legacy words the two gates DIFFERENTLY — `schedule3.xhtml:293` for
+// the Included Unacceptable link, `:267` for Other Costs. The app carried one string for both until the
+// fix, so this step was RED while asserting the legacy guarantee; it is green now, unchanged. Still
+// deliberately a SEPARATE step from the one above: sharing one step is exactly how S19 passed against the
+// wrong message for a day, and merging them would re-open that hole.
 Then('Schedule 3 tells me to save first before Unacceptable costs', async ({ schedule3Page }) => {
   await expect(
     schedule3Page.saveRequiredDialog.getByText(MSG_SAVE_BEFORE_UNACCEPTABLE, { exact: true }),

@@ -249,10 +249,6 @@ export const GUARD_ANCHORS: Record<string, Sch2Anchor & { expectHttp: number; de
 export const scheduleUrl = (millId: number, year: number): string =>
   `/api/v1/schedule2?millId=${millId}&year=${year}`;
 
-/** The read-only Check Status evaluation endpoint (POST, no body — mutates nothing). */
-export const checkStatusUrl = (millId: number, year: number): string =>
-  `/api/v1/schedule2/check-status?millId=${millId}&year=${year}`;
-
 /** The Home Mill-dropdown option text for a mill ("20171 - MILES MILLING"). */
 export const millOptionText = (m: MillRef): string => `${m.millNumber} - ${m.millName}`;
 

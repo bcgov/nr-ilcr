@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.sql.Timestamp;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,107 @@ class ReportTrackTransitionRepositoryIT extends AbstractOracleIT {
 
   @Autowired private ReportTrackTransitionRepository repository;
   @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * {@code R__56}'s repository-arm mill: Submitted, no schedule data, written by nothing else.
+   * These two tests roll back with the class transaction, but the mill is its own anyway so a
+   * rollback that did not happen could not poison another suite.
+   */
+  private static final long REVERSAL_MILL = 799L;
+
+  private static final int REVERSAL_YEAR = 2021;
+
+  private String reversalStatus() {
+    return jdbc.queryForObject(
+        "SELECT ILCR_MILL_REPORT_STATUS_CODE FROM THE.ILCR_MILL_REPORT_STATUS"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+        String.class,
+        REVERSAL_MILL,
+        REVERSAL_YEAR);
+  }
+
+  @Test
+  @DisplayName("Story 18.1 AC9: the reversal UPDATE matches no row when expectedCode is stale")
+  void reversalStatusWriteRefusesAStaleExpectedCode() {
+    assertThat(reversalStatus()).isEqualTo("S");
+
+    // The lost update, against Oracle rather than Mockito. The caller read 'V' (or another request
+    // moved the track since), so the predicate matches nothing — zero rows, and the service turns
+    // that into a 409 refusal rather than a 500 (deviation (U)). VERIFY's statement has no such
+    // predicate by Story 17.1's ruling, so this behaviour is genuinely this statement's alone.
+    int rows =
+        repository.updateTrackStatusWithoutIdentity(
+            REVERSAL_MILL, REVERSAL_YEAR, "S", "V", "reversaladmin");
+
+    assertThat(rows).isZero();
+    assertThat(reversalStatus()).isEqualTo("S");
+  }
+
+  @Test
+  @DisplayName("Story 18.1 AC3: the reversal UPDATE moves the code and touches no identity column")
+  void reversalStatusWriteNamesNoIdentityColumn() {
+    String before =
+        jdbc.queryForObject(
+            "SELECT NVL(TO_CHAR(LICENSEE_MILL_ID),'-') || '/' || NVL(LICENSEE_USER_GUID,'-')"
+                + " || '/' || NVL(TO_CHAR(AUDITOR_MILL_ID),'-') || '/' || NVL(AUDITOR_USER_GUID,'-')"
+                + " || '/r' || TO_CHAR(REVISION_COUNT)"
+                + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+            String.class,
+            REVERSAL_MILL,
+            REVERSAL_YEAR);
+
+    Timestamp stampBefore =
+        jdbc.queryForObject(
+            "SELECT UPDATE_TIMESTAMP FROM THE.ILCR_MILL_REPORT_STATUS"
+                + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+            Timestamp.class,
+            REVERSAL_MILL,
+            REVERSAL_YEAR);
+
+    int rows =
+        repository.updateTrackStatusWithoutIdentity(
+            REVERSAL_MILL, REVERSAL_YEAR, "D", "S", "reversaladmin");
+
+    assertThat(rows).isOne();
+    assertThat(reversalStatus()).isEqualTo("D");
+    // UPDATE_TIMESTAMP = SYSDATE is the one clause in the SET list nothing else in this story read
+    // back (18.1 code review, verification-gap). The seed leaves it NULL, so "moved" is "now set".
+    Timestamp stampAfter =
+        jdbc.queryForObject(
+            "SELECT UPDATE_TIMESTAMP FROM THE.ILCR_MILL_REPORT_STATUS"
+                + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+            Timestamp.class,
+            REVERSAL_MILL,
+            REVERSAL_YEAR);
+    assertThat(stampAfter).isNotNull();
+    if (stampBefore != null) {
+      assertThat(stampAfter).isAfterOrEqualTo(stampBefore);
+    }
+    // Both pairs unchanged BY VALUE, and REVISION_COUNT not bumped — the three ways this SET list
+    // differs from updateTrackStatus and updateTrackStatusWithAuditor, asserted in one string so a
+    // future edit to the statement cannot quietly satisfy a narrower check.
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT NVL(TO_CHAR(LICENSEE_MILL_ID),'-') || '/' || NVL(LICENSEE_USER_GUID,'-')"
+                    + " || '/' || NVL(TO_CHAR(AUDITOR_MILL_ID),'-')"
+                    + " || '/' || NVL(AUDITOR_USER_GUID,'-')"
+                    + " || '/r' || TO_CHAR(REVISION_COUNT)"
+                    + " FROM THE.ILCR_MILL_REPORT_STATUS"
+                    + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+                String.class,
+                REVERSAL_MILL,
+                REVERSAL_YEAR))
+        .isEqualTo(before);
+    // The actor IS recorded — the statement writes UPDATE_USERID even though it writes no identity.
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT UPDATE_USERID FROM THE.ILCR_MILL_REPORT_STATUS"
+                    + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+                String.class,
+                REVERSAL_MILL,
+                REVERSAL_YEAR))
+        .isEqualTo("reversaladmin");
+  }
 
   @Test
   @DisplayName("Schedules 1-3 touch their summaries and costs for one mill/year only")

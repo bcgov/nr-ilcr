@@ -47,7 +47,7 @@ const ReadOnlyField: FC<{
   readonly className?: string
 }> = ({ label, value, className }) => (
   <Field className={className}>
-    <span className="schedule-10__field-label">{label}</span>
+    <span className="schedule-10__field-label">{label}:</span>
     <span className="schedule-10__field-value">{value === '' ? '—' : value}</span>
   </Field>
 )
@@ -122,7 +122,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field>
         <TextInput
           id={id('division')}
-          labelText="Division"
+          labelText="Division:"
           maxLength={DIVISION_MAX}
           autoComplete="off"
           value={form.divisionName}
@@ -137,7 +137,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field>
         <TextInput
           id={id('period')}
-          labelText="Period Surveyed"
+          labelText="Period Surveyed:"
           placeholder="YYYY-MM"
           autoComplete="off"
           value={form.constructionPeriod}
@@ -152,7 +152,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('region')}
-          titleText="Region"
+          titleText="Region:"
           items={[...codeLists.forestRegions]}
           selectedCode={form.forestRegionCode}
           disabled={disabled}
@@ -166,7 +166,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('tsa-or-tfl')}
-          titleText="TSA or TFL"
+          titleText="TSA or TFL:"
           items={tsaOptions}
           selectedCode={form.tsaOrTfl}
           disabled={disabled}
@@ -180,7 +180,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('supply-block')}
-          titleText="Supply Block"
+          titleText="Supply Block:"
           items={blockOptions}
           selectedCode={form.supplyBlock}
           disabled={disabled || tflLocated}
@@ -194,7 +194,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field className="schedule-10__field--narrow">
         <TextInput
           id={id('tfl')}
-          labelText="TFL"
+          labelText="TFL:"
           maxLength={TFL_MAX}
           autoComplete="off"
           value={form.tflNumberCode}

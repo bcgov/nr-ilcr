@@ -93,8 +93,11 @@ body {
 //
 // Subordinate tiers are deliberately NOT touched and are already consistent with CSP: 1rem/600 for a
 // panel or table heading (`.sub-panel__title`, `.schedule-8__subheading`, `.schedule-10__detail-
-// heading`, `.schedule-5-sub-page__panel-heading`; CSP EditableLineItemsTable/index.scss:7) and
-// 0.875rem for the tier below that (`.schedule-10__detail-subheading`; CSP Invoice/index.scss:121).
+// heading`, `.schedule-5-sub-page__panel-heading`; CSP EditableLineItemsTable/index.scss:7).
+//
+// There used to be a second sentence here naming `.schedule-10__detail-subheading` as a 0.875rem
+// tier below that. #440 deleted the class: legacy styles all seven Schedule 10 road-detail headings
+// with one `header` class, so its four sub-headings take the same 1rem as the three above them.
 .schedule-1__heading,
 .schedule-2__heading,
 .schedule-3__heading,
@@ -124,6 +127,13 @@ body {
   // reported on Schedule 10's Road Group. Add new ones to this list.
   .schedule-2__comments-label,
   .schedule-10__field-label,
+  // Schedule 10's End Haul / Overland block prints two of its labels as plain spans rather than as
+  // controls' own labels: the `Distance (km)` / `Volume (m3)` / `$/m3/km` column headings, and the
+  // `End Haul Details:` / `Overland Details:` row headings. Neither is a `.cds--label`, so both
+  // rendered 12px beside the 14px labels around them — the same 2px mismatch #366 reported on Road
+  // Group, from the same cause.
+  .schedule-10__haul-column-head,
+  .schedule-10__haul-row-head,
   .#{$bcgov-prefix}--label {
     font-size: 0.875rem;
   }

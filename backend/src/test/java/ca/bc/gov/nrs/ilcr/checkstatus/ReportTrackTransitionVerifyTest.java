@@ -73,7 +73,7 @@ class ReportTrackTransitionVerifyTest {
   void verifyDoesNotLockTheStatusRow() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.write(MILL, YEAR, "V", "V", USER, GUID)).thenReturn("V");
+    when(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
 
     service.verify(MILL, YEAR, USER, GUID);
 
@@ -165,7 +165,8 @@ class ReportTrackTransitionVerifyTest {
     givenTrackAt("V");
     givenGatePasses();
 
-    // TrackTransition.VERIFY.rejectedKey() is "verifyNotSubmittedErrorMsg" — 15.4's ruled
+    // TrackTransition.VERIFY.rejectedKey(SCHEDULES_1_TO_10) is "verifyNotSubmittedErrorMsg" —
+    // 15.4's ruled
     // DEPARTURE from legacy, which belongs to submit. Verify answers what legacy answered.
     assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
         .isInstanceOfSatisfying(
@@ -178,9 +179,9 @@ class ReportTrackTransitionVerifyTest {
   void legalTransitionDelegatesToTheWriter() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.write(MILL, YEAR, "V", "V", USER, GUID)).thenReturn("V");
+    when(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
 
     assertThat(service.verify(MILL, YEAR, USER, GUID)).isEqualTo("V");
-    verify(writer).write(MILL, YEAR, "V", "V", USER, GUID);
+    verify(writer).write(MILL, YEAR, "S", "V", "V", USER, GUID);
   }
 }

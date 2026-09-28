@@ -15,7 +15,8 @@ pin down. Beyond that bug, what this log records is that **Schedule 11 was rebui
 **four** behaviours genuinely differ from the legacy Gherkin — DIV-1 through DIV-4 — and all four were
 triaged with the Schedule 11 dev on 2026-08-10:
 - **DIV-2 — closed.** Hiding the editing controls in read-only is deliberate, so nothing more is needed.
-- **DIV-1 and DIV-3** — the dev will double-check these with the BA when she gets a chance.
+- **DIV-1 and DIV-3 — closed 2026-09-24 by Story 26.2** (Scho's ruling D1(b)/D4(a)): the page is legacy's
+  again — every row live, Save and Check Status above and below the table, Delete a flag until Save.
 - **DIV-4 — delivered, with one recorded exception.** This was the one with real substance: a legacy
   capability with no new-app counterpart, needing a backend change, and Schedule 1 was missing it too.
   Story 16.2 rebuilt it on both screens (2026-09-11). Five of Schedule 11's six indicators are reproduced;
@@ -84,10 +85,16 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Is it a defect?** Almost certainly not — it is the shipped Story 25.2 contract. But it removes a control
     users know, so it wants an explicit product decision rather than our assumption.
   - **Priority / env:** p2 (informational) · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the dev (2026-08-10): she'll double-check the no-Save-button
-    model with the BA when she gets a chance.
-  - **Test:** covered as the app behaves — `happy-path.feature` `@S01`, `inline-edit.feature` `@S03`,
-    `delete.feature` `@S07`, `persistence.feature` `@S09`. No red.
+  - **Status:** **CLOSED 2026-09-24 — legacy model restored by Story 26.2** (ruling D1(b), D4(a), D5(a)).
+    Every row is a live input; one page-level Save, above and below the table, sends every pending edit and
+    delete in one atomic `PUT /api/v1/schedule11/locations`. Delete is now a flag until Save, as legacy's was
+    (`Schedule11MB.java:132-138`) — without legacy's premature "Data deleted successfully" (26.2 deviation (B)).
+    The per-row `PUT`/`DELETE /locations/{id}` are retired.
+  - **Test:** Vitest (`Schedule11.test.tsx`) and backend ITs (`Schedule11CorrectionIT`, `Schedule11WriteIT`).
+    ⚠️ The scenarios named here — `happy-path.feature` `@S01`, `inline-edit.feature` `@S03`,
+    `delete.feature` `@S07`, `persistence.feature` `@S09` — still script the retired per-row editor and
+    immediate delete, and need re-grounding on the new page. The API helpers they seed and clean up with
+    (`steps/sch11/schedule11Api.ts`) were moved onto the bulk save by 26.2.
 
 - **DIV-2 — When the schedule is read-only, the editing controls are removed rather than greyed out.**
   - **What's different:** Once the silviculture track leaves Draft, legacy **disabled** the six Add
@@ -118,10 +125,11 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Is it a defect?** Very unlikely — a duplicate control for convenience on a long page. Recorded only
     so the S20 assertion's wording change is traceable.
   - **Priority / env:** p3 (cosmetic) · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the Schedule 11 dev (2026-08-10): she'll double-check the
-    single Check Status button with the BA when she gets a chance. We'd previously written this off as "no
-    action expected" on our own judgement — that call is really theirs, so it stays open until they make it.
-  - **Test:** `render-states.feature` `@S20` asserts the single button is disabled. No red.
+  - **Status:** **CLOSED 2026-09-24 — legacy's two buttons restored by Story 26.2** (ruling D4(a)): Save and
+    Check Status render above and below the table. While any change is unsaved, both Check Status buttons are
+    disabled with a screen-reader reason, "Save your changes before checking status" (26.2 D7(a), deviation (C)).
+  - **Test:** Vitest (`Schedule11.test.tsx`). ⚠️ `render-states.feature` `@S20` still asserts ONE Check
+    Status button and needs re-grounding (legacy's S20 wording — "both … are disabled" — applies again).
 
 - **DIV-4 — The per-field "original value" indicators from legacy do not exist anywhere in the new app.**
   _(NEW 2026-08-10 — found by checking whether Schedule 1's DIV-5 also applies to this screen. It does.)_
@@ -206,29 +214,35 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
     affected schedule. One fix turns all of these green.
   - **Local facts (this is what belongs here):**
-    - **Scenarios:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S21` (the false-GREEN arm)
-      and `@S22` (the false-RED arm). Both are needed: they fail in OPPOSITE directions.
+    - **Scenarios:** `check-status-unsaved.feature` `@p1 @S21` (a cost removed) and `@S22` (a cost
+      supplied) — re-grounded GREEN by Story 26.2 (see Status).
     - **Anchors:** two SEEDED, dedicated mill-years — `check-unsaved-violation` (10050/2015) and
       `check-unsaved-fix` (10050/2016), created by
       `real-test-data-patches/sch11/unsaved-check-anchors.sql`. Reusing `check-met` /
       `check-missing-actual` was tried first and collides with S04/S05 under `fullyParallel`, because their
       Givens add a location through the API.
-    - **RE-GROUNDING NOTE — THE IMPORTANT ONE HERE.** Schedule 11 has **no page-level Save** (DIV-1 above):
-      every row saves itself, so the unsaved state is a row sitting in the **inline editor** with
-      typed-but-unconfirmed values, not a dirty form. It is reachable only because Check Status is not gated
-      on it — row actions are disabled during a row edit (`schedule11/index.tsx:810`) while Check Status is
-      only `!editable || saving` (`:876`), verified in source 2026-08-27. The upstream slices
+    - **RE-GROUNDING NOTE — THE IMPORTANT ONE HERE.** _(Historical: written 2026-08-27, before Story 26.2
+      restored the page-level Save; kept because it explains why the scenarios live on an existing row.)_
+      Schedule 11 then had **no page-level Save** (DIV-1 above): every row saved itself, so the unsaved state
+      was a row sitting in the **inline editor** with typed-but-unconfirmed values, not a dirty form. It was
+      reachable only because Check Status was not gated on it — row actions were disabled during a row edit
+      while Check Status was only `!editable || saving`, verified in source 2026-08-27. The upstream slices
       `UC-SCH11-001-S21/S22` describe this against `addActualCost`, the **Add panel** — a NEW row, not a
       stored requirement changed on screen, so it cannot express the rule. The slices are right about legacy
       (which batch-saved a grid behind a page-level Save); it is the re-grounding that had to move to the
       inline editor. Do not "correct" these scenarios back to the Add panel.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged against the shared ticket. Dev to send the on-screen values with
-    the check-status request and evaluate those, following Schedule 6's `Schedule6CheckRequest`; QA
-    re-verifies and closes this entry when the fix lands. The scenarios assert the CORRECT behaviour, so they
-    go green on their own, at which point their tags and `[DISCOVERED …]` title markers come off together.
-    No test change is needed. Added 2026-08-27.
-  - **Test:** `check-status-unsaved.feature` ×2 — both RED by design.
+  - **Status:** **CLOSED for Schedule 11, 2026-09-24 — by Story 26.2's ruling D7(a) (Scho), not by the
+    fix #359 proposes.** Story 26.2 rebuilt the page to legacy's model (every row live, one page-level Save)
+    and Scho ruled that Check Status keeps judging the SAVED data while BOTH Check Status buttons are disabled
+    whenever an edit or flagged delete is unsaved, with the screen-reader reason "Save your changes before
+    checking status". A verdict over unsaved work can no longer be produced on this page, so neither the
+    false-GREEN nor the false-RED is reachable. It is still a DEVIATION from legacy, which evaluated its
+    unsaved in-memory model (`Schedule11MB.java:154-176`) — recorded as Story 26.2 deviation (C).
+    **#359 stays open for the other schedules**; Schedule 3's DIV-6 remains the analysis of record.
+  - **Test:** `check-status-unsaved.feature` ×2 — now GREEN scenarios of the ruled behaviour (the change
+    greys Check Status with its reason, the Save re-enables it, the verdict then describes what was saved).
+    Their `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off with the re-grounding.
 
 ---
 

@@ -4,8 +4,10 @@
 #
 # Each render swept below is genuinely different DOM, not the same page several times:
 #   1. EDITABLE with a real row — Add panel (7 controls incl. a Dropdown and a type-ahead ComboBox),
-#      the sortable column headers, the per-row Edit/Delete actions, and the footer Totals row.
-#   2. The OPEN INLINE EDITOR — seven display cells swapped for inputs whose labels are visually hidden.
+#      the sortable column headers, the row's seven live inputs (visually hidden labels named after the
+#      row), its Delete action, both Save/Check Status bars, and the footer Totals row.
+#   2. A CHANGE PENDING — Save live, both Check Status buttons disabled and described by a visually
+#      hidden reason (Story 26.2 D7(a)): the aria-describedby wiring is exactly what axe checks.
 #   3. READ-ONLY — no Add panel, no Actions column, disabled Check Status: a different accessible tree
 #      whose remaining table must still be navigable.
 #   4. The VALIDATION-ERROR state — the deliberate red below.
@@ -15,7 +17,7 @@
 #  the documented `--grep @a11y` accessibility-only run includes that render state.)
 #
 # The seeded row in (1)/(2) is what makes those sweeps meaningful: an empty table would leave the row
-# controls, the inline editor and the Actions column entirely unexercised.
+# controls and the Actions column entirely unexercised.
 
 @sch11 @UC-SCH11-001 @a11y
 Feature: Report Basic Silviculture Costs (Schedule 11) — accessibility
@@ -23,22 +25,24 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — accessibility
   I want Schedule 11 to meet WCAG 2.1 AA
   So that I can record silviculture costs independently
 
-  # The editable page and its inline editor are swept in ONE scenario on ONE seeded row deliberately:
-  # both need the same seeded location, and two parallel scenarios seeding the same marker on the same
-  # key would be a shared MUTABLE fixture (the read-back asserts exactly one match). Sweeping the closed
-  # and open editor states in sequence keeps the scenario self-contained and parallel-safe.
+  # The editable page and its pending-change state are swept in ONE scenario on ONE seeded row
+  # deliberately: both need the same seeded location, and two parallel scenarios seeding the same marker
+  # on the same key would be a shared MUTABLE fixture (the read-back asserts exactly one match). Sweeping
+  # the two states in sequence keeps the scenario self-contained and parallel-safe. The change is never
+  # saved, so it writes nothing.
   @p1
-  Scenario: The editable Schedule 11 page and its inline row editor have no accessibility violations
+  Scenario: The editable Schedule 11 page, with and without a pending change, has no accessibility violations
     Given the Schedule 11 anchor "a11y" has a seeded location "E2E a11y row"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 11
     Then the Add New Location panel is rendered
     And the Schedule 11 location "E2E a11y row" is listed
     And the "Schedule 11 (editable, with a location)" view has no WCAG 2.1 AA accessibility violations
-    # The editor swaps seven display cells for labelled inputs whose labels are visually hidden — exactly
-    # the shape that produces unlabelled-control violations if a hideLabel is ever mis-wired.
-    When I start editing the Schedule 11 location "E2E a11y row"
-    Then the "Schedule 11 (inline row editor open)" view has no WCAG 2.1 AA accessibility violations
+    # A pending change disables both Check Status buttons and points each at a visually hidden reason —
+    # a broken aria-describedby target is exactly what this sweep would catch.
+    When I change the Schedule 11 location "E2E a11y row" field "Comments" to "pending a11y change"
+    Then both Check Status buttons are disabled until the change is saved
+    And the "Schedule 11 (a change pending)" view has no WCAG 2.1 AA accessibility violations
 
   @p2
   Scenario: The read-only Schedule 11 page has no accessibility violations

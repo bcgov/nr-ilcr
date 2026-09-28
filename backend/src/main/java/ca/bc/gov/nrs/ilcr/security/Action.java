@@ -56,8 +56,8 @@ public enum Action {
   MAINTAIN_MILLS,
   /**
    * Move a report track's status on the Check Status page — verify a submitted Schedules 1&ndash;10
-   * track, and (when those stories land) reverse it back to Submitted or Draft. ADMIN-only: a
-   * SUBMITTER hitting these APIs is denied 403.
+   * track (Story 17.1), and reverse it back to Submitted or Draft (Story 18.1). ADMIN-only: a
+   * SUBMITTER hitting any of these three APIs is denied 403.
    *
    * <p>Deliberately one action for all three admin-driven transitions rather than one per button,
    * for the same reason as {@link #MAINTAIN_MILLS}: legacy derived a WebADE action from each

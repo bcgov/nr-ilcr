@@ -46,14 +46,14 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/accessibility.feature`
     ("A hovered row keeps its action labels readable", `@discovered-bug`).
 
-- **BUG-2 - Eight data tables declare an `aria-label` that the `TableContainer` title overrides (dead `aria-label`, APP-WIDE).**
-  - **What's wrong, in plain terms:** a data table can carry a *name* that screen readers read out. A Schedule 4
-    sub-page's rows table is given **two** - "Towing Total" (from the visible heading) and "Towing Total rows"
-    (typed onto the table). The heading wins, so screen readers say "Towing Total", which is the correct name.
-    **Nothing is wrong for any user;** the defect is that "Towing Total rows" is dead code that looks as though
-    it does something.
-  - **Expected vs actual:** expected one name per table with no ignored attribute in the markup; actual two
-    names declared, one silently discarded.
+- **BUG-2 - CLOSED 2026-09-24: the dead `aria-label`s that a `TableContainer` title overrode are removed (APP-WIDE, #321).**
+  - **What was wrong, in plain terms:** a data table can carry a *name* that screen readers read out. A Schedule 4
+    sub-page's rows table was given **two** - "Towing Total" (from the visible heading) and "Towing Total rows"
+    (typed onto the table). The heading won, so screen readers said "Towing Total", which is the correct name.
+    **Nothing was wrong for any user;** the defect was that "Towing Total rows" was dead code that looked as
+    though it did something.
+  - **Expected vs actual (as raised):** expected one name per table with no ignored attribute in the markup; actual
+    two names declared, one silently discarded.
   - **NOT a WCAG/accessibility item.** Every affected table has a valid accessible name, no success criterion
     fails, and the axe sweeps pass all of them. It involves ARIA attributes, but both the visible and the
     audible behaviour are already correct, so this is a trivial cleanup rather than an accessibility defect.
@@ -87,10 +87,20 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     resolves **1**.
   - **Ticket:** [bcgov/nr-ilcr#321](https://github.com/bcgov/nr-ilcr/issues/321).
   - **Priority / env:** p3 - local seeded DB - Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to delete the eight dead attributes when capacity allows; QA
-    re-verifies and closes this entry then. No test: nothing user-facing is broken, and asserting the
-    currently-dead name would assert a behaviour nobody guarantees.
-  - **Test:** none (the locator note lives in `pages/sch4/schedule4SubPage.ts`).
+  - **Status:** CLOSED 2026-09-24 — fixed by PR [#507](https://github.com/bcgov/nr-ilcr/pull/507) for #321. All eight attributes above were deleted,
+    plus two more the same shape that had appeared since this sweep (`schedule10/RoadDetailPage.tsx`
+    "Road details" under the "<page> -> Roads" title, and `schedule10/index.tsx` "Construction pages" under
+    "Page Summary" — both drifted, both dead). No behaviour changes: every table keeps the name it already
+    announced, the container title. The ten correctly-labelled tables are untouched.
+  - **Test:** an ESLint `no-restricted-syntax` rule in `frontend/eslint.config.mjs` (an AST selector: an
+    `aria-label` on a `<Table>` inside a `<TableContainer title>`), so the pattern cannot creep back — the two
+    Schedule 10 cases are exactly what it would have caught, and `npm run lint` gates in CI (`analysis.yml`).
+    Being an AST match it reads real TSX (a `>` in an earlier prop, arrow functions, spacing) rather than the
+    tag text a regex scan would. `components/__tests__/table-accessible-name.test.ts` lints fixtures through
+    the real config and proves the rule fires on the dead shapes, stays quiet on untitled containers, and
+    names the line when the Schedule 4 attribute is re-added in memory — a rule that matched nothing would
+    pass every lint run silently, which the first draft of it did. The E2E locator note in
+    `pages/sch4/schedule4SubPage.ts` records the history.
 
 - **BUG-3 - A hovered button is almost indistinguishable from the row it sits in (APP-WIDE, WCAG 1.4.11).**
   - **What's wrong:** moving onto a row-action button normally gives it a slightly darker background so the
@@ -188,7 +198,9 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     Check Status buttons `disabled={!editable || saving}`, so the deliberately-red S18 scenario in
     `render-states.feature` passes and its `@discovered-divergence` tag has been dropped. Unit coverage:
     *"both Check Status buttons are DISABLED outside Draft (DIV-1 / #322)"* in `Schedule4.test.tsx`.
-    ⚠ **Schedule 8 is still open** (`schedule8/index.tsx:780`), so issue #322 does NOT close on this alone.
+    ✅ **RESOLVED for Schedule 8 on 2026-09-14** (PR #464, Story 16.3): `schedule8/index.tsx` and its
+    `SamplePage.tsx` both read `disabled={!editable || …}` now. Confirmed in the source 2026-09-22 with an
+    app-wide sweep (below) and a named unit guard added in `Schedule8.test.tsx`; **#322 closes.**
     The original analysis is preserved below.
   - **What's wrong:** once the Schedules 1–10 report leaves Draft (Submitted or Verified), Schedule 4 becomes
     read-only — Add New Location, Copy and Delete are all correctly disabled — but the **Check Status** button
@@ -214,6 +226,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
         `disabled={!editable || saving}`, with an inline comment saying #322 does not close on this alone);
         **Schedule 8 is STILL WRONG** (`schedule8/index.tsx:792`, `disabled={saving}` — the line moved from
         :780). So 1 of 9 schedules is wrong now, not 2.
+        **Re-checked 2026-09-22: Schedule 8 is FIXED too** — `schedule8/index.tsx:837` and
+        `schedule8/SamplePage.tsx:670` both carry `!editable` since PR #464 (2026-09-14), with role-matrix
+        unit tests on both bars. 0 of 9 wrong. **App-wide sweep the same day, per the ticket's "double-check
+        no other page":** every Check Status button includes the term — Schedules 1/3 (`core/ScheduleActions`),
+        2, 4 (×2), 5, 6, 8 (main + sample), 11 directly; 7A/7B (`core/SaveCheckActions`), 9, 10 through
+        `controlsDisabled = !editable || saving`. The standalone Check Status page's Submit/Verified/Set-to
+        buttons are role-gated transitions (legacy `canUserSubmitReport`), a different rule and not in scope.
       - **correct:** Schedules 1 and 3 via `core/ScheduleActions/index.tsx:44`
         (`!editable || saving || checking`); Schedule 2 (`schedule2/index.tsx:319`) and Schedule 11
         (`schedule11/index.tsx:881`) (`!editable || saving`); Schedule 5 (`schedule5/index.tsx:1084`)
@@ -224,13 +243,17 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     app already do, so this is two pages having drifted rather than a deliberate product decision.
   - **Ticket:** [bcgov/nr-ilcr#322](https://github.com/bcgov/nr-ilcr/issues/322).
   - **Priority / env:** p2 · local seeded DB · Chrome.
-  - **Status:** **HALF CLOSED — the Schedule 4 half is FIXED (2026-08-24, defect #293's code review); #322
-    stays OPEN for Schedule 8.** The scenario went green on its own exactly as designed, so only the
-    `@discovered-divergence` tag was dropped and no assertion was edited (see the note at
-    `render-states.feature:113-119`). Re-verified in the source 2026-08-27. Schedule 8 has no E2E suite yet,
-    so QA's close-out check there is manual; do not close #322 on the Schedule 4 evidence alone.
+  - **Status:** **CLOSED (fixed) — Schedule 4 half 2026-08-24 (defect #293's code review), Schedule 8 half
+    2026-09-14 (PR #464, Story 16.3); close-out and sweep recorded 2026-09-22 by the PR closing #322.** The
+    Schedule 4 scenario went green on its own exactly as designed, so only the `@discovered-divergence` tag
+    was dropped and no assertion was edited (see the note at `render-states.feature:113-119`). Schedule 8 has
+    no E2E suite, so its evidence is the source plus unit tests: the Story 16.3 role matrix (SUBMITTER at
+    Submitted → disabled, on the main bar AND the sample bar) and the flag-level *"Check Status is DISABLED on
+    a Submitted/Verified report the caller cannot edit (DIV-1 / #322)"* pair. QA's browser check on the
+    Submitted (20171 / 2015) and Verified (20173 / 2015) anchors is the last step before the ticket closes.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/render-states.feature` (S18) — **GREEN,
-    tag retired**; it is now an ordinary regression guard for the Schedule 4 half.
+    tag retired**; it is now an ordinary regression guard for the Schedule 4 half. Schedule 8:
+    `schedule8/__tests__/Schedule8.test.tsx` (unit), as above.
 
 - **DIV-2 — Check Status says a value is required but not WHICH figure is missing.**
   - ✅ **RESOLVED on 2026-09-18** (issue #326), then **SUPERSEDED the same day by DIV-9 / #465**. The fix
@@ -326,14 +349,25 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     requires it verbatim, and every other page already implements it. This is behaviour lost in the rebuild.
   - **Ticket:** [bcgov/nr-ilcr#324](https://github.com/bcgov/nr-ilcr/issues/324).
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the confirm on the four navigation paths when capacity
-    allows; QA re-verifies and closes this entry then. All three `@discovered-divergence` tests assert the
-    CORRECT behaviour (the prompt appears), so they are RED today and go green on their own when the fix lands,
-    at which point their tags come off. No test change is needed.
-  - **Test:** `features/sch4/uc-sch4-001-report-transportation/nav-and-recompute.feature` (S12,
-    `@discovered-divergence` ×3 — panel Back, Add New Location, and sub-page Back). A fourth, passing scenario
-    asserts the compensating guarantee: whatever is decided about the prompt, a discarded edit is never written
-    to the database.
+  - **Status:** **FIXED 2026-09-22 by the PR closing #324 — awaiting QA re-verification against the running
+    app, then CLOSE.** The fix routes every panel-leaving control (Back/Close, Add New Location, Edit, Copy)
+    through one dirty check and the same "Unsaved changes" modal NAV-002 already used, and gives the
+    sub-page's Back its own instance of that modal. Two decisions to know when re-verifying:
+      - **Dirty-gated, not unconditional** (deviation from legacy, same as Schedule 5's camp panel and
+        Schedule 8's rates page): an untouched panel closes silently; a Copy counts as unsaved from the moment
+        it opens; a saved panel is clean again until the next keystroke. On the sub-page, "unsaved" means a
+        typed-but-not-Added row or an in-place row edit not yet Saved — rows persist on Add/Save, so a
+        sub-page with nothing pending returns to the list silently.
+      - **Copy is guarded too**, though the ticket's table listed only Back / Edit / Add New: it replaces the
+        dirty panel by exactly the same path as Edit, and legacy's five `p:confirm`s cover the row controls.
+    The three `@discovered-divergence` tags came off with NO assertion edited; the Cancel arm and the
+    Edit-another-location path were folded into two of them (no new anchors), and the "never written"
+    scenario now confirms the prompt before asserting the discard. 13 unit tests pin both arms in
+    `schedule4/__tests__/Schedule4.test.tsx` ("NAV-001"). Found 2026-08-17; fourth path found 2026-08-19.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/nav-and-recompute.feature` (S12 ×3 — panel
+    Back + Cancel, Edit-another + Add New Location, and sub-page Back; all green by design once the fix is
+    deployed). A fourth scenario asserts the compensating guarantee: a discarded edit — now the prompt's
+    Continue — is never written to the database.
 
 - **DIV-4 — After saving, the cost-per-cubic-metre column still shows the OLD value until you reopen the location.**
   - **What's wrong:** `$/m³` is calculated by the system from the Cost and Volume entered. Save a location and
@@ -591,10 +625,10 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Status:** OPEN — `blocked` in coverage.md. A gate should treat this as **waived**, not failing.
   - **Test:** none today, by environment limitation rather than by choice.
 
-- **GAP-2 — Schedule 4's five error-fallback messages are untested (part of an app-wide gap).**
-  - **What's missing:** each of these is the string Schedule 4 shows when a request fails *and* the response
-    carries no `ProblemDetail.detail` — a gateway error, a dropped connection, an empty-bodied 500. None is
-    asserted at any level:
+- **GAP-2 — CLOSED 2026-09-24: Schedule 4's five error-fallback messages are now unit-tested (#332).**
+  - **What was missing:** each of these is the string Schedule 4 shows when a request fails *and* the response
+    carries no `ProblemDetail.detail` — a gateway error, a dropped connection, an empty-bodied 500. When this
+    entry was raised, none was asserted at any level:
 
     | site | string |
     | --- | --- |
@@ -607,8 +641,8 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Not dead code, and for the save one it is one untested ARM, not an untested branch.** The save handler is
     `setSaveError(extractDetail(error) || 'Schedule could not be saved.')`, and its `detail` arm is covered at
     BOTH levels: `duplicate-name.feature` `@S14` (409 ERR-002) and
-    `components/schedule4/__tests__/Schedule4.test.tsx:605`. Only the detail-less arm is unexercised. The other
-    four sites have no coverage on either arm.
+    `components/schedule4/__tests__/Schedule4.test.tsx:605`. Only the detail-less arm was unexercised. The other
+    four sites had no coverage on either arm.
   - **The expected text is known, and ERR-003's is legacy's own.** Legacy rendered whatever key the exception
     carried (`Schedule4MB.save()` → `catch (ILCSException e) { FacesUtil.addErrorMessage(e.getErrorCode()); }`),
     which is why the source docs record ERR-003 as `[UNKNOWN]`. The app's fallback is `scheduleNotSavedErrorMsg`
@@ -626,10 +660,15 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     territory; this suite changes no files outside `frontend/e2e/`.
   - **Ticket:** [bcgov/nr-ilcr#332](https://github.com/bcgov/nr-ilcr/issues/332) — the app-wide ticket, where
     Schedule 4 is group 1 (with Schedule 11).
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the Vitest cases when capacity allows; QA re-verifies and
-    closes this entry when Schedule 4's five land. `deferred` in coverage.md.
-  - **Test:** none for these fallbacks. The save handler's `detail` arm is covered by `duplicate-name.feature`
-    and `Schedule4.test.tsx:605`.
+  - **Status:** CLOSED 2026-09-24 — the Vitest cases landed with [#332](https://github.com/bcgov/nr-ilcr/issues/332), exactly as prescribed above
+    (empty-bodied 500 through the existing MSW setup, exact-string assertion). `covered (unit)` in coverage.md.
+  - **Test:** `Schedule4.test.tsx` — six `(#332)` cases, one per site: *"a detail-less save failure falls back
+    to the generic save message and keeps the panel open"*, *"a detail-less delete failure falls back to the
+    generic delete message"*, *"a detail-less Check Status failure falls back to the generic check message"*,
+    *"a detail-less add-row failure falls back to the generic row message and keeps the draft"*, *"a
+    detail-less row-edit Save failure falls back to the generic row message"* and *"a detail-less row delete
+    failure falls back to the generic delete-row message"*. The save handler's `detail` arm stays covered by
+    `duplicate-name.feature` and the existing verbatim case in `Schedule4.test.tsx`.
 
 - **GAP-3 — CLOSED 2026-08-20: the stale-token conflict is now covered end-to-end.**
   - **Test written:** `concurrency.feature` `@p1 @S02` — "Saving a location that another session already

@@ -13,6 +13,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -582,23 +583,56 @@ public class Schedule2Service {
   }
 
   /**
-   * Evaluate the Schedule 2 completion requirement (BR-07) for a mill/year — read-only (AD-5),
-   * never mutates. Reuses the server-assembled document ({@link #getSchedule2}) and inspects {@code
-   * purchasedLogCost.cost} (cost-item 25): non-null &rarr; {@code MET} with one {@code
-   * scheduleRequirementsMetMsg}; null (including the unsaved-schedule state — never 404) &rarr;
-   * {@code ISSUES} with one {@code missingRequiredFieldMsg}. The mill/year context is already
-   * validated in the controller (AD-4). The returned {@link MessageInfo} carries the bundle KEY
-   * only; {@link Schedule2CheckStatusResolver} resolves the verbatim text (AD-8).
+   * Evaluate the Schedule 2 completion requirement (BR-07) against the SCREEN — the endpoint's
+   * entry point (bcgov/nr-ilcr#359). Read-only (AD-5), never mutates, and reads nothing: the one
+   * value the rule inspects is on the page, so the body carries it and {@link #assembleSchedule2}
+   * is deliberately NOT run. Legacy's Check Status was a full postback that checked the screen
+   * ({@code schedule2.xhtml:36,173}); this restores that.
+   *
+   * <p>Named apart from {@link #checkStatusStored} on purpose: with both called {@code checkStatus}
+   * a future caller picks the wrong one by autocomplete and the failure is SILENT — either a sweep
+   * that reads a screen or an endpoint that ignores one. Schedules 5 and 6 name them apart for the
+   * same reason.
+   *
+   * @param request the on-screen item-25 cost (null inside when blank)
+   * @return the outcome + one message key (text resolved by {@link Schedule2CheckStatusResolver})
+   */
+  public Schedule2CheckStatusResponse checkStatus(Schedule2CheckRequest request) {
+    return evaluate(request.purchasedLogCostCost());
+  }
+
+  /**
+   * Is the SAVED Schedule 2 complete? The stored-data counterpart of {@link #checkStatus}, for
+   * report-level callers (Story 15.0/15.1) that have no screen to describe. Reuses the
+   * server-assembled document ({@link #getSchedule2}) and inspects {@code purchasedLogCost.cost}
+   * (cost-item 25): non-null &rarr; {@code MET} with one {@code scheduleRequirementsMetMsg}; null
+   * (including the unsaved-schedule state — never 404) &rarr; {@code ISSUES} with one {@code
+   * missingRequiredFieldMsg}. The mill/year context is already validated by the caller (AD-4).
+   *
+   * <p>The endpoint and this method can legitimately disagree — one answers "is what I'm LOOKING AT
+   * complete?", the other "is what is SAVED complete?". That is the design, not a bug.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @return the outcome + one message key (text resolved by the controller)
+   * @return the outcome + one message key (text resolved by {@link Schedule2CheckStatusResolver})
    */
   @Transactional(readOnly = true)
-  public Schedule2CheckStatusResponse checkStatus(long millId, int year) {
+  public Schedule2CheckStatusResponse checkStatusStored(long millId, int year) {
     // Editability is irrelevant to BR-07 (only the item-25 cost matters); permit nothing.
     Schedule2Response document = assembleSchedule2(millId, year, EditableStatuses.NONE);
-    boolean met = document.purchasedLogCost().cost() != null;
+    return evaluate(document.purchasedLogCost().cost());
+  }
+
+  /**
+   * The BR-07 verdict, source-agnostic: identical for an on-screen cost and a stored one. Neither
+   * {@link #checkStatus} nor {@link #checkStatusStored} may restate any part of it (AD-5). The
+   * returned {@link MessageInfo} carries the bundle KEY only (AD-8).
+   *
+   * @param purchasedLogCostCost the item-25 cost to judge; a pure null test ({@code 0} passes)
+   * @return the outcome + one message key
+   */
+  private static Schedule2CheckStatusResponse evaluate(Integer purchasedLogCostCost) {
+    boolean met = purchasedLogCostCost != null;
     String outcome = met ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     String key = met ? MSG_REQUIREMENTS_MET : MSG_MISSING_REQUIRED;
     // For the ISSUES message the label is carried in text as the prefix the controller prepends to

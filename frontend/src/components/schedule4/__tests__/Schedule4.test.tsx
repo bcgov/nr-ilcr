@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { delay, http, HttpResponse } from 'msw'
+import { http, HttpResponse } from 'msw'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -807,6 +807,57 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
+  // #332: the sub-page's row writes fall back to hardcoded messages when the failure carries no
+  // ProblemDetail detail (an empty-bodied 500). 'Row could not be saved.' is reached from both the
+  // add-row POST and the in-place edit PUT, so each path gets its own arm.
+  test('a detail-less add-row failure falls back to the generic row message and keeps the draft (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(ROWS_7001, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Added Towing')
+    await userEvent.type(screen.getByLabelText('Volume (m³)'), '5')
+    await userEvent.click(screen.getByRole('button', { name: /add row/i }))
+
+    expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
+    // The typed draft is retained for retry (the form only resets on success).
+    expect(screen.getByLabelText('Description')).toHaveValue('Added Towing')
+  })
+
+  test('a detail-less row-edit Save failure falls back to the generic row message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${ROWS_7001}/7013`, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    const cost = screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i })
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '12345')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less row delete failure falls back to the generic delete-row message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${ROWS_7001}/7013`, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deleteButtons = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deleteButtons[deleteButtons.length - 1])
+
+    expect(await screen.findByText('Unable to delete row.')).toBeInTheDocument()
+    // The document only updates on success, so the row is still there.
+    expect(screen.getByDisplayValue('Deferred towing row')).toBeInTheDocument()
+  })
+
   test('Back returns from a sub-page to the location list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
@@ -1031,6 +1082,57 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     expect(await screen.findByText(detail)).toBeInTheDocument()
   })
 
+  // #332: every write falls back to a hardcoded message when the failure carries no ProblemDetail
+  // detail. An empty-bodied 500 is that case; the verbatim-detail siblings above cover the other arm.
+  test('a detail-less save failure falls back to the generic save message and keeps the panel open (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // The record stays open for retry; no success banner.
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less delete failure falls back to the generic delete message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(LOCATIONS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deletes = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deletes[deletes.length - 1])
+
+    expect(await screen.findByText('Unable to delete location.')).toBeInTheDocument()
+    // Nothing was re-read, so the family is still listed.
+    expect(screen.getByText('Harbour Dump')).toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status failure falls back to the generic check message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock releases on failure, so the check can be re-run.
+    await waitFor(() => expect(bottomCheckStatus()).toBeEnabled())
+  })
+
   test('View opens a read-only panel (no Save) and sub-pages open directly (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     renderSchedule4()
@@ -1173,12 +1275,20 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
   })
 
   test('the bottom Check Status is locked while a check is in flight — one POST per click (#293)', async () => {
+    // The response is HELD open by the test, not delayed by a timer. The first version used a fixed
+    // 50 ms msw delay, so under full-suite load the second click landed after the first response and
+    // the test failed for reasons unrelated to the lock — green in isolation, red in CI (#332 review).
+    // Same shape as CheckStatus.test.tsx's "a verify in flight cannot be sent twice".
     let posts = 0
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, async () => {
         posts += 1
-        await delay(50)
+        await held
         return HttpResponse.json({ outcome: 'MET', messages: [], locations: [] })
       }),
     )
@@ -1187,11 +1297,14 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
     const button = bottomCheckStatus()
     await userEvent.click(button)
+    // While the request is open the button is out of action, so a second click cannot post.
+    await waitFor(() => expect(posts).toBe(1))
+    expect(button).toBeDisabled()
     await userEvent.click(button)
+    expect(posts).toBe(1)
 
-    await waitFor(() => {
-      expect(button).toBeEnabled()
-    })
+    release()
+    await waitFor(() => expect(button).toBeEnabled())
     expect(posts).toBe(1)
   })
 
@@ -1796,6 +1909,314 @@ describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
     expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
     expect(screen.queryAllByRole('button', { name: /check status/i })).toHaveLength(0)
     expect(screen.queryByText('Harbour Dump')).not.toBeInTheDocument()
+  })
+})
+
+// ---- NAV-001 (#324): confirm before unsaved panel / sub-page input is discarded. -------------------
+// Legacy attached `confirmNavigationMsg` to the panel's Add New / Edit / Copy / Close controls
+// (schedule4.xhtml:74,130,160,189,213) and to each sub-page's Back (schedule4TowingTotal.xhtml:173-175).
+// The rewrite fires it only when something would actually be lost, so both arms are pinned here: the
+// prompt on a dirty panel, and its ABSENCE on a clean one.
+describe('Schedule4 NAV-001 — confirm before discarding unsaved changes (#324)', () => {
+  const NAV_MSG = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+
+  // The dialog is addressed by its accessible name: a closed ComposedModal is `aria-hidden`, so the
+  // role query answers "is the prompt showing?" honestly, where a text query would find the hidden copy.
+  const unsavedDialog = () => screen.getByRole('dialog', { name: 'Unsaved changes' })
+  const noUnsavedDialog = () =>
+    expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument()
+  const continueButton = () => within(unsavedDialog()).getByRole('button', { name: /^continue$/i })
+  const cancelButton = () => within(unsavedDialog()).getByRole('button', { name: /^cancel$/i })
+
+  // The panel/sub-page action-bar Back (scoped — the always-rendered delete-confirm modal has a "Cancel").
+  const actionBack = () =>
+    screen
+      .getAllByRole('button', { name: /^back$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))[0]
+
+  const openHarbourForEdit = async () => {
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+  }
+
+  // Dirty the open panel with one keystroke in a category cell (Harbour Dump's Lakeside cost is 100000).
+  const dirtyHarbour = async () => {
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+  }
+
+  test('Back on an untouched Edit panel closes it with no prompt', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+
+    await userEvent.click(actionBack())
+
+    noUnsavedDialog()
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+  })
+
+  test('Back on a dirty Edit panel asks first; Cancel keeps the entry, Continue discards it without a write', async () => {
+    let puts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => {
+        puts += 1
+        return HttpResponse.json(doc())
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    // Cancel: the panel stays with the typed value intact.
+    await userEvent.click(cancelButton())
+    noUnsavedDialog()
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+
+    // Continue: the panel closes and the edit is dropped, never saved (the compensating guarantee).
+    await userEvent.click(actionBack())
+    await userEvent.click(continueButton())
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+    expect(puts).toBe(0)
+    // Re-opening shows the STORED value, not the abandoned one.
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
+  })
+
+  test('Add New Location over a dirty panel asks first; Continue opens the New panel', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    // Held: still the Edit panel behind the dialog.
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+
+    await userEvent.click(continueButton())
+    expect(screen.getByText('New Location')).toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('')
+  })
+
+  test('Edit of another location over a dirty panel asks first; Continue opens that location', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[1]) // Empty Landing
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour Dump')
+
+    await userEvent.click(continueButton())
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Empty Landing')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('')
+  })
+
+  test('Copy of another location over a dirty panel asks first; Cancel stays on the edit', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[1]) // Empty Landing
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(cancelButton())
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.queryByText('Copy Location')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour Dump')
+  })
+
+  test('a Copy panel counts as unsaved from the moment it opens (like Schedule 5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+    expect(screen.getByText('Copy Location')).toBeInTheDocument()
+
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(continueButton())
+    expect(screen.queryByText('Copy Location')).not.toBeInTheDocument()
+  })
+
+  test('an untouched New panel closes with no prompt; a typed one asks', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByText('New Location')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.type(screen.getByLabelText('Location Name'), 'Half typed')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Half typed')
+  })
+
+  test('a typed comment alone makes the panel dirty', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+
+    await userEvent.type(screen.getByLabelText(/additional comments/i), ' more')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+  })
+
+  test('after a successful Save the panel is clean again: Back closes it with no prompt', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({
+            locations: [
+              {
+                ...harbour,
+                revisionCount: 1,
+                categories: [
+                  { ...harbour.categories[0], cost: 1000009, perUnit: 500.0045 },
+                  harbour.categories[1],
+                ],
+              },
+              emptyLanding,
+            ],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await screen.findByText('Data saved successfully')
+    // The saved panel stays open, re-seeded from the echo — and is no longer "unsaved".
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+  })
+
+  // PR #492 review: the inputs stay live while the PUT is pending, so a keystroke landing mid-request
+  // used to be wiped by the echo re-seed and then counted as clean. Post-dispatch entry must survive
+  // the save AND still be guarded; untouched fields still take the server's echo (AD-5).
+  test('typing while a Save is in flight survives the echo and is still guarded by NAV-001', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 1000009, distance: null, perUnit: 500.0045 },
+        harbour.categories[1],
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, async () => {
+        await gate
+        return HttpResponse.json(
+          doc({
+            locations: [saved, emptyLanding],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour() // Lakeside cost 1000009 — what the PUT carries
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    // Mid-flight entry: a different category cell and the name, neither of which the PUT carried.
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry volume'), '7')
+    await userEvent.type(screen.getByLabelText('Location Name'), 'X')
+    release()
+    await screen.findByText('Data saved successfully')
+
+    // The echo landed on the field that was sent; the mid-flight entry was NOT replaced by it.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour DumpX')
+
+    // And it is still unsaved: Back asks first.
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+  })
+
+  test('the read-only View panel closes with no prompt (nothing to lose)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(screen.getByText('View Location')).toBeInTheDocument()
+
+    const [close] = screen
+      .getAllByRole('button', { name: /^close$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))
+    await userEvent.click(close)
+    noUnsavedDialog()
+    expect(screen.queryByText('View Location')).not.toBeInTheDocument()
+  })
+
+  // ---- The sub-page's own Back (fourth path). ----------------------------------------------------
+
+  // Edit Harbour Dump → "Towing Total (1)" → NAV-002 Continue → the Towing sub-page.
+  const openTowingSubPage = async () => {
+    await openHarbourForEdit()
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(continueButton())
+    await screen.findByRole('table', { name: /Towing Total/i })
+  }
+
+  test('sub-page Back with a typed add-row asks first; Cancel keeps the input, Continue returns to the list', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Half a row')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(cancelButton())
+    expect(screen.getByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toHaveValue('Half a row')
+
+    await userEvent.click(actionBack())
+    await userEvent.click(continueButton())
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+  })
+
+  test('sub-page Back with an unsaved in-place row edit asks first', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.type(screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i }), '1')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+  })
+
+  test('sub-page Back with nothing pending returns to the list with no prompt', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
   })
 })
 

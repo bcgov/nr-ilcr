@@ -150,6 +150,22 @@ describe('PrintSchedules', () => {
     expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
   })
 
+  it('falls back to the generic message when the failure carries no problem+json detail (#332)', async () => {
+    // The POST reads its response as a blob, so an empty-bodied 500 parses to no detail at all.
+    server.use(http.post(PRINT_URL, () => new HttpResponse(null, { status: 500 })))
+    render(<PrintSchedules />)
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Schedule 5' }))
+    await userEvent.click(screen.getByRole('button', { name: /Generate PDF/ }))
+
+    expect(
+      await screen.findByText('Unable to generate the PDF. Please try again.'),
+    ).toBeInTheDocument()
+    expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
+    // The busy lock releases on failure, so Generate is available for the retry the message invites.
+    expect(screen.getByRole('button', { name: /Generate PDF/ })).toBeEnabled()
+  })
+
   it('ignores a stale response when the mill/year context changed mid-render (no download)', async () => {
     let handled = false
     server.use(

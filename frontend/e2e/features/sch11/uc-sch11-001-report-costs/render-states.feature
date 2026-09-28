@@ -52,7 +52,10 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — guard and read-only s
     When I open Schedule 11
     Then the Add New Location panel is not rendered
     And the Schedule 11 row actions are not rendered
-    And the Check Status button is disabled
+    # Both of legacy's pairs render, and every one is disabled (legacy S20 wording applies again since
+    # Story 26.2 restored the top-and-bottom bars; defects.md DIV-3 closed).
+    And both Save buttons are disabled
+    And both Check Status buttons are disabled
     # POSITIVE assertion — without it an empty-table regression would satisfy every check above
     # vacuously. Read-only must still DISPLAY the data.
     And the Schedule 11 read-only table still shows the seeded row for "<anchor>"

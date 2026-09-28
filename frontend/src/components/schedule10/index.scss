@@ -84,12 +84,6 @@
   flex: 0 0 8rem;
 }
 
-// A short-valued control (a Yes/No select) that would otherwise stretch to fill its row: sized to
-// the value it holds rather than to its longer label.
-.schedule-10__field--compact {
-  flex: 0 0 12rem;
-}
-
 // A read-only field's label. Road Group is the only field in the Add/Edit Page panel with no Carbon
 // control to hang a <label> on, so this <span> has to be made to read like the six labels beside it
 // (#366). It takes its METRICS from the `label-01` token and its SIZE from styles/index.scss — see
@@ -142,49 +136,199 @@
 
 // ---- The road-detail form ------------------------------------------------------------------
 
-// Three columns as in legacy: Road Information, Sub-Grade, Additional Stabilizing.
+// Three columns as in legacy: Road Information, Sub-Grade, Additional Stabilizing — but placed by
+// ROW, because legacy's `pageDtlInfoPnlGrd` is one 19-row table read across, not three independent
+// lists read down (#440 item 1). Every cell carries its legacy row number as `--cell-row` and its
+// column as `--cell-column`; see the comment above the three cell tables in `RoadDetailFields.tsx`
+// for the row map and for why rows 7, 9 and 12 are vacant on the left.
 .schedule-10__detail-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   column-gap: $spacing-06;
-  row-gap: $spacing-06;
+  row-gap: $spacing-05;
   align-items: start;
   margin-block-end: $spacing-06;
-
-  @media (max-width: 82rem) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  @media (max-width: 52rem) {
-    grid-template-columns: 1fr;
-  }
 }
 
-.schedule-10__detail-column {
-  display: flex;
-  flex-direction: column;
-  row-gap: $spacing-05;
+.schedule-10__detail-cell {
+  grid-row: var(--cell-row);
+  grid-column: var(--cell-column);
   min-width: 0;
 
-  // Inside a column the fields stack, so each takes the column's full width.
   .schedule-10__field {
     flex: 1 1 auto;
     min-width: 0;
   }
 }
 
+// Below the width that holds three columns of inputs there is no row to align TO, so the grid
+// stacks: placement is released and the cells flow in DOM order, which is column-major — the whole
+// of Road Information, then Sub-Grade, then Additional Stabilizing.
+@media (max-width: 64rem) {
+  .schedule-10__detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-10__detail-cell {
+    grid-row: auto;
+    grid-column: auto;
+  }
+}
+
+// All seven road-detail headings — the three column headings AND the four in-column sub-headings —
+// take this one class, because legacy styles all seven with its one `header` class, which is
+// `font-weight: bold` and nothing else (`main.css:75`). Two departures from that were #440: the
+// sub-headings sat a tier down at 0.875rem (item 6), and the column headings carried a rule
+// underneath that neither legacy nor their own sub-headings have (item 7). Legacy's underline is a
+// SEPARATE class, `headerUnderline`, which this screen never uses.
 .schedule-10__detail-heading {
   font-size: 1rem;
   font-weight: 600;
-  padding-block-end: $spacing-02;
   margin-block-end: $spacing-03;
-  border-block-end: 1px solid var(--cds-border-subtle);
 }
 
-.schedule-10__detail-subheading {
-  font-size: 0.875rem;
-  font-weight: 600;
-  margin-block-start: $spacing-03;
+// A sub-heading SHARES its row with fields — `Material Type` sits beside `Less Culverts($)` and
+// `TtT Transfer($)` in legacy row 13 — and a table cell centres its content vertically by default,
+// so legacy prints it level with the boxes, not with their labels. Reproduced by dropping it past
+// one label's height (1rem of text plus Carbon's own `$spacing-03` beneath it) and then centring it
+// over the 2.5rem control: the heading's centre lands on the input's centre.
+//
+// The three COLUMN headings (h4, row 1) are deliberately excluded — row 1 holds nothing but
+// headings, so there is no box to centre against.
+h5.schedule-10__detail-heading {
+  display: flex;
+  align-items: center;
+  min-block-size: 2.5rem;
+  margin-block-start: calc(1rem + #{$spacing-03});
+  margin-block-end: 0;
+}
+
+// ---- End Haul / Overland ----------------------------------------------------------------------
+
+// Legacy's `pageDtlOtherEndPnlGrd`: `Includes Detailed Engineering Costs:` and its Yes/No menu on
+// one line (#440 item 4), the menu sharing a column with the two haul row labels beneath it, and
+// `Distance km` / `Volume(m3)` / `$/m3/km` printed once as column headings (#440 item 5). Cells are
+// placed by the same `--cell-row` / `--cell-column` pair the detail grid uses.
+.schedule-10__haul-grid {
+  display: grid;
+  grid-template-columns: max-content max-content repeat(2, minmax(7rem, 11rem)) max-content;
+  justify-content: start;
+  align-items: start;
+  column-gap: $spacing-05;
+  row-gap: $spacing-03;
+  margin-block-end: $spacing-05;
+
+  > * {
+    grid-row: var(--cell-row);
+    grid-column: var(--cell-column);
+    min-width: 0;
+  }
+}
+
+// Every cell in a haul row stretches to the row and centres its own content vertically, so the row
+// label, the two figures and the rate all sit on one line whatever height Carbon gives the
+// controls. Matching their heights by hand is what left `End Haul Details:` riding above its
+// figures — the fix has to not depend on knowing the control's rendered height.
+// A COLUMN box, both of them, and that is load-bearing for the Yes/No menu as well as for the
+// figures: Carbon pins `.cds--form-item` to `flex: none`, so a control in a ROW-direction flex cell
+// shrinks to its own content while its neighbours — column boxes, whose children stretch — fill
+// their cell. That is what left the menu a small field in a wide white gap while every box beside
+// it ran the full width of its column.
+.schedule-10__haul-cell,
+.schedule-10__haul-eng-cell {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+// Sized to the two words it can ever hold. Left to itself the combo takes the text input's
+// intrinsic ~20-character width, which is most of a `max-content` column — far wider than `Yes`
+// needs. The budget: 1rem of leading padding, the word, and the 4rem `.cds--list-box__field`
+// reserves for the clear and chevron icons.
+.schedule-10__haul-eng-combo {
+  inline-size: 7.5rem;
+}
+
+// The Yes/No menu's own label is hidden, because the printed one is the span to its left (#440
+// item 4). Visually hidden rather than `display: none`, so the combo keeps its accessible name —
+// the same technique, for the same reason, as `.code-tables__selector .cds--label`.
+.schedule-10__haul-eng-combo .cds--label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+// The rate cell needs the stretch and nothing else: `.schedule-10__field-value` is already a
+// row-direction flex box that centres its own text, so adding a column direction here would centre
+// the figure HORIZONTALLY as well and pull it off the inputs' left edge.
+.schedule-10__haul-grid > .schedule-10__field-value {
+  align-self: stretch;
+}
+
+// A label printed BESIDE its control rather than above it: given the control's own height so the
+// two sit on one line, and with the stacked layout's bottom margin taken back off.
+.schedule-10__haul-inline-label,
+.schedule-10__haul-row-head {
+  @include type-style('label-01');
+
+  display: flex;
+  align-items: center;
+  min-block-size: 2.5rem;
+  margin-block-end: 0;
+  color: var(--cds-text-primary);
+  white-space: nowrap;
+}
+
+// The same rule for the label column: centred ON its row-mates rather than inside a box of its own
+// height. `align-items` here, not `justify-content` — these are single-line, row-direction boxes.
+.schedule-10__haul-inline-label,
+.schedule-10__haul-row-head {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+// A heading over a column of haul figures. VERTICALLY centred in its row rather than bottom-aligned
+// above the first input, so the three of them sit at the same height as `Includes Detailed
+// Engineering Costs:` and its Yes/No menu, which share that row. Stretch-and-centre for the same
+// reason as the label column below: it does not depend on knowing the menu's rendered height.
+//
+// HORIZONTALLY it stays at the start of its cell, and that is legacy's, not an omission: each of
+// the three sits in a `<p:column styleClass="left">` (`schedule10.xhtml:1521-1530`) and `main.css`
+// defines `.left { text-align: left }` (`:68`). Legacy declares a `.center` class too (`:71`) and
+// does not use it here — so adding `justify-content`/`text-align: center` would centre these over
+// their columns and diverge from the screen this page is reproducing. Asked once in review already.
+//
+// SIZE comes from the `.schedule-page` rule in styles/index.scss, which names this class — the
+// `label-01` include here sets the other three properties only. See the note beside
+// `.schedule-10__field-label` above for why that split exists.
+.schedule-10__haul-column-head {
+  @include type-style('label-01');
+
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  color: var(--cds-text-primary);
+  line-height: 1rem;
+}
+
+// Same release as the detail grid: with no room for the columns there is no row to align to.
+@media (max-width: 64rem) {
+  .schedule-10__haul-grid {
+    grid-template-columns: 1fr;
+
+    > * {
+      grid-row: auto;
+      grid-column: auto;
+    }
+  }
 }
 
 .schedule-10__comments {

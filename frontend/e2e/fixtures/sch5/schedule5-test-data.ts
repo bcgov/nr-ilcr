@@ -165,7 +165,7 @@ export const CHECK_UNSAVED_FIX_ANCHOR: Sch5Anchor = { key: { millId: 12050, year
  * met". Exactly the collision the fixture header's dedication rule exists to prevent, reproduced by
  * ignoring it. Minted 2026-09-11 in sch5's own 2023 range.
  */
-export const CHECK_PANEL_GATE_ANCHOR: Sch5Anchor = { key: { millId: 22051, year: 2023 }, mill: MILL_20172 };
+export const CHECK_NEW_CAMP_ANCHOR: Sch5Anchor = { key: { millId: 22051, year: 2023 }, mill: MILL_20172 };
 
 /**
  * GAP-4 — the ONLY anchor that deliberately ends up holding TWO camps, and it has to.
@@ -293,7 +293,7 @@ export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5A
   { name: 'subpage-cost-access (S23)', anchor: SUBPAGE_COST_ACCESS_ANCHOR },
   { name: 'check-unsaved-violation (S24)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
   { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
-  { name: 'check-panel-gate (S24 green)', anchor: CHECK_PANEL_GATE_ANCHOR },
+  { name: 'check-unsaved-new-camp (S24 green)', anchor: CHECK_NEW_CAMP_ANCHOR },
   { name: 'check-mixed (GAP-4)', anchor: CHECK_MIXED_ANCHOR },
   { name: 'a11y-list (GAP-5)', anchor: A11Y_LIST_ANCHOR },
   { name: 'a11y-panel (GAP-5)', anchor: A11Y_PANEL_ANCHOR },

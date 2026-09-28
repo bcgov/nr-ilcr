@@ -334,7 +334,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
     affected schedule. One fix turns all of these green.
   - **Local facts (this is what belongs here):**
-    - **Scenarios:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S27` (the false-GREEN arm —
+    - **Scenarios:** `check-status-unsaved.feature` `@p1 @S27` (the false-GREEN arm —
       clear a mandatory volume) and `@S28` (the false-RED arm — supply a flagged one). Both arms are needed:
       they fail in OPPOSITE directions.
     - **Anchors:** the existing READ-ONLY Check Status fixtures, shared as this suite already shares them —
@@ -344,14 +344,50 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     - **Re-grounding note:** S28 asserts only that ITS OWN field's error stops being reported, not that the
       schedule becomes met — the anchor's other 21 values are genuinely still missing.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged against the shared ticket. Dev to send the on-screen values with
-    the check-status request and evaluate those, following Schedule 6's `Schedule6CheckRequest`; QA
-    re-verifies and closes this entry when the fix lands. The scenarios assert the CORRECT behaviour, so they
-    go green on their own, at which point their tags and `[DISCOVERED …]` title markers come off together.
-    No test change is needed. Added 2026-08-27.
-  - **Test:** `check-status-unsaved.feature` ×2 — both RED by design.
+  - **Status:** **CLOSED 2026-09-25 for Schedule 1 (#359 group A — Schedules 1, 2 and 3).**
+    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 (Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a); see sch3 DIV-6). The fix and its
+    reasoning are recorded in **sch3 DIV-6**, not here. Local to Schedule 1: the endpoint now takes
+    `Schedule1CheckRequest`; every checked line volume/cost and the shared Other Costs volume come from the screen, while the itemized Other Costs rows (count, cost subtotal, WRN-002) stay database-sourced — they are edited on the sub-page, never here. A volume the GET pre-filled from the crown volume is on screen, so the endpoint now passes it while the Story 15.1 sweep (`checkStatusStored`) still flags it; that disagreement is by design. Added 2026-08-27.
+  - **The closure evidence, reproducible (2026-09-25).**
+    - Backend unit: `cd backend && mvn -B -ntp clean test "-Dtest=Schedule1*,Schedule2*,Schedule3*,CheckStatus*"`
+      — 982 run, 0 failed (947 before the fix).
+    - Backend IT: `cd backend && mvn -B -ntp clean -P integration-test verify "-Dit.test=Schedule1*IT,Schedule2*IT,Schedule3*IT,CheckStatus*IT"`
+      — 375 run, 0 failed (362 before), against Testcontainers Oracle `gvenzl/oracle-free:23.9-slim-faststart`.
+      `Schedule1CheckStatusIT` posts bodies that DISAGREE with Oracle, proves the body wins and that no row or revision
+      token moves; the `schedule1-528-2021` and `schedule1-530-2021` goldens in `CheckStatusWireContractIT` are unchanged byte-for-byte, posted with bodies that mirror their stored fixtures.
+    - Frontend: `cd frontend && npx vitest run --mode test` — 2212 passed, 0 failed.
+    - E2E run: `cd frontend/e2e && npx playwright test --grep "@check-status-unsaved"` on 2026-09-25 against the local real-data extract DB, branch at `beb1515d` + this change — 190 passed: 178 setup/preflight tests plus all 12 `@check-status-unsaved` scenarios (sch1 S27/S28, sch2 S17/S18, sch3 S12/S25/S26, sch5 ×3, sch11 ×2)
+  - **Test:** `check-status-unsaved.feature` ×2 — `@S27` and `@S28` had ONLY their `@discovered-divergence` tag and
+    `[DISCOVERED …]` title marker removed, both together; no assertion, step or fixture was edited.
 
 **Coverage gaps (not tested yet — no app problem):**
+
+- **DIV-7 — the save-first gate fires for VIEW-ONLY readers on Other Costs too. POINTER to sch3 DIV-8.**
+  - **This entry is a POINTER, on purpose.** The full analysis — legacy's three link variants, why legacy
+    renders an empty form rather than "Schedule not found.", the rebuild's role x status matrix, and the
+    sub-page-404 question it reopens — lives in
+    `frontend/e2e/features/sch3/uc-sch3-001-report-admin-costs/defects.md` **DIV-8**, because Schedule 3
+    has two of these links and is where the investigation ran. This entry exists so a Schedule 1 reader
+    finds it, and so the defect is not raised twice.
+  - **What's wrong, for Schedule 1 specifically:** on a never-saved Schedule 1, an **ILCR_ADMIN** — who can
+    only view a Draft report — clicks "Subtotal Other Costs(0):" and gets the passive "Save required" modal
+    telling them to save, with the Save button greyed out. Legacy's `otherCostsEditsDisable` variant
+    (`schedule1.xhtml:506-509`,
+    rendered on `#{schedule1MB.disableReportEdits()}` alone) navigated them to the sub-page with no dialog.
+  - **Why (technical):** `components/schedule1/index.tsx:293` — `if (!data || !isScheduleSaved(data))`
+    raises the blocked modal before the `editable` branch is reached. Identical ordering to Schedule 3's
+    `openSubPage`; one shape, two pages, which is why it is one ticket.
+  - **NOT to be confused with Schedule 1's message text, which is correct.** Legacy gives Schedule 1 one
+    such link and one string, "The schedule has to be saved before opening other costs"
+    (`schedule1.xhtml:497`), and `index.tsx:45` matches it verbatim. #373 changed Schedule 3's wording only
+    and did not touch this page. This entry is about *who* sees the message.
+  - **Ticket:** [bcgov/nr-ilcr#488](https://github.com/bcgov/nr-ilcr/issues/488) — the same ticket as sch3
+    DIV-8, filed 2026-09-18. It covers both schedules.
+  - **Coverage: UNCOVERED.** No sch1 scenario reaches view-only x never-saved; the anchor does not exist.
+    `other-costs.feature` `@S08` covers the *editable* never-saved gate and stays green.
+  - **Priority / env:** p2 — found while code-reviewing #373's fix — Chrome.
+  - **Status:** OPEN - tracked by #488 and analysed in sch3 DIV-8. QA closes this pointer and sch3 DIV-8
+    together when the fix lands.
 
 - **GAP-1 — There is no role-dependent Schedule 1 behaviour to cover yet.** _(reworded 2026-08-07 — the
   earlier wording said role branches were "blocked by mock auth", which implied we were failing to cover
@@ -438,8 +474,10 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED (covered) 2026-08-27. Raised 2026-08-07 and re-verified then; made reachable by #296
     (2026-08-26); closed by writing the E2E scenario 2026-08-27.
   - **Test:** `save-first-gate.feature` `@p1 @S08` — GREEN. Mirrors `sch3`'s `save-first-gate.feature`,
-    which covers the same behaviour on the other schedule #296 touched (and where the second sub-page's
-    wording is still wrong — sch3 DIV-7).
+    which covers the same behaviour on the other schedule #296 touched. That suite's second sub-page
+    carried the wrong wording (sch3 DIV-7 → [#373](https://github.com/bcgov/nr-ilcr/issues/373)); **fixed
+    2026-09-18**, and Schedule 1 was never affected — legacy gives it one such link and one string
+    (`schedule1.xhtml:497`), which this scenario asserts verbatim and which the fix did not touch.
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
 

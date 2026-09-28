@@ -164,6 +164,83 @@ sense against this directory, `mvn clean` before believing it.
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
    | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
    | Verify transition (17.1)  | **764–770**     | `R__55`; 768 is CLS, 769 has no auditor xref, 770 is the rollback arm |
+   | Check Status submit (15.3) | **780–783**    | `R__55_check_status_submit_fixtures.sql`      |
+   | Schedule 11 submit (26.1) | **784–789**     | `R__57`; locations `9411–9416`, summary `1680`, cost-report details `5800–5812`. **Report year 2021 only** — see below |
+   | Schedule 11 correction (26.2) | **801–806** | `R__58`; locations `9421–9430`, cost-report details `5830–5845`, the FIRST seeded `*_AUD` 'S' snapshot rows (BSR audit `1001–1010`, cost audit `2001–2012`). **Report year 2021 only** — see below |
+   | Reversal transitions (18.1) | **790–799**   | `R__56`; summaries `1650–1671`, cost-report details `3201–3452`. **Report year 2021 only** — see below |
+
+   **⚠️ A static id is only free if it is also out of reach of every SEQUENCE.** `R__56`'s
+   cost-detail block was first claimed at `10500–10751`, which no fixture used and which the usual
+   grep therefore reported clear. But `V4` creates `THE.ILCR_COST_REPORT_DETAIL_SEQ` and
+   `V20260811` re-creates it `START WITH 10000`, and a full IT run draws enough `NEXTVAL`s to climb
+   into that band. The result was **38 integration-test failures** — bare `500`s on the Schedule
+   3/4/6/7A/10 cost-line write paths, none of them naming `R__56`, and **none reproducible in a
+   single-class run**, because the sequence only gets that high once the whole suite has run. Keep
+   static cost-detail ids below `9000`; the same applies to `ILCR_REPORT_COMMON_SEQ` (9500 — the
+   sequence that mints `ILCR_REPORT_SUMMARY_ID` and Schedule 11's `BASIC_SILVICULTURE_REPORT_ID`, so
+   `R__56`'s `1650–1699` band is safe by a wide margin), `ROAD_CONSTRUCTION_REPORT_SEQ` (9600) and
+   the three Schedule 8 sequences (9000). There is no sequence behind `ILCR_MILL_USER_XREF`; its key
+   is composite.
+
+   **Reversal transitions (`R__56`, UC-CHK-016/018)** — Set to Draft (`S`→`D`) and Set to Submit
+   (`V`→`S`) need ten mill/year shapes, all 2021. Four of them are mutated and six never are, and
+   the split is what removes the ordering dependence rather than hiding it:
+
+   - **Mutated, one test each.** `790` (`S`, all-met) is Set to Draft's happy path; `791` (`V`,
+     all-met) is Set to Submit's; `798` (`S`) and `795` (`V`) are the two rollback arms, all-met so
+     the forced persistence failure is reached only after every guard has passed.
+   - **Never written, so safely shared across three IT classes.** `792` is `S` with a Schedule 1
+     summary carrying no cost rows, so the validation gate fails while everything else about the
+     request is valid — and because the gate runs before legality it serves BOTH endpoints. `793`
+     (`D`, all-met) is Set to Draft's no-op and Set to Submit's "`D`→`S` is a legal pair but it is
+     SUBMIT" arm. `794` (`V`, all-met) is the illegal `V`→`D` jump. `797` (`S`, all-met) is Set to
+     Submit's no-op. `796` is `CLS` and carries no schedule data, because the mill-active guard
+     refuses it before any schedule is read. `799` is `S` with no schedule data at all, for
+     `ReportTrackTransitionRepositoryIT`'s two statement-level arms.
+
+   Three things about this block are load-bearing. **The prefix is `56`, below `70`**, so `R__70`'s
+   set-based submitter association covers these mills and `SetReportStatusAuthorizationIT`'s
+   denied arm fails for lacking the action rather than for mill scope. **Every status row seeds
+   both identity pairs non-null**, pointing at two xref rows this file creates itself (`R__70`'s
+   canonical submitter sorts *after* `R__56`, so its rows do not exist yet and V20260915's
+   composite FKs would reject the insert) — that is what lets AC 3 assert the four columns
+   unchanged *by value*, which is the only assertion distinguishing "writes no identity pair" from
+   the auditor statement. **Schedule 11 is seeded to a code that differs from the 1–10 code on
+   every row**, so a write that reached `MILL_SILVICULTUR_STATUS_CODE` fails a test instead of
+   coinciding with the right answer.
+
+   The all-met Schedule 1/2/3 data is cloned statement-for-statement from `R__55`'s mill 764 rather
+   than re-derived: that cost-item set is already proven to pass the eleven-schedule gate by 17.1's
+   own green ITs, and hand-rolling a second one is how a fixture ends up almost right.
+
+   **Schedule 11 submit (`R__57`, UC-CHK-003)** — the silviculture track's Draft→Submitted needs
+   six mill/year shapes, all 2021. `784` is the happy path and is mutated once: **silviculture `D`
+   while 1–10 is `S`**, with two met locations, so a write that reached the 1–10 status column or
+   read the 1–10 code fails a test instead of coinciding with the right answer. `786` inverts that
+   pair (silviculture `S`, 1–10 `D`) for the not-Draft 409. `785` has one location with an Actual
+   and a Planned Cost row whose `COST` is NULL, so the one Schedule 11 check fails. `787` is met but has **no category
+   `'11'` row** — seeded without it rather than deleted by the test, so the 500-rollback arm needs
+   no clean-up. `788` is the concurrency arm. `789` has **zero locations** (vacuously MET, legacy
+   `Schedule11CheckStatus.java:19`) with both tracks at `D`, which is also where the "a Schedule 11
+   submit leaves 1–10's Submit offered" arm lives. Location rows take `BASIC_SILVICULTURE_REPORT_ID`
+   **`9411–9416`** — below `ILCR_REPORT_COMMON_SEQ`'s `9500` start, which mints that key, and clear
+   of `R__50`'s `9401–9402` and the db-e2e seed's `9351–9399` — and cost details **`5800–5812`** (block `5800–5829` reserved).
+   The one 1–10 row family is on `784` (a Schedule 2 summary **`1680`**, cost `5811`), seeded so a
+   Schedule 11 submit that also ran the ten 1–10 touches has a row to stamp — without it that
+   mutation is invisible at the database. Prefix `57`, below `70`,
+   for the same reason as `R__55`/`R__56`.
+
+   **Schedule 11 correction (`R__58`, UC-CHK-006/011)** — ministry correction at silviculture `S` with the 1–10
+   track at `D` (codes differ on every mill but `806`, which is silviculture `D`). It is the first fixture to seed
+   **`*_AUD` rows**: the delivery triggers own those tables and the test schema reproduces none, so the `'S'` snapshot
+   the original-value indicators read (`BASIC_SILVICULTURE_REPORT_S_VW`, `ILCR_COST_REPORT_DETAIL_S_VW`) is written
+   here exactly as the trigger would have left it at submission — the Licensee's values, differing from the current
+   rows. `801` is the read-only indicator anchor (`9421` differs on all five tracked fields, `9422` has no snapshot, `9430`'s submitted BEC `8899` has no catalogue row);
+   `802` is the one written by the happy-path arms, and its `9423` Actual cost carries a second `'S'` audit row under an
+   OLDER detail id (`5899`, absent from the base table, higher audit id) so a snapshot keyed by (location, item) rather
+   than by the current detail id serves the wrong baseline. `803` (Check Status), `804` (refusal table) and `805` (stale
+   revision at `REVISION_COUNT 3`, unknown id, ERR-004) are never written; `806` is written only by the Licensee-at-Draft
+   arm. No sequence backs either audit id. Prefix `58`, below `70`.
 
    **Verify transition (`R__55`, UC-CHK-007/012)** — the Submitted→Verified endpoint needs seven
    mill/year shapes, all 2021, and it genuinely mutates the ones it succeeds on, so none can be

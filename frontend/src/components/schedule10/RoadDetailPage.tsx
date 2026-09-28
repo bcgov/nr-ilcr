@@ -87,7 +87,7 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
       </div>
 
       <TableContainer title={`${page.pageLabel} -> Roads`} className="schedule-10__section">
-        <Table aria-label="Road details">
+        <Table>
           <TableHead>
             <TableRow>
               <TableHeader>Roads</TableHeader>

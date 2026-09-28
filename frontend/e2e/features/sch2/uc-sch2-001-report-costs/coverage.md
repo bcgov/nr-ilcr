@@ -44,12 +44,15 @@ S13–S16 entry rejection (`validation.feature`); the save round-trip surviving 
 arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by two deliberate
 `@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — see defects.md
 **DIV-2**, a pointer; the analysis for that app-wide divergence (11 of 12 schedules; Schedule 6 is the only
-correct implementation) lives once, in `sch3/defects.md` DIV-6.
+correct implementation) lives once, in `sch3/defects.md` DIV-6. Their tags and title markers came off on
+**2026-09-25**, when #359 group A (Schedules 1–3) made the endpoint judge the screen.
 
 > ### Suite state — the ONE place this is recorded
-> **35 scenarios / 41 tests after Scenario-Outline expansion: 39 green + 2 deliberate
-> `@discovered-divergence` REDs** (S17/S18 / DIV-2 — Check Status on unsaved edits, #359). Measured from the
-> generated specs and a full run on **2026-08-27**. This suite had no tracked reds at all until these two.
+> **35 scenarios / 41 tests after Scenario-Outline expansion: 41 green, 0 tracked reds.** S17/S18 / DIV-2
+> (Check Status on unsaved edits) lost their tags and markers on 2026-09-25 with the #359 group A fix.
+> Re-measured **2026-09-25** from the generated specs: `npm run bddgen`, then
+> `npx playwright test --list --project=chromium` filtered to `uc-sch2-001` gives **41**, and with
+> `--grep @discovered-divergence` / `@discovered-bug`, **0** / **0**. The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
 
 **All green as of 2026-08-24:** the one deliberate `@discovered-bug` RED — Delete offered on a
 schedule that has never been saved (defects.md **BUG-1**, BR-08/S06) — was fixed in nr-ilcr #292, so its tag
@@ -177,7 +180,7 @@ recorded rather than silently dropped:
 | *(new)* | `Entered volume entry is invalid.` | `validation.ts` NaN guard | `validation.feature` `@p2 @S14` | `covered` |
 | *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail, `index.tsx:60` / `:162` | `Schedule2.test.tsx` — *"a load failure carrying no detail… — %s"* ×4, *"a DELETE failure carrying no detail… — %s"* ×4 and *"a failed DELETE renders the API detail verbatim"* ×1 (`test.each`, so the emitted names carry the shape suffix), plus 2 in `fallback-strings.test.ts` — 11 cases, suite 43 → 54 | `covered (unit)` — GAP-3 closed by [#298](https://github.com/bcgov/nr-ilcr/issues/298), 2026-08-26. Deliberately unit, not E2E: pure client-side branches, and Vitest gates in CI where this suite does not. Label matches the project's existing `covered (unit)` (see `sch11/…/coverage.md:169`) rather than coining a third name for one concept |
 
-| *(new)* | `Unable to check status.` | page fallback when the API returns no detail, `index.tsx:216` | — | `deferred` — the page's fourth owned fallback. Added to this catalog by the #298 code review, which found the verdict below claiming "every row" against a list that omitted it. Assigned to [#332](https://github.com/bcgov/nr-ilcr/issues/332) (the app-wide fallback sweep), explicitly **not** to #298 |
+| *(new)* | `Unable to check status.` | page fallback when the API returns no detail, `index.tsx:216` | `Schedule2.test.tsx` — *"a Check Status failure carrying no detail falls back to the generic check message — %s (AC5, #332)"* ×4 (`test.each` over the same `detailLessFailures` shapes as the load/delete cases) | `covered (unit)` — the page's fourth owned fallback. Added to this catalog by the #298 code review, which found the verdict below claiming "every row" against a list that omitted it; closed 2026-09-24 by [#332](https://github.com/bcgov/nr-ilcr/issues/332) (the app-wide fallback sweep), which also added the save fallback's detail-less arm (*"a Save failure carrying no detail falls back to the generic Save message and keeps the entries — %s (AC3, #332)"* ×4) |
 | *(new)* | `Deleted, but the list could not be refreshed.` | post-delete reload failure, `index.tsx:188` | `Schedule2.test.tsx` — *"a FAILED post-delete reload still closes the Delete gate"* | `covered (unit)` — listed for completeness; it was never a catalog row despite being user-facing |
 
 ## Controls (8 in the legacy Field Reference)
@@ -278,7 +281,7 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
 - **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
   formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
 - **Overall: 18/18 slices covered** (S17/S18, the unsaved-edit arms, covered 2026-08-27 by two deliberate
-  reds against #359 — see the header). On messages: **the two GAP-3 fallbacks are no longer
+  reds against #359 and untagged 2026-09-25 by its group A fix — see the header). On messages: **the two GAP-3 fallbacks are no longer
   `deferred`** — covered in Vitest by [#298](https://github.com/bcgov/nr-ilcr/issues/298) on
   2026-08-26, which is where they belong (a route-interception fallback is a component concern, and Vitest
   needs no database to prove it).
@@ -286,9 +289,9 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
   **added to the catalog by the #298 code review** — the verdict here previously read "every
   message-catalog row except GAP-1", measured against a list that silently omitted the page's fourth
   fallback. Still above the 80% bar.
-- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth), GAP-4 (`deferred`,
-  documented) and `Unable to check status.` (assigned to #332) are the only non-covered items and none
-  is P0/P1-critical. Note this matrix now mixes levels: the GAP-3 row is credited to Vitest inside an
+- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-4 (`deferred`,
+  documented) are the only non-covered items and neither is P0/P1-critical; `Unable to check status.`
+  moved to `covered (unit)` with #332 on 2026-09-24. Note this matrix now mixes levels: the GAP-3 row is credited to Vitest inside an
   E2E coverage table, which is established practice here (`covered (+ backend)`, `covered (unit)`) but
   is invisible in a percentage.
 

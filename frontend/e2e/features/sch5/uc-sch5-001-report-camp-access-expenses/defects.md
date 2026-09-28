@@ -12,15 +12,26 @@
 > here changes status. SPEC-3's product question ("should a passing camp be confirmed by name on a full
 > pass?") was answered by BA/QA on 2026-09-16: **no — keep legacy's behaviour and correct the documents.**
 
-**As of 2026-09-11 the UC is COMPLETE: all 25 slices are authored.** 23 are green; **S24 and S25 are
-deliberately RED** and track DIV-1 below. No Bug/Regression entries.
+**As of 2026-09-11 the UC is COMPLETE: all 25 slices are authored.** All 25 are green as of
+2026-09-22, when DIV-1 was fixed and S24/S25 stopped being deliberately red. No Bug/Regression
+entries, and no open entries of any kind.
+
+**UPDATED 2026-09-22 — DIV-1 IS CLOSED. #476 shipped the full fix and the UC has no open entries
+left.** Check Status now posts the camp panel on screen and the service overlays it onto the stored
+camps before running the same rule, so the verdict describes what the reporter is looking at. The
+availability gate that stood in for this is gone with it. **This does NOT restore legacy Schedule 5**
+— see the correction below. **`@S24` and `@S25` went green with NOT ONE assertion edited** — only their
+`@discovered-divergence` tags and `[DISCOVERED …]` markers came off, both together. The green
+companion was replaced rather than retired: it used to pin the gate, and now pins the unsaved-NEW-camp
+case, which is the one an obvious implementation of this fix gets wrong. Details under DIV-1.
+**#359 remains open for Schedules 1, 2, 4 and 11.**
 
 **UPDATED 2026-09-15 — triage round.** DIV-1 is now ticketed as
 [**bcgov/nr-ilcr#476**](https://github.com/bcgov/nr-ilcr/issues/476) (read the caveat under its **Ticket**
 bullet before fixing it — the ticket's title describes the symptom, and fixing only that makes Schedule 5
 *less* safe). **EVERY SPEC GAP IS NOW CLOSED** — SPEC-1, SPEC-2, SPEC-3 and SPEC-4, by correcting the planning
 artifacts — and **GAP-4** by adding the one scenario that reaches the per-camp "met" line. Two entries
-remain open, for different reasons:
+were open at that point, for different reasons (both have since closed):
 
 **GAP-5 is also now CLOSED** — it was found 2026-09-16 while preparing the PR and closed the same day on
 the review's request: Schedule 5 had **no accessibility coverage whatsoever** and was the only domain in
@@ -29,8 +40,9 @@ was missed is the part worth keeping: **the 25-slice catalogue does not ask for 
 NFR), so "all 25 slices authored" read as complete with half of issue #97 unverified. GAP-4 had the same
 shape. **A slice catalogue is not a completeness test.**
 
-**DIV-1 is the only entry still open**, and it is open by design: a ticketed app defect awaiting a fix
-(#476), not an unresolved question.
+**DIV-1 was the only entry still open, and it closed 2026-09-22** when #476 shipped the endpoint
+change. Nothing in this UC is open now. The app-wide family (#359) is still open for the four other
+affected schedules, but no Schedule 5 entry depends on it.
 
 **A legacy screenshot supplied 2026-09-16 settled SPEC-3 on the facts.** With five camps and one
 incomplete, legacy shows a RED panel of that camp's three missing fields **and** a BLUE panel carrying
@@ -54,22 +66,29 @@ than trusting either document. The single genuine app divergence is **DIV-1**, t
 sch1, sch2, sch4 and sch11 were already known to fail — and the earlier editions of this file said to
 expect it here. It is a fifth instance of one app-wide defect (#359), not a new one.
 
-**What makes Schedule 5's instance worth reading rather than skimming:** it does not fail the way the
-other four do. They answer Check Status wrongly; Schedule 5 refuses to answer at all. That is the
-safer direction — an incomplete schedule can never look ready here — but it is still a change from
-legacy, and it is a workflow cost the other four do not impose. DIV-1 evidences it and leaves the
-trade to BA/QA.
+**What made Schedule 5's instance worth reading rather than skimming:** it did not fail the way the
+other four do. They answer Check Status wrongly; Schedule 5 refused to answer at all. That was the
+safer direction — an incomplete schedule could never look ready here — but it was still a change from
+legacy, and a workflow cost the other four do not impose. DIV-1 evidenced it, BA/QA ruled on it, and
+#476 fixed it on 2026-09-22 by giving the endpoint the screen rather than by re-enabling the button
+over a database-only check. **The trade it left behind is the useful artifact: the "safe" divergence
+was still a divergence, and the tempting one-line fix for the complaint would have converted it into
+the unsafe one.**
 
 ---
 
 ## Divergence (app behaves differently from the legacy-derived spec)
 
-- **DIV-1 — OPEN (triaged, ticketed): Check Status cannot judge what is on screen. Schedule 5 does not
+- **DIV-1 — CLOSED 2026-09-22 (fixed): Check Status cannot judge what is on screen. Schedule 5 does not
   give a WRONG answer like its siblings — it gives NO answer.** Ticketed in its own right as
   **[bcgov/nr-ilcr#476](https://github.com/bcgov/nr-ilcr/issues/476)**, because the Schedule 5 instance
   presents differently from the other four and needs its own reproduction steps; the app-wide family is
-  **bcgov/nr-ilcr#359**, which is where the shared endpoint change belongs. Fixing #476 without #359's
-  change is the trap — see the note under **Ticket** below.
+  **bcgov/nr-ilcr#359**, which is where the shared endpoint change belongs.
+
+  > **Everything from here to the closure bullets is the ORIGINAL 2026-09-11/15 diagnosis, kept
+  > verbatim and in its original tense as the evidence of record.** It describes the app as it was
+  > before 2026-09-22. What was actually done, and why the trap it warns about was avoided rather
+  > than sprung, is in the **HOW IT WAS FIXED** bullet and the ones after it.
   - **What this means in plain language.** A reporter edits a required value, then asks Check Status
     whether the schedule is ready. On Schedules 1, 2, 4 and 11 they get an answer about the
     last-SAVED version, so it can be confidently wrong. On Schedule 5 they get no answer at all: the
@@ -82,13 +101,20 @@ trade to BA/QA.
     So "an unsaved edit plus a clickable Check Status" is not a reachable screen state.
   - **Expected vs actual.** Expected (legacy, and BR-11): the check includes what is on screen.
     Actual: the check cannot be run at all until the camp is saved.
-  - **It IS a divergence from legacy, which is why the tests stay red.** Legacy's Check Status was a
-    full JSF postback (`ajax="false"`) and the camp panels shared its form via `ui:include`, so
-    `UPDATE_MODEL_VALUES` applied every on-screen value to the managed bean BEFORE the action ran
-    (`schedule5.xhtml:40,257`; `Schedule5MB.java:321`). Legacy answered, and answered about the
-    screen. The rewrite's `POST /api/v1/schedule5/check-status` carries **no request body at all**,
-    so the endpoint cannot see the screen even in principle; disabling the button is what stops it
-    answering wrongly.
+  - **It IS a divergence from the app's other schedules, which is why the tests stayed red.**
+    ⚠ **CORRECTED 2026-09-23 — the original wording of this bullet was wrong and is replaced.** It
+    said legacy's `ajax="false"` postback applied every on-screen value to the bean, so legacy
+    Schedule 5 "answered about the screen". **Legacy Schedule 5 does not.** It judges the last SAVED
+    record, confirmed by manual comparison against Schedule 8 (BA and dev, 2026-09-22). Legacy's
+    OTHER schedules do evaluate the screen — the inconsistency is legacy's own, not a mistake in the
+    recovered requirements. The rewrite's `POST /api/v1/schedule5/check-status` carried **no request
+    body at all**, so the endpoint could not see the screen even in principle; disabling the button
+    is what stopped it answering wrongly.
+  - **Do not re-derive a mechanism for the legacy difference.** The obvious lifecycle reading
+    predicts the opposite of what both screens do: Schedule 5's button is `ajax="false"` (a full
+    submit, which should update the model) and Schedule 8's is `process="@this"` (which should not),
+    yet Schedule 8 is the one that evaluates the screen. The behaviour is established by observation
+    and deliberately left unexplained.
   - **Which direction it fails in, because this matters for triage: the SAFE one.** An incomplete
     Schedule 5 can never be made to look ready, which is the actual harm #359 does elsewhere. What is
     lost is workflow, not correctness — the reporter must save before they can check, and legacy did
@@ -112,24 +138,79 @@ trade to BA/QA.
   - **Ticket:** [bcgov/nr-ilcr#476](https://github.com/bcgov/nr-ilcr/issues/476) — *"[BUGFIX]: Schedule 5
     - 'Check Status' button should be available when the camp is in edit mode"*. Raised from this entry;
     the issue body cites it by name.
-  - **READ THIS BEFORE FIXING — the ticket's title describes the SYMPTOM, and fixing only that makes
-    things worse.** #476 asks for the button to be enabled while a camp is in edit mode. Enabling it is
+  - **THE WARNING THAT WAS HEEDED — the ticket's title describes the SYMPTOM, and fixing only that
+    would have made things worse.** #476 asks for the button to be enabled while a camp is in edit mode. Enabling it is
     *half* the fix: `POST /api/v1/schedule5/check-status` carries **no request body**, so an enabled
     button would run a check that still cannot see the screen — and Schedule 5 would stop being the safe
     outlier and start returning #359's confidently-wrong verdict about the last-SAVED camp. The endpoint
     has to be taught to read the screen's values in the same change, following Schedule 6's
     `Schedule6CheckRequest` (the one correct implementation). **The green companion scenario below is the
     tripwire for exactly this:** enable the button without changing the endpoint and it goes RED, which is
-    the intended alarm, not a regression in the test.
+    the intended alarm, not a regression in the test. *(What shipped did change the endpoint, so the
+    companion was replaced rather than tripped — see the **Test** bullet.)*
+  - **HOW IT WAS FIXED (2026-09-22, #476), and it took the whole fix, not the symptom.** The warning
+    above was heeded. ⚠ **Why, matters as much as what:** this is a **sanctioned divergence from the
+    legacy Schedule 5 screen**, decided by the business area in September 2026 on the BA's report
+    that Schedule 5 alone judges the saved record. It is *alignment with legacy's other schedules*,
+    not a restoration of this one. Review it against that decision, not against `schedule5.xhtml`. `POST /api/v1/schedule5/check-status` now carries a body — the camp panel
+    currently on screen (`Schedule5CheckRequest`) — which `Schedule5Service` overlays onto the stored
+    camps before running the *identical* rule (`evaluateCamp` is untouched; the payload path and the
+    stored path route through one private `evaluate(...)`, Schedule 6's arrangement). With the verdict
+    describing the screen there is nothing left for the availability gate to protect against, so it
+    was deleted: the button is now `disabled={!editable || saving}`, which is legacy exactly
+    (`schedule5.xhtml:44`, `:257`).
+  - **One camp, not all of them — the design choice worth knowing before touching this.** Schedule 6
+    sends every record because every record is on screen. Schedule 5's table renders NAMES only and
+    all four checked descriptors live in the single open panel, so the body carries just that panel.
+    Sending the whole list would have made the verdict depend on the client's own, possibly stale,
+    copy of camps the reporter is not even looking at. The itemized sub-page rows are never on this
+    screen and stay database-sourced on both paths.
+  - **The trap inside the fix, which is the part most worth keeping.** The payload is keyed on the
+    panel being OPEN, never on it being DIRTY. An untouched new camp matches its empty baseline and is
+    therefore *clean*, so a dirty-keyed send would omit it and report "requirements met" over a camp
+    with four missing fields — the false-GREEN of #359, rebuilt by the fix for it. Mutation-proved
+    both ways: coercing a cleared descriptor to `0` reddens 2 unit cases; sending only when dirty
+    reddens the unsaved-new-camp case.
+  - **The Story 15.1 sweep is unaffected and was kept that way deliberately.**
+    `Schedule5CheckStatusResolver.checkStatus(millId, year)` was renamed `checkStatusStored` and the
+    sweep re-pointed at it. The sweep has no screen to describe and must keep reading stored data, as
+    legacy's own consolidated check page did. The endpoint and the sweep may legitimately disagree;
+    that is the design. Naming them apart is not cosmetic — with both called `checkStatus`, a future
+    caller picks the wrong one by autocomplete and the failure is silent.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to send the on-screen values with the
-    check-status request and evaluate those; QA re-verifies and closes this entry when the fix lands. Both
-    `@discovered-divergence` scenarios assert the CORRECT behaviour, so they go green on their own, at
-    which point their tags and `[DISCOVERED …]` title markers come off together — **both, or the fix is
-    half-done** (see "Both arms are red" above). No test change is needed. Found 2026-09-11; triaged
-    2026-09-15.
-  - **Test:** `check-status-unsaved.feature` ×2 (`@S24`, `@S25`) — RED by design; plus one GREEN companion
-    (`@p2`) pinning the panel gate.
+  - **Status:** **CLOSED 2026-09-22 — fixed, and verified by the two arms going green on their own.**
+    NOT ONE assertion, step file or fixture was edited to make them pass; only the
+    `@discovered-divergence` tags and the `[DISCOVERED …]` title markers came off, **both together**,
+    which was the acceptance criterion rather than a nice-to-have. Found 2026-09-11; triaged
+    2026-09-15; fixed 2026-09-22.
+  - **The closure run, reproducible.** `cd frontend/e2e && npx playwright test --grep "@sch5"` on
+    2026-09-22, Chrome, local stack on `jdbc:oracle:thin:@//host.docker.internal:1525/DBDOCK_01`
+    (profile `local`): **217 passed / 0 failed** in 2.5 min. Narrowed to this file,
+    `--grep "@check-status-unsaved"` minus the other domains: **181 passed / 0 failed** (178
+    preflight + the three scenarios). Anchors 10050/2023 (S24), 12050/2023 (S25), 22051/2023 (`@p2`).
+  - **Why `@S24` going green is conclusive and not merely encouraging.** It clears a STORED Size of
+    Camp on screen, does not save, and expects the finding reported. The database still holds the
+    value, so no database-only check can produce that verdict — green is reachable only if the
+    payload path works end to end. `@S25` is the same argument inverted.
+  - **⚠ THE STACK WAS SERVING PRE-FIX CODE AND WOULD HAVE PRODUCED A FALSE RED.** This is the #373
+    stale-server trap, but the BACKEND this time rather than Vite. The `backend` container
+    bind-mounts `./backend:/app` and runs `mvn spring-boot:run`, so the running JVM held classes
+    compiled before the change — `GET /v3/api-docs` showed **no `requestBody`** on the endpoint. Run
+    in that state, the frontend posts a body the old backend ignores, the verdict comes from the
+    database, and S24/S25 fail **naming the right message on the right element** — i.e. by
+    reproducing the defect just fixed. `docker restart backend` (~110 s to healthy) recompiles from
+    the mount. **Prove both layers current before reading any result here:** a bodiless POST with
+    valid params must return **400** (old code: 200), and `curl
+    http://localhost:3000/src/components/schedule5/index.tsx` must show `screenCamp` and no
+    `saving || panelOpen`. (`/v3/api-docs` is 404 on the `local` profile, so use the status probe.)
+  - **⚠ #359 IS STILL OPEN.** This entry closes for Schedule 5 only. Schedules 1, 2, 4 and 11 carry the
+    same defect and their own arms are still deliberately red; Schedule 6 was always correct. The
+    split this fix introduced (`checkStatus` payload / `checkStatusStored`) is the shape the remaining
+    four should follow.
+  - **Test:** `check-status-unsaved.feature` ×3 — `@S24` and `@S25` (both now GREEN, unedited), plus a
+    `@p2` scenario that replaces the retired panel-gate companion: *"Check Status includes an unsaved
+    NEW camp that has never been saved"*. The old companion pinned the gate that no longer exists; the
+    new one pins the case S24 and S25 cannot reach and that the obvious implementation gets wrong.
 
 ### Everything else that was checked, and found clean
 

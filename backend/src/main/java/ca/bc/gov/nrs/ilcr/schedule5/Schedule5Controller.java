@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;
 import ca.bc.gov.nrs.ilcr.schedule5.api.Schedule5Api;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
@@ -118,11 +119,12 @@ public class Schedule5Controller implements Schedule5Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule5CheckStatusResponse> checkStatus(
-      String millId, String year, Authentication authentication) {
+      String millId, String year, Schedule5CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first, then evaluate — mutates nothing, and no editability
-    // gate.
+    // gate. The body carries the camp panel on screen (#476); the resolver overlays it.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(checkStatusResolver.checkStatus(context.millId(), context.year()));
+    return ResponseEntity.ok(
+        checkStatusResolver.checkStatus(context.millId(), context.year(), request));
   }
 
   // ===============================================================================================
