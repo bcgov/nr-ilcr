@@ -203,7 +203,8 @@ public class ReportTransitionWriter {
    * LICENSEE pair from the acting user's cross-reference — which for an ADMIN reversing a
    * verification means overwriting the record of who actually submitted, with NULLs whenever that
    * admin has no assignment for the mill. Neither reversal writes either pair, on either track
-   * (deviation (S)); on Schedule 11 the LICENSEE pair is also the one both tracks share.
+   * (deviation (S)). On Schedule 11 both pairs are also shared with Schedules 1&ndash;10, and the
+   * LICENSEE pair is the one legacy's Set to Submit would have overwritten.
    *
    * <p><strong>Order: status, then stamps, then category.</strong> The delivery trigger records the
    * (category state, track status) pair holding when each row is stamped. Status before the stamps

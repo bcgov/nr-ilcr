@@ -308,9 +308,9 @@ public interface ReportTrackTransitionRepository extends Repository<MillReportSt
    * <p>It names no identity column. For Set to Draft that is legacy: {@code
    * updateILCRMillReportStatus():403} skipped the association block for a {@code 'D'} target. For
    * Set to Submit it is deviation (S), extended to this track: legacy wrote the LICENSEE pair from
-   * the acting admin's cross-reference ({@code :405-409}), and on Schedule 11 that pair is the one
-   * both tracks share, so the write would also have overwritten the record of who submitted
-   * Schedules 1&ndash;10, or erased it when the admin has no assignment for the mill.
+   * the acting admin's cross-reference ({@code :405-409}), and on Schedule 11 that pair, like the
+   * AUDITOR pair, is shared by both tracks, so the write would also have overwritten the record of
+   * who submitted Schedules 1&ndash;10, or erased it when the admin has no assignment for the mill.
    *
    * <p>{@code REVISION_COUNT} is not bumped, as the 1&ndash;10 reversal statement does not. The
    * {@code expectedCode} predicate makes a reversal that lost the race answer zero rows, which the

@@ -5045,4 +5045,78 @@ describe('Schedule 11 reversals', () => {
     expect(openDialog()).toBeNull()
     expect(eleven.count).toBe(1)
   })
+
+  // The Set to Submit rows carry a `releases` value too, and nothing on screen shows it: V->S lands
+  // at Submitted, where no Submit is offered. These two arms are what pin that each row lifts ITS
+  // track's latch and never the other's; without them `releases: 'submit'` on the Schedule 11 row
+  // would ship, and a failed 1-10 re-sweep would re-offer a Submit the server can only refuse.
+  test('a Schedule 11 Set to Submit does NOT release the 1–10 latch: a 1–10 submit whose re-sweep failed stays greyed', async () => {
+    const reads = fakeReads(
+      sweep({ canSubmit1To10: true, statusCode11: 'V', canSubmit11: false }),
+      json(millContextBody('D', 'V')),
+    )
+    const oneToTen = submitHandler(() => {
+      reads.state.sweep = () => problem(500, 'sweep down')
+      return submitOk()
+    })
+    const reversed = reversal11Handler(SET_TO_SUBMIT_11_URL, reversal11Ok(REVERSALS_11[1]))
+    const user = userEvent.setup()
+    await mountAdminSettled(SCH11_VERIFIED_LINE)
+
+    await confirmSubmit(user)
+    expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
+    await expectSubmits1To10('disabled')
+    // The re-sweep failed, so the stale payload still offers Schedule 11's Set to Submit.
+    await waitFor(() => expect(requireReversal11('Set to Submit')).toBeEnabled())
+
+    await confirmReversal11(user, 'Set to Submit')
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    expect(reversed.count).toBe(1)
+    await drainEventLoop()
+    // Still latched: the 1–10 transition happened, whatever the stale payload says.
+    await expectSubmits1To10('disabled')
+    await user.click(submitButtons1To10()[0])
+    expect(openDialog()).toBeNull()
+    expect(oneToTen.count).toBe(1)
+  })
+
+  test('a 1–10 Set to Submit does NOT release the Schedule 11 latch: a latched Schedule 11 Submit stays greyed', async () => {
+    // The fake keeps `canSubmit11: true` after the Schedule 11 submit, so only the latch holds that
+    // Submit greyed while the 1–10 Set to Submit beside it is live.
+    const reads = fakeReads(
+      sweep({ statusCode1To10: 'V', statusCode11: 'D', canSubmit11: true }),
+      json(millContextBody('V', 'D')),
+    )
+    const eleven = submit11Handler(() => {
+      reads.state.sweep = json(
+        sweep({ statusCode1To10: 'V', statusCode11: 'S', canSubmit11: true }),
+      )
+      reads.state.context = json(millContextBody('V', 'S'))
+      return submit11Ok()
+    })
+    server.use(
+      http.post(SET_TO_SUBMIT_URL, () => {
+        reads.state.sweep = json(
+          sweep({ statusCode1To10: 'S', statusCode11: 'S', canSubmit11: true }),
+        )
+        reads.state.context = json(millContextBody('S', 'S'))
+        return reversalOk('S', 'sch1-10SubmittedMsg', RESUBMITTED_MSG)
+      }),
+    )
+    const user = userEvent.setup()
+    await mountAdminSettled(SCH11_LINE)
+
+    await confirmSubmit11(user)
+    expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
+    expect(submit11Button()).toBeDisabled()
+    await waitFor(() => expect(reversalButtons('Set to Submit')[0]).toBeEnabled())
+
+    await confirmReversal(user, 'Set to Submit')
+    expect(await screen.findByText(RESUBMITTED_MSG, verbatim)).toBeInTheDocument()
+    await drainEventLoop()
+    expect(submit11Button()).toBeDisabled()
+    await user.click(submit11Button())
+    expect(openDialog()).toBeNull()
+    expect(eleven.count).toBe(1)
+  })
 })

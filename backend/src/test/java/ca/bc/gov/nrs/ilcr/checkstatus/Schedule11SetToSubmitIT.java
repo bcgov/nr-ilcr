@@ -21,8 +21,12 @@ import org.springframework.test.json.JsonCompareMode;
  * nothing (UC-CHK-019).
  *
  * <p>Fixtures ({@code R__62}): 824 (the happy path) is written here exactly once; 829 is the
- * rollback arm and can never succeed; 826, 827, 828 and 833 are refused and never written, and are
- * shared with {@code Schedule11SetToDraftIT} for that reason.
+ * rollback arm and can never succeed; 826 is refused and never written; 827, 828 and 833 are
+ * refused and never written, and are shared with {@code Schedule11SetToDraftIT} for that reason.
+ *
+ * <p>The context guards here are a representative subset. The full set (blank and non-numeric
+ * params, unknown mill) is pinned once, in {@code Schedule11SetToDraftIT}: both endpoints go
+ * through the controller's one {@code reverseOnTrack}, which takes the track as a parameter.
  *
  * <p><strong>Every "unchanged" is asserted by reading the value before and after.</strong>
  */
@@ -80,7 +84,8 @@ class Schedule11SetToSubmitIT extends Schedule11ReversalSupport {
     assertThat(after.get("ILCR_MILL_REPORT_STATUS_CODE"))
         .isEqualTo(before.get("ILCR_MILL_REPORT_STATUS_CODE"));
     // Deviation (S), extended: legacy would have written (824, ADMIN_GUID) into LICENSEE_*, the
-    // pair both tracks share (SubmitReportDAO:405-409). Neither pair moves.
+    // LICENSEE pair both tracks share, as they share AUDITOR_* (SubmitReportDAO:405-409). Neither
+    // pair moves.
     assertThat(identityPairs(824)).isEqualTo(pairsBefore);
     assertThat(after.get("REPORT_COMPLETED_IND")).isEqualTo(before.get("REPORT_COMPLETED_IND"));
     assertThat(after.get("REVISION_COUNT")).isEqualTo(before.get("REVISION_COUNT"));

@@ -389,6 +389,13 @@ class CheckStatusControllerTest {
     assertThat(response.getStatusCode().value()).isEqualTo(200);
     assertThat(response.getBody().trackStatus()).isEqualTo("S");
     assertThat(response.getBody().message().key()).isEqualTo("sch11SubmittedMsg");
+    InOrder order = inOrder(millContextService, transitionService);
+    order.verify(millContextService).validateMillYearActive("824", "2021");
+    order
+        .verify(transitionService)
+        .reverse(
+            ScheduleTrack.SCHEDULE_11, 824, 2021, TrackTransition.SET_TO_SUBMIT, "reversaladmin");
+    verifyNoInteractions(reportSubmission);
     verify(authentication, never()).getPrincipal();
   }
 

@@ -143,8 +143,11 @@ type VerifyKind = keyof typeof VERIFIES
 /**
  * The four reversals differ only in these values: one service method on the server, the track and the
  * transition its only parameters (`CheckStatusApi.java` `/set-to-draft`, `/set-to-submit` and their
- * `/schedule11/` twins). `releases` is the one Submit latch a success lifts: a reversal puts ITS track
- * back where that track's Submit must be offered again, and the other track's latch is not its to lift.
+ * `/schedule11/` twins). `releases` is the one Submit latch a success lifts: a later transition on a
+ * track supersedes that track's submit completion, and the other track's latch is not its to lift. Set
+ * to Draft is the reversal that makes the release visible, because it puts the track back at Draft
+ * where its Submit is offered again. Set to Submit lands at Submitted, where Submit is never offered,
+ * so its release changes nothing on screen; it is kept for the rule's symmetry, not for an effect.
  */
 const REVERSALS = {
   setToDraft: { path: 'set-to-draft', fallback: SET_TO_DRAFT_FAILED, releases: 'submit' },

@@ -80,8 +80,8 @@ public enum TrackTransition {
   /**
    * Verified &rarr; Submitted: the ministry withdraws a verification. {@link Recorded#NONE} on both
    * tracks (deviation (S)); on Schedule 11 legacy's LICENSEE write would also have overwritten the
-   * record of who submitted Schedules 1&ndash;10, because the two tracks share that pair. Both
-   * tracks reuse their submit success text, as legacy did.
+   * record of who submitted Schedules 1&ndash;10, because the two tracks share that pair (as they
+   * share the AUDITOR pair). Both tracks reuse their submit success text, as legacy did.
    */
   SET_TO_SUBMIT(
       "V",
@@ -160,8 +160,10 @@ public enum TrackTransition {
     this.to = to;
     this.categoryState = categoryState;
     this.recorded = recorded;
-    this.schedules1To10Keys = schedules1To10Keys;
-    this.schedule11Keys = schedule11Keys;
+    // Every transition is defined on both tracks. A missing Keys fails here, at class load, by
+    // name, rather than as an anonymous NPE inside successKey() on the first request.
+    this.schedules1To10Keys = Objects.requireNonNull(schedules1To10Keys, "schedules1To10Keys");
+    this.schedule11Keys = Objects.requireNonNull(schedule11Keys, "schedule11Keys");
   }
 
   /**

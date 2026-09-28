@@ -324,8 +324,9 @@ public interface CheckStatusApi {
    *
    * <p>Neither identity pair is written, and here that is deviation (S), extended to this track.
    * Legacy wrote the LICENSEE pair from the acting admin's {@code ILCR_MILL_USER_XREF} row ({@code
-   * SubmitReportDAO:405-409}), and on Schedule 11 that pair is the one both tracks share, so the
-   * write would also have overwritten the record of who submitted Schedules 1&ndash;10.
+   * SubmitReportDAO:405-409}), and on Schedule 11 that pair, like the AUDITOR pair, is shared by
+   * both tracks, so the write would also have overwritten the record of who submitted Schedules
+   * 1&ndash;10.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)

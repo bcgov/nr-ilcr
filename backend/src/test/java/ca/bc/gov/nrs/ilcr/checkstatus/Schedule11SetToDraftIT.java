@@ -21,8 +21,13 @@ import org.springframework.test.json.JsonCompareMode;
  * (UC-CHK-017).
  *
  * <p>Fixtures ({@code R__62}): 823 (the happy path) and 834 (zero locations) are each written here
- * exactly once; 828 is the rollback arm and can never succeed; 825, 827, 829 and 833 are refused
- * and never written, and are shared with {@code Schedule11SetToSubmitIT} for that reason.
+ * exactly once; 828 is the rollback arm and can never succeed; 825 is refused and never written;
+ * 827, 829 and 833 are refused and never written, and are shared with {@code
+ * Schedule11SetToSubmitIT} for that reason.
+ *
+ * <p>This class carries the full context-guard set (missing, blank and non-numeric params, unknown
+ * mill, absent year, closed mill). Both endpoints go through the controller's one {@code
+ * reverseOnTrack}, so {@code Schedule11SetToSubmitIT} repeats only a representative subset.
  *
  * <p><strong>Every "unchanged" is asserted by reading the value before and after.</strong>
  */

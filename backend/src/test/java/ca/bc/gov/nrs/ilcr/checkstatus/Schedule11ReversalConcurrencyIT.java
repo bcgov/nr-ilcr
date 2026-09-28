@@ -52,6 +52,10 @@ class Schedule11ReversalConcurrencyIT extends Schedule11ReversalSupport {
     Map<String, Object> before = statusRow(830);
     List<Map<String, Object>> oneToTenBefore = oneToTenCategories(830);
     Map<String, Object> pairsBefore = identityPairs(830);
+    // R__62 seeds a recorded pair here: over NULLs, "unchanged" could not see a NULL-writing
+    // defect.
+    assertThat(pairsBefore.get("LICENSEE_USER_GUID")).isNotNull();
+    assertThat(pairsBefore.get("AUDITOR_USER_GUID")).isNotNull();
 
     List<Outcome> outcomes = race(830, SET_TO_DRAFT_11, SET_TO_DRAFT_11);
 
@@ -67,6 +71,8 @@ class Schedule11ReversalConcurrencyIT extends Schedule11ReversalSupport {
     Map<String, Object> before = statusRow(831);
     List<Map<String, Object>> oneToTenBefore = oneToTenCategories(831);
     Map<String, Object> pairsBefore = identityPairs(831);
+    assertThat(pairsBefore.get("LICENSEE_USER_GUID")).isNotNull();
+    assertThat(pairsBefore.get("AUDITOR_USER_GUID")).isNotNull();
 
     List<Outcome> outcomes = race(831, SET_TO_SUBMIT_11, SET_TO_SUBMIT_11);
 
