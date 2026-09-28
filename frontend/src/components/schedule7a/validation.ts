@@ -6,6 +6,7 @@
 
 import { parseDecimalInput, roundCost } from '@/utils/number'
 import { utf8Length } from '@/utils/forms'
+import { legacyBannerLines, legacyRowLabel } from '@/utils/legacyValidationBanner'
 
 // Re-exported so this module stays the single validation surface the page imports from.
 export { parseDecimalInput, roundCost }
@@ -250,3 +251,90 @@ export function validateBridge(form: BridgeFormValues): BridgeErrors {
 
 export const LOCATION_MAX_LENGTH = LOCATION_MAX
 export const COMMENTS_MAX_LENGTH = COMMENTS_MAX
+
+/** Every bridge field in on-screen order (`BridgeFields.tsx`), which is the banner's line order. */
+const FIELD_ORDER: readonly (keyof BridgeFormValues)[] = [
+  'locationName',
+  'builtDate',
+  'constructionTypeCode',
+  'lifeSpan',
+  'superstructureTypeCode',
+  'deckTypeCode',
+  'abutmentTypeCode',
+  'abutmentHeight',
+  'loadRatingCode',
+  'length',
+  'width',
+  'distance',
+  'sitePlanCost',
+  'superstructureMaterialCost',
+  'superstructureDeliverCost',
+  'superstructureInstallCost',
+  'approachCost',
+  'abutmentMaterialCost',
+  'abutmentDeliverCost',
+  'abutmentInstallCost',
+  'afterInstallCost',
+  'comments',
+  'otherCost',
+]
+
+/**
+ * The list-row `label` of each field Save requires, verbatim from `schedule7A.xhtml`'s row inputs,
+ * each declared `label="Id: #{obj.rowCounter} - <label>"` with `required="true"`: location `:584`,
+ * date `:606`, new/used `:627`, life `:659`, superstructure type `:680`, decking type `:707`, abutments
+ * type `:736`, height `:768` (`Abutments Ht. (m)`, with the space the Add panel's label lacks), load
+ * rating `:788`, length `:821`, width `:846`, distance `:870`. These are exactly the twelve fields
+ * `validateBridge` requires; the costs and comments are never required, so their errors are range or
+ * length messages.
+ */
+const REQUIRED_LABELS: Partial<Record<keyof BridgeFormValues, string>> = {
+  locationName: 'Name/Location of Bridge',
+  builtDate: 'Date',
+  constructionTypeCode: 'New/Used',
+  lifeSpan: 'Expected Life Span',
+  superstructureTypeCode: 'Superstructure Type',
+  deckTypeCode: 'Decking Type',
+  abutmentTypeCode: 'Abutments Type',
+  abutmentHeight: 'Abutments Ht. (m)',
+  loadRatingCode: 'Load Rating',
+  length: 'Length (m)',
+  width: 'Width (m)',
+  distance: 'Distance (km)',
+}
+
+/**
+ * The row fields whose legacy range/format message carried the row prefix — `validatorMessage` /
+ * `converterMessage="Id: #{obj.rowCounter} - #{msg...}"` in `schedule7A.xhtml`: date `:607`
+ * (converter), life `:657`, abutments height `:765-766` (validator + converter), length `:818`, width
+ * `:843`, distance `:867`, and all ten costs (`:907-912` … `:1201-1202`). The inline text of each is
+ * the bundle message itself (`messages.properties:69,70,133-137,153,156`), so the banner line is
+ * `Id: <n> - ` + that text. The name's length cap and the comments' are not legacy validators and stay
+ * unprefixed.
+ */
+const PREFIXED_FIELDS: ReadonlySet<keyof BridgeFormValues> = new Set<keyof BridgeFormValues>([
+  'builtDate',
+  'lifeSpan',
+  'abutmentHeight',
+  'length',
+  'width',
+  'distance',
+  ...COST_FIELDS,
+])
+
+/**
+ * The legacy banner lines for one bridge ROW's errors: a blank required field reads `Id: <n> -
+ * <label>: Value is required.`, a prefixed field's range/format error `Id: <n> - <inline text>`, any
+ * other error its inline text.
+ */
+export const bridgeBannerLines = (errors: BridgeErrors, rowCounter: number): string[] =>
+  legacyBannerLines(
+    errors,
+    FIELD_ORDER,
+    BRIDGE_MESSAGES.valueRequired,
+    (field) => {
+      const label = REQUIRED_LABELS[field]
+      return label === undefined ? undefined : legacyRowLabel(rowCounter, label)
+    },
+    { rowNumber: rowCounter, fields: PREFIXED_FIELDS },
+  )

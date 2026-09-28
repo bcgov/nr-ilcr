@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule7a.api;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import jakarta.validation.Valid;
@@ -128,8 +129,15 @@ public interface Schedule7aApi {
    * editability-gated ({@code VIEW_SCHEDULE}). Flags each missing required value per bridge;
    * returns the per-bridge and schedule-wide all-met messages when complete.
    *
+   * <p>{@code request} carries every bridge row currently ON SCREEN (#359): legacy's check read the
+   * bean's in-memory document, into which every row input wrote on change, so unsaved edits — on
+   * any paginator page — move the verdict. Rows are numbered by payload ordinal. The body is
+   * REQUIRED (an absent one is a clean 400), but its row fields are unvalidated, because reporting
+   * missing values is the check's whole job. Nothing is persisted.
+   *
    * @param millId the raw mill id param
    * @param year the raw reporting year param
+   * @param request the on-screen bridge rows the check reads
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -137,5 +145,6 @@ public interface Schedule7aApi {
   ResponseEntity<Schedule7aCheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule7aCheckRequest request,
       Authentication authentication);
 }

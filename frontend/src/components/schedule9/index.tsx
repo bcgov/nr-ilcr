@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid } from '@carbon/react'
 import { Pagination } from '@carbon/react'
 import { Add, CheckmarkOutline, Close, Save, TrashCan } from '@carbon/icons-react'
@@ -8,12 +8,16 @@ import type {
   ContractualWorkRecord,
   Schedule9CheckStatusResponse,
 } from '@/interfaces/Schedule9Response'
+import type {
+  ContractualWorkCheckEntry,
+  Schedule9CheckRequest,
+} from '@/interfaces/Schedule9Request'
 import apiService from '@/service/api-service'
 import { useScheduleBanners } from '@/hooks/useScheduleBanners'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { clearFieldError } from '@/utils/forms'
-import { groupFixedInput } from '@/utils/number'
+import { groupFixedInput, parseDecimalInput, roundCost } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -25,6 +29,7 @@ import {
   emptyRecordForm,
   formFromRecord,
   itemDescriptionEnabled,
+  recordBannerLines,
   sideSlopeEnabled,
   sourceDescriptionEnabled,
   unitDescriptionEnabled,
@@ -76,6 +81,25 @@ const withConditionalClears = (
   return next
 }
 
+// The Check Status entry for one record (#359): its CURRENT form state — typed for an edited row,
+// served for an untouched one — with a blank or unparseable field sent as null. Never `?? 0`: the
+// server's check is a null test, so a zero would turn a missing value into a pass. Side slope is sent
+// as it stands on screen; whether the item makes it matter is the server's rule.
+const checkEntry = (form: RecordFormValues): ContractualWorkCheckEntry => {
+  const codeOrNull = (raw: string): string | null => (raw.trim() === '' ? null : raw)
+  return {
+    contractorId: form.contractorId.trim() === '' ? null : form.contractorId.trim(),
+    contractualItemCode:
+      form.contractualItemCode.trim() === '' ? null : Number(form.contractualItemCode),
+    sideSlopePct: roundCost(parseDecimalInput(form.sideSlopePct)),
+    numberOfUnits: parseDecimalInput(form.numberOfUnits),
+    unitCode: codeOrNull(form.unitCode),
+    biogeoclimaticZone: codeOrNull(form.biogeoclimaticZone),
+    cost: roundCost(parseDecimalInput(form.cost)),
+    sourceCode: codeOrNull(form.sourceCode),
+  }
+}
+
 const Schedule9: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
@@ -83,13 +107,34 @@ const Schedule9: FC = () => {
     saving,
     message,
     actionError,
+    validationErrors,
     checkResult,
     setMessage,
+    setValidationErrors,
     setCheckResult,
-    clearBanners,
+    clearBanners: clearHookBanners,
     resetBanners,
     run,
   } = useScheduleBanners<Schedule9CheckStatusResponse>(isCurrent)
+
+  // Check Status describes one exact screen snapshot (#359). Bumped synchronously whenever a checked
+  // value changes — and whenever the banners are cleared for a new action — so an older response can
+  // never repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  // A checked value changed: the shown verdict (and any check in flight) describes the old screen, and
+  // the validation banner's lines no longer describe it either — legacy re-rendered `p:messages` on
+  // every input's change, so a corrected field did not keep its line.
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+    setValidationErrors([])
+  }
+
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+  }
 
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addForm, setAddForm] = useState<RecordFormValues>(emptyRecordForm)
@@ -181,8 +226,9 @@ const Schedule9: FC = () => {
       ...prev,
       [record.id]: clearFieldError(prev[record.id] ?? {}, key),
     }))
-    // A check-status result names fields by value-at-the-time; once the user edits, it is stale.
-    setCheckResult(null)
+    // A check-status result names fields by value-at-the-time; once the user edits, it is stale — and
+    // a check still in flight describes the old values, so its answer is dropped when it lands.
+    invalidateCheckResult()
   }
 
   const handleAdd = () => {
@@ -222,6 +268,8 @@ const Schedule9: FC = () => {
     const errors = validateRecord(form)
     setRowErrors((prev) => ({ ...prev, [record.id]: errors }))
     if (Object.keys(errors).length > 0) {
+      // The top banner names each failing field of THIS row in legacy's wording (#359 group B).
+      setValidationErrors(recordBannerLines(errors, data.records.indexOf(record) + 1))
       return
     }
     run(
@@ -258,11 +306,53 @@ const Schedule9: FC = () => {
       return
     }
     clearBanners()
+    // Every record's CURRENT form in document order: typed for an edited row, served otherwise.
+    const forms = data.records.map((record) => ({
+      record,
+      form: rowForms[record.id] ?? formFromRecord(record),
+    }))
+    // Schedule 9 has no page-level Save, so the gate is Save's per-row validator over EVERY record
+    // (#359) — only when the page is editable: a read-only page highlights nothing, so a stored value
+    // failing a client rule must not block the check silently.
+    if (data.editable) {
+      const errorsByRow: Record<number, RecordErrors> = {}
+      const lines: string[] = []
+      let firstFailed = -1
+      for (const [index, { record, form }] of forms.entries()) {
+        const errors = validateRecord(form)
+        errorsByRow[record.id] = errors
+        if (Object.keys(errors).length > 0) {
+          if (firstFailed === -1) {
+            firstFailed = index
+          }
+          lines.push(...recordBannerLines(errors, index + 1))
+        }
+      }
+      // Replace wholesale rather than merging: a row that now passes must lose its old red text.
+      setRowErrors(errorsByRow)
+      if (firstFailed !== -1) {
+        setValidationErrors(lines)
+        // Bring the first offender into view and open it, so its inline errors are reachable.
+        setPage(Math.floor(firstFailed / PAGE_SIZE) + 1)
+        setOpenIds((prev) => new Set(prev).add(forms[firstFailed].record.id))
+        return
+      }
+    }
+    // The body carries every record as it is ON SCREEN, in document order (the server numbers rows by
+    // ordinal), including rows on other paginator pages. The Add draft is never sent.
+    const body: Schedule9CheckRequest = { records: forms.map(({ form }) => checkEntry(form)) }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     run(
       apiService
         .getAxiosInstance()
-        .post<Schedule9CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),
-      { fallback: 'Unable to check status.', onSuccess: setCheckResult },
+        .post<Schedule9CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes values no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
     )
   }
 
@@ -311,6 +401,7 @@ const Schedule9: FC = () => {
           keyPrefix="record"
           message={message}
           actionError={actionError}
+          validationErrors={validationErrors}
           checkResult={checkResult}
         />
 

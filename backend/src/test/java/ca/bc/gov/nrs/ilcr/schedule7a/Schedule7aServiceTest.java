@@ -18,6 +18,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
@@ -28,6 +29,8 @@ import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest.BridgeEntry;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
@@ -291,7 +294,7 @@ class Schedule7aServiceTest {
                 cost(7, 7603, 80, 300),
                 cost(8, 7603, 81, 500)));
 
-    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+    Schedule7aCheckStatusResponse result = service.checkStatusStored(514, 2021);
 
     assertThat(result.requirementsMet()).isFalse();
     assertThat(result.errors()).hasSize(2);
@@ -333,7 +336,7 @@ class Schedule7aServiceTest {
                 cost(9, 7601, 80, 1),
                 cost(10, 7601, 81, 1)));
 
-    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+    Schedule7aCheckStatusResponse result = service.checkStatusStored(514, 2021);
 
     assertThat(result.requirementsMet()).isTrue();
     assertThat(result.errors()).isEmpty();
@@ -369,7 +372,7 @@ class Schedule7aServiceTest {
                 cost(9, 7601, 80, 1),
                 cost(10, 7601, 81, 1)));
 
-    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+    Schedule7aCheckStatusResponse result = service.checkStatusStored(514, 2021);
 
     assertThat(result.requirementsMet()).isFalse();
     assertThat(result.errors()).isNotEmpty();
@@ -379,6 +382,262 @@ class Schedule7aServiceTest {
     assertThat(result.bridgeMessages().get(0).key()).isEqualTo("bridgeRequirementsMetMsg");
     // No schedule-wide line on a mixed result.
     assertThat(result.requirementsMetMessage()).isNull();
+  }
+
+  // ===============================================================================================
+  // Check Status against the SCREEN (#359) — the endpoint's path
+  // ===============================================================================================
+
+  /** A complete on-screen bridge: every attribute and all ten costs present. */
+  private static BridgeEntry completeEntry() {
+    return new BridgeEntry(
+        "North Fork",
+        "2020-06",
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        12,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1);
+  }
+
+  /** {@link #completeEntry()} with its distance and Other Costs as given. */
+  private static BridgeEntry entryWith(Integer distance, Integer otherCost) {
+    return new BridgeEntry(
+        "North Fork",
+        "2020-06",
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        distance,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        otherCost);
+  }
+
+  private static List<BridgeCostEntity> allTenCosts(long bridgeId) {
+    List<BridgeCostEntity> costs = new java.util.ArrayList<>();
+    int id = 1;
+    for (int item : List.of(70, 71, 72, 73, 74, 75, 76, 79, 80, 81)) {
+      costs.add(cost(bridgeId * 100 + id++, bridgeId, item, 1));
+    }
+    return costs;
+  }
+
+  private Schedule7aCheckStatusResponse screen(BridgeEntry... entries) {
+    return service.checkStatus(514, 2021, new Schedule7aCheckRequest(List.of(entries)));
+  }
+
+  private static List<String> texts(Schedule7aCheckStatusResponse response) {
+    return response.errors().stream().map(MessageInfo::text).toList();
+  }
+
+  @Test
+  @DisplayName("#359 unsaved clear: distance emptied on screen, stored distance present -> flagged")
+  void checkStatusScreen_unsavedClear_isFlagged() {
+    lenient()
+        .when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    lenient().when(repository.findCostDetails(514, 2021)).thenReturn(allTenCosts(7601));
+
+    Schedule7aCheckStatusResponse result = screen(entryWith(null, 1));
+
+    assertThat(texts(result))
+        .containsExactly("Bridge Report Id : 1 - Distance (km) : Value Required");
+    assertThat(result.requirementsMetMessage()).isNull();
+    verify(repository, never()).findBridges(anyLong(), anyInt());
+    verify(repository, never()).findCostDetails(anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("#359 unsaved fix: a stored-missing cost typed on screen -> met")
+  void checkStatusScreen_unsavedFix_passes() {
+    // Stored: every cost missing — the stored path would flag ten lines.
+    lenient()
+        .when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7602, "South Fork", LocalDate.of(2020, 7, 1))));
+    lenient().when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    Schedule7aCheckStatusResponse result = screen(completeEntry());
+
+    assertThat(result.requirementsMet()).isTrue();
+    assertThat(result.errors()).isEmpty();
+    assertThat(result.bridgeMessages()).isEmpty();
+    assertThat(result.requirementsMetMessage().key()).isEqualTo("scheduleRequirementsMetMsg");
+  }
+
+  @Test
+  @DisplayName("#359 other page: row 7 of 7 is evaluated, numbered by ordinal; the rest all-met")
+  void checkStatusScreen_otherPageRow_numberedByOrdinal() {
+    Schedule7aCheckStatusResponse result =
+        screen(
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            entryWith(12, null));
+
+    assertThat(texts(result))
+        .containsExactly("Bridge Report Id : 7 - Other Costs : Value Required");
+    // The six passing rows each get the per-bridge line, numbered by ordinal (the bundle default
+    // echoes the key here, so the ordinal is asserted through the argument count only).
+    assertThat(result.bridgeMessages()).hasSize(6);
+  }
+
+  @Test
+  @DisplayName("#359 a typed 0 passes and a blank month is absent; null is never coerced")
+  void checkStatusScreen_zeroPasses_blankIsMissing() {
+    BridgeEntry zeros =
+        new BridgeEntry(
+            "X",
+            "2020-01",
+            0,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0);
+    assertThat(screen(zeros).requirementsMet()).isTrue();
+
+    BridgeEntry blanks =
+        new BridgeEntry(
+            " ", " ", null, null, null, null, null, null, null, null, null, null, null, null, null,
+            null, null);
+    assertThat(texts(screen(blanks)))
+        .containsExactly(
+            "Bridge Report Id : 1 - Name / Location of Bridge : Value Required",
+            "Bridge Report Id : 1 - Built Date : Value Required",
+            "Bridge Report Id : 1 - Expected Life Span : Value Required",
+            "Bridge Report Id : 1 - Abutments heigth value : Value Required",
+            "Bridge Report Id : 1 - Length (m) : Value Required",
+            "Bridge Report Id : 1 - Width (m) : Value Required",
+            "Bridge Report Id : 1 - Distance (km) : Value Required",
+            "Bridge Report Id : 1 - Superstructure - Materil Cost : Value Required",
+            "Bridge Report Id : 1 - Superstructure - Deliver Cost : Value Required",
+            "Bridge Report Id : 1 - Superstructure - Install Cost : Value Required",
+            "Bridge Report Id : 1 - Abutments Material Cost : Value Required",
+            "Bridge Report Id : 1 - Abutments Deliver Cost : Value Required",
+            "Bridge Report Id : 1 - Abutments Install Cost : Value Required",
+            "Bridge Report Id : 1 - Site Plan / Gen. Arr.  Cost : Value Required",
+            "Bridge Report Id : 1 - Approach works Cost : Value Required",
+            "Bridge Report Id : 1 - Certification After install Cost : Value Required",
+            "Bridge Report Id : 1 - Other Costs : Value Required");
+  }
+
+  @Test
+  @DisplayName("#359 an empty screen is vacuously met, as an empty stored schedule is")
+  void checkStatusScreen_empty_isMet() {
+    assertThat(screen().requirementsMet()).isTrue();
+  }
+
+  @Test
+  @DisplayName("#359 each screen cost routes to its own item: one blank cost, one line, per slot")
+  void checkStatusScreen_eachCostRoutesToItsItem() {
+    // Built from the full blank list above by position: blanking exactly one cost field of a
+    // complete entry must produce exactly that field's label, proving the payload→item mapping.
+    String[] labels = {
+      " - Site Plan / Gen. Arr.  Cost ",
+      " - Superstructure - Materil Cost ",
+      " - Superstructure - Deliver Cost ",
+      " - Superstructure - Install Cost ",
+      " - Abutments Material Cost ",
+      " - Abutments Deliver Cost ",
+      " - Abutments Install Cost ",
+      " - Approach works Cost ",
+      " - Certification After install Cost ",
+      " - Other Costs "
+    };
+    for (int slot = 0; slot < labels.length; slot++) {
+      Integer[] c = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+      c[slot] = null;
+      BridgeEntry entry =
+          new BridgeEntry(
+              "N",
+              "2020-06",
+              50,
+              BigDecimal.ONE,
+              BigDecimal.ONE,
+              BigDecimal.ONE,
+              1,
+              c[0],
+              c[1],
+              c[2],
+              c[3],
+              c[4],
+              c[5],
+              c[6],
+              c[7],
+              c[8],
+              c[9]);
+      assertThat(texts(screen(entry)))
+          .as("slot %d", slot)
+          .containsExactly("Bridge Report Id : 1" + labels[slot] + ": Value Required");
+    }
+  }
+
+  @Test
+  @DisplayName("#359 parity: a body mirroring the stored rows yields the stored verdict exactly")
+  void checkStatusScreen_mirroringBody_equalsStored() {
+    when(repository.findBridges(514, 2021))
+        .thenReturn(
+            List.of(
+                bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)), bridge(7602, "  ", null)));
+    when(repository.findCostDetails(514, 2021)).thenReturn(allTenCosts(7601));
+
+    Schedule7aCheckStatusResponse stored = service.checkStatusStored(514, 2021);
+    Schedule7aCheckStatusResponse payload =
+        screen(
+            completeEntry(),
+            new BridgeEntry(
+                "  ",
+                null,
+                50,
+                new BigDecimal("5.0"),
+                new BigDecimal("20.0"),
+                new BigDecimal("4.0"),
+                12,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+    assertThat(stored.requirementsMet()).isFalse();
+    assertThat(stored.bridgeMessages()).hasSize(1);
+    assertThat(payload).isEqualTo(stored);
   }
 
   @Test

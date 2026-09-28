@@ -66,7 +66,9 @@ Feature: Schedule 4 — copy an existing location
     And I note the Schedule 4 mutation count
     And I copy the Schedule 4 location "E2E Unnamed Copy Src"
     And I save the Schedule 4 location
-    Then I should see the error "Please correct the highlighted fields before saving."
+    # The Copy panel is `schedule4NewLocation.xhtml` in legacy, whose name input is `required`.
+    Then the Schedule 4 error banner lists:
+      | Location Name: Value is required. |
     And the Schedule 4 location name field is invalid with "Location Name can not be empty. Please enter a description."
     # Client-gated: no write left the browser, and the anchor still holds only the source.
     And no further Schedule 4 write should have been sent

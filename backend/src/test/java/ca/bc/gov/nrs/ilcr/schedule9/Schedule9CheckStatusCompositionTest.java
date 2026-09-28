@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
+import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import java.util.List;
@@ -28,6 +29,9 @@ class Schedule9CheckStatusCompositionTest {
 
   private static final long MILL = 703L;
   private static final int YEAR = 2021;
+
+  /** Since #359 the endpoint takes the on-screen rows; the service is mocked, so any body does. */
+  private static final Schedule9CheckRequest SCREEN = new Schedule9CheckRequest(List.of());
 
   private final Schedule9Service service = mock(Schedule9Service.class);
   private final Schedule9Controller controller =
@@ -52,7 +56,7 @@ class Schedule9CheckStatusCompositionTest {
   @Test
   @DisplayName("valueRequired segments compose verbatim, with NO space before the final colon")
   void valueRequiredSegments_composeVerbatim() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule9CheckStatusResponse(
                 false,
@@ -84,7 +88,7 @@ class Schedule9CheckStatusCompositionTest {
                 null));
 
     Schedule9CheckStatusResponse body =
-        controller.checkStatus("703", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("703", "2021", SCREEN, mock(Authentication.class)).getBody();
 
     assertEquals(8, body.errors().size());
     assertEquals(
@@ -95,7 +99,7 @@ class Schedule9CheckStatusCompositionTest {
   @DisplayName(
       "rangeError segments compose verbatim, using the real messages.properties invalidRangeErrorMsg")
   void rangeErrorSegments_composeVerbatim() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule9CheckStatusResponse(
                 false,
@@ -112,7 +116,7 @@ class Schedule9CheckStatusCompositionTest {
                 null));
 
     Schedule9CheckStatusResponse body =
-        controller.checkStatus("703", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("703", "2021", SCREEN, mock(Authentication.class)).getBody();
 
     assertEquals(3, body.errors().size());
     assertEquals(
@@ -129,7 +133,7 @@ class Schedule9CheckStatusCompositionTest {
   @Test
   @DisplayName("the schedule-level banner resolves verbatim — and has NO trailing period")
   void scheduleBanner_resolvesVerbatim() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule9CheckStatusResponse(
                 true,
@@ -139,7 +143,7 @@ class Schedule9CheckStatusCompositionTest {
                     "All requirements for this schedule have been met")));
 
     Schedule9CheckStatusResponse body =
-        controller.checkStatus("703", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("703", "2021", SCREEN, mock(Authentication.class)).getBody();
 
     assertEquals(
         "All requirements for this schedule have been met", body.requirementsMetMessage().text());

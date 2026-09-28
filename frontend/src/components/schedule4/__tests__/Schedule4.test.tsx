@@ -1269,7 +1269,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
     // The banner DOES render, and it renders in the very region Check Status focuses — so without the
     // `focusVerdict` guard this is exactly where focus would be stolen.
-    const banner = await screen.findByText('Please correct the highlighted fields before saving.')
+    const banner = await screen.findByText('Location Name: Value is required.')
     expect(banner.closest('[tabindex="-1"]')).not.toBeNull()
     expect(document.activeElement).not.toHaveAttribute('tabindex', '-1')
   })
@@ -2233,3 +2233,414 @@ const StaleRaceHarness = () => {
     </>
   )
 }
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B — Check Status evaluates the open panel as it is on screen.
+// ---------------------------------------------------------------------------------------------------
+
+// Every error banner's subtitle, in render order — the validation banner is one line per failing field.
+const errorBannerLines = () =>
+  Array.from(
+    document.querySelectorAll(
+      '.cds--inline-notification--error .cds--inline-notification__subtitle',
+    ),
+  ).map((node) => node.textContent)
+
+const MET = { outcome: 'MET', messages: [], locations: [] }
+
+const locationRow = (name: string) => within(screen.getByText(name).closest('tr') as HTMLElement)
+
+const panelSave = () =>
+  within(document.querySelector('.schedule-4__panel') as HTMLElement).getByRole('button', {
+    name: /^save$/i,
+  })
+
+describe('Schedule4 Check Status evaluates the open panel (#359 group B)', () => {
+  test('no panel open: the body is {"location": null}', async () => {
+    let body: unknown = 'unsent'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(body).toEqual({ location: null })
+    })
+  })
+
+  test('an open existing location sends its id and its ON-SCREEN (renamed, trimmed) name', async () => {
+    let body: unknown = 'unsent'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    const name = await screen.findByLabelText('Location Name')
+    await userEvent.clear(name)
+    await userEvent.type(name, '  Harbour Renamed ')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(body).toEqual({ location: { id: 7001, name: 'Harbour Renamed' } })
+    })
+  })
+
+  test('an unsaved New or Copy panel is sent with a null id', async () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Location Name'), 'Fresh Landing')
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bodies).toEqual([{ location: { id: null, name: 'Fresh Landing' } }])
+    })
+
+    // Copy is also unsaved — the copy of Empty Landing (no amounts) given a new name.
+    await userEvent.click(locationRow('Empty Landing').getByRole('button', { name: /^copy$/i }))
+    // The New panel holds a typed name, so leaving it asks first (NAV-001).
+    await userEvent.click(await screen.findByRole('button', { name: /^continue$/i }))
+    await screen.findByText('Copy Location')
+    await userEvent.type(screen.getByLabelText('Location Name'), 'Copied Landing')
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bodies).toHaveLength(2)
+    })
+    expect(bodies[1]).toEqual({ location: { id: null, name: 'Copied Landing' } })
+  })
+
+  test('existing panel, Crew Barge/Ferry Distance only: no request, both legacy lines in the banner, inline Value Required on both cells', async () => {
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await userEvent.type(await screen.findByLabelText('Crew Barge/Ferry distance'), '50')
+
+    await userEvent.click(bottomCheckStatus())
+
+    // `schedule4ExistingLocation.xhtml:629,650` labels, verbatim.
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Crew Barge Ferry Volume (m3): Value is required.',
+        'Crew Barge Ferry (Cost $): Value is required.',
+      ])
+    })
+    expect(posts).toBe(0)
+    const volumeCell = screen.getByLabelText('Crew Barge/Ferry volume').closest('td') as HTMLElement
+    const costCell = screen.getByLabelText('Crew Barge/Ferry cost').closest('td') as HTMLElement
+    expect(within(volumeCell).getByText('Value Required')).toBeInTheDocument()
+    expect(within(costCell).getByText('Value Required')).toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Please correct the highlighted fields before saving.'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('new panel, blank name + Rail Haul Distance only: Save and Check Status both list the name and both Rail Haul lines', async () => {
+    let posts = 0
+    let writes = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET)
+      }),
+      http.put(LOCATIONS_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Rail Haul distance'), '12')
+
+    // `schedule4NewLocation.xhtml:14,206,209` labels, verbatim — the New panel's own wording, which
+    // differs from the existing-location panel's (`Rail Haul Volume (m3)`).
+    const expected = [
+      'Location Name: Value is required.',
+      'Rail Haul (Volume m³): Value is required.',
+      'Rail Haul (Cost $): Value is required.',
+    ]
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(posts).toBe(0)
+    // ERR-001 marks the name inline once the gate has blocked an action.
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Value Required')).toHaveLength(2)
+
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(writes).toBe(0)
+  })
+
+  test('a whitespace-only name keeps the bean message; the copy panel uses the New panel labels', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Empty Landing').getByRole('button', { name: /^copy$/i }))
+    await screen.findByText('Copy Location')
+    await userEvent.type(screen.getByLabelText('Location Name'), '   ')
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry volume'), '800')
+
+    await userEvent.click(bottomCheckStatus())
+    // JSF `required` passes a whitespace name, so the bean's own ERR-001 text is what legacy showed;
+    // the Copy panel is `schedule4NewLocation.xhtml`, whose Distance is labelled `Distance (Km)`.
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Location Name can not be empty. Please enter a description.',
+        'Distance (Km): Value is required.',
+      ])
+    })
+  })
+
+  test('an out-of-range amount reports its verbatim range text in the banner', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    const volume = await screen.findByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '10000000')
+
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Entered volume must be between 0 and 9,999,999.'])
+    })
+  })
+
+  test('a panel edit (category or name) after a check clears the shown verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '1')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Location Name'), 'x')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a check response for a superseded panel snapshot is dropped', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [],
+        })
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeDisabled()
+    })
+    // The panel inputs stay live while a request is out, so an edit CAN land before the verdict.
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+
+    releaseCheck()
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeEnabled()
+    })
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  const MET_WITH_BANNER = {
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    locations: [],
+  }
+
+  test('closing the panel clears a verdict given on its values', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_WITH_BANNER)),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /^back$/i }))
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a Save blocked by validation clears a shown verdict, so "met" never sits beside the lines', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_WITH_BANNER)),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    // Every edit to a checked field already drops the verdict, so the blocked-Save branch clearing it
+    // too is defence in depth (a panel that fails validation cannot be checked into a verdict); this
+    // pins the observable end state of that journey.
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '10000000')
+    // The edit above already cleared it; the Save path must not bring anything stale back either.
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Entered volume must be between 0 and 9,999,999.'])
+    })
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('editing a field clears the validation banner lines; the name marker stays until the panel re-opens', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Rail Haul distance'), '12')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toHaveLength(3)
+    })
+
+    // Legacy re-rendered its messages on each input's change, so a corrected field keeps no line.
+    await userEvent.type(screen.getByLabelText('Rail Haul volume'), '400')
+    expect(errorBannerLines()).toEqual([])
+    // The name is still blank and an action was blocked on this panel: its ERR-001 marker stays.
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+    // Only the still-missing Cost keeps its inline marker.
+    expect(screen.getAllByText('Value Required')).toHaveLength(1)
+  })
+
+  test('a FAILED check for a superseded panel snapshot is dropped too — no stale error banner', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json({ detail: 'Stale check failure detail' }, { status: 500 })
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeDisabled()
+    })
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+
+    releaseCheck()
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeEnabled()
+    })
+    expect(screen.queryByText('Stale check failure detail')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unable to check status.')).not.toBeInTheDocument()
+  })
+})

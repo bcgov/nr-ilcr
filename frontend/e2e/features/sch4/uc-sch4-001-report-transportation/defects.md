@@ -534,19 +534,42 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
     affected schedule. One fix turns all of these green.
   - **Local facts (this is what belongs here):**
-    - **Scenario:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S33 @S34` — **ONE** scenario
-      carrying BOTH directions, unlike the other schedules' two. Not a shortcut: this suite enforces one
-      dedicated (mill, year) per mutating scenario plus "used in at most one feature file", and the extract
-      has no free Draft left, so a second anchor had to be seeded for no gain. Split it the day one frees up.
+    - **Scenario (2026-08-27 → 2026-09-18, historical):** `check-status-unsaved.feature`
+      `@discovered-divergence @p1 @S33 @S34` — ONE scenario carrying both directions on a saved
+      Volume-only category. Retired with #465 (see Status).
+    - **Scenarios (since 2026-09-28, #359 group B):** `check-status-unsaved.feature` `@p1 @S33 @S34` ×2,
+      GREEN by design, no `@discovered-*` tag — (1) an existing location with an unsaved Crew Barge/Ferry
+      Distance only, on `check-unsaved`; (2) a New location with no name and a Rail Haul Distance only, on
+      the shared validate-only `validation` anchor (it saves nothing; a second scenario on `check-unsaved`
+      would race the first one's empty-at-rest Given under `fullyParallel`).
     - **Anchor:** `check-unsaved` (9050/2015), SEEDED by
-      `real-test-data-patches/sch4/unsaved-check-anchors.sql`. A first attempt reused 12050/2015 and
-      preflight caught it — that pair is `nav-subpage-back`, declared across four lines, which a line-based
-      search misses.
+      `real-test-data-patches/sch4/unsaved-check-anchors.sql` and present in the CI seed
+      (`backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql`, the 2015/9050 report-status row).
+      Released 2026-09-18, re-claimed 2026-09-28. A first attempt reused 12050/2015 and preflight caught
+      it — that pair is `nav-subpage-back`, declared across four lines, which a line-based search misses.
     - **Re-grounding note:** Schedule 4 saves per LOCATION from the panel's own Save while Check Status is a
       page-level action, so "unsaved" here means an open panel holding typed amounts — the same state DIV-3
       is about.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** **RETIRED for Schedule 4 on 2026-09-18 (#465)** — not fixed, made moot. The scenario's
+  - **Status:** **UN-RETIRED and FIXED on 2026-09-28 by #359 group B** — pending the e2e run to CLOSE.
+    (The same change fixed Schedules 7A, 7B and 9, verified by backend unit/IT and Vitest; those
+    schedules have no e2e suite.) Legacy, observed by Iman on 2026-09-25: pressing Check Status first ran
+    the page's field validation over the OPEN panel's on-screen values — the rules Save runs (on the three
+    distance categories a Distance makes Volume and Cost required, and the other way round; on a New or
+    Copy panel the Location Name is required) — and listed each failing field in the banner as
+    `{label}: Value is required.` (`common/validation.properties:11`). The rebuild had skipped that and
+    answered "requirements met" over an invalid panel. The fix gates Check Status on `validateLocationForm`
+    over the open panel, names each failing field in legacy's wording (on Save too), and sends the panel
+    (`{location: {id, name}}`) so the check judges the name on screen. #359 stays OPEN for Schedules 8
+    and 10 (group C).
+    - **Closure evidence:**
+      - Run command: `cd frontend/e2e && npx playwright test --grep "@sch4"`, then `--grep "@check-status-unsaved"`
+      - Date: 2026-09-28
+      - Database: local stack, real-data extract
+      - Result: `@sch4` 266 passed + 5 failed, the 5 being the `@discovered-*` reds (DIV-7 ×2, BUG-1, BUG-4 ×2).
+        `@check-status-unsaved` 193 passed, 0 failed: both restored `@S33 @S34` scenarios green, and
+        Schedules 1, 2, 3 and 5 still green.
+    - **Earlier history — RETIRED for Schedule 4 on 2026-09-18 (#465)**, not fixed, made moot. The scenario's
     premise was a saved Volume-only category that Check Status flags; under legacy parity (DIV-9) nothing
     saved on Schedule 4 can be flagged, and the one field the check does enforce — the description — cannot
     be saved blank, so neither the false-RED nor the false-GREEN arm has a producible Schedule 4 state.
@@ -554,8 +577,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     stays in `real-test-data-patches/sch4/` for teardown). **#359 itself stays open** — the other ten
     scenarios across sch1/sch2/sch3/sch11 still reproduce it, and Schedule 4's page still has the same
     architecture (Check Status judges the saved document), so if a Schedule 4 check-status rule ever
-    returns, this instance returns with it. Added 2026-08-27; retired 2026-09-18.
-  - **Test:** none (retired). The sch3 register's table of instances records this.
+    returns, this instance returns with it. Added 2026-08-27; retired 2026-09-18; un-retired 2026-09-28.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status-unsaved.feature` — "A Distance
+    typed into an existing location, unsaved, blocks Check Status until Volume and Cost are given" and "A
+    new location with no name and a Rail Haul Distance only blocks Check Status on all three fields"
+    (`@p1 @S33 @S34`, both green by design). Also `validation.feature` S13/S19–S23 and the copy/subpages
+    blank-name scenarios, which now assert the banner lines. The sch3 register's table of instances
+    records this.
 
 - **DIV-9 — Check Status reports a missing Cost for every Volume-only row; legacy never reported it at all.**
   - ✅ **RESOLVED on 2026-09-18** (issue [#465](https://github.com/bcgov/nr-ilcr/issues/465)), in the same PR

@@ -24,6 +24,8 @@ type MutationOptions<T> = {
   readonly fallback: string | null
   /** Appended to the base path before the mill/year query, e.g. {@code '/records/12'} for a by-id write. */
   readonly suffix?: string
+  /** See {@code useScheduleBanners.RunOptions.stillWanted}; honoured by {@code checkStatus}. */
+  readonly stillWanted?: () => boolean
 }
 
 /**
@@ -83,9 +85,9 @@ export function useScheduleMutations<TCheckResult>({
    * and it sends a body only because the business area ruled it should match the others (#476).
    */
   const checkStatus = <T>(
-    { onSuccess, fallback, suffix = '/check-status' }: MutationOptions<T>,
+    { onSuccess, fallback, suffix = '/check-status', stillWanted }: MutationOptions<T>,
     body?: unknown,
-  ) => banners.run<T>(api().post<T>(url(suffix), body), { fallback, onSuccess })
+  ) => banners.run<T>(api().post<T>(url(suffix), body), { fallback, onSuccess, stillWanted })
 
   return { ...banners, query, url, save, remove, checkStatus }
 }

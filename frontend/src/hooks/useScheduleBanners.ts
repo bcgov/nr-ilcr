@@ -14,10 +14,16 @@ type UseScheduleBannersResult<TCheckResult> = {
   readonly saving: boolean
   readonly message: string | null
   readonly actionError: string | null
+  /**
+   * The page's client-side validation banner: one legacy line per failing field, in page order
+   * (`utils/legacyValidationBanner.ts`). Empty when nothing is blocked. Cleared by `clearBanners`.
+   */
+  readonly validationErrors: readonly string[]
   readonly checkResult: TCheckResult | null
   readonly setMessage: (text: string | null) => void
   /** For the page's OWN gate text (e.g. "correct these rows"); API failures go through `failed`. */
   readonly setActionError: (text: string | null) => void
+  readonly setValidationErrors: (lines: readonly string[]) => void
   readonly setCheckResult: (result: TCheckResult | null) => void
   /** Drop every banner. Called before an action so a failure cannot leave a stale success notice. */
   readonly clearBanners: () => void
@@ -52,7 +58,17 @@ type RunOptions<T> = {
    * (defect #292, PR #351 review).
    */
   readonly onSuccess: (data: T) => void | Promise<unknown>
+  /**
+   * Optional freshness gate beyond the mill/year context: when it answers false at settle time, the
+   * response is dropped on BOTH paths — neither `onSuccess` nor the failure banner runs. Check Status
+   * uses it to discard an answer (or an error) for a screen snapshot that has since changed (#359).
+   * The in-flight lock is released exactly as before.
+   */
+  readonly stillWanted?: () => boolean
 }
+
+// One shared empty list, so clearing an already-empty banner is a no-op state update (no re-render).
+const NO_VALIDATION_ERRORS: readonly string[] = []
 
 export const useScheduleBanners = <TCheckResult>(
   isCurrent: () => boolean,
@@ -60,12 +76,19 @@ export const useScheduleBanners = <TCheckResult>(
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [validationErrorsState, setValidationErrorsState] =
+    useState<readonly string[]>(NO_VALIDATION_ERRORS)
   const [checkResult, setCheckResult] = useState<TCheckResult | null>(null)
 
   const clearBanners = useCallback(() => {
     setMessage(null)
     setActionError(null)
+    setValidationErrorsState(NO_VALIDATION_ERRORS)
     setCheckResult(null)
+  }, [])
+
+  const setValidationErrors = useCallback((lines: readonly string[]) => {
+    setValidationErrorsState(lines.length === 0 ? NO_VALIDATION_ERRORS : lines)
   }, [])
 
   const resetBanners = useCallback(() => {
@@ -80,21 +103,24 @@ export const useScheduleBanners = <TCheckResult>(
 
   // Deliberately NOT memoized: `isCurrent` is a fresh closure over the render's mill/year, and a
   // memoized `run` would keep dispatching under a stale one.
-  const run = <T>(request: Promise<{ data: T }>, { fallback, onSuccess }: RunOptions<T>) => {
+  const run = <T>(
+    request: Promise<{ data: T }>,
+    { fallback, onSuccess, stillWanted = () => true }: RunOptions<T>,
+  ) => {
     setSaving(true)
     // RETURNING onSuccess's result is what makes a chained follow-up part of this operation: a
     // promise returned here is awaited by the chain, so `.finally` — and the lock release — waits
     // for it. A void return behaves exactly as before.
     return request
       .then((response) => {
-        if (isCurrent()) {
+        if (isCurrent() && stillWanted()) {
           return onSuccess(response.data)
         }
         return undefined
       })
       .catch((error: unknown) => {
         // fallback === null → fail silently (no banner); see RunOptions.fallback.
-        if (isCurrent() && fallback !== null) {
+        if (isCurrent() && stillWanted() && fallback !== null) {
           failed(error, fallback)
         }
       })
@@ -111,9 +137,11 @@ export const useScheduleBanners = <TCheckResult>(
     saving,
     message,
     actionError,
+    validationErrors: validationErrorsState,
     checkResult,
     setMessage,
     setActionError,
+    setValidationErrors,
     setCheckResult,
     clearBanners,
     resetBanners,

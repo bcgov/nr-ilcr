@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule9.api.Schedule9Api;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
@@ -134,11 +135,13 @@ public class Schedule9Controller implements Schedule9Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule9CheckStatusResponse> checkStatus(
-      String millId, String year, Authentication authentication) {
+      String millId, String year, Schedule9CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first, then evaluate — mutates nothing, and no editability
-    // gate.
+    // gate. The SCREEN, not the database (#359); Schedule9Service#checkStatusStored answers the
+    // other question, for the report-level sweep.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(schedule9Service.checkStatus(context.millId(), context.year()));
+    return ResponseEntity.ok(
+        schedule9Service.checkStatus(context.millId(), context.year(), request));
   }
 
   /** Resolve a legacy bundle key to a {@link MessageInfo} carrying its verbatim text (AD-8). */

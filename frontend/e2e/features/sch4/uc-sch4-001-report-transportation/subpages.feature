@@ -196,7 +196,8 @@ Feature: Schedule 4 — record list-based transportation on a location's sub-pag
     And I click the Schedule 4 "Towing Total" sub-page link
     And I confirm the Schedule 4 save-first prompt
     Then the Schedule 4 sub-page is not open
-    And I should see the error "Please correct the highlighted fields before saving."
+    And the Schedule 4 error banner lists:
+      | Location Name: Value is required. |
     And the Schedule 4 location name field is invalid with "Location Name can not be empty. Please enter a description."
     And the Schedule 4 write request should not have been sent
     And no Schedule 4 locations are stored

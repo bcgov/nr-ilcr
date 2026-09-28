@@ -34,3 +34,28 @@ export default interface ContractualWorkRecordRequest {
   // Required on UPDATE only (read from the loaded record, never hardcoded or coerced).
   readonly revisionCount?: number
 }
+
+/**
+ * The Check Status body — every record as it is ON SCREEN, mirroring the backend
+ * `Schedule9CheckRequest` (#359). Legacy's check read the bean's in-memory document, which every row
+ * input wrote into on change, so the verdict described the screen (rows on other paginator pages
+ * included) rather than the saved record. Rows are numbered server-side by their ORDINAL here, so they
+ * must be sent in document order. The Add panel's draft is never part of it (Add saves at once).
+ *
+ * ⚠ Every member is nullable and `null` MUST stay null: the server's check is a pure null test (a
+ * typed `0` passes), so coercing a blank field to `0` turns a missing value into a pass.
+ */
+export interface ContractualWorkCheckEntry {
+  readonly contractorId: string | null
+  readonly contractualItemCode: number | null
+  readonly sideSlopePct: number | null
+  readonly numberOfUnits: number | null
+  readonly unitCode: string | null
+  readonly biogeoclimaticZone: string | null
+  readonly cost: number | null
+  readonly sourceCode: string | null
+}
+
+export interface Schedule9CheckRequest {
+  readonly records: readonly ContractualWorkCheckEntry[]
+}

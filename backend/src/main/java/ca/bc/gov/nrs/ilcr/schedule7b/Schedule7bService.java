@@ -16,6 +16,7 @@ import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
@@ -27,7 +28,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -486,9 +489,48 @@ public class Schedule7bService {
   // ===============================================================================================
 
   /**
-   * Walk every stored culvert in the exact legacy field order ({@code Schedule7bMB.java:130-158}),
+   * Check Status against the SCREEN — the endpoint's entry point (bcgov/nr-ilcr#359). Legacy's
+   * check read the bean's in-memory document with no reload ({@code Schedule7bMB.java:123-125}),
+   * into which every row input wrote on change, so the verdict described every row on screen —
+   * unsaved edits and other paginator pages included. The candidates are {@code request.culverts()}
+   * in payload order, numbered by 1-based payload ordinal; nothing is read from or written to the
+   * database. The rules are {@link #evaluate}, shared with {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the on-screen culvert rows
+   * @return the flags and verbatim messages; nothing is mutated
+   */
+  public Schedule7bCheckStatusResponse checkStatus(
+      long millId, int year, Schedule7bCheckRequest request) {
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (Schedule7bCheckRequest.CulvertEntry entry : request.culverts()) {
+      // Values taken VERBATIM, nulls included — every rule is a null test, so a coerced 0 would
+      // turn a missing value into a pass.
+      candidates.add(
+          new CheckCandidate(
+              entry.culvertTypeCode(),
+              entry.spanSize(),
+              entry.length(),
+              entry.culvertPieceCount(),
+              entry.materialCost(),
+              entry.installCost(),
+              entry.comments()));
+    }
+    return evaluate(candidates, this::resolveText);
+  }
+
+  /**
+   * Walk every STORED culvert in the exact legacy field order ({@code Schedule7bMB.java:130-158}),
    * flagging each missing required value with {@code missingRequiredFieldMsg} = "Value Required".
    * When every culvert passes, the response also carries the SUC-003 schedule-wide all-met message.
+   * The stored-data counterpart of {@link #checkStatus}, for report-level callers (the Check Status
+   * sweep and the submit gate) that have no screen to describe.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–3, 5 and 6: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
    *
    * <p>Unlike Schedule 7A there is NO per-culvert all-met message — legacy emits only the
    * schedule-wide line ({@code Schedule7bMB.java:162-164}).
@@ -498,52 +540,96 @@ public class Schedule7bService {
    * @return the flags and verbatim messages; nothing is mutated
    */
   @Transactional(readOnly = true)
-  public Schedule7bCheckStatusResponse checkStatus(long millId, int year) {
+  public Schedule7bCheckStatusResponse checkStatusStored(long millId, int year) {
     List<CulvertReportEntity> rows = repository.findCulverts(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
         costsByCulvert(repository.findCostDetails(millId, year));
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (CulvertReportEntity row : rows) {
+      Map<Integer, Integer> cost = costs.getOrDefault(row.culvertReportId(), Map.of());
+      candidates.add(
+          new CheckCandidate(
+              row.culvertTypeCode(),
+              row.spanSize(),
+              row.length(),
+              row.culvertPieceCount(),
+              cost.get(ITEM_MATERIAL),
+              cost.get(ITEM_INSTALL),
+              row.comments()));
+    }
+    return evaluate(candidates, this::resolveText);
+  }
 
+  /**
+   * The Schedule 7B values one culvert's check judges, from either source — the screen ({@link
+   * #checkStatus}) or the database ({@link #checkStatusStored}). Rise is absent because no rule
+   * reads it.
+   *
+   * @param culvertTypeCode the culvert type code
+   * @param spanSize the span
+   * @param length the length
+   * @param culvertPieceCount the number of pieces
+   * @param materialCost the material cost (item 77)
+   * @param installCost the installation cost (item 78)
+   * @param comments the comments
+   */
+  record CheckCandidate(
+      String culvertTypeCode,
+      Integer spanSize,
+      BigDecimal length,
+      Integer culvertPieceCount,
+      Integer materialCost,
+      Integer installCost,
+      String comments) {}
+
+  /**
+   * The BR-07 verdict, source-agnostic and pure: candidates in display order, numbered 1-based.
+   * Neither {@link #checkStatus} nor {@link #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the culverts to judge, in display order
+   * @param text resolves a bundle key to its verbatim text
+   * @return the flags and verbatim messages
+   */
+  static Schedule7bCheckStatusResponse evaluate(
+      List<CheckCandidate> candidates, UnaryOperator<String> text) {
     List<MessageInfo> errors = new ArrayList<>();
     boolean allMet = true;
 
     int rowCounter = 1;
-    for (CulvertReportEntity row : rows) {
-      Map<Integer, Integer> cost = costs.getOrDefault(row.culvertReportId(), Map.of());
-      List<String> missing = missingLabels(row, cost);
+    for (CheckCandidate candidate : candidates) {
+      List<String> missing = missingLabels(candidate);
       if (!missing.isEmpty()) {
         allMet = false;
         for (String label : missing) {
-          errors.add(new MessageInfo(MSG_VALUE_REQUIRED, missingText(rowCounter, label)));
+          errors.add(new MessageInfo(MSG_VALUE_REQUIRED, missingText(rowCounter, label, text)));
         }
       }
       rowCounter++;
     }
 
     MessageInfo requirementsMetMessage =
-        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET)) : null;
+        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, text.apply(MSG_REQUIREMENTS_MET)) : null;
     return new Schedule7bCheckStatusResponse(allMet, errors, requirementsMetMessage);
   }
 
   /**
    * One required-value check: the "is this value missing?" test paired with its verbatim legacy
-   * label. The predicate sees both the culvert row and its cost map, so an attribute check and a
-   * cost check share one shape.
+   * label. The predicate sees one {@link CheckCandidate}, so an attribute check and a cost check
+   * share one shape whichever source built the candidate.
    *
    * @param missing whether the value this check guards is absent
    * @param label the verbatim legacy label fragment, spacing included
    */
-  private record RequiredCheck(
-      java.util.function.BiPredicate<CulvertReportEntity, Map<Integer, Integer>> missing,
-      String label) {}
+  private record RequiredCheck(Predicate<CheckCandidate> missing, String label) {}
 
   /** A required-attribute check on the culvert row itself. */
-  private static RequiredCheck attrCheck(Predicate<CulvertReportEntity> missing, String label) {
-    return new RequiredCheck((r, c) -> missing.test(r), label);
+  private static RequiredCheck attrCheck(Predicate<CheckCandidate> missing, String label) {
+    return new RequiredCheck(missing, label);
   }
 
-  /** A required-cost check: the cost item has no stored value for the culvert. */
-  private static RequiredCheck costCheck(int itemId, String label) {
-    return new RequiredCheck((r, c) -> c.get(itemId) == null, label);
+  /** A required-cost check: the culvert has no value for the cost. */
+  private static RequiredCheck costCheck(Function<CheckCandidate, Integer> cost, String label) {
+    return new RequiredCheck(c -> cost.apply(c) == null, label);
   }
 
   /**
@@ -574,7 +660,8 @@ public class Schedule7bService {
    * both conditional checks simply do not apply and the culvert is judged on the four unconditional
    * values alone. Same class of fix the 7A twin records for its abutment-height check ({@code
    * Schedule7aService.java:374-376}); a write cannot produce this state ({@code culvertTypeCode} is
-   * {@code @NotBlank}), so it is reachable only through legacy-written or migrated data.
+   * {@code @NotBlank}), so it is reachable only through legacy-written or migrated data — or, since
+   * #359, a screen whose type dropdown is still blank.
    *
    * <p>The label spacing is copied byte-for-byte, inconsistencies included: the two
    * type-conditional labels use {@code "Id : "} while the four unconditional ones use {@code "Id:
@@ -594,8 +681,8 @@ public class Schedule7bService {
               " - Culvert Type Others - Comments"),
           attrCheck(r -> r.length() == null, " - Length "),
           attrCheck(r -> r.culvertPieceCount() == null, " - Piece Count "),
-          costCheck(ITEM_MATERIAL, " - Material Cost "),
-          costCheck(ITEM_INSTALL, " - Install Cost "));
+          costCheck(CheckCandidate::materialCost, " - Material Cost "),
+          costCheck(CheckCandidate::installCost, " - Install Cost "));
 
   /**
    * The two type-conditional labels take {@code "Culvert Report Id : "} (space before the colon);
@@ -608,10 +695,10 @@ public class Schedule7bService {
   /**
    * The missing required-field labels for one culvert, in the exact legacy order (verbatim text).
    */
-  private static List<String> missingLabels(CulvertReportEntity row, Map<Integer, Integer> cost) {
+  private static List<String> missingLabels(CheckCandidate candidate) {
     List<String> missing = new ArrayList<>();
     for (RequiredCheck check : REQUIRED_CHECKS) {
-      if (check.missing().test(row, cost)) {
+      if (check.missing().test(candidate)) {
         missing.add(check.label());
       }
     }
@@ -623,10 +710,10 @@ public class Schedule7bService {
    * ({@code FacesUtil.addCheckStatusErrorMessage} concatenates {@code label + ": " + bundleText},
    * {@code util/FacesUtil.java:134}).
    */
-  private String missingText(int rowCounter, String label) {
+  private static String missingText(int rowCounter, String label, UnaryOperator<String> text) {
     String prefix =
         SPACED_PREFIX_LABELS.contains(label) ? "Culvert Report Id : " : "Culvert Report Id: ";
-    return prefix + rowCounter + label + ": " + resolveText(MSG_VALUE_REQUIRED);
+    return prefix + rowCounter + label + ": " + text.apply(MSG_VALUE_REQUIRED);
   }
 
   private String resolveText(String key) {
