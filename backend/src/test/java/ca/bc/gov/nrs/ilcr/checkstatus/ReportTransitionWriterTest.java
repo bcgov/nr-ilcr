@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -42,6 +43,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 @DisplayName("ReportTransitionWriter — the transactional write half (Story 17.1)")
 class ReportTransitionWriterTest {
 
+  private static final ScheduleTrack ONE_TO_TEN = ScheduleTrack.SCHEDULES_1_TO_10;
   private static final long MILL = 764L;
   private static final int YEAR = 2021;
   private static final String USER = "verifyadmin";
@@ -95,7 +97,7 @@ class ReportTransitionWriterTest {
     givenTenCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    writer.write(MILL, YEAR, "S", "V", "V", USER, GUID);
+    writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
 
     // The ONLY guard against re-inverting this. Delivery derives ILCR_*_AUD.RECORD_STATE_CODE in a
     // BEFORE-UPDATE trigger from the (CATEGORY_STATE_CODE, mill status) pair, and (D,S) is the only
@@ -116,7 +118,7 @@ class ReportTransitionWriterTest {
     givenTenCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    writer.write(MILL, YEAR, "S", "V", "V", USER, GUID);
+    writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
 
     verify(repository).touchReportSummaries(MILL, YEAR, USER);
     verify(repository).touchReportSummaryCostDetails(MILL, YEAR, USER);
@@ -151,7 +153,10 @@ class ReportTransitionWriterTest {
     givenOneCategoryRowIsMissing();
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
   }
 
@@ -162,7 +167,10 @@ class ReportTransitionWriterTest {
     givenNoCategoryRowsAdvance();
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
   }
 
@@ -178,7 +186,10 @@ class ReportTransitionWriterTest {
         .thenReturn(0);
     givenTheAuditorIsAssigned();
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportTransitionRejectedException.class)
         .hasMessage(ReportTransitionRejectedException.GENERIC_KEY);
     verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
@@ -192,7 +203,8 @@ class ReportTransitionWriterTest {
       names = {"SUBMIT", "VERIFY"})
   @DisplayName("a transition that owes an identity pair is refused by writeReversal before any SQL")
   void writeReversalRefusesIdentityOwingTransitions(TrackTransition transition) {
-    assertThatThrownBy(() -> writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
+    assertThatThrownBy(
+            () -> writer.writeReversal(ONE_TO_TEN, REVERSAL_MILL, YEAR, transition, USER))
         .isInstanceOf(IllegalArgumentException.class);
     verifyNoInteractions(repository, millUserXrefRepository);
   }
@@ -210,7 +222,7 @@ class ReportTransitionWriterTest {
     givenTheReversalStatusRowMoves(transition);
     givenTenCategoryRowsAdvanceTo(transition.categoryState());
 
-    writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER);
+    writer.writeReversal(ONE_TO_TEN, REVERSAL_MILL, YEAR, transition, USER);
 
     verify(repository).touchReportSummaries(REVERSAL_MILL, YEAR, USER);
     verify(repository).touchReportSummaryCostDetails(REVERSAL_MILL, YEAR, USER);
@@ -241,7 +253,8 @@ class ReportTransitionWriterTest {
         .thenReturn(1);
     givenTenCategoryRowsAdvance();
 
-    assertThat(writer.write(MILL, YEAR, "S", "V", "V", USER, null)).isEqualTo("V");
+    assertThat(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, null))
+        .isEqualTo("V");
     // The cross-reference lookup is skipped entirely rather than run with a null key.
     verify(millUserXrefRepository, never()).findAssignment(anyLong(), any());
     verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER);
@@ -255,7 +268,8 @@ class ReportTransitionWriterTest {
         .thenReturn(1);
     givenTenCategoryRowsAdvance();
 
-    assertThat(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+    assertThat(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isEqualTo("V");
     verify(repository).updateTrackStatusWithAuditor(MILL, YEAR, "V", "S", null, null, USER);
   }
 
@@ -267,7 +281,10 @@ class ReportTransitionWriterTest {
     when(repository.touchReportSummaries(MILL, YEAR, USER))
         .thenThrow(new DataIntegrityViolationException("sweep failed"));
 
-    assertThatThrownBy(() -> writer.write(MILL, YEAR, "S", "V", "V", USER, GUID))
+    assertThatThrownBy(
+            () ->
+                writer.write(
+                    ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
@@ -301,15 +318,16 @@ class ReportTransitionWriterTest {
     givenTheReversalStatusRowMoves(transition);
     givenTenCategoryRowsAdvanceTo(transition.categoryState());
 
-    assertThat(writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
+    assertThat(writer.writeReversal(ONE_TO_TEN, REVERSAL_MILL, YEAR, transition, USER))
         .isEqualTo(transition.to());
 
-    // THE ONLY GUARD against re-inverting this, and the reason Story 18.1 writes it first. The
-    // delivery BEFORE-UPDATE triggers derive ILCR_*_AUD.RECORD_STATE_CODE from the
-    // (CATEGORY_STATE_CODE, mill status) pair, and Set to Submit's (V,S) maps to 'A' only while the
-    // category is still V (V20260910__the_audit_shadow_tables…:18-32). Advance the category first
-    // and the pair seen is (A,S), a different snapshot. The IT schema carries no triggers at all,
-    // so no acceptance test in this repo can see the difference.
+    // THE ONLY GUARD against re-inverting this. The delivery BEFORE-UPDATE triggers derive
+    // ILCR_*_AUD.RECORD_STATE_CODE from the (CATEGORY_STATE_CODE, mill status) pair at stamp time
+    // (V20260910__the_audit_shadow_tables…:18-32). Status before the stamps is what matters: Set to
+    // Draft with the category moved first stamps (D,S), a spurious 'S' snapshot that re-baselines
+    // the original-value indicators. Set to Submit is indifferent once the status has moved: (V,S)
+    // and (A,S) both record 'A'. The IT schema carries no triggers at all, so no acceptance test in
+    // this repo can see the difference.
     InOrder order = inOrder(repository);
     order
         .verify(repository)
@@ -332,7 +350,7 @@ class ReportTransitionWriterTest {
     givenTheReversalStatusRowMoves(transition);
     givenTenCategoryRowsAdvanceTo(transition.categoryState());
 
-    writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER);
+    writer.writeReversal(ONE_TO_TEN, REVERSAL_MILL, YEAR, transition, USER);
 
     // updateTrackStatusWithAuditor is the ONLY statement naming AUDITOR_*, updateTrackStatus the
     // only one naming LICENSEE_*. Reaching neither is what "unchanged by value" means in SQL terms;
@@ -360,7 +378,8 @@ class ReportTransitionWriterTest {
             REVERSAL_MILL, YEAR, transition.to(), transition.from(), USER))
         .thenReturn(0);
 
-    assertThatThrownBy(() -> writer.writeReversal(REVERSAL_MILL, YEAR, transition, USER))
+    assertThatThrownBy(
+            () -> writer.writeReversal(ONE_TO_TEN, REVERSAL_MILL, YEAR, transition, USER))
         .isInstanceOf(ReportTransitionRejectedException.class)
         .hasMessage(transition.rejectedKey(ScheduleTrack.SCHEDULES_1_TO_10));
     verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
@@ -378,7 +397,9 @@ class ReportTransitionWriterTest {
     }
 
     assertThatThrownBy(
-            () -> writer.writeReversal(REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+            () ->
+                writer.writeReversal(
+                    ONE_TO_TEN, REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
         .isInstanceOf(ReportSubmissionException.class);
   }
 
@@ -390,9 +411,299 @@ class ReportTransitionWriterTest {
         .thenThrow(new DataIntegrityViolationException("sweep failed"));
 
     assertThatThrownBy(
-            () -> writer.writeReversal(REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+            () ->
+                writer.writeReversal(
+                    ONE_TO_TEN, REVERSAL_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
         .isInstanceOf(ReportSubmissionException.class);
     verify(repository, never())
         .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Story 26.3 — Verify on the Schedule 11 track. Same write half, dispatched by track: the
+  // silviculture status statement, Schedule 11's one row family, category '11' alone.
+  // -----------------------------------------------------------------------------------------------
+
+  private static final ScheduleTrack ELEVEN = ScheduleTrack.SCHEDULE_11;
+  private static final long SCH11_MILL = 807L;
+
+  private void givenTheSilvicultureStatusRowMoves() {
+    when(repository.updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(1);
+  }
+
+  private void givenTheSchedule11AuditorIsAssigned() {
+    when(millUserXrefRepository.findAssignment(SCH11_MILL, GUID))
+        .thenReturn(
+            Optional.of(
+                new MillUserXrefEntity(SCH11_MILL, GUID, null, null, 0, null, null, null, null)));
+  }
+
+  @Test
+  @DisplayName("Schedule 11: silviculture status, then both location touches, then category '11'")
+  void schedule11StatementOrder() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(1);
+
+    assertThat(writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+
+    // Legacy's order (SubmitReportDAO.submitReportSchedule11:161-164). S->V is trigger-indifferent
+    // ((A,V) and (V,V) both record 'V'); the order is pinned anyway so the track's two writers
+    // cannot drift apart.
+    InOrder order = inOrder(repository);
+    order
+        .verify(repository)
+        .updateSilvicultureTrackStatusWithAuditor(
+            SCH11_MILL, YEAR, "V", "S", SCH11_MILL, GUID, USER);
+    order.verify(repository).touchBasicSilvicultureReports(SCH11_MILL, YEAR, USER);
+    order.verify(repository).touchBasicSilvicultureCostDetails(SCH11_MILL, YEAR, USER);
+    order.verify(repository).advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER);
+  }
+
+  @Test
+  @DisplayName("Schedule 11 never reaches a 1-10 statement: status, stamps or categories 1-10")
+  void schedule11NeverTouchesTheOtherTrack() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(1);
+
+    writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID);
+
+    verify(repository, never())
+        .updateTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());
+    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
+    verify(repository, never()).touchRoadConstructionCostDetails(anyLong(), anyInt(), anyString());
+    for (String categoryId : CATEGORIES) {
+      verify(repository, never())
+          .advanceCategoryState(anyLong(), anyInt(), eq(categoryId), anyString(), anyString());
+    }
+  }
+
+  @Test
+  @DisplayName("1-10 never reaches a Schedule 11 statement: status, locations or category '11'")
+  void oneToTenNeverTouchesSchedule11() {
+    givenTheStatusRowMoves();
+    givenTenCategoryRowsAdvance();
+    givenTheAuditorIsAssigned();
+
+    writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
+
+    verify(repository, never())
+        .updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString());
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), anyString());
+    verify(repository, never()).touchBasicSilvicultureCostDetails(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), eq("11"), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a silviculture status write matching no row is the generic 409")
+  void schedule11LostUpdateIsRefused() {
+    when(repository.updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), anyString()))
+        .thenReturn(0);
+    givenTheSchedule11AuditorIsAssigned();
+
+    assertThatThrownBy(() -> writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class)
+        .hasMessage(ReportTransitionRejectedException.GENERIC_KEY);
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("Schedule 11: no category '11' row fails the transition — its one row, not ten")
+  void schedule11MissingCategoryRowFails() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(0);
+
+    assertThatThrownBy(() -> writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportSubmissionException.class);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: an admin with no cross-reference records NULL in both auditor columns")
+  void schedule11NoXrefRecordsNullAuditor() {
+    when(millUserXrefRepository.findAssignment(SCH11_MILL, GUID)).thenReturn(Optional.empty());
+    when(repository.updateSilvicultureTrackStatusWithAuditor(
+            SCH11_MILL, YEAR, "V", "S", null, null, USER))
+        .thenReturn(1);
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", "V", USER)).thenReturn(1);
+
+    assertThat(writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID)).isEqualTo("V");
+    verify(repository)
+        .updateSilvicultureTrackStatusWithAuditor(SCH11_MILL, YEAR, "V", "S", null, null, USER);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a persistence failure becomes a 500 and stops before the category")
+  void schedule11PersistenceFailure() {
+    givenTheSilvicultureStatusRowMoves();
+    givenTheSchedule11AuditorIsAssigned();
+    when(repository.touchBasicSilvicultureReports(SCH11_MILL, YEAR, USER))
+        .thenThrow(new DataIntegrityViolationException("touch failed"));
+
+    assertThatThrownBy(() -> writer.write(ELEVEN, SCH11_MILL, YEAR, "S", "V", "V", USER, GUID))
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // The two reversals on the Schedule 11 track: the silviculture no-identity statement, Schedule
+  // 11's one row family, category '11' alone.
+  // -----------------------------------------------------------------------------------------------
+
+  private void givenTheSilvicultureReversalRowMoves(TrackTransition transition) {
+    when(repository.updateSilvicultureTrackStatusWithoutIdentity(
+            SCH11_MILL, YEAR, transition.to(), transition.from(), USER))
+        .thenReturn(1);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("Schedule 11 reversal: silviculture status, then both location touches, then '11'")
+  void schedule11ReversalStatementOrder(TrackTransition transition) {
+    givenTheSilvicultureReversalRowMoves(transition);
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", transition.categoryState(), USER))
+        .thenReturn(1);
+
+    assertThat(writer.writeReversal(ELEVEN, SCH11_MILL, YEAR, transition, USER))
+        .isEqualTo(transition.to());
+
+    // Legacy's order (SubmitReportDAO.submitReportSchedule11:161-164). Status before the stamps is
+    // the load-bearing half: S->D with the category moved first stamps the pair (D,S), which the
+    // delivery trigger records as a spurious 'S' snapshot that re-baselines the original-value
+    // indicators to the pre-reversal values (V20260910…:18-28). No IT sees a trigger.
+    InOrder order = inOrder(repository);
+    order
+        .verify(repository)
+        .updateSilvicultureTrackStatusWithoutIdentity(
+            SCH11_MILL, YEAR, transition.to(), transition.from(), USER);
+    order.verify(repository).touchBasicSilvicultureReports(SCH11_MILL, YEAR, USER);
+    order.verify(repository).touchBasicSilvicultureCostDetails(SCH11_MILL, YEAR, USER);
+    order
+        .verify(repository)
+        .advanceCategoryState(SCH11_MILL, YEAR, "11", transition.categoryState(), USER);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName(
+      "Schedule 11 reversal never reaches a 1-10 statement, a 1-10 category or an identity write")
+  void schedule11ReversalNeverTouchesTheOtherTrackOrAnIdentity(TrackTransition transition) {
+    givenTheSilvicultureReversalRowMoves(transition);
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", transition.categoryState(), USER))
+        .thenReturn(1);
+
+    writer.writeReversal(ELEVEN, SCH11_MILL, YEAR, transition, USER);
+
+    verify(repository, never())
+        .updateTrackStatusWithoutIdentity(anyLong(), anyInt(), anyString(), anyString(), any());
+    verify(repository, never()).touchReportSummaries(anyLong(), anyInt(), anyString());
+    verify(repository, never()).touchRoadConstructionCostDetails(anyLong(), anyInt(), anyString());
+    for (String categoryId : CATEGORIES) {
+      verify(repository, never())
+          .advanceCategoryState(anyLong(), anyInt(), eq(categoryId), anyString(), anyString());
+    }
+    // Every statement that writes an identity pair, on either track (deviation (S), extended).
+    verify(repository, never())
+        .updateTrackStatus(anyLong(), anyInt(), anyString(), anyString(), any(), any(), any());
+    verify(repository, never())
+        .updateTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), any());
+    verify(repository, never())
+        .updateSilvicultureTrackStatus(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), any());
+    verify(repository, never())
+        .updateSilvicultureTrackStatusWithAuditor(
+            anyLong(), anyInt(), anyString(), anyString(), any(), any(), any());
+    verifyNoInteractions(millUserXrefRepository);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("1-10 reversal never reaches a Schedule 11 statement, location or category '11'")
+  void oneToTenReversalNeverTouchesSchedule11(TrackTransition transition) {
+    givenTheReversalStatusRowMoves(transition);
+    givenTenCategoryRowsAdvanceTo(transition.categoryState());
+
+    writer.writeReversal(ONE_TO_TEN, REVERSAL_MILL, YEAR, transition, USER);
+
+    verify(repository, never())
+        .updateSilvicultureTrackStatusWithoutIdentity(
+            anyLong(), anyInt(), anyString(), anyString(), any());
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), anyString());
+    verify(repository, never()).touchBasicSilvicultureCostDetails(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), eq("11"), anyString(), anyString());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("Schedule 11 reversal: a status write matching no row is legacy's generic 409")
+  void schedule11ReversalLostUpdateIsRefused(TrackTransition transition) {
+    when(repository.updateSilvicultureTrackStatusWithoutIdentity(
+            SCH11_MILL, YEAR, transition.to(), transition.from(), USER))
+        .thenReturn(0);
+
+    assertThatThrownBy(() -> writer.writeReversal(ELEVEN, SCH11_MILL, YEAR, transition, USER))
+        .isInstanceOf(ReportTransitionRejectedException.class)
+        .hasMessage(ReportTransitionRejectedException.GENERIC_KEY);
+    verify(repository, never()).touchBasicSilvicultureReports(anyLong(), anyInt(), anyString());
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("Schedule 11 reversal: no category '11' row is a 500, not a committed 200")
+  void schedule11ReversalMissingCategoryRowFails(TrackTransition transition) {
+    givenTheSilvicultureReversalRowMoves(transition);
+    when(repository.advanceCategoryState(SCH11_MILL, YEAR, "11", transition.categoryState(), USER))
+        .thenReturn(0);
+
+    assertThatThrownBy(() -> writer.writeReversal(ELEVEN, SCH11_MILL, YEAR, transition, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+  }
+
+  @Test
+  @DisplayName("Schedule 11 reversal: a persistence failure is a 500 and stops before the category")
+  void schedule11ReversalPersistenceFailure() {
+    givenTheSilvicultureReversalRowMoves(TrackTransition.SET_TO_DRAFT);
+    when(repository.touchBasicSilvicultureCostDetails(SCH11_MILL, YEAR, USER))
+        .thenThrow(new DataIntegrityViolationException("touch failed"));
+
+    assertThatThrownBy(
+            () ->
+                writer.writeReversal(ELEVEN, SCH11_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(ReportSubmissionException.class);
+    verify(repository, never())
+        .advanceCategoryState(anyLong(), anyInt(), anyString(), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("a reversal with no track is refused before any SQL: there is no default track")
+  void reversalWithoutATrackIsRefused() {
+    assertThatThrownBy(
+            () -> writer.writeReversal(null, SCH11_MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(NullPointerException.class);
+    verifyNoInteractions(repository, millUserXrefRepository);
   }
 }

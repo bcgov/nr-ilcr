@@ -18,6 +18,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -73,9 +75,10 @@ class ReportTrackTransitionVerifyTest {
   void verifyDoesNotLockTheStatusRow() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
+    when(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
+        .thenReturn("V");
 
-    service.verify(MILL, YEAR, USER, GUID);
+    service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID);
 
     verify(millContextService).findTrackStatusCodes(MILL, YEAR);
     // The lock is submit's (15.3 D10). Verify keeping it off is Epic 17's ratified legacy parity,
@@ -90,7 +93,8 @@ class ReportTrackTransitionVerifyTest {
     when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR))
         .thenReturn(List.of());
 
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOf(ReportNotSubmittedException.class);
     verifyNoInteractions(writer);
   }
@@ -108,7 +112,8 @@ class ReportTrackTransitionVerifyTest {
                 met("1"), met("2"), met("3"), met("4"), met("5"), met("6"), met("7A"), met("8"),
                 met("9"), met("10")));
 
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOf(ReportNotSubmittedException.class);
     verifyNoInteractions(writer);
   }
@@ -118,7 +123,8 @@ class ReportTrackTransitionVerifyTest {
   void missingStatusRow() {
     when(millContextService.findTrackStatusCodes(MILL, YEAR)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOf(ScheduleNotFoundException.class);
     verifyNoInteractions(sweepService, writer);
   }
@@ -128,7 +134,8 @@ class ReportTrackTransitionVerifyTest {
   void nullStatusCodeIsRefused() {
     givenTrackAt(null);
 
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOf(ReportTransitionRejectedException.class);
     verifyNoInteractions(writer);
   }
@@ -143,7 +150,8 @@ class ReportTrackTransitionVerifyTest {
     // ILCRService.submitReport:718-723, and the bean's catch rendered the error instead of the
     // verified message. UC-CHK-007-S07 calls it a silent success, having read only the bean and
     // the DAO.
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOf(ReportTransitionRejectedException.class);
     verifyNoInteractions(writer);
   }
@@ -154,7 +162,8 @@ class ReportTrackTransitionVerifyTest {
     givenTrackAt("D");
     givenGatePasses();
 
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOf(ReportTransitionRejectedException.class);
     verifyNoInteractions(writer);
   }
@@ -168,7 +177,8 @@ class ReportTrackTransitionVerifyTest {
     // TrackTransition.VERIFY.rejectedKey(SCHEDULES_1_TO_10) is "verifyNotSubmittedErrorMsg" —
     // 15.4's ruled
     // DEPARTURE from legacy, which belongs to submit. Verify answers what legacy answered.
-    assertThatThrownBy(() -> service.verify(MILL, YEAR, USER, GUID))
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
         .isInstanceOfSatisfying(
             ReportTransitionRejectedException.class,
             ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
@@ -179,9 +189,168 @@ class ReportTrackTransitionVerifyTest {
   void legalTransitionDelegatesToTheWriter() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.write(MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
+    when(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
+        .thenReturn("V");
 
-    assertThat(service.verify(MILL, YEAR, USER, GUID)).isEqualTo("V");
-    verify(writer).write(MILL, YEAR, "S", "V", "V", USER, GUID);
+    assertThat(service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
+        .isEqualTo("V");
+    verify(writer).write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID);
+  }
+
+  @Test
+  @DisplayName("1-10 verify never runs the Schedule 11 gate")
+  void oneToTenNeverChecksSchedule11() {
+    givenTrackAt("S");
+    givenGatePasses();
+    when(writer.write(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, "S", "V", "V", USER, GUID))
+        .thenReturn("V");
+
+    service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID);
+
+    verify(sweepService, never()).checkTrack(ELEVEN, MILL, YEAR);
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Story 26.3 — the same verify on the Schedule 11 track. Legacy verifiedSchedule11() was one line
+  // into the same submitSchedule11(code) as the Schedule 11 submit (CheckStatusMB:208-210), so the
+  // track is a parameter here too, never a second method.
+  // -----------------------------------------------------------------------------------------------
+
+  private static final ScheduleTrack ELEVEN = ScheduleTrack.SCHEDULE_11;
+
+  /** The two codes deliberately differ, so reading the wrong column is visible. */
+  private void givenCodes(String schedules1To10, String schedule11) {
+    when(millContextService.findTrackStatusCodes(MILL, YEAR))
+        .thenReturn(Optional.of(new TrackStatusCodes(schedules1To10, schedule11)));
+  }
+
+  private void givenSchedule11Gate(List<ScheduleCheckResult> verdicts) {
+    when(sweepService.checkTrack(ELEVEN, MILL, YEAR)).thenReturn(verdicts);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: S->V reads the silviculture code, runs ITS gate, writes on its track")
+  void schedule11LegalTransitionDelegatesOnItsTrack() {
+    givenCodes("D", "S");
+    givenSchedule11Gate(List.of(met("11")));
+    when(writer.write(ELEVEN, MILL, YEAR, "S", "V", "V", USER, GUID)).thenReturn("V");
+
+    assertThat(service.verify(ELEVEN, MILL, YEAR, USER, GUID)).isEqualTo("V");
+
+    verify(writer).write(ELEVEN, MILL, YEAR, "S", "V", "V", USER, GUID);
+    verify(sweepService, never()).checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR);
+    verify(millContextService, never()).lockTrackStatusCodes(MILL, YEAR);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a 1-10 track at S does not make Schedule 11 verifiable")
+  void schedule11ReadsItsOwnColumn() {
+    // 1-10 at S, Schedule 11 at D: reading the 1-10 column would admit this verify.
+    givenCodes("S", "D");
+    givenSchedule11Gate(List.of(met("11")));
+
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("1-10: a Schedule 11 track at S does not make 1-10 verifiable")
+  void oneToTenReadsItsOwnColumn() {
+    givenCodes("D", "S");
+    givenGatePasses();
+
+    assertThatThrownBy(
+            () -> service.verify(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR, USER, GUID))
+        .isInstanceOf(ReportTransitionRejectedException.class);
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a failing location check is the gate's 409, nothing written")
+  void schedule11GateFails() {
+    givenCodes("D", "S");
+    givenSchedule11Gate(List.of(new ScheduleCheckResult("11", false, null)));
+
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportNotSubmittedErrorMsg"));
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: zero verdicts is a failed gate, not a vacuous pass")
+  void schedule11NoVerdictFailsTheGate() {
+    givenCodes("D", "S");
+    givenSchedule11Gate(List.of());
+
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOf(ReportNotSubmittedException.class);
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: two verdicts is a failed gate — the track owes exactly one")
+  void schedule11TwoVerdictsFailTheGate() {
+    givenCodes("D", "S");
+    givenSchedule11Gate(List.of(met("11"), met("11")));
+
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOf(ReportNotSubmittedException.class);
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: eleven met verdicts (the 1-10 count) is a failed gate too")
+  void schedule11ElevenVerdictsFailTheGate() {
+    // Pins that the count follows the track: a gate still comparing against 1-10's eleven would
+    // pass this list and verify a Schedule 11 that nothing checked as Schedule 11.
+    givenCodes("D", "S");
+    givenSchedule11Gate(
+        List.of(
+            met("1"), met("2"), met("3"), met("4"), met("5"), met("6"), met("7A"), met("7B"),
+            met("8"), met("9"), met("10")));
+
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOf(ReportNotSubmittedException.class);
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("Schedule 11: a NULL silviculture code is the generic 409, before the gate")
+  void schedule11NullCodeIsRefused() {
+    givenCodes("S", null);
+
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(sweepService, writer);
+  }
+
+  @ParameterizedTest(name = "from {0}")
+  @ValueSource(strings = {"D", "V"})
+  @DisplayName("Schedule 11: a track not at S is refused with legacy's generic text")
+  void schedule11NotSubmittedIsRefused(String code) {
+    givenCodes("D", code);
+    givenSchedule11Gate(List.of(met("11")));
+
+    // The epic's ruling (legacy parity, not a fix): no Schedule 11 "not Submitted" text exists.
+    assertThatThrownBy(() -> service.verify(ELEVEN, MILL, YEAR, USER, GUID))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("there is no default track: a null track is refused before any read")
+  void nullTrackIsRefused() {
+    assertThatThrownBy(() -> service.verify(null, MILL, YEAR, USER, GUID))
+        .isInstanceOf(NullPointerException.class);
+    verifyNoInteractions(millContextService, sweepService, writer);
   }
 }

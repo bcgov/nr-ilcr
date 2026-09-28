@@ -22,17 +22,16 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The Check Status endpoints (Stories 15.1, 15.3, 17.1, 18.1 and 26.1). Each authorizes by naming
- * an action (AD-7) — {@code VIEW_SCHEDULE} for the sweep, exactly as the twelve per-schedule
- * check-status endpoints do, {@code SUBMIT_REPORT} for the licensee's submit on either track and
- * {@code SET_REPORT_STATUS} for all three of the ministry's transitions (verify and both reversals;
- * one action, not one per button — see {@code Action.SET_REPORT_STATUS}) — and delegates ALL
- * mill/year validation to {@link MillContextService} as its first line (AD-4). Mill scope normally
- * arrives with it: {@code validateMillYearActive}'s first statement is {@code validateMillAccess}.
- * Submit adds one action-specific check for a dual-role ADMIN+SUBMITTER because ADMIN's browsing
- * scope must not widen SUBMITTER's submission scope. There is no {@code isAuthenticated()}: the
- * epic's "any signed-in user" phrasing is imprecise and is not the spec (FR2 requires role AND mill
- * scope).
+ * The Check Status endpoints. Each authorizes by naming an action (AD-7) — {@code VIEW_SCHEDULE}
+ * for the sweep, exactly as the twelve per-schedule check-status endpoints do, {@code
+ * SUBMIT_REPORT} for the licensee's submit on either track and {@code SET_REPORT_STATUS} for the
+ * ministry's transitions (verify and both reversals, on either track; one action, not one per
+ * button — see {@code Action.SET_REPORT_STATUS}) — and delegates ALL mill/year validation to {@link
+ * MillContextService} as its first line (AD-4). Mill scope normally arrives with it: {@code
+ * validateMillYearActive}'s first statement is {@code validateMillAccess}. Submit adds one
+ * action-specific check for a dual-role ADMIN+SUBMITTER because ADMIN's browsing scope must not
+ * widen SUBMITTER's submission scope. There is no {@code isAuthenticated()}: the epic's "any
+ * signed-in user" phrasing is imprecise and is not the spec (FR2 requires role AND mill scope).
  *
  * <p>This is the ONE guard the sweep owns (AC 9). None of the twelve in-process validations checks
  * its own context, and six of them report an absent or closed mill-year as a vacuous MET — so the
@@ -42,8 +41,6 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 public class CheckStatusController implements CheckStatusApi {
-
-  private static final String VERIFIED_MESSAGE_KEY = "sch1-10VerifiedMsg";
 
   private final MillContextService millContextService;
   private final CheckStatusSweepService sweepService;
@@ -128,16 +125,34 @@ public class CheckStatusController implements CheckStatusApi {
   @PreAuthorize("@permissions.hasPermission(authentication, 'SET_REPORT_STATUS')")
   public ResponseEntity<VerifyReportResponse> verifySchedules1To10(
       String millId, String year, Authentication authentication) {
+    return verifyOnTrack(ScheduleTrack.SCHEDULES_1_TO_10, millId, year, authentication);
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'SET_REPORT_STATUS')")
+  public ResponseEntity<VerifyReportResponse> verifySchedule11(
+      String millId, String year, Authentication authentication) {
+    return verifyOnTrack(ScheduleTrack.SCHEDULE_11, millId, year, authentication);
+  }
+
+  /**
+   * Both verifies, which differ only in the track they name. Same guard, same order as the sweep:
+   * 400 ERR-001 / 404 / 409 before anything is written. No submitter mill-scope check, for the
+   * reason {@link #reverseOnTrack} gives: verifying is an ADMIN capability and ADMIN is all-mills.
+   */
+  private ResponseEntity<VerifyReportResponse> verifyOnTrack(
+      ScheduleTrack track, String millId, String year, Authentication authentication) {
     try {
-      // Same guard, same order as the sweep: 400 ERR-001 / 404 / 409 before anything is written.
       MillYearContext context = millContextService.validateMillYearActive(millId, year);
       String status =
           transitionService.verify(
+              track,
               context.millId(),
               context.year(),
               authentication.getName(),
               directoryGuid(authentication));
-      return ResponseEntity.ok(new VerifyReportResponse(status, message(VERIFIED_MESSAGE_KEY)));
+      return ResponseEntity.ok(
+          new VerifyReportResponse(status, message(TrackTransition.VERIFY.successKey(track))));
     } catch (ScheduleNotFoundException notFound) {
       throw checkStatusNotFound(notFound);
     }
@@ -147,19 +162,46 @@ public class CheckStatusController implements CheckStatusApi {
   @PreAuthorize("@permissions.hasPermission(authentication, 'SET_REPORT_STATUS')")
   public ResponseEntity<SetTrackStatusResponse> setSchedules1To10ToDraft(
       String millId, String year, Authentication authentication) {
-    return reverse(TrackTransition.SET_TO_DRAFT, millId, year, authentication);
+    return reverseOnTrack(
+        ScheduleTrack.SCHEDULES_1_TO_10,
+        TrackTransition.SET_TO_DRAFT,
+        millId,
+        year,
+        authentication);
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'SET_REPORT_STATUS')")
   public ResponseEntity<SetTrackStatusResponse> setSchedules1To10ToSubmit(
       String millId, String year, Authentication authentication) {
-    return reverse(TrackTransition.SET_TO_SUBMIT, millId, year, authentication);
+    return reverseOnTrack(
+        ScheduleTrack.SCHEDULES_1_TO_10,
+        TrackTransition.SET_TO_SUBMIT,
+        millId,
+        year,
+        authentication);
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'SET_REPORT_STATUS')")
+  public ResponseEntity<SetTrackStatusResponse> setSchedule11ToDraft(
+      String millId, String year, Authentication authentication) {
+    return reverseOnTrack(
+        ScheduleTrack.SCHEDULE_11, TrackTransition.SET_TO_DRAFT, millId, year, authentication);
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'SET_REPORT_STATUS')")
+  public ResponseEntity<SetTrackStatusResponse> setSchedule11ToSubmit(
+      String millId, String year, Authentication authentication) {
+    return reverseOnTrack(
+        ScheduleTrack.SCHEDULE_11, TrackTransition.SET_TO_SUBMIT, millId, year, authentication);
   }
 
   /**
-   * Both admin reversals, which differ only in the transition they name (Story 18.1). Same guard
-   * and same order as the sweep and verify: 400 ERR-001 / 404 / 409 before anything is written.
+   * All four admin reversals, which differ only in the track and the transition they name. Same
+   * guard and same order as the sweep and verify: 400 ERR-001 / 404 / 409 before anything is
+   * written.
    *
    * <p>No {@code ReportSubmission.validateSubmitterMillAccess} call, unlike {@link #submit}. That
    * extra check exists because a dual-role ADMIN+SUBMITTER must not use ADMIN's browsing scope to
@@ -167,19 +209,22 @@ public class CheckStatusController implements CheckStatusApi {
    * ({@code MillContextService:81-83}), so applying it here would refuse a ministry user acting
    * within their own authority.
    *
-   * <p>No directory GUID is resolved either: neither reversal records an identity pair (D1), so
-   * there is no {@code ILCR_MILL_USER_XREF} row to look up. The audit name alone is passed.
+   * <p>No directory GUID is resolved either: no reversal records an identity pair, on either track,
+   * so there is no {@code ILCR_MILL_USER_XREF} row to look up. The audit name alone is passed.
    */
-  private ResponseEntity<SetTrackStatusResponse> reverse(
-      TrackTransition transition, String millId, String year, Authentication authentication) {
+  private ResponseEntity<SetTrackStatusResponse> reverseOnTrack(
+      ScheduleTrack track,
+      TrackTransition transition,
+      String millId,
+      String year,
+      Authentication authentication) {
     try {
       MillYearContext context = millContextService.validateMillYearActive(millId, year);
       String status =
           transitionService.reverse(
-              context.millId(), context.year(), transition, authentication.getName());
+              track, context.millId(), context.year(), transition, authentication.getName());
       return ResponseEntity.ok(
-          new SetTrackStatusResponse(
-              status, message(transition.successKey(ScheduleTrack.SCHEDULES_1_TO_10))));
+          new SetTrackStatusResponse(status, message(transition.successKey(track))));
     } catch (ScheduleNotFoundException notFound) {
       throw checkStatusNotFound(notFound);
     }

@@ -167,6 +167,9 @@ sense against this directory, `mvn clean` before believing it.
    | Check Status submit (15.3) | **780–783**    | `R__55_check_status_submit_fixtures.sql`      |
    | Schedule 11 submit (26.1) | **784–789**     | `R__57`; locations `9411–9416`, summary `1680`, cost-report details `5800–5812`. **Report year 2021 only** — see below |
    | Schedule 11 correction (26.2) | **801–806** | `R__58`; locations `9421–9430`, cost-report details `5830–5845`, the FIRST seeded `*_AUD` 'S' snapshot rows (BSR audit `1001–1010`, cost audit `2001–2012`). **Report year 2021 only** — see below |
+   | Schedule 11 verify (26.3) | **807–815**     | `R__59`; locations `9431–9440`, summaries `1681–1684`, cost-report details `5846–5869` and `5750–5785` (815's all-met Schedules 1–3, so a 1–10 verify can commit on an S/S mill). **Report year 2021 only** — see below |
+   | Schedule 11 late correction (26.4) | **816–822** | `R__61`; locations `9441–9455`, cost-report details `5870–5898` (5898 only as an audit row's detail id), BSR audit `1011–1030`, cost audit `2013–2040`. **Report year 2021 only** — see below |
+   | Schedule 11 reversals (26.5) | **823–834** | `R__62`; locations `9456–9468` (block `9456–9479` reserved), summaries `1700–1701` (block `1700–1709`), cost-report details `5900–5925` and `5950–5951` (block `5900–5959`). **Report year 2021 only** — see below |
    | Reversal transitions (18.1) | **790–799**   | `R__56`; summaries `1650–1671`, cost-report details `3201–3452`. **Report year 2021 only** — see below |
 
    **⚠️ A static id is only free if it is also out of reach of every SEQUENCE.** `R__56`'s
@@ -241,6 +244,37 @@ sense against this directory, `mvn clean` before believing it.
    than by the current detail id serves the wrong baseline. `803` (Check Status), `804` (refusal table) and `805` (stale
    revision at `REVISION_COUNT 3`, unknown id, ERR-004) are never written; `806` is written only by the Licensee-at-Draft
    arm. No sequence backs either audit id. Prefix `58`, below `70`.
+
+   **Schedule 11 late correction (`R__61`, UC-CHK-015)** — the administrator's correction at silviculture `V`
+   (category `'11'` at `'V'` on every mill). `816` (1–10 `V`) is the read-only indicator anchor: `9441` differs from
+   its `'S'` snapshot on all five tracked fields, and `9442` was corrected by the ministry at `S` — its later `'A'`
+   and `'V'` audit rows carry the ministry's values with higher audit ids, so a view that ranked before filtering on
+   `'S'` would serve them (this pins the test schema's copy of the view, `V20260910`; a delivery view that differed is
+   out of the suite's reach). `817` (1–10 `S`, the real S/V pair) is the only mill written, by one test: its `9443`
+   Actual cost has a second `'S'` row under an older detail id (`5898`) with a higher audit id, as `R__58`'s `802`
+   does, and its status row carries a LICENSEE and an AUDITOR pair (R__59's users) proven untouched. `818` (Check
+   Status: `9446`'s two cost rows exist with `COST NULL`), `819` (all met), `820` (refusal tables; `9449` is named
+   `'Refusal Block'` so the shared refusal bodies fit), `821` (stale revision at `REVISION_COUNT 3`) and `822` (the
+   SUBMITTER refused at `V`) are never written. **"Free" is per table**: nothing above audit id `1010` / `2012` is
+   seeded, the bare `10xx` hits elsewhere are `ILCR_REPORT_SUMMARY_ID`s, and cost audit id `2021` is skipped on
+   purpose: it is the report year on nearly every fixture line, so no bare-id grep could prove it free. Prefix `61`, below `70`; it rides the
+   `db/` chain, so these mills also appear in the e2e database's Home dropdown.
+
+   **Schedule 11 reversals (`R__62`, UC-CHK-017/019)** — Set to Draft (`S`→`D`) and Set to Submit (`V`→`S`) on the
+   silviculture track, the two track codes differing on every mill. `823` (silviculture `S`, 1–10 `V`) and `824`
+   (`V`, 1–10 `D`) are the two happy paths, each written by exactly one test; both carry a LICENSEE and an AUDITOR pair
+   proved unchanged by value, and `824` also xrefs the acting admin, so legacy's Set to Submit write of that admin into
+   the LICENSEE pair would show (deviation (S)). Each carries one Schedule 2 summary (`1700`/`1701`) so a reversal that
+   also ran the 1–10 touches has a row to stamp. `825`/`826` fail the gate (a Planned Cost row with `COST NULL`);
+   `827` (silviculture `D`), `833` (`NULL`) are refused by both endpoints; `828` (`S`) and `829` (`V`) have **no
+   category `'11'` row**, so each is one endpoint's 500 rollback and the other's legality refusal; `830`–`832` are the
+   concurrency arms (`832` races Set to Draft against the Schedule 11 Verify); `834` has zero locations. Only `823`,
+   `824`, `830`–`832` and `834` are ever written. Prefix `62`, below `70`.
+
+   **`V20260910`'s header names a fixture that was never written.** Its lines 4–5 point to
+   `R__60_original_value_snapshots.sql`; no such file exists. The `'S'` snapshot rows live in `R__58` and `R__61`, and
+   `R__60` is the Data Extract fixture. The comment stays wrong on purpose: `V20260910` is a versioned migration, and
+   editing it changes its checksum and fails Flyway `validate` on every existing database.
 
    **Verify transition (`R__55`, UC-CHK-007/012)** — the Submitted→Verified endpoint needs seven
    mill/year shapes, all 2021, and it genuinely mutates the ones it succeeds on, so none can be

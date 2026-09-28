@@ -130,6 +130,81 @@ class ReportTrackTransitionRepositoryIT extends AbstractOracleIT {
         .isEqualTo("reversaladmin");
   }
 
+  /**
+   * Puts the repository-arm mill's silviculture track at {@code code}; rolled back with the class.
+   */
+  private void givenSilvicultureAt(String code) {
+    jdbc.update(
+        "UPDATE THE.ILCR_MILL_REPORT_STATUS SET MILL_SILVICULTUR_STATUS_CODE = ?"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+        code,
+        REVERSAL_MILL,
+        REVERSAL_YEAR);
+  }
+
+  private String silvicultureStatus() {
+    return jdbc.queryForObject(
+        "SELECT MILL_SILVICULTUR_STATUS_CODE FROM THE.ILCR_MILL_REPORT_STATUS"
+            + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+        String.class,
+        REVERSAL_MILL,
+        REVERSAL_YEAR);
+  }
+
+  @Test
+  @DisplayName(
+      "Schedule 11 reversal UPDATE: its predicate reads the silviculture column, not 1-10's")
+  void silvicultureReversalRefusesAStaleExpectedCode() {
+    // The 1-10 code is S. With the silviculture code at V, a predicate that read the wrong column
+    // would match and move the row.
+    assertThat(reversalStatus()).isEqualTo("S");
+    givenSilvicultureAt("V");
+
+    int rows =
+        repository.updateSilvicultureTrackStatusWithoutIdentity(
+            REVERSAL_MILL, REVERSAL_YEAR, "D", "S", "reversaladmin");
+
+    assertThat(rows).isZero();
+    assertThat(silvicultureStatus()).isEqualTo("V");
+    assertThat(reversalStatus()).isEqualTo("S");
+  }
+
+  @Test
+  @DisplayName("Schedule 11 reversal UPDATE: moves only the silviculture code, no identity column")
+  void silvicultureReversalMovesOnlyItsOwnColumn() {
+    givenSilvicultureAt("S");
+    String before = identityAndRevision();
+
+    int rows =
+        repository.updateSilvicultureTrackStatusWithoutIdentity(
+            REVERSAL_MILL, REVERSAL_YEAR, "D", "S", "reversaladmin");
+
+    assertThat(rows).isOne();
+    assertThat(silvicultureStatus()).isEqualTo("D");
+    // Both codes started at S; only the silviculture one may move (BR-07).
+    assertThat(reversalStatus()).isEqualTo("S");
+    assertThat(identityAndRevision()).isEqualTo(before);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT UPDATE_USERID FROM THE.ILCR_MILL_REPORT_STATUS"
+                    + " WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+                String.class,
+                REVERSAL_MILL,
+                REVERSAL_YEAR))
+        .isEqualTo("reversaladmin");
+  }
+
+  private String identityAndRevision() {
+    return jdbc.queryForObject(
+        "SELECT NVL(TO_CHAR(LICENSEE_MILL_ID),'-') || '/' || NVL(LICENSEE_USER_GUID,'-')"
+            + " || '/' || NVL(TO_CHAR(AUDITOR_MILL_ID),'-') || '/' || NVL(AUDITOR_USER_GUID,'-')"
+            + " || '/r' || TO_CHAR(REVISION_COUNT)"
+            + " FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = ? AND REPORT_YEAR = ?",
+        String.class,
+        REVERSAL_MILL,
+        REVERSAL_YEAR);
+  }
+
   @Test
   @DisplayName("Schedules 1-3 touch their summaries and costs for one mill/year only")
   void touchesSchedules1To3Scope() {
