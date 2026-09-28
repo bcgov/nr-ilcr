@@ -267,6 +267,22 @@ When('I edit the {string} camp', async ({ schedule5Page }, campName) => {
 });
 
 /**
+ * The camp stays open in the panel, and its OWN row cannot act on it: Edit/Delete/Copy grey out while
+ * it is the open camp (#503, index.tsx `isOpenCamp`). Asserted rather than assumed so a regression that
+ * reopens or unfreezes the row fails here instead of in a later click.
+ */
+Then(
+  'the {string} camp is still open with its row actions frozen',
+  async ({ schedule5Page }, campName) => {
+    await expect(schedule5Page.campPanelHeading(campName)).toBeVisible();
+    const row = schedule5Page.existingCampRow(campName);
+    for (const action of ['Edit', 'Delete', 'Copy']) {
+      await expect(row.getByRole('button', { name: action })).toBeDisabled();
+    }
+  },
+);
+
+/**
  * The panel must open PRE-FILLED with what was stored — the thing that distinguishes an edit from a
  * blank add, and the precondition for the change assertions that follow.
  *
