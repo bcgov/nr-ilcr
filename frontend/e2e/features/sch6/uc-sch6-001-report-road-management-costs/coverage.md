@@ -17,7 +17,7 @@ thirty-nine scenarios, **37 passing** and **2 deliberate tagged reds** excluded 
 
 The two reds are both `@discovered-bug`, and only one of them is this page's: **BUG-1** is the app-wide
 Carbon `aria-errormessage` wiring, already tracked elsewhere and merely confirmed present here;
-**BUG-2** is new — a live character counter left on the disabled General Comments field of a submitted
+**BUG-2** is new (bcgov/nr-ilcr#502) — a live character counter left on the disabled General Comments field of a submitted
 schedule. See `defects.md` sections 2 and 3.
 
 **Scope is 23 slices, S01–S23.** The slice catalogue said 21 in three places while the Gherkin folder
@@ -42,7 +42,7 @@ pinned (mill, year) anchors                  21  — 15 mutating/validate-only i
                                                   seeded), plus 2 guards (1/2017 closed-mill,
                                                   23050/2024 deliberately absent)
 @discovered-divergence / @discovered-bug      2  — both @discovered-bug, both accessibility:
-                                                  BUG-1 (app-wide, tracked elsewhere) and BUG-2 (new)
+                                                  BUG-1 (app-wide, tracked elsewhere) and BUG-2 (new, #502)
 ```
 
 Thirty-two scenarios over twenty-three slices, because five slices need more than one:
@@ -810,7 +810,7 @@ accessibility is an NFR that no slice asks for, which is exactly why it is track
 | 3 | the Add panel showing **validation errors** | validate-only (no write) | **red - BUG-1** (app-wide) |
 | 4 | a saved record's **expanded row** - row editor, derived cells, Delete | 10050/2025 | green |
 | 5 | a **Check Status verdict with findings** - the notification list | 12050/2025 | green |
-| 6 | the **read-only** (non-Draft) schedule - every control disabled | 24051/2024 (S17's, read-only) | **red - BUG-2** (new) |
+| 6 | the **read-only** (non-Draft) schedule - every control disabled | 24051/2024 (S17's, read-only) | **red - BUG-2** (new, #502) |
 | 7 | the **context-suppressed** guard state - notification instead of body | none needed | green |
 
 **Why one sweep covers all three context guards.** S06/S07/S08 render through the same shared
@@ -839,7 +839,7 @@ else.
   BUG-1) and listed in `KNOWN_A11Y_RULES`, so it logs one line rather than a full dump. Confirmed
   present here on `#add-volume`; the fix belongs to the app-wide item.
 - **BUG-2** - the disabled General Comments field still shows its live character counter, at **1.73:1**.
-  New, and found by this work. Measured from the rendered pixels (`rgba(22, 22, 22, 0.25)` composited to
+  New, found by this work, and ticketed as bcgov/nr-ilcr#502. Measured from the rendered pixels (`rgba(22, 22, 22, 0.25)` composited to
   `rgb(197, 197, 197)` on white) rather than taken on axe's word. **Probably WCAG-exempt** - 1.4.3 gives
   text in an *inactive* component no contrast requirement - but it still points at a real oddity, and
   the WCAG call is BA/QA's rather than the test author's, so it stays red pending their choice.
@@ -863,7 +863,7 @@ the correct trade.
   merit, but **a clean single-pass 522/522 has not yet been observed** - the crash is an environment
   flake on this box (see the fourth trap above), and it is worth one more run on CI, where `workers: 1`
   makes it far less likely.
-- One item awaits a human, on `defects.md`: **BUG-2**, the disabled-field character counter — and it
+- One item awaits a human, on `defects.md`: **BUG-2** (#502), the disabled-field character counter — and it
   is the only code change left on this UC. It does not block the gate. The three judgement items were
   all settled by BA/QA on 2026-09-23, each in favour of the app as built and none needing a change:
   **SPEC-2** (the required-field wording accepted), **VER-5** (the lingering error accepted),

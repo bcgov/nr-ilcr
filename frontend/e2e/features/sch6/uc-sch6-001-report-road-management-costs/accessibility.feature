@@ -127,10 +127,13 @@ Feature: Report Road Management Costs (Schedule 6) — accessibility
     And the "Schedule 6 Check Status findings" view has no WCAG 2.1 AA accessibility violations
 
   # -------------------------------------------------------------------------------------------------
-  # RED, AND THE ONE FINDING THIS WHOLE FILE TURNED UP. See defects.md BUG-2 for the full write-up.
+  # BUG-2 — DELIBERATELY RED, ticketed as bcgov/nr-ilcr#502. THE ONE FINDING THIS WHOLE FILE TURNED UP.
+  # See defects.md BUG-2 for the full write-up. The counter comes from the shared core/CommentsTextArea,
+  # so the fix is expected to land for Schedules 6, 7A, 7B and 9 together; do NOT weaken this assertion
+  # to make it pass. It goes green on its own when #502 lands.
   #
   # axe reports `color-contrast` [serious] on ONE node — the General Comments textarea's helper text,
-  # `#text-area-helper-text-id-*`, which reads "372 characters remaining". On the read-only page that
+  # `#text-area-helper-text-id-*`, which reads "3457 characters remaining". On the read-only page that
   # textarea is DISABLED, and Carbon renders a disabled field's helper text at `rgba(22, 22, 22, 0.25)`:
   # composited over the white content background that is effectively rgb(197, 197, 197), which measures
   # **1.73:1** against 4.5:1. (Measured directly from the rendered pixels 2026-09-18, not from axe
@@ -161,7 +164,7 @@ Feature: Report Road Management Costs (Schedule 6) — accessibility
   # comment all scanned, and only this one node reported.
   # -------------------------------------------------------------------------------------------------
   @p1 @S17 @discovered-bug
-  Scenario: The read-only schedule has no WCAG 2.1 AA violations [DISCOVERED BUG — a live character counter on a disabled field, at 1.73:1; defects.md BUG-2]
+  Scenario: The read-only schedule has no WCAG 2.1 AA violations [DISCOVERED BUG — a live character counter on a disabled field, at 1.73:1; defects.md BUG-2 / issue #502]
     Given the Schedule 6 report for that mill and year is not in Draft
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 6

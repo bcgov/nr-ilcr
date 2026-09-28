@@ -26,8 +26,9 @@ encountered there turned out to be the test being wrong, and each is recorded wh
 - **BUG-1** — validation errors are not announced to screen readers. **App-wide Carbon issue, already
   tracked** elsewhere; confirmed present here.
 - **BUG-2** — a live character counter is still shown on the disabled General Comments field of a
-  submitted schedule, at 1.73:1. **New.** Probably WCAG-exempt (inactive component) but pointing at a
-  real oddity; needs a BA/QA choice. See section 2.
+  submitted schedule, at 1.73:1. **New**, ticketed as
+  [bcgov/nr-ilcr#502](https://github.com/bcgov/nr-ilcr/issues/502). Probably WCAG-exempt (inactive
+  component) but pointing at a real oddity; needs a BA/QA choice. See section 2.
 
 **Worth stating plainly for triage:** S22/S23, the two slices that are a live defect on Schedule 5
 (issue #476 / app-wide #359), are **green here**. Schedule 6 already judges what is on screen rather
@@ -35,8 +36,9 @@ than what is in the database. They stand as a regression guard — see section 1
 
 **One thing needs a human, and it is the only code change on this page.** It does not block the gate:
 
-1. **BUG-2** — hide the character counter on the disabled General Comments field (recommended), or
-   accept the contrast as WCAG-exempt and record a node exclusion. Either closes it.
+1. **BUG-2** ([#502](https://github.com/bcgov/nr-ilcr/issues/502)) — hide the character counter on the
+   disabled General Comments field (recommended), or accept the contrast as WCAG-exempt and record a
+   node exclusion. Either closes it.
 
 **Everything else that was awaiting a decision has been settled by BA/QA on 2026-09-23**, all three in
 favour of the app as built, and none of them needing a code or test change:
@@ -95,13 +97,18 @@ to the app-wide item, not to this story.**
 **Test:** `accessibility.feature` `@discovered-bug` — deliberately RED, and excluded from
 `npm run test:gate`. It goes green on its own when the app-wide fix lands.
 
-### BUG-2 — a live character counter on a field nobody can type into — OPEN (new, found by the sweep)
+### BUG-2 — a live character counter on a field nobody can type into — OPEN (ticketed #502)
 
 **This is the one finding the accessibility work turned up.**
 
 **What's wrong.** On a **submitted** (non-Draft) Schedule 6, everything is correctly locked — but the
-General Comments box still displays its live character counter, *"372 characters remaining"*, and it is
-rendered so faintly as to be effectively invisible.
+General Comments box still displays its live character counter, *"3457 characters remaining"* on
+S17's anchor, and it is rendered so faintly as to be effectively invisible.
+
+*(Corrected 2026-09-23: this entry first quoted "372 characters remaining". That is the arithmetic of the
+400-character per-record Comments field, not of General Comments, whose cap is 3500. The flagged node is
+the General Comments counter; the per-record counters sit inside collapsed accordion rows, which axe
+skips as hidden. S17's seeded general comment is 43 characters, so 3500 − 43 = 3457.)*
 
 **Expected vs actual.** Expected: a field that cannot be typed into does not advertise how much room is
 left in it. Actual: the counter is still there, greyed to the point of being unreadable.
@@ -145,8 +152,30 @@ element and nothing more, which is what makes the finding precise rather than a 
 this suite — the authored Home welcome message (sec BUG-1) and Schedule 4's row-hover contrast — so
 adding it to `KNOWN_A11Y_RULES` would hide those. The louder logging is the correct trade.
 
+**Reproduced on delivery data, 2026-09-23.** The ticket's repro deliberately does not use S17's anchor
+(24051/2024 exists only because `real-test-data-patches/sch6/view-mode-road-records.sql` creates it).
+It uses the extract's **13050 ISP TEST / 2015** (Verified, the same cell sch11 pins as its Verified
+anchor). There the counter reads "3470 characters remaining" at `rgba(22, 22, 22, 0.25)`, and axe
+reports **1.72:1**. That is the same colour: axe truncates where the pixel calculation above rounds.
+
+**Not Schedule 6 alone.** The counter comes from the shared `core/CommentsTextArea`. Schedules 7A, 7B and
+9 also pass `disabled` to it on a locked report; that was checked by code inspection only. Schedules 1–5,
+8 and 10 lock their comment differently and are unaffected, which the green read-only sweeps on sch1,
+sch2, sch3 and sch5 are consistent with. The ticket carries the page-by-page table.
+
+**Ticket:** [bcgov/nr-ilcr#502](https://github.com/bcgov/nr-ilcr/issues/502) — *[BUGFIX]: Disabled
+comment fields still show a "characters remaining" counter, faded to 1.72:1 — Schedule 6 verified; 7A,
+7B and 9 share the pattern*.
+
+**Priority / env:** p2 · local seeded DB · Chrome.
+
 **Test:** `accessibility.feature` `@p1 @S17 @discovered-bug` — deliberately RED, excluded from
 `npm run test:gate`.
+
+**Status:** OPEN — confirmed and triaged by raising a ticket. BA/QA to choose between hiding the counter
+on a locked field and accepting its contrast as WCAG-exempt; Dev to implement that choice in the shared
+`CommentsTextArea` (confirming 7A, 7B and 9 on a locked report); QA re-verifies and closes when the fix
+lands.
 
 ## 3. Coverage gaps (something the suite does not yet prove)
 
@@ -167,7 +196,7 @@ was *"a slice catalogue is not a completeness test"*).
 | the Add panel showing validation errors | **red — BUG-1**, app-wide, already tracked |
 | a saved record's expanded row | green |
 | a Check Status verdict with findings | green |
-| the read-only (non-Draft) schedule | **red — BUG-2**, new (see above) |
+| the read-only (non-Draft) schedule | **red — BUG-2**, new, #502 (see above) |
 | the context-suppressed guard state | green |
 
 **One sweep covers all three context guards** — S06/S07/S08 render through the same shared
@@ -179,7 +208,7 @@ render path. The context-suppressed one is used because it needs no anchor at al
 five green sweeps → 25/25.
 
 **Disposition.** Closed. Board item **#101** — as of 2026-09-23 the only remaining open items on this
-page are **BUG-2** (new, needs a BA/QA choice) and **BUG-1** (app-wide, not this story's). Every
+page are **BUG-2** (new, #502, needs a BA/QA choice) and **BUG-1** (app-wide, not this story's). Every
 judgement item is settled: SPEC-2, VER-5 and VER-7 all closed 2026-09-23.
 
 ### GAP-2 — one scenario in the source cannot happen on this screen — OPEN (informational)
