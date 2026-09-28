@@ -35,6 +35,7 @@ import CheckStatus, {
   HINT_NOT_SUBMITTED,
   HINT_NOT_SUBMITTED_11,
   HINT_NOT_SUBMITTER,
+  HINT_STATUS_UNRESOLVED,
   SET_TO_DRAFT_11_FAILED,
   SET_TO_DRAFT_FAILED,
   SET_TO_SUBMIT_11_FAILED,
@@ -4329,16 +4330,22 @@ describe('Verify Schedule 11 (Story 26.3)', () => {
 
   // ---- AC 8: a Schedule 11 verify touches no success latch -------------------------------------
   //
-  // Same window as 26.1's P1 arms: a submit answered 200 but its re-sweep FAILED, so the hook keeps
-  // the last good payload and the finished track's Submit is held greyed by its latch alone.
+  // The window 26.1's P1 arms opened with a FAILED re-sweep. A failed re-read now also greys Verified
+  // (the status is unresolved, PR #515 review), so this arm stages it with a successful re-read that
+  // still offers the finished Submit: the latch alone holds it greyed.
 
-  test('AC 8: a 1–10 submit success whose re-sweep fails stays latched through a Schedule 11 verify — no second 1–10 POST is offered', async () => {
+  test('AC 8: a 1–10 submit success stays latched through a Schedule 11 verify, even against a re-read that still offers it — no second 1–10 POST is offered', async () => {
     const reads = fakeReads(
       sweep({ canSubmit1To10: true, statusCode11: 'S', canSubmit11: false }),
       json(millContextBody('D', 'S')),
     )
     const oneToTen = submitHandler(() => {
-      reads.state.sweep = () => problem(500, 'sweep down')
+      // A SUCCESSFUL re-read that still offers the 1–10 Submit (deliberately inconsistent), so the latch
+      // is the only thing holding it greyed. A FAILED re-read would now grey the Schedule 11 control
+      // too (the status is unresolved), so it can no longer stage this window.
+      reads.state.sweep = json(
+        sweep({ canSubmit1To10: true, statusCode11: 'S', canSubmit11: false }),
+      )
       return submitOk()
     })
     const verify = verify11Handler(verify11Ok)
@@ -4348,14 +4355,14 @@ describe('Verify Schedule 11 (Story 26.3)', () => {
     await confirmSubmit(user)
     expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
     await expectSubmits1To10('disabled')
-    // The re-sweep failed and the stale payload still offers the Schedule 11 Verified.
+    // The re-read still offers the Schedule 11 Verified.
     await waitFor(() => expect(verify11Button()).toBeEnabled())
 
     await confirmVerify11(user)
     expect(await screen.findByText(SCH11_VERIFIED_TEXT)).toBeInTheDocument()
     expect(verify.count).toBe(1)
     await drainEventLoop()
-    // Still latched: the 1–10 transition happened, whatever the stale payload says.
+    // Still latched: the 1–10 transition happened, whatever the re-read says.
     await expectSubmits1To10('disabled')
     await user.click(submitButtons1To10()[0])
     expect(openDialog()).toBeNull()
@@ -4976,13 +4983,18 @@ describe('Schedule 11 reversals', () => {
     await waitFor(() => expect(eleven.count).toBe(2))
   })
 
-  test('a Schedule 11 reversal does NOT release the 1–10 latch: a 1–10 submit whose re-sweep failed stays greyed', async () => {
+  test('a Schedule 11 reversal does NOT release the 1–10 latch: a finished 1–10 submit stays greyed against a re-read that still offers it', async () => {
     const reads = fakeReads(
       sweep({ canSubmit1To10: true, statusCode11: 'S', canSubmit11: false }),
       json(millContextBody('D', 'S')),
     )
     const oneToTen = submitHandler(() => {
-      reads.state.sweep = () => problem(500, 'sweep down')
+      // A SUCCESSFUL re-read that still offers the 1–10 Submit (deliberately inconsistent), so the latch
+      // is the only thing holding it greyed. A FAILED re-read would now grey the Schedule 11 control
+      // too (the status is unresolved), so it can no longer stage this window.
+      reads.state.sweep = json(
+        sweep({ canSubmit1To10: true, statusCode11: 'S', canSubmit11: false }),
+      )
       return submitOk()
     })
     const reversed = reversal11Handler(SET_TO_DRAFT_11_URL, reversal11Ok(REVERSALS_11[0]))
@@ -4992,14 +5004,14 @@ describe('Schedule 11 reversals', () => {
     await confirmSubmit(user)
     expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
     await expectSubmits1To10('disabled')
-    // The re-sweep failed, so the stale payload still offers Schedule 11's Set to Draft.
+    // The re-read still offers Schedule 11's Set to Draft.
     await waitFor(() => expect(requireReversal11('Set to Draft')).toBeEnabled())
 
     await confirmReversal11(user, 'Set to Draft')
     expect(await screen.findByText(SCH11_DRAFT_TEXT)).toBeInTheDocument()
     expect(reversed.count).toBe(1)
     await drainEventLoop()
-    // Still latched: the 1–10 transition happened, whatever the stale payload says.
+    // Still latched: the 1–10 transition happened, whatever the re-read says.
     await expectSubmits1To10('disabled')
     await user.click(submitButtons1To10()[0])
     expect(openDialog()).toBeNull()
@@ -5050,13 +5062,18 @@ describe('Schedule 11 reversals', () => {
   // at Submitted, where no Submit is offered. These two arms are what pin that each row lifts ITS
   // track's latch and never the other's; without them `releases: 'submit'` on the Schedule 11 row
   // would ship, and a failed 1-10 re-sweep would re-offer a Submit the server can only refuse.
-  test('a Schedule 11 Set to Submit does NOT release the 1–10 latch: a 1–10 submit whose re-sweep failed stays greyed', async () => {
+  test('a Schedule 11 Set to Submit does NOT release the 1–10 latch: a finished 1–10 submit stays greyed against a re-read that still offers it', async () => {
     const reads = fakeReads(
       sweep({ canSubmit1To10: true, statusCode11: 'V', canSubmit11: false }),
       json(millContextBody('D', 'V')),
     )
     const oneToTen = submitHandler(() => {
-      reads.state.sweep = () => problem(500, 'sweep down')
+      // A SUCCESSFUL re-read that still offers the 1–10 Submit (deliberately inconsistent), so the latch
+      // is the only thing holding it greyed. A FAILED re-read would now grey the Schedule 11 control
+      // too (the status is unresolved), so it can no longer stage this window.
+      reads.state.sweep = json(
+        sweep({ canSubmit1To10: true, statusCode11: 'V', canSubmit11: false }),
+      )
       return submitOk()
     })
     const reversed = reversal11Handler(SET_TO_SUBMIT_11_URL, reversal11Ok(REVERSALS_11[1]))
@@ -5066,14 +5083,14 @@ describe('Schedule 11 reversals', () => {
     await confirmSubmit(user)
     expect(await screen.findByText(SUBMITTED)).toBeInTheDocument()
     await expectSubmits1To10('disabled')
-    // The re-sweep failed, so the stale payload still offers Schedule 11's Set to Submit.
+    // The re-read still offers Schedule 11's Set to Submit.
     await waitFor(() => expect(requireReversal11('Set to Submit')).toBeEnabled())
 
     await confirmReversal11(user, 'Set to Submit')
     expect(await screen.findByText(SCH11_SUBMITTED_TEXT)).toBeInTheDocument()
     expect(reversed.count).toBe(1)
     await drainEventLoop()
-    // Still latched: the 1–10 transition happened, whatever the stale payload says.
+    // Still latched: the 1–10 transition happened, whatever the re-read says.
     await expectSubmits1To10('disabled')
     await user.click(submitButtons1To10()[0])
     expect(openDialog()).toBeNull()
@@ -5118,5 +5135,151 @@ describe('Schedule 11 reversals', () => {
     await user.click(submit11Button())
     expect(openDialog()).toBeNull()
     expect(eleven.count).toBe(1)
+  })
+})
+
+// ================================================================================================
+// A failed re-read after a transition leaves the status UNRESOLVED (PR #515 review; closes 18.2 R3)
+// ================================================================================================
+//
+// The sweep hook keeps the last good payload when a re-read fails, and the reload is over, so
+// `isReloading` no longer greys anything. Verified and the reversals are gated on that payload's
+// status, which a committed transition has already left: each would be offered again, and its click
+// would earn a 409 that paints over the success just shown. Each arm moves one control on one
+// track, fails the re-read, and proves the SAME control is greyed with the unresolved hint (which
+// only renders for that state, so this is not the in-flight grey), sends nothing, and leaves the
+// success standing.
+
+const STALE_ROWS = [
+  {
+    name: '1–10 Verified',
+    sweep: sweep({ statusCode1To10: 'S', statusCode11: 'D' }),
+    context: millContextBody('S', 'D'),
+    line: SCH11_LINE,
+    url: VERIFY_URL,
+    ok: () => ok(),
+    success: VERIFIED_MSG,
+    button: () => verifiedButtons1To10()[0],
+  },
+  {
+    name: '1–10 Set to Draft',
+    sweep: sweep({ statusCode1To10: 'S', statusCode11: 'D' }),
+    context: millContextBody('S', 'D'),
+    line: SCH11_LINE,
+    url: SET_TO_DRAFT_URL,
+    ok: () => reversalOk('D', 'sch1-10DraftMsg', DRAFT_MSG),
+    success: DRAFT_MSG,
+    button: () => reversalButtons('Set to Draft')[0],
+  },
+  {
+    name: '1–10 Set to Submit',
+    sweep: sweep({ statusCode1To10: 'V', statusCode11: 'D' }),
+    context: millContextBody('V', 'D'),
+    line: SCH11_LINE,
+    url: SET_TO_SUBMIT_URL,
+    ok: () => reversalOk('S', 'sch1-10SubmittedMsg', RESUBMITTED_MSG),
+    success: RESUBMITTED_MSG,
+    button: () => reversalButtons('Set to Submit')[0],
+  },
+  {
+    name: 'Schedule 11 Verified',
+    sweep: sweep({ statusCode11: 'S', canSubmit11: false }),
+    context: millContextBody('D', 'S'),
+    line: SCH11_SUBMITTED_LINE,
+    url: VERIFY_11_URL,
+    ok: () => verify11Ok(),
+    success: SCH11_VERIFIED_TEXT,
+    button: () => verify11Button(),
+  },
+  {
+    name: 'Schedule 11 Set to Draft',
+    sweep: sweep({ statusCode11: 'S', canSubmit11: false }),
+    context: millContextBody('D', 'S'),
+    line: SCH11_SUBMITTED_LINE,
+    url: SET_TO_DRAFT_11_URL,
+    ok: () => reversal11Ok(REVERSALS_11[0])(),
+    success: SCH11_DRAFT_TEXT,
+    button: () => requireReversal11('Set to Draft'),
+  },
+  {
+    name: 'Schedule 11 Set to Submit',
+    sweep: sweep({ statusCode11: 'V', canSubmit11: false }),
+    context: millContextBody('D', 'V'),
+    line: SCH11_VERIFIED_LINE,
+    url: SET_TO_SUBMIT_11_URL,
+    ok: () => reversal11Ok(REVERSALS_11[1])(),
+    success: SCH11_SUBMITTED_TEXT,
+    button: () => requireReversal11('Set to Submit'),
+  },
+]
+
+describe('A failed re-read leaves the status unresolved (PR #515 review)', () => {
+  test.each(STALE_ROWS)(
+    '$name: a success whose re-read fails greys the same control with the unresolved hint — no second POST, the success stands',
+    async (row) => {
+      const reads = fakeReads(row.sweep, json(row.context))
+      let posts = 0
+      server.use(
+        http.post(row.url, () => {
+          posts += 1
+          reads.state.sweep = () => problem(500, 'sweep down')
+          return row.ok()
+        }),
+      )
+      const user = userEvent.setup()
+      await mountAdminSettled(row.line)
+      expect(row.button()).toBeEnabled()
+      expect(hintFor(row.button())).toBeNull()
+
+      await user.click(row.button())
+      await user.click(within(await dialog()).getByRole('button', { name: 'Yes' }))
+      expect(await screen.findByText(row.success, verbatim)).toBeInTheDocument()
+      // The re-read has been issued AND has failed: the reload is over, not in flight.
+      await waitFor(() => expect(reads.calls.sweep).toBe(2))
+      await drainEventLoop()
+
+      // The failed re-read kept the pre-transition payload, so the control is rendered again —
+      // greyed, and saying why.
+      const again = row.button()
+      expect(again).toBeDisabled()
+      expect(hintFor(again)).toHaveTextContent(HINT_STATUS_UNRESOLVED)
+      await user.click(again)
+      expect(openDialog()).toBeNull()
+      expect(posts).toBe(1)
+      expect(screen.getByText(row.success, verbatim)).toBeInTheDocument()
+    },
+  )
+
+  test('the unresolved state is cleared by the next successful read: a mill/year change offers the new report its controls', async () => {
+    let failSweep = false
+    server.use(
+      http.get(MILL_CONTEXT, () => HttpResponse.json(millContextBody('S', 'D'))),
+      http.get(SWEEP_URL, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        const millId = Number(params.get('millId'))
+        if (failSweep && millId !== 999) return problem(500, 'sweep down')
+        return HttpResponse.json(
+          sweep({ millId, year: Number(params.get('year')), statusCode1To10: 'S' }),
+        )
+      }),
+      http.post(VERIFY_URL, () => {
+        failSweep = true
+        return ok()
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<ContextSwitchHarness />)
+    expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+
+    await user.click(verifiedButtons1To10()[0])
+    await user.click(within(await dialog()).getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByText(VERIFIED_MSG, verbatim)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(hintFor(verifiedButtons1To10()[0])).toHaveTextContent(HINT_STATUS_UNRESOLVED),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'change' }))
+    await waitFor(() => expect(verifiedButtons1To10()[0]).toBeEnabled())
+    expect(hintFor(verifiedButtons1To10()[0])).toBeNull()
   })
 })

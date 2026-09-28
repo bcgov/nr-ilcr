@@ -41,6 +41,11 @@ export const HINT_NOT_DRAFT_11 = 'Available while Schedule 11 is in Draft'
 export const HINT_NOT_ADMIN = "Verifying is an administrator's action"
 export const HINT_NOT_SUBMITTED = 'Available once Schedules 1-10 are Submitted'
 export const HINT_NOT_SUBMITTED_11 = 'Available once Schedule 11 is Submitted'
+// The re-read after a transition FAILED, so the status on screen may be one the server has already
+// left. Verified and the reversals grey with this until a fresh read lands, rather than offer to act
+// on that status and earn a 409 over the success just shown. Not legacy — legacy re-rendered the
+// buttons in the same round trip as the transition, so it had no such state and no text for it.
+export const HINT_STATUS_UNRESOLVED = 'The status could not be refreshed. Reload the page.'
 
 /**
  * Legacy's confirmation, verbatim (messages.properties:102, resolved in the view by
@@ -316,13 +321,17 @@ const trackActions = (
   submitGate: SubmitGate,
   verifyWiring: TransitionWiring,
   reversals: ReversalWiring,
+  /** The last re-read failed: `track.statusCode` may be one the server has already left. */
+  statusUnresolved: boolean,
 ): TrackActions => {
   const canVerify = isAdmin && track.statusCode === SUBMITTED
   // One reversal, built only inside its own `rendered=` state below — so the admin half of legacy's
   // rule has already passed and no not-an-admin hint is reachable here. The button is live and greys
-  // only while ANY transition and the re-sweep behind it are in flight.
+  // while ANY transition and the re-sweep behind it are in flight, and — saying why — while the
+  // status it is offered at is unresolved.
   const reversal = (wiring: TransitionWiring): TrackAction => ({
-    enabled: !wiring.busy,
+    enabled: !wiring.busy && !statusUnresolved,
+    disabledReason: statusUnresolved ? HINT_STATUS_UNRESOLVED : undefined,
     onClick: wiring.onClick,
   })
   return {
@@ -343,8 +352,14 @@ const trackActions = (
       onClick: submitGate.onClick,
     },
     verify: {
-      enabled: canVerify && !verifyWiring.busy,
-      disabledReason: canVerify ? undefined : isAdmin ? hints.notSubmitted : HINT_NOT_ADMIN,
+      enabled: canVerify && !verifyWiring.busy && !statusUnresolved,
+      disabledReason: !canVerify
+        ? isAdmin
+          ? hints.notSubmitted
+          : HINT_NOT_ADMIN
+        : statusUnresolved
+          ? HINT_STATUS_UNRESOLVED
+          : undefined,
       onClick: verifyWiring.onClick,
     },
   }
@@ -371,7 +386,7 @@ const trackActions = (
 const CheckStatus: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const [reloadToken, setReloadToken] = useState(0)
-  const { data, isLoading, errorDetail, isReloading } = useCheckStatusSweep(
+  const { data, isLoading, errorDetail, isReloading, isStale } = useCheckStatusSweep(
     millId,
     year,
     reloadToken,
@@ -633,6 +648,10 @@ const CheckStatus: FC = () => {
   // `isReloading` keeps them greyed across the refresh window too, so nothing is pressed against a
   // status the screen has not caught up to yet.
   const anyTransitionInFlight = saving || verifying || reversing || isReloading
+  // A failed re-read leaves the last good payload on screen with the reload over, so `isReloading` no
+  // longer covers it. Verified and the reversals are gated on that payload's status, which may be one
+  // a committed transition has already left; they stay greyed until a fresh read lands. Submit needs
+  // no such term: its own latch holds a finished Submit, and the server alone decides `canSubmit`.
   const actions1To10 = trackActions(
     data.schedules1To10,
     isSubmitter,
@@ -649,6 +668,7 @@ const CheckStatus: FC = () => {
       setToDraft: { onClick: requestReversal('setToDraft'), busy: anyTransitionInFlight },
       setToSubmit: { onClick: requestReversal('setToSubmit'), busy: anyTransitionInFlight },
     },
+    isStale,
   )
   // Schedule 11's Submit reads the server's own verdict, exactly as 1-10's does; its Verified and its
   // reversals keep legacy's client gates (admin at the right status) under the same one lock as every
@@ -668,6 +688,7 @@ const CheckStatus: FC = () => {
       setToDraft: { onClick: requestReversal('setToDraft11'), busy: anyTransitionInFlight },
       setToSubmit: { onClick: requestReversal('setToSubmit11'), busy: anyTransitionInFlight },
     },
+    isStale,
   )
 
   return (
