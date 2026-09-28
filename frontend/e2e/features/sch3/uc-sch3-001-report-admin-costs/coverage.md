@@ -93,34 +93,40 @@ both are covered as of 2026-08-26. S19 was covered by a deliberate red until DIV
 2026-09-18; it is an ordinary green now.
 
 > ### Suite state — the ONE place this is recorded
-> **40 scenarios / 49 tests after Scenario-Outline expansion: 45 green + 4 deliberate
-> `@discovered-divergence` REDs** — DIV-5 (row delete confirm, #362) and **DIV-6 ×3** (Check Status on
-> unsaved edits, #359 — the Override input, a cleared mandatory amount and the mirror). Re-measured
-> **2026-09-18** when DIV-7's fix turned S19 green, by counting the generated specs rather than by
+> **40 scenarios / 49 tests after Scenario-Outline expansion: 48 green + 1 deliberate
+> `@discovered-divergence` RED** — DIV-5 (row delete confirm, #362). **DIV-6 ×3** (`@S12`, `@S25`, `@S26` —
+> Check Status on unsaved edits) lost their tags and markers on **2026-09-25** with the #359 group A fix;
+> The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios). Re-measured **2026-09-25** by counting the generated specs rather than by
 > decrementing the previous figure. Priorities are **unchanged** at **5 × p0, 31 × p1, 13 × p2** (= 49):
-> S19 lost only its `@discovered-divergence` tag and keeps its `@p2`, so the green/red split moved and
-> the priority split did not. That sum is worth re-checking whenever you edit this — a breakdown that no
+> the three lost only their `@discovered-divergence` tags and keep their `@p1`, so the green/red split
+> moved and the priority split did not. That sum is worth re-checking whenever you edit this — a breakdown that no
 > longer adds up to its total is how three of these numbers went stale unnoticed.
 >
-> How the 2026-09-18 figures were derived, so the next person can reproduce rather than trust them:
-> `npx playwright test --list --project=chromium` filtered to `uc-sch3-001` gives **49**; the same
-> command with `--grep @p0` / `@p1` / `@p2` gives 5 / 31 / 13; with `--grep @discovered-divergence`
-> it gives **4** and with `--grep @discovered-bug`, **0**. Green is then 49 − 4.
+> How the 2026-09-25 figures were derived, so the next person can reproduce rather than trust them:
+> `npm run bddgen`, then `npx playwright test --list --project=chromium` filtered to `uc-sch3-001` gives
+> **49**; the same command with `--grep @p0` / `@p1` / `@p2` gives 5 / 31 / 13; with
+> `--grep @discovered-divergence` it gives **1** and with `--grep @discovered-bug`, **0**. Green is then
+> 49 − 1.
 >
 > Every other file that used to restate these numbers now points here instead, because they moved four
 > times in three days and the copies disagreed each time. If you change a scenario, re-measure with
 > `npx playwright test --list --project=chromium` and edit **this block only**.
 
 A clean run is `npm run test:gate` (regenerates the features first and excludes every `@discovered-*`
-red). The four reds are DIV-5 (row delete has no confirm, [#362](https://github.com/bcgov/nr-ilcr/issues/362))
-and **DIV-6 ×3** (Check Status ignores unsaved edits, [#359](https://github.com/bcgov/nr-ilcr/issues/359)).
-Each asserts the correct legacy behaviour, so each goes green on its own when its fix lands — as DIV-7's
-S19 did on 2026-09-18, with no assertion edited.
+red). The one red is DIV-5 (row delete has no confirm, [#362](https://github.com/bcgov/nr-ilcr/issues/362)).
+It asserts the correct legacy behaviour, so it goes green on its own when its fix lands — as DIV-7's S19
+did on 2026-09-18, and DIV-6's three did on 2026-09-25 ([#359](https://github.com/bcgov/nr-ilcr/issues/359)
+group A), with no assertion edited.
 
 **DIV-6 is the app-wide one, and this UC is its home.** Schedules 1, 2, 4 and 11 carry the same divergence
 with their own scenarios and short pointer entries (sch1 DIV-6, sch2 DIV-2, sch4 DIV-8, sch11 DIV-5); nine
 **ten** scenarios across five domains track it, all on the one ticket — nine written 2026-08-27 plus this
 suite's pre-existing `@S12`. One command runs them all: `npm test -- --grep @check-status-unsaved`.
+**State at 2026-09-25 (recounted from the feature files):** 12 scenarios carry `@check-status-unsaved`, none of
+them red. sch1 ×2, sch2 ×2 and sch3 ×3 went green unedited with #359 group A and were untagged. sch5 ×3 went
+green with #476. sch11 ×2 were re-grounded green by Story 26.2 under Scho's ruling D7(a): Schedule 11 keeps
+judging the saved data and greys Check Status while anything is unsaved (sch11 DIV-5 CLOSED as a recorded
+deviation). sch4's pair was retired under #465. The "ten" above is the historical count.
 Ex-**GAP-4** tracked the missing nine and was CLOSED 2026-08-27 by writing them.
 
 ## Story AC traceability — bcgov/nr-ilcr#83 (Story 28.3, epic #226)
@@ -312,7 +318,7 @@ recorded rather than silently dropped:
 | BR-09 a changed Crown Timber volume propagates into Schedule 1 | `crown-push.feature` both scenarios, read back on Schedule 1 | `covered` |
 | BR-10 Override "Y" suppresses the Harvest≥PO&P check (8 PO&P-bearing fixed lines + other-acceptable rows) | `check-status.feature` `@p1 @S12` + its mirror | `covered` — legacy-faithful; was wider than the sidecar described, which is now corrected at source (ex-**SPEC-1**; raised as DIV-2, retracted) |
 | BR-11 Check Status requires the amounts, both volumes and each row's description + cost | `check-status.feature` `@p0 @S10` (main page, whole inventory) + `@p1 @S10` (sub-page rows) | `covered` |
-| BR-12 Check Status evaluates what is ON SCREEN, including unsaved edits (legacy's `ajax="false"` full postback) | `check-status-unsaved.feature` `@discovered-divergence` ×3 — `@p1 @S12` Override, `@p1 @S25` a cleared mandatory amount, `@p1 @S26` the mirror | `divergence` — **DIV-6** ([#359](https://github.com/bcgov/nr-ilcr/issues/359)), fully covered here and on Schedules 1/2/4/11. Recovered upstream 2026-08-27 (ilcr-bmad PR #92) as slices S25/S26; this rule had been missing from the catalogue, which is why every OTHER Check Status scenario here checks AFTER a save |
+| BR-12 Check Status evaluates what is ON SCREEN, including unsaved edits (legacy's `ajax="false"` full postback) | `check-status-unsaved.feature` ×3 (untagged 2026-09-25) — `@p1 @S12` Override, `@p1 @S25` a cleared mandatory amount, `@p1 @S26` the mirror | `covered` — ex-`divergence` **DIV-6** ([#359](https://github.com/bcgov/nr-ilcr/issues/359)), CLOSED for Schedules 1–3 on 2026-09-25 (e2e confirmed); fully covered here and on Schedules 1/2/4/11. Recovered upstream 2026-08-27 (ilcr-bmad PR #92) as slices S25/S26; this rule had been missing from the catalogue, which is why every OTHER Check Status scenario here checks AFTER a save |
 
 ## Deliberately excluded by the slice catalogue — re-checked against the new app
 
@@ -384,12 +390,12 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-25. *
 - **P0: 100%** — all 5 P0 items exercised and all 5 GREEN: the happy path (entry, save, full derived
   arithmetic, reload), the BR-09 crown push, both Check Status headline outcomes, and the never-started
   schedule opening enterable (`no-create.feature` — the ex-DIV-1 red, green since #296).
-- **P1: 100%** of P1 items covered — 31 tests, 27 green plus the DIV-5 red and DIV-6's three, which **count
-  as covered** (they map to S04's confirm-before-delete and to S12/S25/S26's evaluate-the-screen, and are red
-  on purpose).
+- **P1: 100%** of P1 items covered — 31 tests, 30 green plus the DIV-5 red, which **counts as covered** (it
+  maps to S04's confirm-before-delete and is red on purpose). DIV-6's three (S12/S25/S26) were untagged
+  2026-09-25.
 - **Overall: 26/26 slices `covered`.** S18/S19 stopped being `not-applicable` when #296 made their state
-  reachable; S25/S26 arrived upstream with ilcr-bmad PR #92 and are now covered by DIV-6's own reds rather
-  than deferred. Every message-catalog row is dispositioned: covered, `divergence`, `not-applicable` with a
+  reachable; S25/S26 arrived upstream with ilcr-bmad PR #92, were covered by DIV-6's own reds rather than
+  deferred, and are ordinary regression tests since the 2026-09-25 fix. Every message-catalog row is dispositioned: covered, `divergence`, `not-applicable` with a
   reason, or `covered (unit)` (the page-fallback strings, in Vitest since #332 on 2026-09-24). **THREE of this suite's four
   coverage gaps are closed:** GAP-2 and GAP-3 on 2026-08-26 by writing them (`concurrency.feature`,
   `subpage-back.feature`), and **GAP-4 on 2026-08-27, also by writing them** — nine new scenarios across five

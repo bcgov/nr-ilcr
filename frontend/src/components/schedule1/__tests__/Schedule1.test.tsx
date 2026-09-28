@@ -1767,3 +1767,175 @@ describe('Schedule1 ministry correction at Submitted (Story 16.3)', () => {
       .forEach((button) => expect(button).toBeDisabled())
   })
 })
+
+/**
+ * The screen-aware check (#359): legacy's Check Status was a full postback that judged the SCREEN,
+ * so the request must carry every checked value as typed. These cases pin the halves that can each
+ * fail silently — the body actually CARRIES the keystroke state (blank as null, never 0), invalid
+ * text never reaches the server as a false "Value Required", and a verdict never outlives the screen
+ * it described.
+ */
+describe('Schedule1 Check Status judges the screen (#359)', () => {
+  const CHECK_URL = 'http://localhost:3000/api/v1/schedule1/check-status'
+  const MET_TEXT = 'All requirements for this schedule have been met'
+  const metResponse = () => ({
+    requirementsMet: true,
+    errors: [],
+    warnings: [],
+    message: { key: 'scheduleRequirementsMetMsg', text: MET_TEXT },
+  })
+  const checkButton = () => screen.getAllByRole('button', { name: /check status/i })[0]
+  const standingTreeVolume = () => screen.getByLabelText('Standing Tree to Loaded Truck volume')
+
+  /** Capture every check-status request body, whatever it is, including its nulls. */
+  const captureCheckBodies = (doc: unknown = schedule1Doc) => {
+    const bodies: unknown[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    return bodies
+  }
+
+  /** The body for `schedule1Doc` as served: absent lines are blank on screen, so they are null. */
+  const servedBody = (
+    overrides: Record<number, { volume?: number | null; cost?: number | null }>,
+  ) => {
+    const served: Record<number, { volume: number | null; cost: number | null }> = {
+      12: { volume: 1000, cost: 50000 },
+      1: { volume: 500, cost: 20000 },
+      139: { volume: 55, cost: null },
+    }
+    const line = (code: number) => ({
+      costItemCode: code,
+      volume: null,
+      cost: null,
+      ...served[code],
+      ...overrides[code],
+    })
+    return {
+      lineItems: [12, 13, 14, 15, 16, 17, 18, 1, 2, 143, 144, 139, 140].map(line),
+      otherCostsVolume: 8000,
+    }
+  }
+
+  test('the request carries every checked value as typed, not as stored', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.type(standingTreeVolume(), '2500')
+    // No blur: the keystroke state is what legacy's postback submitted.
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual(servedBody({ 12: { volume: 2500 } }))
+  })
+
+  /**
+   * The false-GREEN guard. The server's check is a pure NULL test — a stored `0` passes — so a
+   * `?? 0` anywhere on the send path would turn a cleared field into a pass.
+   */
+  test('a CLEARED field is sent as null, never coerced to 0', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.clear(screen.getByLabelText('Subtotal Other Costs volume'))
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({
+      ...servedBody({ 12: { volume: null } }),
+      otherCostsVolume: null,
+    })
+  })
+
+  test('a volume the GET pre-filled from the crown volume is sent — it is on screen', async () => {
+    const bodies = captureCheckBodies(prefillDoc)
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(checkButton())
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    const body = bodies[0] as { lineItems: { costItemCode: number; volume: number | null }[] }
+    expect(body.lineItems.map((l) => l.volume)).toEqual(Array(13).fill(7777))
+  })
+
+  test('invalid text blocks the check with the Save gate, and NO request is sent', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.type(standingTreeVolume(), '12x')
+    await user.click(checkButton())
+
+    expect(
+      await screen.findByText('Please correct the highlighted fields before checking status.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('an out-of-range value blocks the check too', async () => {
+    const bodies = captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Standing Tree to Loaded Truck volume'))
+    await user.type(standingTreeVolume(), '99999999')
+    await user.click(checkButton())
+
+    expect(
+      await screen.findByText('Please correct the highlighted fields before checking status.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('editing a checked field clears the shown verdict', async () => {
+    captureCheckBodies()
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(checkButton())
+    expect(await screen.findByText(MET_TEXT)).toBeVisible()
+
+    await user.type(screen.getByLabelText('Subtotal Other Costs volume'), '1')
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metResponse())
+      }),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.click(checkButton())
+    await waitFor(() => expect(checkButton()).toBeDisabled())
+    await user.clear(standingTreeVolume())
+
+    releaseCheck()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+})

@@ -18,6 +18,14 @@ type UseCheckStatusSweepResult = {
    * status the server has already moved past.
    */
   readonly isReloading: boolean
+  /**
+   * The last reload for the context on screen FAILED, so the data shown is the last good payload and
+   * may predate a transition that has already committed. `isReloading` is false by then (the reload is
+   * over), so a caller gating controls on the status must treat this as unresolved too — otherwise a
+   * control the server has already moved past is offered again and its click earns a 409 that paints
+   * over the success just shown. Cleared by the next successful sweep for any context.
+   */
+  readonly isStale: boolean
 }
 
 /**
@@ -32,6 +40,8 @@ type Settled =
       readonly year: number
       readonly reloadToken: number
       readonly data: CheckStatusSweepResponse
+      /** A reload for this context failed after this payload settled. */
+      readonly stale: boolean
     }
   | {
       readonly kind: 'error'
@@ -88,10 +98,10 @@ export function useCheckStatusSweep(
     const fail = (detail: string) =>
       setSettled((previous) =>
         previous?.kind === 'data' && previous.millId === millId && previous.year === year
-          ? // A failed RELOAD keeps the data that was already correct — but the reload is over, so it
-            // is re-tagged with the token it answered. Returning `previous` unchanged would leave
-            // `isReloading` true for good and strand every control gated on it.
-            { ...previous, reloadToken }
+          ? // A failed RELOAD keeps the last good data on screen — but the reload is over, so it is
+            // re-tagged with the token it answered, and marked stale: the server may already have
+            // moved past it. Returning `previous` unchanged would leave `isReloading` true for good.
+            { ...previous, reloadToken, stale: true }
           : { kind: 'error', millId, year, reloadToken, detail },
       )
     apiService
@@ -107,7 +117,7 @@ export function useCheckStatusSweep(
         if (body.millId !== millId || body.year !== year) {
           fail(LOAD_FAILED)
         } else {
-          setSettled({ kind: 'data', millId, year, reloadToken, data: body })
+          setSettled({ kind: 'data', millId, year, reloadToken, data: body, stale: false })
         }
       })
       .catch((error: unknown) => {
@@ -133,6 +143,7 @@ export function useCheckStatusSweep(
     // dispatched yet on the first of those renders, which is the point: there must be no frame in
     // which the caller believes the stale status is current.
     isReloading: hasContext && current !== null && current.reloadToken !== reloadToken,
+    isStale: current?.kind === 'data' && current.stale,
   }
 }
 

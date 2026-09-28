@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule2.api.Schedule2Api;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -88,9 +89,10 @@ public class Schedule2Controller implements Schedule2Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule2CheckStatusResponse> checkStatus(
-      long millId, int year, Authentication authentication) {
+      long millId, int year, Schedule2CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
+    // The body carries the screen (#359); the resolver judges it.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(request));
   }
 }

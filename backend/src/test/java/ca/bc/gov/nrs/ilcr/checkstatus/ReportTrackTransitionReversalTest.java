@@ -44,6 +44,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("ReportTrackTransitionService.reverse — the two admin reversals (Story 18.1)")
 class ReportTrackTransitionReversalTest {
 
+  private static final ScheduleTrack ONE_TO_TEN = ScheduleTrack.SCHEDULES_1_TO_10;
   private static final long MILL = 790L;
   private static final int YEAR = 2021;
   private static final String USER = "reversaladmin";
@@ -104,7 +105,7 @@ class ReportTrackTransitionReversalTest {
     // SUBMIT owes LICENSEE_*, VERIFY owes AUDITOR_*; writeReversal writes neither. Routed here
     // they would commit without their pair and nothing downstream would notice — the failure mode
     // two independent review layers named. Refused before the status row is even read.
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOf(IllegalArgumentException.class);
     verifyNoInteractions(millContextService, sweepService, writer);
   }
@@ -118,10 +119,12 @@ class ReportTrackTransitionReversalTest {
   void setToDraftDelegatesToTheWriter() {
     givenTrackAt("S");
     givenGatePasses();
-    when(writer.writeReversal(MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER)).thenReturn("D");
+    when(writer.writeReversal(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .thenReturn("D");
 
-    assertThat(service.reverse(MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER)).isEqualTo("D");
-    verify(writer).writeReversal(MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER);
+    assertThat(service.reverse(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isEqualTo("D");
+    verify(writer).writeReversal(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER);
   }
 
   @Test
@@ -129,10 +132,12 @@ class ReportTrackTransitionReversalTest {
   void setToSubmitDelegatesToTheWriter() {
     givenTrackAt("V");
     givenGatePasses();
-    when(writer.writeReversal(MILL, YEAR, TrackTransition.SET_TO_SUBMIT, USER)).thenReturn("S");
+    when(writer.writeReversal(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_SUBMIT, USER))
+        .thenReturn("S");
 
-    assertThat(service.reverse(MILL, YEAR, TrackTransition.SET_TO_SUBMIT, USER)).isEqualTo("S");
-    verify(writer).writeReversal(MILL, YEAR, TrackTransition.SET_TO_SUBMIT, USER);
+    assertThat(service.reverse(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_SUBMIT, USER))
+        .isEqualTo("S");
+    verify(writer).writeReversal(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_SUBMIT, USER);
   }
 
   @ParameterizedTest(name = "{0}")
@@ -143,9 +148,10 @@ class ReportTrackTransitionReversalTest {
   void reversalsDoNotLockTheStatusRow(TrackTransition transition) {
     givenTrackAt(transition.from());
     givenGatePasses();
-    when(writer.writeReversal(MILL, YEAR, transition, USER)).thenReturn(transition.to());
+    when(writer.writeReversal(ONE_TO_TEN, MILL, YEAR, transition, USER))
+        .thenReturn(transition.to());
 
-    service.reverse(MILL, YEAR, transition, USER);
+    service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER);
 
     verify(millContextService).findTrackStatusCodes(MILL, YEAR);
     // Submit's FOR UPDATE is 15.3's D10. Two more holders of an unbounded lock across the
@@ -162,9 +168,10 @@ class ReportTrackTransitionReversalTest {
   void reversalsResolveNoIdentity(TrackTransition transition) {
     givenTrackAt(transition.from());
     givenGatePasses();
-    when(writer.writeReversal(MILL, YEAR, transition, USER)).thenReturn(transition.to());
+    when(writer.writeReversal(ONE_TO_TEN, MILL, YEAR, transition, USER))
+        .thenReturn(transition.to());
 
-    service.reverse(MILL, YEAR, transition, USER);
+    service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER);
 
     // Submit and verify both resolve an ILCR_MILL_USER_XREF row to write into their identity pair.
     // With Recorded.NONE on both reversals there is nothing to resolve, and the service signature
@@ -185,7 +192,7 @@ class ReportTrackTransitionReversalTest {
     givenTrackAt(transition.from());
     givenGateFails();
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOf(ReportNotSubmittedException.class);
     verifyNoInteractions(writer);
   }
@@ -205,7 +212,7 @@ class ReportTrackTransitionReversalTest {
     givenTrackAt(transition.from());
     givenGateFails();
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOfSatisfying(
             ReportNotSubmittedException.class,
             ex -> assertThat(ex.getMessageKey()).isEqualTo(expectedKey));
@@ -221,7 +228,7 @@ class ReportTrackTransitionReversalTest {
     when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR))
         .thenReturn(List.of(met("1")));
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOfSatisfying(
             ReportNotSubmittedException.class,
             ex ->
@@ -239,7 +246,7 @@ class ReportTrackTransitionReversalTest {
     when(sweepService.checkTrack(ScheduleTrack.SCHEDULES_1_TO_10, MILL, YEAR))
         .thenReturn(List.of());
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOf(ReportNotSubmittedException.class);
     verifyNoInteractions(writer);
   }
@@ -260,7 +267,7 @@ class ReportTrackTransitionReversalTest {
                 met("1"), met("2"), met("3"), met("4"), met("5"), met("6"), met("7A"), met("8"),
                 met("9"), met("10")));
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOf(ReportNotSubmittedException.class);
     verifyNoInteractions(writer);
   }
@@ -278,7 +285,8 @@ class ReportTrackTransitionReversalTest {
     givenTrackAt("D");
     givenGateFails();
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+    assertThatThrownBy(
+            () -> service.reverse(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
         .isInstanceOf(ReportNotSubmittedException.class);
     verifyNoInteractions(writer);
   }
@@ -306,7 +314,7 @@ class ReportTrackTransitionReversalTest {
     givenTrackAt(current);
     givenGatePasses();
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOf(ReportTransitionRejectedException.class);
     verifyNoInteractions(writer);
   }
@@ -326,7 +334,7 @@ class ReportTrackTransitionReversalTest {
     givenTrackAt(transition.to());
     givenGatePasses();
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOfSatisfying(
             ReportTransitionRejectedException.class,
             ex -> assertThat(ex.getMessageKey()).isEqualTo(expectedKey));
@@ -344,7 +352,7 @@ class ReportTrackTransitionReversalTest {
   void missingStatusRow(TrackTransition transition) {
     when(millContextService.findTrackStatusCodes(MILL, YEAR)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOf(ScheduleNotFoundException.class);
     verifyNoInteractions(sweepService, writer);
   }
@@ -361,12 +369,140 @@ class ReportTrackTransitionReversalTest {
     // verify(), the refusal names the transition (D3), so the text says which status was required.
     givenTrackAt(null);
 
-    assertThatThrownBy(() -> service.reverse(MILL, YEAR, transition, USER))
+    assertThatThrownBy(() -> service.reverse(ONE_TO_TEN, MILL, YEAR, transition, USER))
         .isInstanceOfSatisfying(
             ReportTransitionRejectedException.class,
             ex ->
                 assertThat(ex.getMessageKey())
                     .isEqualTo(transition.rejectedKey(ScheduleTrack.SCHEDULES_1_TO_10)));
     verifyNoInteractions(sweepService, writer);
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // The Schedule 11 track: the silviculture code, a one-verdict gate, legacy's generic texts
+  // -----------------------------------------------------------------------------------------------
+
+  private static final ScheduleTrack ELEVEN = ScheduleTrack.SCHEDULE_11;
+
+  /**
+   * The silviculture code at {@code code}, and the 1-10 code at one that would make the reversal
+   * illegal if it were the one read.
+   */
+  private void givenSchedule11At(String code) {
+    when(millContextService.findTrackStatusCodes(MILL, YEAR))
+        .thenReturn(Optional.of(new TrackStatusCodes("S".equals(code) ? "V" : "D", code)));
+  }
+
+  private void givenSchedule11GateReturns(List<ScheduleCheckResult> verdicts) {
+    when(sweepService.checkTrack(ELEVEN, MILL, YEAR)).thenReturn(verdicts);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("Schedule 11: a legal reversal reads the silviculture code and writes that track")
+  void schedule11ReversalDelegatesOnItsOwnTrack(TrackTransition transition) {
+    givenSchedule11At(transition.from());
+    givenSchedule11GateReturns(List.of(met("11")));
+    when(writer.writeReversal(ELEVEN, MILL, YEAR, transition, USER)).thenReturn(transition.to());
+
+    assertThat(service.reverse(ELEVEN, MILL, YEAR, transition, USER)).isEqualTo(transition.to());
+
+    verify(writer).writeReversal(ELEVEN, MILL, YEAR, transition, USER);
+    verify(sweepService, never()).checkTrack(ONE_TO_TEN, MILL, YEAR);
+    verify(millContextService, never()).lockTrackStatusCodes(MILL, YEAR);
+    verifyNoInteractions(millUserXrefRepository, reportSubmission, repository);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("Schedule 11: a failing verdict is refused with legacy's reportNotSubmittedErrorMsg")
+  void schedule11FailingGate(TrackTransition transition) {
+    givenSchedule11At(transition.from());
+    givenSchedule11GateReturns(List.of(new ScheduleCheckResult("11", false, "Value Required")));
+
+    assertThatThrownBy(() -> service.reverse(ELEVEN, MILL, YEAR, transition, USER))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportNotSubmittedErrorMsg"));
+    verifyNoInteractions(writer);
+  }
+
+  @ParameterizedTest(name = "{0} with {1} verdicts")
+  @CsvSource({"SET_TO_DRAFT, 0", "SET_TO_DRAFT, 2", "SET_TO_SUBMIT, 0", "SET_TO_SUBMIT, 2"})
+  @DisplayName("Schedule 11: the gate owes exactly one verdict — none, or two all-met, is refused")
+  void schedule11WrongVerdictCount(TrackTransition transition, int count) {
+    givenSchedule11At(transition.from());
+    givenSchedule11GateReturns(count == 0 ? List.of() : List.of(met("11"), met("11")));
+
+    assertThatThrownBy(() -> service.reverse(ELEVEN, MILL, YEAR, transition, USER))
+        .isInstanceOfSatisfying(
+            ReportNotSubmittedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportNotSubmittedErrorMsg"));
+    verifyNoInteractions(writer);
+  }
+
+  @ParameterizedTest(name = "{0} at {1} is refused")
+  @CsvSource({
+    "SET_TO_DRAFT, D",
+    "SET_TO_DRAFT, V",
+    "SET_TO_DRAFT, O",
+    "SET_TO_SUBMIT, S",
+    "SET_TO_SUBMIT, D",
+    "SET_TO_SUBMIT, O",
+  })
+  @DisplayName("Schedule 11: every other status is refused with legacy's generic text (D3)")
+  void schedule11IllegalPairs(TrackTransition transition, String current) {
+    givenSchedule11At(current);
+    givenSchedule11GateReturns(List.of(met("11")));
+
+    assertThatThrownBy(() -> service.reverse(ELEVEN, MILL, YEAR, transition, USER))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(writer);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = TrackTransition.class,
+      names = {"SET_TO_DRAFT", "SET_TO_SUBMIT"})
+  @DisplayName("Schedule 11: a NULL silviculture code is the generic 409, before the gate")
+  void schedule11NullCode(TrackTransition transition) {
+    // Real rows carry a NULL silviculture code; the page never offers a reversal there, so only a
+    // forged request lands here.
+    when(millContextService.findTrackStatusCodes(MILL, YEAR))
+        .thenReturn(Optional.of(new TrackStatusCodes(transition.from(), null)));
+
+    assertThatThrownBy(() -> service.reverse(ELEVEN, MILL, YEAR, transition, USER))
+        .isInstanceOfSatisfying(
+            ReportTransitionRejectedException.class,
+            ex -> assertThat(ex.getMessageKey()).isEqualTo("reportSubmissionErrorMsg"));
+    verifyNoInteractions(sweepService, writer);
+  }
+
+  @Test
+  @DisplayName("1-10: a reversal reads the 1-10 code, never the silviculture one")
+  void oneToTenReadsItsOwnCode() {
+    // Silviculture at S, 1-10 at D: reading the wrong column would make Set to Draft legal.
+    when(millContextService.findTrackStatusCodes(MILL, YEAR))
+        .thenReturn(Optional.of(new TrackStatusCodes("D", "S")));
+    givenGatePasses();
+
+    assertThatThrownBy(
+            () -> service.reverse(ONE_TO_TEN, MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(ReportTransitionRejectedException.class);
+    verifyNoInteractions(writer);
+  }
+
+  @Test
+  @DisplayName("there is no default track: a null track is refused before any read")
+  void nullTrackIsRefused() {
+    assertThatThrownBy(() -> service.reverse(null, MILL, YEAR, TrackTransition.SET_TO_DRAFT, USER))
+        .isInstanceOf(NullPointerException.class);
+    verifyNoInteractions(millContextService, sweepService, writer);
   }
 }

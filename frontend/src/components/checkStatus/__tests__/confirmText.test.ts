@@ -2,12 +2,20 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import {
+  CONFIRM_SET_TO_DRAFT_11,
   CONFIRM_SET_TO_DRAFT_1_TO_10,
+  CONFIRM_SET_TO_SUBMIT_11,
   CONFIRM_SET_TO_SUBMIT_1_TO_10,
   CONFIRM_SUBMIT_11,
   CONFIRM_VERIFY_1_TO_10,
+  CONFIRM_VERIFY_11,
 } from '../index'
-import { SCH11_NOT_DRAFT_TEXT, SCH11_SUBMITTED_TEXT } from './fixtures'
+import {
+  SCH11_DRAFT_TEXT,
+  SCH11_NOT_DRAFT_TEXT,
+  SCH11_SUBMITTED_TEXT,
+  SCH11_VERIFIED_TEXT,
+} from './fixtures'
 
 /**
  * The transition confirmations are the only user-facing text on this page the client owns: each is
@@ -74,6 +82,15 @@ describe('the Check Status confirm prompt mirrors the message bundle', () => {
     expect(Object.keys(bundle)).toContain('confirmSubmitSch11Msg')
   })
 
+  // Schedule 11's verify prompt (Story 26.3), legacy key and text verbatim (2.0.4 :112).
+  test('confirmVerifySch11Msg is byte-identical to the rendered constant', () => {
+    expect(bundle['confirmVerifySch11Msg']).toBe(CONFIRM_VERIFY_11)
+  })
+
+  test('the bundle carries confirmVerifySch11Msg', () => {
+    expect(Object.keys(bundle)).toContain('confirmVerifySch11Msg')
+  })
+
   // Not client-owned — the server sends these — but the page suite's MSW fixtures stand in for the
   // server, and a fixture that says something the server never would makes every banner arm a test
   // of the mock. Pinned here so the stand-in cannot drift from the real envelope.
@@ -82,5 +99,33 @@ describe('the Check Status confirm prompt mirrors the message bundle', () => {
     expect(Object.keys(bundle)).toContain('sch11SubmitNotDraftErrorMsg')
     expect(bundle['sch11SubmittedMsg']).toBe(SCH11_SUBMITTED_TEXT)
     expect(bundle['sch11SubmitNotDraftErrorMsg']).toBe(SCH11_NOT_DRAFT_TEXT)
+  })
+
+  test('the Schedule 11 verify success fixture is the bundle’s own text', () => {
+    expect(Object.keys(bundle)).toContain('sch11VerifiedMsg')
+    expect(bundle['sch11VerifiedMsg']).toBe(SCH11_VERIFIED_TEXT)
+  })
+
+  // Schedule 11's two reversal prompts, legacy keys and text verbatim (2.0.4 :113-114). Their names
+  // do not follow the 1-10 pair's `…Sche1-10Msg` shape; they are legacy's own.
+  test('confirmSch11DraftMsg is byte-identical to the rendered constant', () => {
+    expect(bundle['confirmSch11DraftMsg']).toBe(CONFIRM_SET_TO_DRAFT_11)
+  })
+
+  test('the bundle carries confirmSch11DraftMsg', () => {
+    expect(Object.keys(bundle)).toContain('confirmSch11DraftMsg')
+  })
+
+  test('confirmSch11SubmitBackMsg is byte-identical to the rendered constant', () => {
+    expect(bundle['confirmSch11SubmitBackMsg']).toBe(CONFIRM_SET_TO_SUBMIT_11)
+  })
+
+  test('the bundle carries confirmSch11SubmitBackMsg', () => {
+    expect(Object.keys(bundle)).toContain('confirmSch11SubmitBackMsg')
+  })
+
+  test('the Schedule 11 Set to Draft success fixture is the bundle’s own text', () => {
+    expect(Object.keys(bundle)).toContain('sch11DraftMsg')
+    expect(bundle['sch11DraftMsg']).toBe(SCH11_DRAFT_TEXT)
   })
 })

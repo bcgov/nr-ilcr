@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -29,6 +30,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class Schedule1AuthorizationIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule1";
+
+  /** Since #359 check-status requires the on-screen body; its content is irrelevant to authz. */
+  private static final String CHECK_BODY = "{\"lineItems\":[],\"otherCostsVolume\":null}";
+
   private static final long SEEDED_MILL = 514L;
   private static final int SEEDED_YEAR = 2021;
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
@@ -101,10 +106,53 @@ class Schedule1AuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(ENDPOINT + "/check-status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  /**
+   * The case above is also refused by Story 5.7 mill-scope (no associated GUID), which raises the
+   * same 403 body — so on its own it would stay green without the VIEW_SCHEDULE gate. This caller
+   * carries the canonical submitter's GUID, which passes mill-scope for the seeded mill, but no
+   * ILCR group: only the {@code @PreAuthorize} gate can refuse it.
+   */
+  @Test
+  @DisplayName("check-status: mill-associated GUID but no ILCR group -> 403 from the gate itself")
+  void checkStatus_millAssociatedWithoutGroup_returns403() throws Exception {
+    mockMvc
+        .perform(
+            post(ENDPOINT + "/check-status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(
+                    jwt()
+                        .jwt(
+                            j ->
+                                j.claim("custom:idp_user_id", CANONICAL_SUBMITTER_GUID)
+                                    .claim("cognito:groups", List.of()))
+                        .authorities(j -> CONVERTER.convert(j).getAuthorities())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("check-status: ILCR_SUBMITTER group -> passes authz (2xx)")
+  void checkStatus_submitter_passesAuthorization() throws Exception {
+    mockMvc
+        .perform(
+            post(ENDPOINT + "/check-status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(canonicalSubmitter()))
+        .andExpect(status().is2xxSuccessful());
   }
 }

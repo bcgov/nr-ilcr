@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,8 @@ public class Schedule2CheckStatusResolver {
   private final MessageSource messageSource;
 
   /**
-   * Evaluate and resolve Schedule 2 for a validated mill/year — the whole check in one call.
+   * Evaluate and resolve the SAVED Schedule 2 for a validated mill/year — the cross-schedule
+   * sweep's entry point (Story 15.1), which has no screen to describe.
    *
    * <p><strong>The caller MUST validate the mill/year context first</strong> (AD-4, {@code
    * MillContextService.validateMillYearActive}). This method does not, and the failure mode is
@@ -41,8 +43,24 @@ public class Schedule2CheckStatusResolver {
    * @param year the reporting year
    * @return the verdict with every message's verbatim text populated
    */
-  public Schedule2CheckStatusResponse checkStatus(long millId, int year) {
-    return resolve(schedule2Service.checkStatus(millId, year));
+  public Schedule2CheckStatusResponse checkStatusStored(long millId, int year) {
+    return resolve(schedule2Service.checkStatusStored(millId, year));
+  }
+
+  /**
+   * Evaluate and resolve Schedule 2 against the SCREEN — the endpoint's entry point (#359).
+   *
+   * <p>Differs from {@link #checkStatusStored} only in its source: the body's item-25 cost is
+   * judged by the identical rule instead of the stored one. Named apart so a caller cannot reach
+   * for the wrong one by autocomplete; a sweep that read a screen, or an endpoint that ignored one,
+   * would both fail silently. It takes no mill/year because it reads nothing — but the CALLER must
+   * still have validated the context first (AD-4), exactly as for {@link #checkStatusStored}.
+   *
+   * @param request the on-screen value the check reads
+   * @return the verdict with every message's verbatim text populated
+   */
+  public Schedule2CheckStatusResponse checkStatus(Schedule2CheckRequest request) {
+    return resolve(schedule2Service.checkStatus(request));
   }
 
   /**

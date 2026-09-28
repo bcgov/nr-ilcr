@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule2.api;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -79,18 +80,26 @@ public interface Schedule2Api {
 
   /**
    * Evaluate the Schedule 2 completion requirement (BR-07, Check Status) for a mill/year —
-   * read-only (AD-5), mutates nothing, no request body. Returns 200 {@code {outcome:"MET", ...}}
-   * when the server-assembled {@code purchasedLogCost.cost} (item 25) is present, else {@code
-   * {outcome:"ISSUES", ...}} (including an unsaved schedule with no summary — never 404). Same
+   * read-only (AD-5), mutates nothing. Returns 200 {@code {outcome:"MET", ...}} when the ON-SCREEN
+   * {@code purchasedLogCostCost} (item 25) is present, else {@code {outcome:"ISSUES", ...}}. Same
    * no-summary-required context guards as read/write: 400 (bad param) / 404 (unknown mill) / 409
    * (closed) / 403 (no VIEW_SCHEDULE).
    *
+   * <p>{@code request} carries the value currently ON SCREEN (#359): legacy's Check Status was a
+   * full postback that judged the screen, not the saved record, so an unsaved edit must move the
+   * verdict. The body is REQUIRED — an absent one is a clean 400 — but its member is unvalidated,
+   * because reporting a missing value is the check's whole job.
+   *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param request the on-screen value the check reads
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
    * @return 200 with the {@link Schedule2CheckStatusResponse} (outcome + resolved message)
    */
   @PostMapping("/check-status")
   ResponseEntity<Schedule2CheckStatusResponse> checkStatus(
-      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule2CheckRequest request,
+      Authentication authentication);
 }
