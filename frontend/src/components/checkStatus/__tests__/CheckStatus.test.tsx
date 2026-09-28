@@ -56,6 +56,7 @@ import {
   SCH7B_ERROR_TEXT,
   SCH8_HARVESTED_TEXT,
   SCH8_NO_SAMPLE_TEXT,
+  SCH8_PAGE_1_LABEL,
   SCH8_SKIDDING_TEXT,
   SCH10_ROAD_ISSUE_TEXT,
   schedule1Fail,
@@ -158,6 +159,13 @@ const item = (title: string): HTMLElement => {
 
 /** The result lines inside one item — every InlineNotification renders with role=status. */
 const linesIn = (element: HTMLElement) => within(element).queryAllByRole('status')
+
+/**
+ * A line as Testing Library sees it: the default text matcher collapses the NODE's whitespace but
+ * not a string matcher's, and the Schedule 8 page label carries legacy's double space
+ * ("Page # 1  -TSA: …"), so an expected line is collapsed the same way before matching.
+ */
+const shown = (text: string) => text.replace(/\s+/g, ' ').trim()
 
 /** The sweep requests seen by a spy on the shared axios instance (the tombstone's /mill-context read shares it). */
 const sweepCalls = (spy: { mock: { calls: unknown[][] } }) =>
@@ -453,7 +461,7 @@ describe('Check Status page (Story 15.2)', () => {
 
   // ---- S10 / S18: Schedule 8 pages and samples ------------------------------------------------
 
-  test('S10 (submitter) / CHK-009 S10 / S18: Schedule 8 renders the page issues and both samples’ issues, attributed positionally, verbatim', async () => {
+  test('S10 (submitter) / CHK-009 S10 / S18: Schedule 8 renders the page issues and both samples’ issues, attributed by the wire page/sample labels (#461), verbatim', async () => {
     asSubmitter()
     server.use(
       http.get(SWEEP_URL, () =>
@@ -465,17 +473,23 @@ describe('Check Status page (Story 15.2)', () => {
       ),
     )
     render(<CheckStatus />)
-    await screen.findByText(`Page # 1 - Sample # 2 - Actual Harvested: ${SCH8_HARVESTED_TEXT}`)
+    await screen.findByText(
+      shown(`${SCH8_PAGE_1_LABEL} - Sample # 2 - CZERO - Actual Harvested: ${SCH8_HARVESTED_TEXT}`),
+    )
 
     const schedule8 = item(SCHEDULE_TITLES['8'])
     expect(linesIn(schedule8)).toHaveLength(13)
-    expect(within(schedule8).getByText('Page # 1 - Division: Value Required')).toBeInTheDocument()
     expect(
-      within(schedule8).getByText('Page # 1 - Sample # 1 - Cut Block: Value Required'),
+      within(schedule8).getByText(shown(`${SCH8_PAGE_1_LABEL} - Division: Value Required`)),
     ).toBeInTheDocument()
     expect(
       within(schedule8).getByText(
-        `Page # 1 - Sample # 1 - Skidding/Yarding: ${SCH8_SKIDDING_TEXT}`,
+        shown(`${SCH8_PAGE_1_LABEL} - Sample # 1 - CISS - Cut Block: Value Required`),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(schedule8).getByText(
+        shown(`${SCH8_PAGE_1_LABEL} - Sample # 1 - CISS - Skidding/Yarding: ${SCH8_SKIDDING_TEXT}`),
       ),
     ).toBeInTheDocument()
     expect(within(schedule8).queryByText(MET_TEXT)).not.toBeInTheDocument()

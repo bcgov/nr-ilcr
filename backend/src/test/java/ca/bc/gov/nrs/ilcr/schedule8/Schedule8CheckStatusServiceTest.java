@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
@@ -63,8 +64,27 @@ class Schedule8CheckStatusServiceTest {
   }
 
   private static TreeToTruckReportEntity page(String contact, String phone) {
+    return page(8970, "TSA5", null, contact, phone);
+  }
+
+  /** A page with the identifiers the legacy title is built from (#461): TSA and cutting permit. */
+  private static TreeToTruckReportEntity page(
+      int id, String tsa, String cuttingPermit, String contact, String phone) {
     return new TreeToTruckReportEntity(
-        8970, "SC1", "R1", "BZ1", "TSA5", "B", null, null, "L600", "Div", contact, phone, "c", 0);
+        id,
+        "SC1",
+        "R1",
+        "BZ1",
+        tsa,
+        "B",
+        null,
+        cuttingPermit,
+        "L600",
+        "Div",
+        contact,
+        phone,
+        "c",
+        0);
   }
 
   private static TreeToTruckDetailReportEntity metSample() {
@@ -101,6 +121,12 @@ class Schedule8CheckStatusServiceTest {
     assertEquals("MET", result.outcome());
     assertTrue(result.pages().get(0).met());
     assertTrue(result.pages().get(0).samples().get(0).met());
+    // #461: every result says which page and sample it is, in the words the screen uses.
+    Schedule8PageCheckResult page = result.pages().get(0);
+    assertEquals(1, page.pageNumber());
+    assertEquals("Page # 1  -TSA: TSA5 -CP:  - ", page.pageLabel()); // no cutting permit -> " - "
+    assertEquals(1, page.samples().get(0).sampleNumber());
+    assertEquals("Sample # 1 - C", page.samples().get(0).sampleLabel());
   }
 
   @Test
@@ -168,6 +194,80 @@ class Schedule8CheckStatusServiceTest {
         result.pages().get(0).samples().get(0).issues().stream()
             .map(Schedule8CheckFieldIssue::field)
             .anyMatch("Skidding/Yarding"::equals));
+  }
+
+  @Test
+  void checkStatusPage_numbersThePageByItsPositionInTheWholeDocument() {
+    // Two pages; the single-page scope on the SECOND must still call it "Page # 2" — the number the
+    // Page Summary shows — not "Page # 1" of a one-page list (#461).
+    when(repository.findPages(MILL, YEAR))
+        .thenReturn(List.of(page("Pat", "250"), page(8972, "TSA5", "cp123", "Pat", "250")));
+    when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(metSample()));
+
+    Schedule8CheckStatusResponse result = service.checkStatusPage(MILL, YEAR, 8972);
+
+    assertEquals(1, result.pages().size());
+    Schedule8PageCheckResult page = result.pages().get(0);
+    assertEquals(8972, page.id());
+    assertEquals(2, page.pageNumber());
+    assertEquals("Page # 2  -TSA: TSA5 -CP: cp123", page.pageLabel());
+    // The page has no sample, so the scope reports that — and nothing about page 1.
+    assertEquals("ISSUES", result.outcome());
+    assertTrue(
+        page.issues().stream().map(Schedule8CheckFieldIssue::field).anyMatch("Sample"::equals));
+  }
+
+  @Test
+  void checkStatusPage_unknownPage_isVacuouslyMetWithNoPages() {
+    when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page("Pat", "250")));
+    when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(metSample()));
+
+    Schedule8CheckStatusResponse result = service.checkStatusPage(MILL, YEAR, 4242);
+
+    assertEquals("MET", result.outcome());
+    assertTrue(result.pages().isEmpty());
+  }
+
+  @Test
+  void labels_nullGuardsMatchTheScreen() {
+    // The screen renders a null TSA as empty and a blank cutting permit as " - "
+    // (schedule8/index.tsx
+    // pageLabel); legacy printed "null". The wire label follows the screen so the two read alike.
+    when(repository.findPages(MILL, YEAR))
+        .thenReturn(List.of(page(8970, null, "   ", "Pat", "250")));
+    when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sampleWithContract(null)));
+
+    Schedule8PageCheckResult page = service.checkStatus(MILL, YEAR).pages().get(0);
+
+    assertEquals("Page # 1  -TSA:  -CP:  - ", page.pageLabel());
+    assertEquals("Sample # 1 - ", page.samples().get(0).sampleLabel());
+  }
+
+  private static TreeToTruckDetailReportEntity sampleWithContract(String contractId) {
+    TreeToTruckDetailReportEntity s = metSample();
+    return new TreeToTruckDetailReportEntity(
+        s.id(),
+        s.reportId(),
+        contractId,
+        s.cutBlock(),
+        s.groundBasePct(),
+        s.grapplePct(),
+        s.skylinePct(),
+        s.highleadPct(),
+        s.helicopterPct(),
+        s.otherSkiddingPct(),
+        s.skylineSlopeDistance(),
+        s.skylineSupportNumber(),
+        s.supportAverageDistance(),
+        s.cycleTime(),
+        s.distance(),
+        s.waterDumpDestinationInd(),
+        s.uphillDirectionInd(),
+        s.skidTypeCode(),
+        s.coniferousVolume(),
+        s.deciduousVolume(),
+        s.originalRate(),
+        s.revisionCount());
   }
 
   @Test

@@ -431,11 +431,25 @@ export const schedule6AllSegments: Schedule6CheckStatusResponse = {
   ],
 }
 
+/** The legacy page title the check-status fixtures' pages carry (TSA5, no cutting permit → " - "). */
+export const SCH8_PAGE_1_LABEL = 'Page # 1  -TSA: TSA5 -CP:  - '
+
 /** schedule8-600-2021.json — MET, and `pages` is still populated. */
 export const schedule8Met: Schedule8CheckStatusResponse = {
   outcome: 'MET',
   messages: [MET],
-  pages: [{ id: 8970, met: true, issues: [], samples: [{ id: 8971, met: true, issues: [] }] }],
+  pages: [
+    {
+      id: 8970,
+      pageNumber: 1,
+      pageLabel: SCH8_PAGE_1_LABEL,
+      met: true,
+      issues: [],
+      samples: [
+        { id: 8971, sampleNumber: 1, sampleLabel: 'Sample # 1 - CMET', met: true, issues: [] },
+      ],
+    },
+  ],
 }
 
 export const SCH8_SKIDDING_TEXT =
@@ -449,6 +463,8 @@ export const schedule8Issues: Schedule8CheckStatusResponse = {
   pages: [
     {
       id: 8972,
+      pageNumber: 1,
+      pageLabel: SCH8_PAGE_1_LABEL,
       met: false,
       issues: [
         { field: 'Division', message: REQUIRED },
@@ -459,6 +475,8 @@ export const schedule8Issues: Schedule8CheckStatusResponse = {
       samples: [
         {
           id: 8973,
+          sampleNumber: 1,
+          sampleLabel: 'Sample # 1 - CISS',
           met: false,
           issues: [
             { field: 'Cut Block', message: REQUIRED },
@@ -476,6 +494,8 @@ export const schedule8Issues: Schedule8CheckStatusResponse = {
         },
         {
           id: 8974,
+          sampleNumber: 2,
+          sampleLabel: 'Sample # 2 - CZERO',
           met: false,
           issues: [
             {
@@ -491,7 +511,11 @@ export const schedule8Issues: Schedule8CheckStatusResponse = {
 
 export const SCH8_NO_SAMPLE_TEXT = 'Please create a TtT sample data record for this page'
 
-/** schedule8-602-2021.json — a page-level issue and no samples. */
+/**
+ * schedule8-602-2021.json — a page-level issue and no samples. Deliberately WITHOUT the #461
+ * `pageNumber`/`pageLabel`: it stands in for a verdict stored before those fields existed, which the
+ * Check Status page still has to attribute — positionally.
+ */
 export const schedule8NoSamples: Schedule8CheckStatusResponse = {
   outcome: 'ISSUES',
   messages: [],

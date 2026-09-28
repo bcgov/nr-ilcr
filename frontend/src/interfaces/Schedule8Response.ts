@@ -113,14 +113,22 @@ export interface CheckFieldIssue {
   readonly message: MessageInfo
 }
 
+// Where a finding belongs (#461): the 1-based ordinal and the legacy title the screen shows for the
+// page ("Page # 1  -TSA: TSA5 -CP: cp123") or sample ("Sample # 1 - CMET"), so two pages missing the
+// same field are distinguishable. Optional because a verdict STORED before #461 (the Check Status
+// page reads stored verdicts) has neither; renderers fall back to the positional ordinal then.
 export interface SampleCheckResult {
   readonly id: number | null
+  readonly sampleNumber?: number
+  readonly sampleLabel?: string
   readonly met: boolean
   readonly issues: CheckFieldIssue[]
 }
 
 export interface PageCheckResult {
   readonly id: number | null
+  readonly pageNumber?: number
+  readonly pageLabel?: string
   readonly met: boolean
   readonly issues: CheckFieldIssue[]
   readonly samples: SampleCheckResult[]

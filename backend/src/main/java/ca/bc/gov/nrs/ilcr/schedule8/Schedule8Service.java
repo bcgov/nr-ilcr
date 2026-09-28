@@ -669,7 +669,7 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
-    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages());
+    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages(), null);
   }
 
   /**
@@ -684,18 +684,25 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
-    List<Page> scoped =
-        getSchedule8(millId, year, EditableStatuses.NONE).pages().stream()
-            .filter(p -> p.id() != null && p.id() == pageId)
-            .toList();
-    return evaluate(scoped);
+    // The full document goes in, not a pre-filtered one, so the page keeps its position in the
+    // Page Summary (page 2 is "Page # 2" in its notices, #461); evaluate() skips the others.
+    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages(), pageId);
   }
 
-  /** Apply the Check-Status rules to the given pages and build the all-or-nothing result. */
-  private Schedule8CheckStatusResponse evaluate(List<Page> pages) {
+  /**
+   * Apply the Check-Status rules to the document's pages — all of them, or only {@code onlyPageId}
+   * when given — and build the all-or-nothing result. Each result names its page and sample by
+   * ordinal and legacy title ({@link Schedule8Labels}, #461), numbered over the FULL document so
+   * the single-page scope reports the same "Page # n" the summary shows.
+   */
+  private Schedule8CheckStatusResponse evaluate(List<Page> pages, Integer onlyPageId) {
     List<Schedule8PageCheckResult> pageResults = new ArrayList<>(pages.size());
     boolean scheduleMet = true;
-    for (Page page : pages) {
+    for (int index = 0; index < pages.size(); index++) {
+      Page page = pages.get(index);
+      if (onlyPageId != null && !onlyPageId.equals(page.id())) {
+        continue;
+      }
       List<Schedule8CheckFieldIssue> pageIssues = new ArrayList<>();
       requireField(pageIssues, "Division", page.division());
       requireField(pageIssues, "Contact", page.contact());
@@ -712,16 +719,32 @@ public class Schedule8Service {
 
       List<Schedule8SampleCheckResult> sampleResults = new ArrayList<>(page.samples().size());
       boolean allSamplesMet = true;
-      for (Sample sample : page.samples()) {
+      for (int s = 0; s < page.samples().size(); s++) {
+        Sample sample = page.samples().get(s);
+        int sampleNumber = s + 1;
         List<Schedule8CheckFieldIssue> issues = evaluateSample(sample);
         boolean sampleMet = issues.isEmpty();
         allSamplesMet &= sampleMet;
-        sampleResults.add(new Schedule8SampleCheckResult(sample.id(), sampleMet, issues));
+        sampleResults.add(
+            new Schedule8SampleCheckResult(
+                sample.id(),
+                sampleNumber,
+                Schedule8Labels.sampleLabel(sample, sampleNumber),
+                sampleMet,
+                issues));
       }
 
       boolean pageMet = pageIssues.isEmpty() && allSamplesMet;
       scheduleMet &= pageMet;
-      pageResults.add(new Schedule8PageCheckResult(page.id(), pageMet, pageIssues, sampleResults));
+      int pageNumber = index + 1; // the Page Summary's ordinal, over the whole document
+      pageResults.add(
+          new Schedule8PageCheckResult(
+              page.id(),
+              pageNumber,
+              Schedule8Labels.pageLabel(page, pageNumber),
+              pageMet,
+              pageIssues,
+              sampleResults));
     }
     String outcome = scheduleMet ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     List<MessageInfo> messages =
