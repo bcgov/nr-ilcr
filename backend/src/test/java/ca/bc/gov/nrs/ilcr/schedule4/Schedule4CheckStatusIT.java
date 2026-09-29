@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Acceptance test — Story 4.4. POST /api/v1/schedule4/check-status — read-only MET/ISSUES
@@ -28,6 +29,11 @@ import org.springframework.test.context.TestPropertySource;
  * Dump is the pin that a Volume-only category is NOT reported. Each case captures report/detail
  * counts before and after to prove no mutation. The ISSUES branch (a blank description) cannot be
  * stored through the app, so {@code Schedule4CheckStatusServiceTest} covers it.
+ *
+ * <p>Since #359 the endpoint takes the open location panel as its body and overlays it onto the
+ * stored locations. The original cases post "no panel open" ({@code {"location":null}}), which is
+ * exactly the stored verdict; the {@code #359} cases post a panel that DISAGREES with Oracle — and
+ * reach the ISSUES branch through the screen, which the database cannot hold.
  */
 @DisplayName("POST /api/v1/schedule4/check-status — requirement check (Story 4.4)")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -37,7 +43,35 @@ class Schedule4CheckStatusIT extends AbstractOracleIT {
   private static final String REPORT = "THE.TRANSPORTATION_REPORT";
   private static final String DETAIL = "THE.ILCR_COST_REPORT_DETAIL";
 
+  /** No panel open: the stored locations alone. */
+  private static final String NO_PANEL = "{\"location\":null}";
+
+  private static String panel(Integer id, String name) {
+    return "{\"location\":{\"id\":"
+        + id
+        + ",\"name\":"
+        + (name == null ? "null" : "\"" + name + "\"")
+        + "}}";
+  }
+
+  private static MockHttpServletRequestBuilder check(String millId, String json) {
+    return post(ENDPOINT)
+        .with(csrf())
+        .param("millId", millId)
+        .param("year", "2021")
+        .contentType(MediaType.APPLICATION_JSON)
+        .accept(MediaType.APPLICATION_JSON)
+        .content(json);
+  }
+
   @Autowired private JdbcTemplate jdbcTemplate;
+
+  /** Every 514 transportation row, names and REVISION_COUNT included, as one comparable string. */
+  private String reportsOf514() {
+    return jdbcTemplate
+        .queryForList("SELECT * FROM " + REPORT + " WHERE ILCR_MILL_ID = 514 ORDER BY 1")
+        .toString();
+  }
 
   private long footprint(long mill) {
     Integer reports =
@@ -62,12 +96,7 @@ class Schedule4CheckStatusIT extends AbstractOracleIT {
   void allPass_met() throws Exception {
     long before = footprint(560);
     mockMvc
-        .perform(
-            post(ENDPOINT)
-                .with(csrf())
-                .param("millId", "560")
-                .param("year", "2021")
-                .accept(MediaType.APPLICATION_JSON))
+        .perform(check("560", NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(
@@ -89,12 +118,7 @@ class Schedule4CheckStatusIT extends AbstractOracleIT {
   void volumeOnlyCategory_notReported_met() throws Exception {
     long before = footprint(514);
     mockMvc
-        .perform(
-            post(ENDPOINT)
-                .with(csrf())
-                .param("millId", "514")
-                .param("year", "2021")
-                .accept(MediaType.APPLICATION_JSON))
+        .perform(check("514", NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(
@@ -122,12 +146,7 @@ class Schedule4CheckStatusIT extends AbstractOracleIT {
   @DisplayName("no location on 514 carries any issue code — cost-item codes are never emitted")
   void noCostItemCodeIsEverEmitted() throws Exception {
     mockMvc
-        .perform(
-            post(ENDPOINT)
-                .with(csrf())
-                .param("millId", "514")
-                .param("year", "2021")
-                .accept(MediaType.APPLICATION_JSON))
+        .perform(check("514", NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.locations[*].issues[*]", empty()));
   }
@@ -136,13 +155,69 @@ class Schedule4CheckStatusIT extends AbstractOracleIT {
   @DisplayName("check-status returns problem+json content type nothing; 200 JSON body")
   void returnsJson() throws Exception {
     mockMvc
-        .perform(
-            post(ENDPOINT)
-                .with(csrf())
-                .param("millId", "560")
-                .param("year", "2021")
-                .accept(MediaType.APPLICATION_JSON))
+        .perform(check("560", NO_PANEL))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+  }
+
+  @Test
+  @DisplayName(
+      "#359 open existing panel renamed (Harbour Dump 7001) -> the on-screen name; no write")
+  void renamedPanel_carriesOnScreenName_persistsNothing() throws Exception {
+    String before = reportsOf514();
+    long footprintBefore = footprint(514);
+    mockMvc
+        .perform(check("514", panel(7001, "Renamed Dump")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("MET")))
+        .andExpect(jsonPath("$.locations.length()", is(2)))
+        .andExpect(jsonPath("$.locations[0].id", is(7001)))
+        .andExpect(jsonPath("$.locations[0].name", is("Renamed Dump")))
+        .andExpect(
+            jsonPath(
+                "$.locations[0].messages[0].text",
+                is("All requirements for Renamed Dump have been met.")));
+    assertEquals(before, reportsOf514(), "check-status must not rename or re-token a row");
+    assertEquals(footprintBefore, footprint(514), "check-status must not mutate anything");
+  }
+
+  @Test
+  @DisplayName("#359 open existing panel with its name cleared (Empty Landing 7002) -> ISSUES")
+  void clearedPanelName_isAFinding_storedNameIgnored() throws Exception {
+    String before = reportsOf514();
+    mockMvc
+        .perform(check("514", panel(7002, "  ")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("ISSUES")))
+        .andExpect(jsonPath("$.messages", empty()))
+        .andExpect(jsonPath("$.locations[0].met", is(true)))
+        .andExpect(jsonPath("$.locations[1].id", is(7002)))
+        .andExpect(jsonPath("$.locations[1].met", is(false)))
+        .andExpect(jsonPath("$.locations[1].issues[0].message.text", is("Value Required")));
+    assertEquals(before, reportsOf514(), "check-status must not write the blank name");
+  }
+
+  @Test
+  @DisplayName("#359 new/copy panel (null id) is an extra location after the stored ones")
+  void newPanel_isEvaluatedAsAnExtraLocation() throws Exception {
+    mockMvc
+        .perform(check("514", panel(null, null)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("ISSUES")))
+        .andExpect(jsonPath("$.locations.length()", is(3)))
+        .andExpect(jsonPath("$.locations[2].met", is(false)));
+    mockMvc
+        .perform(check("514", panel(null, "Brand New Landing")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("MET")))
+        .andExpect(jsonPath("$.locations[2].name", is("Brand New Landing")));
+  }
+
+  @Test
+  @DisplayName("#359 an ABSENT body is a clean 400, not a silent stored-only verdict")
+  void checkStatusRequiresABody() throws Exception {
+    mockMvc
+        .perform(post(ENDPOINT).with(csrf()).param("millId", "514").param("year", "2021"))
+        .andExpect(status().isBadRequest());
   }
 }

@@ -18,6 +18,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
@@ -32,7 +33,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -73,6 +73,12 @@ public class Schedule4Service {
 
   /** The 9 fixed no-distance cost-item codes (written as detail rows on the primary report). */
   private static final Set<Integer> FIXED_CODES = Set.of(40, 41, 42, 44, 45, 49, 50, 51, 53);
+
+  /** The write path walks the codes in a fixed order so its statements are deterministic. */
+  private static final List<Integer> FIXED_CODES_IN_ORDER = FIXED_CODES.stream().sorted().toList();
+
+  private static final List<Integer> DISTANCE_CODES_IN_ORDER =
+      DISTANCE_CODES.stream().sorted().toList();
 
   private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_LOCATION_MET = "locationRequirementsMetMsg";
@@ -326,39 +332,139 @@ public class Schedule4Service {
   }
 
   /**
-   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year —
-   * read-only (AD-5), mutates nothing. Reuses the assembled read model ({@link #getSchedule4}) and,
-   * per location, flags a blank location description as the ONLY missing field — legacy parity
-   * (issue #465). Legacy's {@code Schedule4CheckStatus} enforced the description unconditionally
-   * ({@code :19-23}) and gated every per-category Cost check behind an {@code isXxxToCheck} flag
-   * that defaults to false and is set to false on load ({@code Schedule4DAO:243-337}) and never to
-   * true anywhere, so no Schedule 4 Cost was ever required; Distance and Comments were commented
-   * out (§Decisions 2 and 3). Story 10.4 §Decision 1 had read the dormant flags as an intended
-   * "Cost required when the category is stored" rule and enforced it; #465 reversed that. The
-   * schedule {@code outcome} is {@code MET} only when EVERY location passes (all-or-nothing, S31).
-   * Emits bundle KEYS; {@link Schedule4CheckStatusResolver} resolves the verbatim text (AD-8),
-   * substituting the location name into the per-location met message. A mill/year with no locations
-   * is vacuously MET (legacy {@code isSchedule4Valid} AND-over-locations).
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) against the SCREEN — the
+   * endpoint's entry point (bcgov/nr-ilcr#359). The stored locations are the candidates, with the
+   * open panel ({@code request.location()}) overlaid onto them — see {@link #overlay}. Read-only
+   * (AD-5), mutates nothing. The rule is {@link #evaluate}, shared with {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the open location panel, if any
+   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by {@link
+   *     Schedule4CheckStatusResolver})
+   */
+  @Transactional(readOnly = true)
+  public Schedule4CheckStatusResponse checkStatus(
+      long millId, int year, Schedule4CheckRequest request) {
+    return evaluate(overlay(storedCandidates(millId, year), request));
+  }
+
+  /**
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for the SAVED locations of
+   * a mill/year — the stored-data counterpart of {@link #checkStatus}, for report-level callers
+   * (the Check Status sweep and the submit gate) that have no screen to describe. Read-only (AD-5),
+   * mutates nothing. Reuses the assembled read model ({@link #getSchedule4}) and, per location,
+   * flags a blank location description as the ONLY missing field — legacy parity (issue #465).
+   * Legacy's {@code Schedule4CheckStatus} enforced the description unconditionally ({@code :19-23})
+   * and gated every per-category Cost check behind an {@code isXxxToCheck} flag that defaults to
+   * false and is set to false on load ({@code Schedule4DAO:243-337}) and never to true anywhere, so
+   * no Schedule 4 Cost was ever required; Distance and Comments were commented out (§Decisions 2
+   * and 3). Story 10.4 §Decision 1 had read the dormant flags as an intended "Cost required when
+   * the category is stored" rule and enforced it; #465 reversed that. The schedule {@code outcome}
+   * is {@code MET} only when EVERY location passes (all-or-nothing, S31). Emits bundle KEYS; {@link
+   * Schedule4CheckStatusResolver} resolves the verbatim text (AD-8), substituting the location name
+   * into the per-location met message. A mill/year with no locations is vacuously MET (legacy
+   * {@code isSchedule4Valid} AND-over-locations).
    *
    * <p>The write path already rejects a blank name ({@code Schedule4LocationRequest} is {@code
    * NotBlank}, as legacy's save was), so the description finding is reachable only for data that
    * arrived outside the app. It is kept because it is the rule, not because it is expected.
    *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–3, 5 and 6: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
+   *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by the
-   *     controller)
+   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by {@link
+   *     Schedule4CheckStatusResolver})
    */
   @Transactional(readOnly = true)
-  public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
-    // Editability is irrelevant to the requirement check (only stored Costs matter).
+  public Schedule4CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedCandidates(millId, year));
+  }
+
+  /**
+   * The stored locations as candidates, in served order.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return one candidate per stored location
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    // Editability is irrelevant to the requirement check (only the stored names matter).
     Schedule4Response document = assembleSchedule4(millId, year, EditableStatuses.NONE);
-    List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
-    boolean scheduleMet = true;
+    List<CheckCandidate> candidates = new ArrayList<>(document.locations().size());
     for (Location location : document.locations()) {
+      candidates.add(new CheckCandidate(location.id(), location.name()));
+    }
+    return candidates;
+  }
+
+  /**
+   * Overlay the open panel onto the stored candidates. Three cases, as on Schedule 5 (#476):
+   *
+   * <ul>
+   *   <li>no panel open ({@code request} or its {@code location} is null) → the stored locations,
+   *       unchanged;
+   *   <li>the panel holds a STORED location → its name is replaced in place (an unsaved rename
+   *       applies), so it keeps its position;
+   *   <li>the panel holds an UNSAVED location — a new one, a copy, or one another session deleted —
+   *       → APPENDED after the stored ones as an additional candidate, with a null id (it has no
+   *       stored id to report; a synthetic one would read as a persisted row). Recorded deviation
+   *       DL-28: legacy's final check skipped a detached new/copy panel.
+   * </ul>
+   *
+   * <p>The name is judged exactly as received (the server does not trim or default it) and tested
+   * with {@code isBlank()}, so a null, empty or whitespace-only name fails. The page sends the
+   * TRIMMED on-screen name, blank as {@code null} — the form Save stores it in — and its own Save
+   * gate already blocks a blank or whitespace-only name before Check Status is reached.
+   *
+   * @param stored the stored candidates, in order
+   * @param request the body, possibly null
+   * @return the candidates to judge
+   */
+  private static List<CheckCandidate> overlay(
+      List<CheckCandidate> stored, Schedule4CheckRequest request) {
+    Schedule4CheckRequest.LocationEntry entry = request == null ? null : request.location();
+    if (entry == null) {
+      return stored;
+    }
+    List<CheckCandidate> result = new ArrayList<>(stored);
+    for (int i = 0; i < result.size(); i++) {
+      CheckCandidate candidate = result.get(i);
+      if (entry.id() != null && entry.id().equals(candidate.id())) {
+        result.set(i, new CheckCandidate(candidate.id(), entry.name()));
+        return result;
+      }
+    }
+    result.add(new CheckCandidate(null, entry.name()));
+    return result;
+  }
+
+  /**
+   * One location to judge, from either source.
+   *
+   * @param id the stored location id, or null for an unsaved panel
+   * @param name the location name (description)
+   */
+  record CheckCandidate(Integer id, String name) {}
+
+  /**
+   * The BR-07 verdict, source-agnostic and pure. Neither {@link #checkStatus} nor {@link
+   * #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the locations to judge, in display order
+   * @return the MET/ISSUES outcome + per-location breakdown, carrying bundle keys only
+   */
+  static Schedule4CheckStatusResponse evaluate(List<CheckCandidate> candidates) {
+    List<LocationCheckResult> results = new ArrayList<>(candidates.size());
+    boolean scheduleMet = true;
+    for (CheckCandidate location : candidates) {
       List<FieldIssue> issues = new ArrayList<>();
       // The description is the one field legacy required (Schedule4CheckStatus.java:19). Category
-      // and sub-page-row Costs are NOT checked — see the Javadoc above (#465).
+      // and sub-page-row Costs are NOT checked — see checkStatusStored's Javadoc (#465).
       if (location.name() == null || location.name().isBlank()) {
         issues.add(
             new FieldIssue(
@@ -445,9 +551,7 @@ public class Schedule4Service {
           repository.renameFamily(millId, year, oldName, name, user);
         }
       }
-      for (CategoryInput category : request.categoriesOrEmpty()) {
-        writeCategory(millId, year, name, primaryId, category, user);
-      }
+      writeCategories(millId, year, name, primaryId, request.categoriesOrEmpty(), user);
     } catch (DataAccessException ex) {
       // StaleRevisionException (a BusinessException, not a DataAccessException) propagates on its
       // own
@@ -647,47 +751,124 @@ public class Schedule4Service {
   }
 
   /**
-   * Persist one entered category. Fixed codes become detail rows on the primary report; distance
-   * codes (47/48/52) live on their own child report (insert/update, or delete when fully emptied).
-   * Out-of-scope codes (deferred sub-page lists 43/46/55, dead 54, unknown) are ignored — never
-   * written by this story.
+   * Write a location's categories as its COMPLETE desired state (#335): every in-scope code is
+   * written, and a code the request did not send is written as empty — which clears it. The client
+   * omits a category with nothing in it, including one the user has just emptied, so "omitted" and
+   * "sent with all-null amounts" are the same thing by construction here, and a create needs no
+   * special case: its clears are no-ops on a fresh family. Legacy wrote all 15 categories on every
+   * save, so an emptied one was written through; this is the same outcome.
+   *
+   * <p>Fixed codes (40/41/42/44/45/49/50/51/53) are detail rows on the primary report: one
+   * set-based delete for everything empty, an upsert for everything else. Distance codes (47/48/52)
+   * live on their own child reports: one read of the family's children, then per code. Out-of-scope
+   * codes (deferred sub-page lists 43/46/55, dead 54, unknown) are ignored — never written here.
    */
-  private void writeCategory(
-      long millId, int year, String name, int primaryId, CategoryInput category, String user) {
-    Integer code = category.code();
-    if (code == null) {
-      return;
+  private void writeCategories(
+      long millId, int year, String name, int primaryId, List<CategoryInput> sent, String user) {
+    Map<Integer, CategoryInput> desired = desiredCategories(sent);
+
+    List<Integer> emptyFixed = new ArrayList<>();
+    for (int code : FIXED_CODES_IN_ORDER) {
+      CategoryInput category = desired.get(code);
+      if (category.volume() == null && category.cost() == null) {
+        // Deleted, never inserted: legacy skipped the insert for an empty category, and the read
+        // lists only stored rows, so an all-null row would surface as a category the user removed.
+        emptyFixed.add(code);
+      } else {
+        // A single null is written through, so a partial clear (Cost emptied, Volume kept)
+        // persists.
+        repository.upsertDetail(primaryId, code, category.volume(), category.cost(), user);
+      }
     }
-    if (DISTANCE_CODES.contains(code)) {
-      writeDistanceCategory(millId, year, name, code, category, user);
-    } else if (FIXED_CODES.contains(code)) {
-      repository.upsertDetail(primaryId, code, category.volume(), category.cost(), user);
+    if (!emptyFixed.isEmpty()) {
+      repository.deleteDetails(primaryId, emptyFixed);
+    }
+
+    Map<Integer, List<Integer>> children = repository.findDistanceChildren(millId, year, name);
+    for (int code : DISTANCE_CODES_IN_ORDER) {
+      writeDistanceCategory(
+          millId,
+          year,
+          name,
+          primaryId,
+          code,
+          desired.get(code),
+          children.getOrDefault(code, List.of()),
+          user);
     }
   }
 
+  /** The request's categories keyed by in-scope code, every code present — absent means empty. */
+  private static Map<Integer, CategoryInput> desiredCategories(List<CategoryInput> sent) {
+    Map<Integer, CategoryInput> desired = new HashMap<>();
+    for (int code : FIXED_CODES_IN_ORDER) {
+      desired.put(code, new CategoryInput(code, null, null, null));
+    }
+    for (int code : DISTANCE_CODES_IN_ORDER) {
+      desired.put(code, new CategoryInput(code, null, null, null));
+    }
+    for (CategoryInput category : sent) {
+      if (category.code() != null && desired.containsKey(category.code())) {
+        desired.put(category.code(), category);
+      }
+    }
+    return desired;
+  }
+
   /**
-   * A distance category is its OWN {@code TRANSPORTATION_REPORT} child (its own distance).
-   * Fully-empty (distance + volume + cost all null) clears it: delete the child if one exists.
-   * Otherwise update-in-place when present, else insert a new child report; then upsert its single
-   * detail row.
+   * A distance category is its OWN {@code TRANSPORTATION_REPORT} child (its own distance). {@code
+   * existing} is every report in the family carrying this code, ids ascending (usually none or
+   * one).
+   *
+   * <p>Fully-empty (distance + volume + cost all null) clears it: every such child goes. Otherwise
+   * the first child is kept and updated in place (or a new child inserted when there is none), and
+   * its single detail row upserted. The form has one cell per code, so one child per code is the
+   * desired state: a duplicate a legacy family carries collapses into the first rather than
+   * surviving to resurrect its figures on the next read.
    */
   private void writeDistanceCategory(
-      long millId, int year, String name, int code, CategoryInput category, String user) {
-    Optional<Integer> existing = repository.findDistanceReportId(millId, year, name, code);
+      long millId,
+      int year,
+      String name,
+      int primaryId,
+      int code,
+      CategoryInput category,
+      List<Integer> existing,
+      String user) {
     boolean empty =
         category.distance() == null && category.volume() == null && category.cost() == null;
     if (empty) {
-      existing.ifPresent(repository::deleteReport);
+      for (int reportId : existing) {
+        clearDistanceChild(primaryId, reportId, code);
+      }
       return;
     }
+    for (int i = 1; i < existing.size(); i++) {
+      clearDistanceChild(primaryId, existing.get(i), code);
+    }
     int reportId;
-    if (existing.isPresent()) {
-      reportId = existing.get();
-      repository.updateReportDistance(reportId, category.distance(), user);
-    } else {
+    if (existing.isEmpty()) {
       reportId = repository.insertReport(millId, year, name, category.distance(), user);
+    } else {
+      reportId = existing.get(0);
+      repository.updateReportDistance(reportId, category.distance(), user);
     }
     repository.upsertDetail(reportId, code, category.volume(), category.cost(), user);
+  }
+
+  /**
+   * Remove one distance child — unless it is the location's own identity report. On a legacy family
+   * with no distance-null primary, the id the document serves (and the edit is addressed to) is the
+   * lowest report id (§Decision 2 fallback), which is then a distance child that may also carry the
+   * fixed detail rows just upserted onto it. Deleting it would delete the location. That report
+   * keeps its row and loses only this code's detail; every other child is deleted whole.
+   */
+  private void clearDistanceChild(int primaryId, int reportId, int code) {
+    if (reportId == primaryId) {
+      repository.deleteDetails(reportId, List.of(code));
+    } else {
+      repository.deleteReport(reportId);
+    }
   }
 
   /**

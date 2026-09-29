@@ -131,7 +131,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     and the ticket are its only tracking.
   - **Test:** none - see Status.
 
-- **BUG-4 — Once a category holds a saved value you cannot clear it back to empty; the save reports success and the old figure comes back (DATA LOSS).**
+- **BUG-4 - CLOSED 2026-09-25: once a category held a saved value you could not clear it back to empty; the save reported success and the old figure came back (DATA LOSS, #335).**
   - **What's wrong:** enter a Volume or a Cost on a category in the Edit Location panel and save. Come back,
     delete the value, and save again: *"Data saved successfully"* appears, but the old number is still stored
     and reappears on reload. A reporter who entered a figure by mistake has no way to remove it — the only
@@ -183,13 +183,33 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     [#260](https://github.com/bcgov/nr-ilcr/issues/260), which is the CLOSED Schedule 1 precedent cited above.)
   - **Priority / env:** **p0** (data integrity, and a previously-broken behaviour with a closed precedent) ·
     local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to fix when capacity allows; QA
-    re-verifies and closes this entry then. Both `@discovered-bug` tests assert the CORRECT behaviour, so they
-    are RED today and go green on their own when the fix lands, at which point their tags come off. Found
-    2026-08-20 by the QA reviewer in manual testing, not by the suite.
+  - **Status:** CLOSED 2026-09-25 — fixed for [#335](https://github.com/bcgov/nr-ilcr/issues/335), server side.
+    `Schedule4Service.saveLocation` now treats the request's category list as the location's COMPLETE
+    desired state on an edit: every in-scope category not sent is cleared — a fixed code's detail row is
+    deleted, a distance code's child report is deleted (the `writeDistanceCategory` `empty` branch this
+    entry said "simply never runs" now runs for absent categories too). A fixed category sent with all-null
+    amounts deletes its row rather than writing an all-null one. The client is unchanged: omitting an
+    emptied category is now a correct thing for it to do, and `buildRequest` says so. Legacy parity: legacy
+    wrote every category on every save, so an emptied one was written through — same outcome. The partial
+    clear (Cost emptied, Volume kept) keeps working: the category is still sent and the null upserted.
+    Schedules 3, 5 and 8 were checked for the same shape (#260's question): their request builders send
+    the whole form, not a filtered list, so they do not share it. Found 2026-08-20 by the QA reviewer in
+    manual testing, not by the suite.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/update.feature` — "Clearing a distance category
     removes it and leaves the rest of the location intact" and "Clearing a fixed category's amounts persists,
-    one field at a time and then entirely", both `@p0 @discovered-bug`.
+    one field at a time and then entirely", both `@p0`; their `@discovered-bug` tags came off with the fix and
+    they now stand as the regression guard (EXACT-set assertions, so a surviving category fails). Backend:
+    `Schedule4WriteServiceTest` (omitted fixed → detail deleted; omitted distance → child deleted; all-null
+    fixed → deleted, never inserted; partial clear still upserts the null; create does not reconcile) and
+    `Schedule4WriteIT.put_edit_omittedCategories_areCleared` on its own fixture (mill 547, `R__45`), which
+    walks the same partial-then-full boundary against Oracle. **Review of PR #510 (2026-09-29)** hardened
+    the fix for legacy-shaped families the 54x fixtures never had: a family with NO distance-null primary
+    (the document then serves its lowest child as the location's id — deleting that "cleared" child would
+    have deleted the location and the fixed rows just written) and a family with TWO children for one
+    distance code (a first-row-only lookup left the second to resurrect its figures). The identity report
+    now only ever loses the code's detail, every child of a cleared code goes, and duplicates collapse into
+    the first on a keep. `Schedule4WriteIT.put_edit_legacyFamilyWithoutPrimary_…` (mill 548, `R__46`) and
+    three `Schedule4WriteServiceTest` cases pin it.
 
 **Divergences:**
 
@@ -534,19 +554,47 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
     affected schedule. One fix turns all of these green.
   - **Local facts (this is what belongs here):**
-    - **Scenario:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S33 @S34` — **ONE** scenario
-      carrying BOTH directions, unlike the other schedules' two. Not a shortcut: this suite enforces one
-      dedicated (mill, year) per mutating scenario plus "used in at most one feature file", and the extract
-      has no free Draft left, so a second anchor had to be seeded for no gain. Split it the day one frees up.
+    - **Scenario (2026-08-27 → 2026-09-18, historical):** `check-status-unsaved.feature`
+      `@discovered-divergence @p1 @S33 @S34` — ONE scenario carrying both directions on a saved
+      Volume-only category. Retired with #465 (see Status).
+    - **Scenarios (since 2026-09-28, #359 group B):** `check-status-unsaved.feature` `@p1 @S33 @S34` ×2,
+      GREEN by design, no `@discovered-*` tag — (1) an existing location with an unsaved Crew Barge/Ferry
+      Distance only, on `check-unsaved`; (2) a New location with no name and a Rail Haul Distance only, on
+      the shared validate-only `validation` anchor (it saves nothing; a second scenario on `check-unsaved`
+      would race the first one's empty-at-rest Given under `fullyParallel`).
     - **Anchor:** `check-unsaved` (9050/2015), SEEDED by
-      `real-test-data-patches/sch4/unsaved-check-anchors.sql`. A first attempt reused 12050/2015 and
-      preflight caught it — that pair is `nav-subpage-back`, declared across four lines, which a line-based
-      search misses.
+      `real-test-data-patches/sch4/unsaved-check-anchors.sql` and present in the CI seed
+      (`backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql`, the 2015/9050 report-status row).
+      Released 2026-09-18, re-claimed 2026-09-28. A first attempt reused 12050/2015 and preflight caught
+      it — that pair is `nav-subpage-back`, declared across four lines, which a line-based search misses.
     - **Re-grounding note:** Schedule 4 saves per LOCATION from the panel's own Save while Check Status is a
       page-level action, so "unsaved" here means an open panel holding typed amounts — the same state DIV-3
       is about.
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** **RETIRED for Schedule 4 on 2026-09-18 (#465)** — not fixed, made moot. The scenario's
+  - **Status:** **UN-RETIRED and FIXED on 2026-09-28 by #359 group B** — pending the e2e run to CLOSE.
+    (The same change fixed Schedules 7A, 7B and 9, verified by backend unit/IT and Vitest; those
+    schedules have no e2e suite.) Legacy, observed on the legacy app on 2026-09-25: pressing Check Status first ran
+    the page's field validation over the OPEN panel's on-screen values — the rules Save runs (on the three
+    distance categories a Distance makes Volume and Cost required, and the other way round; on a New or
+    Copy panel the Location Name is required) — and listed each failing field in the banner as
+    `{label}: Value is required.` (`common/validation.properties:11`). The rebuild had skipped that and
+    answered "requirements met" over an invalid panel. The fix gates Check Status on `validateLocationForm`
+    over the open panel, names each failing field in legacy's wording (on Save too), and sends the panel
+    (`{location: {id, name}}`) so the check judges the name on screen. #359 stays OPEN for Schedules 8
+    and 10 (group C).
+    - **Closure evidence:**
+      - Run command: `cd frontend/e2e && npx playwright test --grep "@sch4"`, then `--grep "@check-status-unsaved"`
+      - Date: 2026-09-29, re-run after the per-field and all-or-nothing follow-ups and a merge of main
+        (first run 2026-09-28)
+      - Database: local stack, real-data extract
+      - Result:
+        - `@sch4`: the 92 scenarios gave 89 passed and 3 failed. All 3 are `@discovered-bug`
+          (BUG-1, BUG-4 ×2), and every setup/preflight check passed.
+        - The two DIV-7 `@discovered-divergence` scenarios, red on 2026-09-28, now pass after main's
+          #514. Retiring their tags belongs to that work, not #359.
+        - `@check-status-unsaved`: 219 passed, 0 failed. Both restored `@S33 @S34` scenarios are
+          green, and Schedules 1, 2, 3 and 5 are still green.
+    - **Earlier history — RETIRED for Schedule 4 on 2026-09-18 (#465)**, not fixed, made moot. The scenario's
     premise was a saved Volume-only category that Check Status flags; under legacy parity (DIV-9) nothing
     saved on Schedule 4 can be flagged, and the one field the check does enforce — the description — cannot
     be saved blank, so neither the false-RED nor the false-GREEN arm has a producible Schedule 4 state.
@@ -554,8 +602,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     stays in `real-test-data-patches/sch4/` for teardown). **#359 itself stays open** — the other ten
     scenarios across sch1/sch2/sch3/sch11 still reproduce it, and Schedule 4's page still has the same
     architecture (Check Status judges the saved document), so if a Schedule 4 check-status rule ever
-    returns, this instance returns with it. Added 2026-08-27; retired 2026-09-18.
-  - **Test:** none (retired). The sch3 register's table of instances records this.
+    returns, this instance returns with it. Added 2026-08-27; retired 2026-09-18; un-retired 2026-09-28.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status-unsaved.feature` — "A Distance
+    typed into an existing location, unsaved, blocks Check Status until Volume and Cost are given" and "A
+    new location with no name and a Rail Haul Distance only blocks Check Status on all three fields"
+    (`@p1 @S33 @S34`, both green by design). Also `validation.feature` S13/S19–S23 and the copy/subpages
+    blank-name scenarios, which now assert the banner lines. The sch3 register's table of instances
+    records this.
 
 - **DIV-9 — Check Status reports a missing Cost for every Volume-only row; legacy never reported it at all.**
   - ✅ **RESOLVED on 2026-09-18** (issue [#465](https://github.com/bcgov/nr-ilcr/issues/465)), in the same PR

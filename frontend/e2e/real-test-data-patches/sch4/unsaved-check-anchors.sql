@@ -30,12 +30,13 @@
 --      the app has never seen.
 -- Nothing else is seeded, so the anchor holds NO locations at rest, which
 -- preflight asserts and the scenario's own Given then builds on.
---   9050/2015 — `check-unsaved` (S33/S34). Its Given saves a location with a
---               Volume but no Cost; the scenario then supplies the Cost in the
---               open panel and re-checks WITHOUT saving (the false-RED arm), and
---               empties it again and re-checks (the false-GREEN arm). Both arms
---               share one scenario because this is the only free anchor — see
---               `features/sch4/.../check-status-unsaved.feature` for that note.
+--   9050/2015 — `check-unsaved` (S33/S34). Its Given saves a location with
+--               only a name; the scenario then enters a Crew Barge/Ferry
+--               Distance in the open panel and presses Check Status WITHOUT
+--               saving, which the panel's field validation blocks (#359 group B;
+--               re-authored 2026-09-28 — the original false-RED/false-GREEN arms
+--               were retired with #465). See
+--               `features/sch4/.../check-status-unsaved.feature`.
 -- Mill 9050 ("760 WESTEROS") is deliberate: sch4 already owns that mill in
 -- 2018-2021, so this anchor stays inside the domain that uses it.
 --

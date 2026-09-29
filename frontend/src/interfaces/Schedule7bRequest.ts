@@ -37,3 +37,28 @@ export interface CulvertSaveAllRequest {
     readonly culvert: CulvertRequest
   }[]
 }
+
+/**
+ * The Check Status body — every culvert as it is ON SCREEN, mirroring the backend
+ * `Schedule7bCheckRequest` (#359). Legacy's check read the bean's in-memory document, which every row
+ * input wrote into on change, so the verdict described the screen (rows on other paginator pages
+ * included) rather than the saved record. Rows are numbered server-side by their ORDINAL here, so they
+ * must be sent in document order. The Add panel's draft is never part of it (Add saves at once).
+ *
+ * ⚠ Every member is nullable and `null` MUST stay null: the server's check is a pure null test (a
+ * typed `0` passes), so coercing a blank field to `0` turns a missing value into a pass. There is no
+ * rise — the check never reads it.
+ */
+export interface CulvertCheckEntry {
+  readonly culvertTypeCode: string | null
+  readonly spanSize: number | null
+  readonly length: number | null
+  readonly culvertPieceCount: number | null
+  readonly materialCost: number | null
+  readonly installCost: number | null
+  readonly comments: string | null
+}
+
+export interface Schedule7bCheckRequest {
+  readonly culverts: readonly CulvertCheckEntry[]
+}

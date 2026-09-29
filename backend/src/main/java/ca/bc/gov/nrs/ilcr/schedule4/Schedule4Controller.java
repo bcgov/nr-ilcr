@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule4.api.Schedule4Api;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
@@ -127,9 +128,10 @@ public class Schedule4Controller implements Schedule4Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule4CheckStatusResponse> checkStatus(
-      long millId, int year, Authentication authentication) {
+      long millId, int year, Schedule4CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary required), then evaluate — mutates nothing.
+    // The body carries the open location panel (#359); the resolver overlays it.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year, request));
   }
 }

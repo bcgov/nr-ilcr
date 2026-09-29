@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule7a.api.Schedule7aApi;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
@@ -129,9 +130,12 @@ public class Schedule7aController implements Schedule7aApi {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule7aCheckStatusResponse> checkStatus(
-      String millId, String year, Authentication authentication) {
+      String millId, String year, Schedule7aCheckRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(schedule7aService.checkStatus(context.millId(), context.year()));
+    // The SCREEN, not the database (#359); Schedule7aService#checkStatusStored answers the other
+    // question, for the report-level sweep.
+    return ResponseEntity.ok(
+        schedule7aService.checkStatus(context.millId(), context.year(), request));
   }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutation-echo success message. */

@@ -7,7 +7,7 @@
 
 | Source | What it contributed |
 |---|---|
-| `UC-SCH4-001/gherkin/*.feature` (**34** slices S01–S34) | the executable scenarios. S32 is "Correct a Sub-Page Row In Place"; **S33/S34 arrived upstream 2026-08-27 with ilcr-bmad PR #92** — the Check-Status-on-unsaved-edits arms, **covered** 2026-08-27 by ONE deliberate `@discovered-divergence` scenario carrying both directions, against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — **RETIRED 2026-09-18**: since #465 (DIV-9) nothing saved on Schedule 4 can be flagged, so S33/S34 have no producible Schedule 4 state (`not-applicable`; the arms stay live on sch1/sch2/sch3/sch11). Register entry: defects.md **DIV-8**, a pointer; the analysis lives once, in `sch3/defects.md` DIV-6 |
+| `UC-SCH4-001/gherkin/*.feature` (**34** slices S01–S34) | the executable scenarios. S32 is "Correct a Sub-Page Row In Place"; **S33/S34 arrived upstream 2026-08-27 with ilcr-bmad PR #92** — the Check-Status-on-unsaved-edits arms, **covered** 2026-08-27 by ONE deliberate `@discovered-divergence` scenario carrying both directions, against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — retired 2026-09-18 (since #465 / DIV-9 nothing SAVED on Schedule 4 can be flagged), and **UN-RETIRED 2026-09-28 by #359 group B**: legacy's Check Status first ran the open panel's field validation over its on-screen values (observed on the legacy app 2026-09-25), so `check-status-unsaved.feature` is re-authored as two GREEN `@S33 @S34` scenarios (existing location, and New location) — not `@discovered-divergence`. Register entry: defects.md **DIV-8**, a pointer; the analysis lives once, in `sch3/defects.md` DIV-6 |
 | `UC-SCH4-001-slices.md` (Relevant Controls / Messages / Fields / Business Rules per slice; Gap Analysis) | 9 business rules (BR-01…BR-09), 27 fields, the deliberate-exclusion list |
 | `UC-SCH4-001-technical.md` (Confirmed Messages, Validation Rules, UI Element Reference) | the ERR/WRN/STA/CNT/FLD/SUC/EF2/NAV catalogue (25 rows) |
 
@@ -84,8 +84,9 @@ See GAP-1.
 | FLD-002 category Cost range [-99,999,999, 99,999,999] | S20, FLD-002 | same | validation `@S20 @p1` outline (both ends) | covered | — |
 | FLD-003 Distance range [0, 999,999.9] | S21, FLD-003 | `validation.ts` DISTANCE | validation `@S21 @p1` outline (both ends) | covered | — |
 | …those bounds are INCLUSIVE | implied by the ranges | `fieldRange.ts` `rangeError` | validation `@S19 @S20 @S21 @p2` outline | covered | — |
-| FLD-005 / BR-04 Distance ⇒ Volume+Cost required | S22, BR-04, FLD-005 `[UNKNOWN]` | `validation.ts` BR-04 + `DistanceCategoryCompleteValidator` | validation `@S22 @p1` outline | covered (message re-grounded) | — |
-| FLD-005 / BR-04 Volume\|Cost ⇒ Distance required | S23, BR-04 | same | validation `@S23 @p1` outline | covered (message re-grounded) | — |
+| FLD-005 / BR-04 Distance ⇒ Volume+Cost required (since 2026-09-29 ALL-OR-NOTHING: any of Distance/Volume/Cost present ⇒ every missing one reported at once — a deliberate fix of legacy's step-by-step reveal, by BA decision 2026-09-29; the set of valid rows is unchanged) | S22, BR-04, FLD-005 — marked `[UNKNOWN]` in the source Gherkin, but legacy's text was never unknown: JSF `required` as legacy overrode it, `{0}: Value is required.` (`common/validation.properties:11`), `{0}` = the input's XHTML `label` | `validation.ts` BR-04 + `DistanceCategoryCompleteValidator`; the banner line from `locationBannerLines` (e.g. `Truck Barge Ferry (Volume m³): Value is required.` on the New panel), plus the rewrite's own inline `Value Required` | validation `@S22 @p1` outline (inline + banner) | covered | — |
+| FLD-005 / BR-04 Volume\|Cost ⇒ Distance required — and, since 2026-09-29, the OTHER amount too (Volume only ⇒ Distance + Cost; Cost only ⇒ Distance + Volume), all at once. Legacy's conditional `required=` asked for the Distance first and the other amount only on the next attempt; the rebuild fixes that on purpose (BA decision, 2026-09-29), in `validation.ts` and `DistanceCategoryCompleteValidator` alike | S23, BR-04; same `validation.properties:11` text | same (`Distance (Km): Value is required.` + the other amount's line on the New panel) | validation `@S23 @p1` outline (both missing cells, inline + banner) | covered | — |
+| The validation banner lists EACH failing field in legacy's wording, in panel order (name, then grid row by row), replacing the generic "Please correct the highlighted fields before saving." — on Save and on Check Status alike | legacy `p:messages` (one message per failing field); #359 group B decision, 2026-09-28; labels from `schedule4ExistingLocation.xhtml` / `schedule4NewLocation.xhtml` by panel mode | `locationBannerLines` (`validation.ts`) → the "Action failed" column in `index.tsx` | validation `@S13 @S19–S23 @p1`, copy `@S07 @S13 @p2`, subpages `@S03 @S13 @p2`, check-status-unsaved `@S33 @S34 @p1` | covered | — |
 | BR-04 does NOT apply to the 9 fixed categories | slices Data Field Reference | `validation.ts` `kind === 'DISTANCE'` guard | validation `@S22 @p2` | covered | — |
 | A fully-empty distance category raises nothing | BR-04 boundary | `DistanceCategoryCompleteValidator` empty-branch | validation `@S22 @S23 @p2` | covered | — |
 | Two invalid cells report independently | slices Gap Analysis combination (2) | per-field `fieldErrors` map | validation `@S19 @S20 @p2` | covered | — |
@@ -118,7 +119,7 @@ See GAP-1.
 | A mill/year with no locations is vacuously MET | legacy AND-over-locations | `checkStatus` empty loop | check-status `@S28 @p2` | covered | — |
 | Check Status mutates nothing | AD-5 | `@Transactional(readOnly)`; no state change | implicit in every check-status scenario (read-backs unchanged) | covered | — |
 | …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | `describeIssue()` in `schedule4/index.tsx` → `checkStatusFieldLabel()` — `"Description: Value Required"`; a cost-item code would render `"<category> (Cost $): …"` | — (no producible finding since #465) | not-applicable | DIV-2 (resolved 2026-09-18 by #326, superseded by DIV-9) — Vitest only |
-| Check Status on unsaved panel edits (S33 / S34) | ilcr-bmad PR #92 | Check Status judges the saved document (app-wide, #359) | — (retired: nothing saved can be flagged) | not-applicable | DIV-8 (Schedule 4 instance retired 2026-09-18) |
+| Check Status on unsaved panel edits (S33 / S34): the open panel's field validation runs over its ON-SCREEN values first — an existing location with a Crew Barge/Ferry Distance only, and a New location with no name and a Rail Haul Distance only, are blocked with the legacy banner lines, no verdict, nothing stored | ilcr-bmad PR #92; observed on the legacy app 2026-09-25 (spec #359 group B) | `handleCheckStatus` gates on `validateLocationForm` over the open panel; the body carries the panel (`{location: {id, name}}`) | check-status-unsaved `@S33 @S34 @p1` ×2 | covered | DIV-8 (fixed by #359 group B — green in the e2e run of 2026-09-28) |
 | Check Status does NOT require a Distance | **S29 as corrected 2026-08-20** (its original missing-Distance premise never existed anywhere) | not enforced — legacy's check is commented out (`Schedule4CheckStatus.java:88-94`) | check-status `@S29 @p1` | covered | SPEC-3 (closed) |
 | Comments never affect Check Status | **S30 as corrected 2026-08-20** (Schedule 4 never had that rule; legacy's was on 7B, conditional) | not enforced — commented out inline (`Schedule4CheckStatus.java:22`) | check-status `@S30 @p1` | covered | SPEC-4 (closed) |
 
@@ -148,16 +149,18 @@ See GAP-1.
 
 ## Coverage gate (§B of the quality gates)
 
-Counted mechanically from the three tables above (88 source-item rows; a row's priority is the lowest `@pN`
-its Scenario cell carries). **6 rows are `not-applicable`** and leave the denominator: the >30-char name via
-the UI, the Comments maxlength, ALT-001, ASY-001, the EF2 recovery arms (owned by UC-SEC-001), and the AC1
-count columns. That leaves **82 coverage-eligible rows**.
+Counted mechanically from the four tables above (**92** source-item rows; a row's priority is the lowest
+`@pN` its Scenario cell carries). Re-counted by script on 2026-09-28 (#359 group B), which also corrected
+figures that had drifted: **8 rows are `not-applicable`** and leave the denominator — the >30-char name via
+the UI, the Comments maxlength, ALT-001, ASY-001, the EF2 recovery arms (owned by UC-SEC-001), the AC1
+count columns, and the two Check Status rows with no producible browser state since #465 (the blank
+description finding, and the finding naming its field). That leaves **84 coverage-eligible rows**.
 
 | Bar | Threshold | Result |
 |---|---|---|
 | **P0** | 100% | **100%** — 19 of 19 eligible P0 rows covered, 0 gaps. Every core journey (S01 create, S02 edit, S03/S04 sub-page entry, S07 copy, S10 delete, S11 row delete, S18 read-only ×2 codes, S28 Check Status) is covered by a passing or deliberately-red scenario. |
-| **P1** | ≥ 90% (floor 80%) | **100%** — 37 of 37 eligible P1-tagged rows covered, 0 gaps. |
-| **Overall** | ≥ 80% | **97.6%** — 80 of 82 eligible rows covered; 2 counted gaps, all named below (GAP-3 closed 2026-08-20, GAP-2 closed 2026-09-24). |
+| **P1** | ≥ 90% (floor 80%) | **100%** — 41 of 41 eligible P1-tagged rows covered, 0 gaps (S33/S34 un-retired 2026-09-28). |
+| **Overall** | ≥ 80% | **97.6%** — 82 of 84 eligible rows covered; 2 counted gaps, all named below (GAP-3 closed 2026-08-20, GAP-2 closed 2026-09-24). |
 
 The two counted gaps (each filed in `defects.md`, none of them an app fault). GAP-2 and GAP-3 are listed too, as CLOSED, because their ids are cited elsewhere:
 
@@ -188,10 +191,13 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 | Parallel stress ×3 | `--repeat-each=5` (twice at default workers, once at `--workers=4`) | **512 / 514 each run — 1,542 executions, 6 failures, ALL at the entry point (app-shell paint, Home's first fetch, one Chrome launch >60 s), never the same test twice, and ZERO data-contention failures.** Two genuine readiness waits were stabilised as a result (see `defects.md`); the rest is this box's dev-mode Vite server saturating under ~24 concurrent browsers for 20+ min. Reported as measured rather than retried away or timeout-inflated — see the note below. |
 
 > ### Suite state — the ONE place this is recorded
-> **72 scenarios / 90 tests after Scenario-Outline expansion: 82 green + 8 deliberately-red.** Measured
-> from the generated specs and a full run on **2026-08-27**, then adjusted on 2026-09-18 for #326/#465 (DIV-9):
-> DIV-2's S28 scenario and DIV-8's S33/S34 scenario were retired as unproducible, one green and one red
-> (counted from `playwright test --list`; not re-run as a whole suite). The run rows above are the dated
+> **75 scenarios / 92 tests after Scenario-Outline expansion: 87 expected-green + 5 deliberately-red.**
+> Counted from the generated specs on **2026-09-28** (#359 group B: `npm run bddgen`, then
+> `npx playwright test --list --project=chromium --grep @sch4` → 92 chromium tests; 5 scenarios carry a
+> `@discovered-*` tag) after `check-status-unsaved.feature` came back as two green `@S33 @S34` scenarios.
+> **Measured 2026-09-29** on the local stack (real-data extract): 92 `@sch4` scenarios, 89 passed + 3
+> `@discovered-bug` reds. The DIV-7 pair now passes after #514. The earlier record — 72 / 90 on 2026-08-27, adjusted on 2026-09-18 for #326/#465 when
+> DIV-2's S28 scenario and DIV-8's S33/S34 scenario were retired — is superseded by this count. The run rows above are the dated
 > authoring-time records and are left as written. No whole-suite total is written down anywhere by design —
 > the e2e [`README.md`](../../../README.md) gives the command to measure one.
 >
@@ -223,7 +229,7 @@ see where they went:
 | render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) for Schedule 4; Schedule 8 followed 2026-09-14 (#464, `schedule8/index.tsx:837` + `SamplePage.tsx:670`), so #322 is closed |
 | nav-and-recompute `@S01 @S02` | DIV-4 | issue #291's fix (`6e86d7a`) — the panel shows the recomputed $/m³ without a reopen |
 | check-status `@S28` | DIV-2 | issue #326's fix (2026-09-18) named the field; the scenario was then REMOVED the same day when #465 (DIV-9) removed the cost finding it labelled — Vitest covers the labelling |
-| check-status-unsaved `@S33 @S34` | DIV-8 | REMOVED 2026-09-18, not fixed: #465 (DIV-9) left Schedule 4 with no saved state Check Status can flag, so neither arm is producible. #359 stays open on sch1/sch2/sch3/sch11 |
+| check-status-unsaved `@S33 @S34` | DIV-8 | REMOVED 2026-09-18, not fixed: #465 (DIV-9) left Schedule 4 with no saved state Check Status can flag. RE-AUTHORED 2026-09-28 as two GREEN scenarios (#359 group B: Check Status validates the open panel's on-screen entry first) — never a red in its new form |
 
 > ⚠️ **Every mutating scenario owns its own (mill, year)** — 50 of them, listed in
 > `fixtures/sch4/schedule4-test-data.ts`'s anchor table, and `preflight/sch4-anchors.setup.ts` fails the run

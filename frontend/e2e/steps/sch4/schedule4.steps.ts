@@ -321,6 +321,22 @@ Then('the Schedule 4 panel heading is {string}', async ({ schedule4Page }, headi
   await expect(schedule4Page.panelHeading).toHaveText(heading);
 });
 
+/**
+ * After a save the record stays open in the panel (index.tsx handleSave re-opens the saved record in
+ * edit mode), and since #514 the open record's OWN row actions are frozen: Edit / Copy / Delete grey out
+ * while it is the open location (index.tsx `isOpen`). The Schedule 4 twin of Schedule 5's step. Asserted
+ * rather than assumed, so a regression that closes the panel or unfreezes the row fails here instead of
+ * in a later click — which is how #335's fixed-category guard first failed once #514 landed: it re-opened
+ * a record that was already open, against a now-disabled Edit.
+ */
+Then('the Schedule 4 location {string} is still open with its row actions frozen', async ({ schedule4Page }, name) => {
+  await expect(schedule4Page.panel).toBeVisible();
+  await expect(schedule4Page.panelHeading).toHaveText('Edit Location');
+  for (const action of ['Edit', 'Copy', 'Delete']) {
+    await expect(schedule4Page.rowAction(name, action)).toBeDisabled();
+  }
+});
+
 Then('the Schedule 4 location panel is closed', async ({ schedule4Page }) => {
   await expect(schedule4Page.panel).toHaveCount(0);
 });
@@ -386,6 +402,28 @@ Then(
     await expect(schedule4Page.nameError).toHaveText(message);
   },
 );
+
+/**
+ * The validation banner, EXACTLY: one row per expected line, in order. When the client-side gate blocks
+ * Save or Check Status, the banner names each failing field in legacy's own wording — `{label}: Value is
+ * required.` for a blank required field (#359 group B) — so a missing, extra or re-ordered line fails.
+ * Polled, because the banner lands on the click's own render.
+ */
+Then(
+  'the Schedule 4 error banner lists:',
+  async ({ schedule4Page }, table: { raw: () => string[][] }) => {
+    const expected = table.raw().map(([line]) => line.trim());
+    await expect.poll(() => schedule4Page.errorBannerLines()).toEqual(expected);
+  },
+);
+
+/**
+ * One line of the validation banner, wherever it sits in the list — for a scenario whose subject is a
+ * single field (the others' lines are asserted by their own scenarios). Polled like the exact form.
+ */
+Then('the Schedule 4 error banner includes {string}', async ({ schedule4Page }, line) => {
+  await expect.poll(() => schedule4Page.errorBannerLines()).toContain(line);
+});
 
 Then('the Schedule 4 comments show {string}', async ({ schedule4Page }, expected) => {
   await expect(schedule4Page.commentsInput).toHaveValue(expected);
