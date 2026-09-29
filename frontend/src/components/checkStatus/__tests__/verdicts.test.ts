@@ -20,6 +20,7 @@ import {
   SCH7A_BRIDGE_MET_TEXT,
   SCH8_HARVESTED_TEXT,
   SCH8_NO_SAMPLE_TEXT,
+  SCH8_PAGE_1_LABEL,
   SCH8_SKIDDING_TEXT,
   SCH10_PAGE_ISSUE_TEXT,
   SCH10_ROAD_ISSUE_TEXT,
@@ -298,34 +299,38 @@ describe('Check Status verdict flatteners (D5/D6/D8 composition rules)', () => {
     expect(met.requirementsMetMessage?.text).toBe(MET_TEXT)
   })
 
-  test('Schedule 8 ISSUES: page issues then each sample’s, attributed positionally (D6), texts verbatim', () => {
+  test('Schedule 8 ISSUES: page issues then each sample’s, attributed by the wire labels (#461), texts verbatim', () => {
     const flat = flattenVerdict({ schedule: '8', requirementsMet: false, verdict: schedule8Issues })
+    // The page title is the one the Schedule 8 summary shows; the sample title the sample list shows.
+    const page = SCH8_PAGE_1_LABEL
     expect(texts(flat.errors)).toEqual([
-      'Page # 1 - Division: Value Required',
-      'Page # 1 - Contact: Value Required',
-      'Page # 1 - Phone: Value Required',
-      'Page # 1 - Supply Block: Value Required',
-      'Page # 1 - Sample # 1 - Cut Block: Value Required',
-      'Page # 1 - Sample # 1 - Slope Distance: Value Required',
-      'Page # 1 - Sample # 1 - Support Number: Value Required',
-      'Page # 1 - Sample # 1 - Support Avg Dist: Value Required',
-      'Page # 1 - Sample # 1 - Coniferous: Value Required',
-      'Page # 1 - Sample # 1 - Deciduous: Value Required',
-      'Page # 1 - Sample # 1 - Original TtT Rate: Value Required',
-      `Page # 1 - Sample # 1 - Skidding/Yarding: ${SCH8_SKIDDING_TEXT}`,
-      `Page # 1 - Sample # 2 - Actual Harvested: ${SCH8_HARVESTED_TEXT}`,
+      `${page} - Division: Value Required`,
+      `${page} - Contact: Value Required`,
+      `${page} - Phone: Value Required`,
+      `${page} - Supply Block: Value Required`,
+      `${page} - Sample # 1 - CISS - Cut Block: Value Required`,
+      `${page} - Sample # 1 - CISS - Slope Distance: Value Required`,
+      `${page} - Sample # 1 - CISS - Support Number: Value Required`,
+      `${page} - Sample # 1 - CISS - Support Avg Dist: Value Required`,
+      `${page} - Sample # 1 - CISS - Coniferous: Value Required`,
+      `${page} - Sample # 1 - CISS - Deciduous: Value Required`,
+      `${page} - Sample # 1 - CISS - Original TtT Rate: Value Required`,
+      `${page} - Sample # 1 - CISS - Skidding/Yarding: ${SCH8_SKIDDING_TEXT}`,
+      `${page} - Sample # 2 - CZERO - Actual Harvested: ${SCH8_HARVESTED_TEXT}`,
     ])
     // The raw DB ids never appear.
     expect(JSON.stringify(flat)).not.toMatch(/897[234]/)
   })
 
-  test('Schedule 8: the no-samples page case and MET with `pages` still populated', () => {
+  test('Schedule 8: the no-samples page case is attributed to its page label; MET keeps `pages` populated', () => {
     const noSamples = flattenVerdict({
       schedule: '8',
       requirementsMet: false,
       verdict: schedule8NoSamples,
     })
-    expect(texts(noSamples.errors)).toEqual([`Page # 1 - Sample: ${SCH8_NO_SAMPLE_TEXT}`])
+    expect(texts(noSamples.errors)).toEqual([
+      `${SCH8_PAGE_1_LABEL} - Sample: ${SCH8_NO_SAMPLE_TEXT}`,
+    ])
     const met = flattenVerdict({ schedule: '8', requirementsMet: true, verdict: schedule8Met })
     expect(met.errors).toEqual([])
     expect(met.requirementsMetMessage?.text).toBe(MET_TEXT)

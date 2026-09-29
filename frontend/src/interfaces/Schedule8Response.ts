@@ -113,14 +113,23 @@ export interface CheckFieldIssue {
   readonly message: MessageInfo
 }
 
+// Where a finding belongs (#461): the 1-based ordinal and the legacy title the screen shows for the
+// page ("Page # 1  -TSA: TSA5 -CP: cp123") or sample ("Sample # 1 - CMET"), so two pages missing the
+// same field are distinguishable. Always present: the server composes both on every response, and
+// no verdict is ever stored (the Check Status sweep evaluates live), so there is no older shape to
+// fall back from — same contract as Schedule 10's required `pageLabel`.
 export interface SampleCheckResult {
   readonly id: number | null
+  readonly sampleNumber: number
+  readonly sampleLabel: string
   readonly met: boolean
   readonly issues: CheckFieldIssue[]
 }
 
 export interface PageCheckResult {
   readonly id: number | null
+  readonly pageNumber: number
+  readonly pageLabel: string
   readonly met: boolean
   readonly issues: CheckFieldIssue[]
   readonly samples: SampleCheckResult[]
