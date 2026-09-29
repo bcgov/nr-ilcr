@@ -331,6 +331,13 @@ class Schedule4WriteIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.locations[?(@.id == 8072)].categories[*].code", contains(40, 48)));
 
     assertEquals(1, reports("TRANSPORTATION_REPORT_ID = 8072"), "the identity report survives");
+    // Its DISTANCE was code 47's, the last distance code on it — so it is cleared with the code
+    // rather than left behind as a stale distance (legacy wrote the report's distance from the
+    // form).
+    assertEquals(
+        1,
+        reports("TRANSPORTATION_REPORT_ID = 8072 AND DISTANCE IS NULL"),
+        "…and its now-orphaned distance is cleared");
     assertEquals(
         0,
         details("TRANSPORTATION_REPORT_ID = 8072 AND ILCR_REPORT_COST_ITEM_ID = 47"),
