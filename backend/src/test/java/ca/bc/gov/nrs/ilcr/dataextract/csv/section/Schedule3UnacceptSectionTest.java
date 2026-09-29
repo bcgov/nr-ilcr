@@ -194,22 +194,35 @@ class Schedule3UnacceptSectionTest {
       // markers, and dropping them would shorten the line a consumer expects to be seven wide.
       String[] expected = {"670", "2021", "Submitted", "8201", "*** NO DATA FOUND ***", "", ""};
 
-      List<String[]> rows = SECTION.rows(CTX, document(30000, List.of()));
+      List<String[]> rows = SECTION.rows(CTX, document(null, List.of()));
 
       assertThat(rows).hasSize(1);
       assertThat(rows.get(0)).hasSize(7).containsExactly(expected);
     }
 
     @Test
-    @DisplayName("no rows means no Annual Rents row either, even when the figure is present")
-    void noRowsMeansNoAnnualRentsRow() {
+    @DisplayName("a non-zero rents figure with no item-38 rows is the rents row and a Total:")
+    void rentsAloneAreNotEmpty() {
       // Legacy gated on getNumberOfUnacceptableCosts() == 0 (Schedule3UnacceptExtract.java:53),
-      // and the rents row lived in the else branch — so a mill with an item-29 figure but no
-      // item-38 rows gets the marker alone and its rents figure never reaches the file.
-      List<String[]> rows = SECTION.rows(CTX, document(30000, List.of()));
+      // and that count adds one for a non-null, non-zero rents figure (Schedule3DO.java:396-403) —
+      // so a mill with an item-29 figure but no item-38 rows takes the else branch and prints the
+      // rents row and a Total: (:69-105). Observed on DLVR for mill 7777 / 2016.
+      String[] rents = {"670", "2021", "Submitted", "8201", RENTS, "30,000", "30,000"};
+      String[] total = {"", "", "", "", "Total:", "30,000", "30,000"};
 
-      assertThat(rows).hasSize(1);
-      assertThat(rows.get(0)).doesNotContain(RENTS, "30,000");
+      assertThat(SECTION.rows(CTX, document(30000, List.of()))).containsExactly(rents, total);
+      // Null rows read as no rows, so they take the same branch.
+      assertThat(SECTION.rows(CTX, document(30000, null))).containsExactly(rents, total);
+    }
+
+    @Test
+    @DisplayName("a zero rents figure with no item-38 rows is still the marker")
+    void zeroRentsAloneAreEmpty() {
+      // Legacy's count test is non-null AND compareTo(ZERO) != 0 (Schedule3DO.java:398), so a
+      // stored zero does not count and the section keeps its marker.
+      String[] expected = {"670", "2021", "Submitted", "8201", "*** NO DATA FOUND ***", "", ""};
+
+      assertThat(SECTION.rows(CTX, document(0, List.of()))).containsExactly(expected);
     }
 
     @Test
@@ -219,7 +232,7 @@ class Schedule3UnacceptSectionTest {
 
       assertThat(SECTION.rows(CTX, null)).hasSize(1);
       assertThat(SECTION.rows(CTX, null).get(0)).containsExactly(expected);
-      assertThat(SECTION.rows(CTX, document(30000, null)).get(0)).containsExactly(expected);
+      assertThat(SECTION.rows(CTX, document(null, null)).get(0)).containsExactly(expected);
     }
 
     @Test
