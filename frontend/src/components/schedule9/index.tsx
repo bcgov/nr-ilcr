@@ -275,12 +275,12 @@ const Schedule9: FC = () => {
     }
   }
 
-  const SELECT_FIELDS: readonly (keyof RecordFormValues)[] = [
+  const SELECT_FIELDS: ReadonlySet<keyof RecordFormValues> = new Set<keyof RecordFormValues>([
     'contractualItemCode',
     'unitCode',
     'biogeoclimaticZone',
     'sourceCode',
-  ]
+  ])
 
   const setRowField = (
     record: ContractualWorkRecord,
@@ -302,7 +302,7 @@ const Schedule9: FC = () => {
     invalidateCheckResult()
     // A select's selection IS its change: validate it now, with the value just chosen, plus any
     // dependent the selection cleared.
-    if (SELECT_FIELDS.includes(key)) {
+    if (SELECT_FIELDS.has(key)) {
       const cleared = RECORD_FIELD_ORDER.filter(
         (field) => field !== key && current[field] !== next[field],
       )

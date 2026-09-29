@@ -819,7 +819,8 @@ const Schedule4: FC = () => {
       }
     }
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
-    checkStatus<Schedule4CheckStatusResponse>(
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void checkStatus<Schedule4CheckStatusResponse>(
       {
         fallback: 'Unable to check status.',
         onSuccess: setCheckResult,
