@@ -18,6 +18,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
@@ -326,39 +327,139 @@ public class Schedule4Service {
   }
 
   /**
-   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year —
-   * read-only (AD-5), mutates nothing. Reuses the assembled read model ({@link #getSchedule4}) and,
-   * per location, flags a blank location description as the ONLY missing field — legacy parity
-   * (issue #465). Legacy's {@code Schedule4CheckStatus} enforced the description unconditionally
-   * ({@code :19-23}) and gated every per-category Cost check behind an {@code isXxxToCheck} flag
-   * that defaults to false and is set to false on load ({@code Schedule4DAO:243-337}) and never to
-   * true anywhere, so no Schedule 4 Cost was ever required; Distance and Comments were commented
-   * out (§Decisions 2 and 3). Story 10.4 §Decision 1 had read the dormant flags as an intended
-   * "Cost required when the category is stored" rule and enforced it; #465 reversed that. The
-   * schedule {@code outcome} is {@code MET} only when EVERY location passes (all-or-nothing, S31).
-   * Emits bundle KEYS; {@link Schedule4CheckStatusResolver} resolves the verbatim text (AD-8),
-   * substituting the location name into the per-location met message. A mill/year with no locations
-   * is vacuously MET (legacy {@code isSchedule4Valid} AND-over-locations).
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) against the SCREEN — the
+   * endpoint's entry point (bcgov/nr-ilcr#359). The stored locations are the candidates, with the
+   * open panel ({@code request.location()}) overlaid onto them — see {@link #overlay}. Read-only
+   * (AD-5), mutates nothing. The rule is {@link #evaluate}, shared with {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the open location panel, if any
+   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by {@link
+   *     Schedule4CheckStatusResolver})
+   */
+  @Transactional(readOnly = true)
+  public Schedule4CheckStatusResponse checkStatus(
+      long millId, int year, Schedule4CheckRequest request) {
+    return evaluate(overlay(storedCandidates(millId, year), request));
+  }
+
+  /**
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for the SAVED locations of
+   * a mill/year — the stored-data counterpart of {@link #checkStatus}, for report-level callers
+   * (the Check Status sweep and the submit gate) that have no screen to describe. Read-only (AD-5),
+   * mutates nothing. Reuses the assembled read model ({@link #getSchedule4}) and, per location,
+   * flags a blank location description as the ONLY missing field — legacy parity (issue #465).
+   * Legacy's {@code Schedule4CheckStatus} enforced the description unconditionally ({@code :19-23})
+   * and gated every per-category Cost check behind an {@code isXxxToCheck} flag that defaults to
+   * false and is set to false on load ({@code Schedule4DAO:243-337}) and never to true anywhere, so
+   * no Schedule 4 Cost was ever required; Distance and Comments were commented out (§Decisions 2
+   * and 3). Story 10.4 §Decision 1 had read the dormant flags as an intended "Cost required when
+   * the category is stored" rule and enforced it; #465 reversed that. The schedule {@code outcome}
+   * is {@code MET} only when EVERY location passes (all-or-nothing, S31). Emits bundle KEYS; {@link
+   * Schedule4CheckStatusResolver} resolves the verbatim text (AD-8), substituting the location name
+   * into the per-location met message. A mill/year with no locations is vacuously MET (legacy
+   * {@code isSchedule4Valid} AND-over-locations).
    *
    * <p>The write path already rejects a blank name ({@code Schedule4LocationRequest} is {@code
    * NotBlank}, as legacy's save was), so the description finding is reachable only for data that
    * arrived outside the app. It is kept because it is the rule, not because it is expected.
    *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–3, 5 and 6: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
+   *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by the
-   *     controller)
+   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by {@link
+   *     Schedule4CheckStatusResolver})
    */
   @Transactional(readOnly = true)
-  public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
-    // Editability is irrelevant to the requirement check (only stored Costs matter).
+  public Schedule4CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedCandidates(millId, year));
+  }
+
+  /**
+   * The stored locations as candidates, in served order.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return one candidate per stored location
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    // Editability is irrelevant to the requirement check (only the stored names matter).
     Schedule4Response document = assembleSchedule4(millId, year, EditableStatuses.NONE);
-    List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
-    boolean scheduleMet = true;
+    List<CheckCandidate> candidates = new ArrayList<>(document.locations().size());
     for (Location location : document.locations()) {
+      candidates.add(new CheckCandidate(location.id(), location.name()));
+    }
+    return candidates;
+  }
+
+  /**
+   * Overlay the open panel onto the stored candidates. Three cases, as on Schedule 5 (#476):
+   *
+   * <ul>
+   *   <li>no panel open ({@code request} or its {@code location} is null) → the stored locations,
+   *       unchanged;
+   *   <li>the panel holds a STORED location → its name is replaced in place (an unsaved rename
+   *       applies), so it keeps its position;
+   *   <li>the panel holds an UNSAVED location — a new one, a copy, or one another session deleted —
+   *       → APPENDED after the stored ones as an additional candidate, with a null id (it has no
+   *       stored id to report; a synthetic one would read as a persisted row). Recorded deviation
+   *       DL-28: legacy's final check skipped a detached new/copy panel.
+   * </ul>
+   *
+   * <p>The name is judged exactly as received (the server does not trim or default it) and tested
+   * with {@code isBlank()}, so a null, empty or whitespace-only name fails. The page sends the
+   * TRIMMED on-screen name, blank as {@code null} — the form Save stores it in — and its own Save
+   * gate already blocks a blank or whitespace-only name before Check Status is reached.
+   *
+   * @param stored the stored candidates, in order
+   * @param request the body, possibly null
+   * @return the candidates to judge
+   */
+  private static List<CheckCandidate> overlay(
+      List<CheckCandidate> stored, Schedule4CheckRequest request) {
+    Schedule4CheckRequest.LocationEntry entry = request == null ? null : request.location();
+    if (entry == null) {
+      return stored;
+    }
+    List<CheckCandidate> result = new ArrayList<>(stored);
+    for (int i = 0; i < result.size(); i++) {
+      CheckCandidate candidate = result.get(i);
+      if (entry.id() != null && entry.id().equals(candidate.id())) {
+        result.set(i, new CheckCandidate(candidate.id(), entry.name()));
+        return result;
+      }
+    }
+    result.add(new CheckCandidate(null, entry.name()));
+    return result;
+  }
+
+  /**
+   * One location to judge, from either source.
+   *
+   * @param id the stored location id, or null for an unsaved panel
+   * @param name the location name (description)
+   */
+  record CheckCandidate(Integer id, String name) {}
+
+  /**
+   * The BR-07 verdict, source-agnostic and pure. Neither {@link #checkStatus} nor {@link
+   * #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the locations to judge, in display order
+   * @return the MET/ISSUES outcome + per-location breakdown, carrying bundle keys only
+   */
+  static Schedule4CheckStatusResponse evaluate(List<CheckCandidate> candidates) {
+    List<LocationCheckResult> results = new ArrayList<>(candidates.size());
+    boolean scheduleMet = true;
+    for (CheckCandidate location : candidates) {
       List<FieldIssue> issues = new ArrayList<>();
       // The description is the one field legacy required (Schedule4CheckStatus.java:19). Category
-      // and sub-page-row Costs are NOT checked — see the Javadoc above (#465).
+      // and sub-page-row Costs are NOT checked — see checkStatusStored's Javadoc (#465).
       if (location.name() == null || location.name().isBlank()) {
         issues.add(
             new FieldIssue(

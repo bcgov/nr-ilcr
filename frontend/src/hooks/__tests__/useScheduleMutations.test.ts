@@ -136,4 +136,57 @@ describe('useScheduleMutations', () => {
       expect(successData).toEqual({ requirementsMet: true })
     })
   })
+
+  test('checkStatus POSTs the on-screen body when one is given (#359)', async () => {
+    let received: unknown = 'unsent'
+    server.use(
+      http.post(`${URL}/check-status`, async ({ request }) => {
+        received = await request.json()
+        return HttpResponse.json({ requirementsMet: true })
+      }),
+    )
+
+    const { result } = renderHook(() =>
+      useScheduleMutations({
+        path: '/v1/test-path',
+        millId: 100,
+        year: 2024,
+        isCurrent: () => true,
+      }),
+    )
+
+    act(() => {
+      result.current.checkStatus(
+        { fallback: 'Failed', onSuccess: () => undefined },
+        { location: { id: null, name: null } },
+      )
+    })
+
+    // `null` members survive the wire as null — never dropped, never coerced.
+    await vi.waitFor(() => {
+      expect(received).toEqual({ location: { id: null, name: null } })
+    })
+  })
+
+  test('clearBanners also clears the validation banner lines (#359 group B)', () => {
+    const { result } = renderHook(() =>
+      useScheduleMutations({
+        path: '/v1/test-path',
+        millId: 100,
+        year: 2024,
+        isCurrent: () => true,
+      }),
+    )
+    expect(result.current.validationErrors).toEqual([])
+
+    act(() => {
+      result.current.setValidationErrors(['Location Name: Value is required.'])
+    })
+    expect(result.current.validationErrors).toEqual(['Location Name: Value is required.'])
+
+    act(() => {
+      result.current.clearBanners()
+    })
+    expect(result.current.validationErrors).toEqual([])
+  })
 })

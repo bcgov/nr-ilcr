@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule9.api;
 
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
 import jakarta.validation.Valid;
@@ -123,9 +124,15 @@ public interface Schedule9Api {
       Authentication authentication);
 
   /**
-   * Check Status for Schedule 9 (S09) — read-only readiness validation. Mutates nothing, takes NO
-   * request body, and is NOT editability-gated: {@code VIEW_SCHEDULE} only (the Schedule 5/7A
-   * precedent), so a Submitted mill can still be checked.
+   * Check Status for Schedule 9 (S09) — read-only readiness validation. Mutates nothing and is NOT
+   * editability-gated: {@code VIEW_SCHEDULE} only (the Schedule 5/7A precedent), so a Submitted
+   * mill can still be checked.
+   *
+   * <p>{@code request} carries every contractual-work row currently ON SCREEN (#359): legacy's
+   * check read the bean's in-memory document, into which every row input wrote on change, so
+   * unsaved edits — on any paginator page — move the verdict. Rows are numbered by payload ordinal.
+   * The body is REQUIRED (an absent one is a clean 400), but its row fields are unvalidated,
+   * because reporting missing and out-of-range values is the check's whole job.
    *
    * <p>Returns either {@code requirementsMet: true} with the single SUC-002 banner and no errors,
    * or {@code requirementsMet: false} with each record's composed {@code Value Required} / range
@@ -133,6 +140,7 @@ public interface Schedule9Api {
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
+   * @param request the on-screen rows the check reads
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -140,5 +148,6 @@ public interface Schedule9Api {
   ResponseEntity<Schedule9CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule9CheckRequest request,
       Authentication authentication);
 }

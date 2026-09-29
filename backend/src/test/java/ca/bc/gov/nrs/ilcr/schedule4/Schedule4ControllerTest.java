@@ -4,10 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
@@ -185,12 +189,14 @@ class Schedule4ControllerTest {
                     List.of(new MessageInfo("locationRequirementsMetMsg", null)),
                     List.of(
                         new FieldIssue(47, new MessageInfo("missingRequiredFieldMsg", null))))));
-    when(schedule4Service.checkStatus(MILL_ID, YEAR)).thenReturn(raw);
+    Schedule4CheckRequest request =
+        new Schedule4CheckRequest(new Schedule4CheckRequest.LocationEntry(8001, "Dump A"));
+    when(schedule4Service.checkStatus(MILL_ID, YEAR, request)).thenReturn(raw);
     when(messageSource.getMessage(anyString(), any(), any(), any(Locale.class)))
         .thenReturn("resolved text");
 
     ResponseEntity<Schedule4CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
@@ -200,5 +206,7 @@ class Schedule4ControllerTest {
     assertEquals("resolved text", location.messages().get(0).text());
     assertEquals("resolved text", location.issues().get(0).message().text());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
+    // The SCREEN path (#359) with the very body posted — never the stored one.
+    verify(schedule4Service, never()).checkStatusStored(anyLong(), anyInt());
   }
 }

@@ -4,6 +4,7 @@ import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
+import type { Schedule4CheckRequest } from '@/interfaces/Schedule4Request'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -46,11 +47,15 @@ import {
   checkStatusFieldLabel,
   checkStatusLocationName,
   isLocationFormValid,
+  locationBannerEntries,
+  locationFieldBannerEntry,
   validateLocationForm,
   type CategoryForm,
+  type LegacyPanel,
 } from './validation'
 import { isUnusableEntry } from '@/utils/derivedMath'
 import { deriveCategoryPerUnits } from './derived'
+import { setBannerEntry, type BannerEntry } from '@/utils/legacyValidationBanner'
 import SubPage from './SubPage'
 import { SUB_PAGE_DEFS, type SubPageDef } from './subPageDefs'
 import './index.scss'
@@ -88,6 +93,11 @@ const NAV_SAVE_FIRST =
   'The information for the New Location must be saved before you can add other Transportation. Would you like to save the information now?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
+
+// The legacy panel each mode renders, for the banner's field labels: New and Copy were both
+// `schedule4NewLocation.xhtml`, an open existing location `schedule4ExistingLocation.xhtml`.
+const legacyPanelFor = (mode: PanelMode): LegacyPanel =>
+  mode === 'new' || mode === 'copy' ? 'new' : 'existing'
 
 // NAV-001 (#324): the panel-leaving action held behind the "unsaved data will be lost" confirm while the
 // panel is dirty — Back/Close, Add New Location, and Edit/View/Copy of a (different) location. Legacy
@@ -415,15 +425,50 @@ const Schedule4: FC = () => {
     onReset: resetTransient,
   })
 
+  // Check Status describes one exact screen snapshot — the open panel (#359). Bumped synchronously
+  // whenever a checked panel value (the name, a category amount) changes, and whenever the banners are
+  // cleared for a new action, so an older response can never repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  // A checked panel value changed (or the panel went away): the shown verdict, and any check in flight,
+  // describe the old screen. The validation banner is NOT wiped here: it accumulates per cell (see
+  // `commitCategoryField`), so only a changed cell's own line is recomputed, on its change.
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  // The validation banner, one keyed line per failing field in panel order (#359 group B change log).
+  // Save and Check Status REPLACE it with the full list; a category cell's change adds or removes only
+  // its own line — a deliberate deviation from legacy, which replaced the banner on every change
+  // (BA ruling). The Location Name has no change listener in legacy, so its line comes from Save /
+  // Check Status only.
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // The inline errors of the category grid. NOT derived on every keystroke any more: a cell is judged
+  // when it is changed and left (legacy `f:ajax event="change"`), and the whole panel by Save / Check.
+  const [panelFieldErrors, setPanelFieldErrors] = useState<Record<string, string>>({})
+  // The cells changed since they were last judged — a focus-and-leave with no change judges nothing.
+  const changedCellsRef = useRef<Set<string>>(new Set())
+
+  // ERR-001 marks the name once an action has been blocked on this panel, and stays until the panel is
+  // re-opened: clearing the banner on the next keystroke must not also hide the name's own marker while
+  // the name is still blank (legacy's field highlight outlived a re-render of the messages).
+  const [nameMarked, setNameMarked] = useState(false)
+
   // Drop every banner before an action: the hook-owned success/error/check banners plus the
   // page-local copy nudge.
   const clearMessages = () => {
+    checkSnapshotVersionRef.current += 1
     clearBanners()
     setWarnMessage(null)
+    setBannerEntries([])
+    setPanelFieldErrors({})
+    changedCellsRef.current.clear()
   }
 
   const openNew = () => {
     clearMessages()
+    setNameMarked(false)
     setPanelMode('new')
     setPanelName('')
     setPanelCategories(emptyCategoryForm())
@@ -437,6 +482,7 @@ const Schedule4: FC = () => {
 
   const openEditOrView = (location: Location, mode: 'edit' | 'view') => {
     clearMessages()
+    setNameMarked(false)
     const seeded = seedCategoryForm(location)
     setPanelMode(mode)
     setPanelName(location.name)
@@ -455,6 +501,7 @@ const Schedule4: FC = () => {
 
   const openCopy = (location: Location) => {
     clearMessages()
+    setNameMarked(false)
     const seeded = seedCategoryForm(location)
     setPanelMode('copy')
     setPanelName('') // name cleared — a copy must be given a new unique name (WRN-001)
@@ -472,7 +519,15 @@ const Schedule4: FC = () => {
     setPanelBaseline(emptySnapshot())
   }
 
-  const closePanel = () => setPanelMode('closed')
+  // A verdict (or a check in flight) on the closed panel's values is stale the moment it closes.
+  const closePanel = () => {
+    invalidateCheckResult()
+    // Lines and red cells about a panel that is gone describe nothing on screen.
+    setBannerEntries([])
+    setPanelFieldErrors({})
+    changedCellsRef.current.clear()
+    setPanelMode('closed')
+  }
 
   // ---- NAV-001 (#324): confirm before a dirty panel is discarded. ---------------------------------
 
@@ -515,6 +570,9 @@ const Schedule4: FC = () => {
   }
 
   const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
+    // A shown verdict described the panel before this edit; a check in flight is dropped on landing.
+    invalidateCheckResult()
+    changedCellsRef.current.add(`${code}-${field}`)
     // value is already the raw digit string (CommaNumberInput strips its display grouping).
     setPanelCategories((prev) => ({
       ...prev,
@@ -526,11 +584,32 @@ const Schedule4: FC = () => {
   // An invalid or unusable entry holds its previous committed value rather than driving the $/m³ from
   // something the server would refuse (ruled 2026-08-21 after code review).
   const commitCategoryField = (code: number, field: CategoryField) => () => {
-    // Validated here rather than read from `fieldErrors`, which is computed further down (after the
-    // early returns); same source of truth, and it only runs on blur.
-    const invalid = Boolean(
-      validateLocationForm(panelName, panelCategories).fieldErrors[`${code}-${field}`],
-    )
+    const key = `${code}-${field}`
+    // The same rules Save runs, read for THIS cell only: the Distance ⇄ Volume/Cost rule is judged
+    // for the cell just changed, against the other cells' current values.
+    const message = validateLocationForm(panelName, panelCategories).fieldErrors[key]
+    const invalid = message !== undefined
+    // Changed and left → judge this cell (#359 group B change log): red + its legacy banner line, or,
+    // passing, neither. A focus-and-leave with no change judges nothing.
+    if (changedCellsRef.current.has(key)) {
+      changedCellsRef.current.delete(key)
+      setPanelFieldErrors((prev) => {
+        if (message === undefined) {
+          if (!(key in prev)) return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        }
+        return { ...prev, [key]: message }
+      })
+      setBannerEntries((prev) =>
+        setBannerEntry(
+          prev,
+          key,
+          locationFieldBannerEntry(key, message, legacyPanelFor(panelMode)),
+        ),
+      )
+    }
     setPanelCommitted((prev) => {
       const live = panelCategories[code] ?? { volume: '', cost: '', distance: '' }
       const committed = prev[code] ?? { volume: '', cost: '', distance: '' }
@@ -577,10 +656,17 @@ const Schedule4: FC = () => {
   const putLocation = (afterSave: (doc: Schedule4Response) => void): void => {
     const validation = validateLocationForm(panelName, panelCategories)
     if (!isLocationFormValid(validation)) {
-      // Generic banner; the specific verbatim messages (ERR-001, ranges, BR-04) show inline on the
-      // fields so they are not duplicated.
+      // The banner names each failing field in legacy's wording (#359 group B); the inline markers
+      // (ERR-001, ranges, BR-04's `Value Required`) stay under the fields as well.
       setSaveMessage(null)
-      setSaveError('Please correct the highlighted fields before saving.')
+      setSaveError(null)
+      // A shown "requirements met" must never sit beside the lines saying the panel is incomplete.
+      invalidateCheckResult()
+      setNameMarked(true)
+      // Save judges the whole panel and REPLACES the banner with the full list.
+      setPanelFieldErrors(validation.fieldErrors)
+      changedCellsRef.current.clear()
+      setBannerEntries(locationBannerEntries(panelName, validation, legacyPanelFor(panelMode)))
       return
     }
     clearMessages()
@@ -695,20 +781,55 @@ const Schedule4: FC = () => {
 
   useEffect(() => {
     if (!focusVerdictRef.current) return
-    if (checkResult === null && saveError === null) return
+    if (checkResult === null && saveError === null && bannerEntries.length === 0) return
     focusVerdictRef.current = false
-    // Whichever landed: the verdict column on success, the "Action failed" column on error.
+    // Whichever landed: the verdict column on success, the "Action failed" column on an error or on a
+    // panel the validation gate blocked.
     ;(verdictRef.current ?? actionErrorRef.current)?.focus()
-  }, [checkResult, saveError])
+  }, [checkResult, saveError, bannerEntries])
+
+  // The Check Status body (#359): the open panel as it is on screen, or null with no panel open. An
+  // open existing location (edit, or view) carries its id; a New/Copy panel is unsaved, so id null.
+  const buildCheckRequest = (): Schedule4CheckRequest => ({
+    location:
+      panelMode === 'closed'
+        ? null
+        : {
+            id: panelMode === 'edit' || panelMode === 'view' ? panelEditId : null,
+            name: panelName.trim() === '' ? null : panelName.trim(),
+          },
+  })
 
   const handleCheckStatus = () => {
     if (saving) return
     clearMessages()
     focusVerdictRef.current = true
-    checkStatus<Schedule4CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    // Legacy ran the page's own field validation over the open panel's on-screen values before
+    // checking — the rules Save runs (Distance ⇄ Volume/Cost; a blank name). Gated only while the
+    // panel is editable: a View panel (or a read-only page) highlights nothing, so it must not block.
+    const panelEditable = data?.editable === true && panelMode !== 'closed' && panelMode !== 'view'
+    if (panelEditable) {
+      const validation = validateLocationForm(panelName, panelCategories)
+      if (!isLocationFormValid(validation)) {
+        setNameMarked(true)
+        // Check Status judges the whole panel and REPLACES the banner with the full list.
+        setPanelFieldErrors(validation.fieldErrors)
+        setBannerEntries(locationBannerEntries(panelName, validation, legacyPanelFor(panelMode)))
+        return
+      }
+    }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void checkStatus<Schedule4CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes a panel no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
+      buildCheckRequest(),
+    )
   }
 
   // ---- Sub-page navigation (Story 10.6). ---------------------------------------------------------
@@ -798,7 +919,9 @@ const Schedule4: FC = () => {
   }
 
   const validation = validateLocationForm(panelName, panelCategories)
-  const fieldErrors = panelMode === 'view' ? {} : validation.fieldErrors
+  // The name's ERR-001 still reads the live `validation` (shown once `nameMarked`); the grid shows
+  // only what a change or Save / Check Status has judged.
+  const fieldErrors = panelMode === 'view' ? {} : panelFieldErrors
   const panelOpen = panelMode !== 'closed'
   const readOnlyPanel = panelMode === 'view'
   const panelLocation =
@@ -956,8 +1079,12 @@ const Schedule4: FC = () => {
           labelText="Location Name"
           maxLength={30}
           value={panelName}
-          onChange={(event) => setPanelName(event.target.value)}
-          invalid={Boolean(validation.nameError) && saveError !== null}
+          onChange={(event) => {
+            invalidateCheckResult()
+            setPanelName(event.target.value)
+          }}
+          // ERR-001 marks the name only once an action has been attempted and blocked (or failed).
+          invalid={Boolean(validation.nameError) && (saveError !== null || nameMarked)}
           invalidText={validation.nameError}
         />
       )}
@@ -1082,14 +1209,26 @@ const Schedule4: FC = () => {
             <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
           </Column>
         )}
-        {saveError && (
+        {(saveError || bannerEntries.length > 0) && (
           <Column sm={4} md={8} lg={16} ref={actionErrorRef} tabIndex={-1}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
+            {saveError && (
+              <InlineNotification
+                kind="error"
+                lowContrast
+                title="Action failed"
+                subtitle={saveError}
+              />
+            )}
+            {/* The validation banner: one legacy line per failing field, in panel order. */}
+            {bannerEntries.map(({ line }, index) => (
+              <InlineNotification
+                key={`validation-${String(index)}`}
+                kind="error"
+                lowContrast
+                title="Action failed"
+                subtitle={line}
+              />
+            ))}
           </Column>
         )}
         {warnMessage && (

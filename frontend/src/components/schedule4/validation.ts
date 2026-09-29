@@ -3,6 +3,7 @@
 // round-trip. Ranges + messages MIRROR the Schedule 4 write DTO / message bundle. Category labels are
 // the legacy cost-item names (Constants.REPORT_COST_ITEMS).
 
+import { legacyRequiredMessage, type BannerEntry } from '@/utils/legacyValidationBanner'
 import { isBlank, rangeError } from './fieldRange'
 import { subPageDefByCode } from './subPageDefs'
 
@@ -107,6 +108,9 @@ export interface CategoryFormValue {
 
 export type CategoryForm = Record<number, CategoryFormValue>
 
+// The three cells of a distance row, in column order.
+const CATEGORY_FIELD_KEYS = ['distance', 'volume', 'cost'] as const
+
 export interface LocationValidation {
   nameError?: string
   fieldErrors: Record<string, string> // key: `${code}-volume` | `${code}-cost` | `${code}-distance`
@@ -136,18 +140,27 @@ export function validateLocationForm(name: string, categories: CategoryForm): Lo
         const e = rangeError(value.distance, DISTANCE, VALIDATION_MESSAGES.distance)
         if (e) fieldErrors[`${def.code}-distance`] = e
       }
-      // BR-04 bidirectional required (advisory).
-      const hasVolume = !isBlank(value.volume)
-      const hasCost = !isBlank(value.cost)
-      const hasDistance = !isBlank(value.distance)
-      if ((hasVolume || hasCost) && !hasDistance) {
-        fieldErrors[`${def.code}-distance`] = VALIDATION_MESSAGES.required
-      }
-      if (hasDistance && !hasVolume) {
-        fieldErrors[`${def.code}-volume`] = VALIDATION_MESSAGES.required
-      }
-      if (hasDistance && !hasCost) {
-        fieldErrors[`${def.code}-cost`] = VALIDATION_MESSAGES.required
+      // BR-04, ALL-OR-NOTHING (advisory; mirrors DistanceCategoryCompleteValidator).
+      // - Legacy's bug: on Truck Barge/Ferry, Crew Barge/Ferry and Rail Haul, a Volume or Cost entered
+      //   first revealed the other two required fields in steps — first the Distance, then, once the
+      //   Distance was in, the remaining amount — while a Distance (km) entered first showed both at
+      //   once (conditional `required=` at `schedule4ExistingLocation.xhtml:524,550,572`; Crew
+      //   Barge/Ferry `:607,632,654`; Rail Haul `:881,905,925`).
+      // - The decision: a deliberate fix of that legacy behaviour, by BA decision (2026-09-29). Once
+      //   any one of Distance/Volume/Cost has a value, all three are required and every missing one is
+      //   reported at once, so Check Status (or Save) shows every required field of the row in one go
+      //   instead of making the user discover them in several steps.
+      // - The set of VALID rows is unchanged: both rules accept only an all-empty or an all-filled row.
+      //   Only which missing fields are reported, and when, changes.
+      // The banner labels stay legacy's own. On a cell's change only that cell's entry here is read, so
+      // the changed cell is required iff another cell in its row holds a value.
+      const present = CATEGORY_FIELD_KEYS.filter((field) => !isBlank(value[field]))
+      if (present.length > 0) {
+        for (const field of CATEGORY_FIELD_KEYS) {
+          if (isBlank(value[field])) {
+            fieldErrors[`${def.code}-${field}`] = VALIDATION_MESSAGES.required
+          }
+        }
       }
     }
   }
@@ -158,4 +171,146 @@ export function validateLocationForm(name: string, categories: CategoryForm): Lo
 /** True when the validation has no name error and no field errors. */
 export function isLocationFormValid(v: LocationValidation): boolean {
   return v.nameError === undefined && Object.keys(v.fieldErrors).length === 0
+}
+
+/**
+ * Which legacy panel a Schedule 4 panel mode corresponds to, for its field labels. An open EXISTING
+ * location rendered `schedule4ExistingLocation.xhtml`; Add New Location AND Copy both rendered
+ * `schedule4NewLocation.xhtml` (`Schedule4MB.copyLocation` calls `addNewLocation`, `:284-285`). The
+ * two files label the same inputs differently, so the banner follows the panel on screen.
+ */
+export type LegacyPanel = 'existing' | 'new'
+
+type DistanceLabels = { distance: string; volume: string; cost: string }
+
+/**
+ * The `label` of every input Schedule 4 can REQUIRE, verbatim from the legacy XHTML — only the three
+ * distance categories' Distance/Volume/Cost carry a (conditional) `required`, so these are the only
+ * fields whose blank value reads `{label}: Value is required.`. Every other field error is a range
+ * message, reported verbatim.
+ *
+ * - existing: `schedule4ExistingLocation.xhtml` — Truck Barge/Ferry `:523,547,568`, Crew Barge/Ferry
+ *   `:606,629,650`, Rail Haul `:880,902,922`.
+ * - new/copy: `schedule4NewLocation.xhtml` — Truck Barge/Ferry `:138,143,146`, Crew Barge/Ferry
+ *   `:153,158,161`, Rail Haul `:201,206,209`. Every Distance there is labelled plain `Distance (Km)`,
+ *   and each Volume label carries the markup `m&lt;sup&gt;3&lt;/sup&gt;`. Legacy's escaping banner printed
+ *   that markup literally; that is a legacy defect, so the unit is rendered as `m³` here (#359
+ *   group B decision, 2026-09-28). The label text is otherwise verbatim.
+ */
+const DISTANCE_LABELS: Record<LegacyPanel, Record<number, DistanceLabels>> = {
+  existing: {
+    47: {
+      distance: 'Truck Barge Ferry (Km)',
+      volume: 'Truck Barge Ferry Volume (m3)',
+      cost: 'Truck Barge Ferry (Cost $)',
+    },
+    48: {
+      distance: 'Crew Barge Ferry (Km)',
+      volume: 'Crew Barge Ferry Volume (m3)',
+      cost: 'Crew Barge Ferry (Cost $)',
+    },
+    52: {
+      distance: 'Rail Haul (Km)',
+      volume: 'Rail Haul Volume (m3)',
+      cost: 'Rail Haul (Cost $)',
+    },
+  },
+  new: {
+    47: {
+      distance: 'Distance (Km)',
+      volume: 'Truck Barge Ferry (Volume m³)',
+      cost: 'Truck Barge Ferry (Cost $)',
+    },
+    48: {
+      distance: 'Distance (Km)',
+      volume: 'Crew Barge Ferry (Volume m³)',
+      cost: 'Crew Barge Ferry (Cost $)',
+    },
+    52: {
+      distance: 'Distance (Km)',
+      volume: 'Rail Haul (Volume m³)',
+      cost: 'Rail Haul (Cost $)',
+    },
+  },
+}
+
+/** The location name's `label` — identical in both panels (`schedule4ExistingLocation.xhtml:15`,
+ * `schedule4NewLocation.xhtml:14`), both `required="true"`. */
+const LOCATION_NAME_LABEL = 'Location Name'
+
+// The panel's grid order (legacy code order 40-55) and each row's column order (Dist, Volume, Cost),
+// which is the order legacy's messages listed the failing fields in.
+const GRID_ORDER = [...ALL_CATEGORIES].sort((a, b) => a.code - b.code)
+const COLUMN_ORDER = ['distance', 'volume', 'cost'] as const
+
+/**
+ * The legacy banner lines for a blocked location panel (#359 group B), in page order: the name first,
+ * then the grid row by row.
+ *
+ * The name follows JSF: `required` rejects only an EMPTY submission, so a blank name reads `Location
+ * Name: Value is required.`, while a whitespace-only name passes `required` and meets the bean's own
+ * `locationEmptyOrNull` check (`Schedule4MB.java:615`) — the ERR-001 text this page already shows
+ * inline. A category's blank-but-required field reads `{label}: Value is required.`; a range error its
+ * inline text.
+ */
+export function locationBannerLines(
+  name: string,
+  validation: LocationValidation,
+  panel: LegacyPanel,
+): string[] {
+  return locationBannerEntries(name, validation, panel).map((entry) => entry.line)
+}
+
+/** The banner key of the location name's line. */
+export const LOCATION_NAME_KEY = 'name'
+
+/**
+ * One category cell's banner entry — keyed `${code}-${field}` like `fieldErrors` — or null when the
+ * cell has no error. Used on a cell's change (the accumulating banner) and, per cell, by
+ * `locationBannerEntries`, so a cell's line reads the same whichever path produced it.
+ */
+export function locationFieldBannerEntry(
+  key: string,
+  message: string | undefined,
+  panel: LegacyPanel,
+): BannerEntry | null {
+  if (message === undefined) {
+    return null
+  }
+  const [codeText, field] = key.split('-') as [string, (typeof COLUMN_ORDER)[number]]
+  const code = Number(codeText)
+  const gridIndex = GRID_ORDER.findIndex((def) => def.code === code)
+  const label =
+    message === VALIDATION_MESSAGES.required ? DISTANCE_LABELS[panel][code]?.[field] : undefined
+  return {
+    key,
+    rank: gridIndex * COLUMN_ORDER.length + COLUMN_ORDER.indexOf(field),
+    line: label === undefined ? message : legacyRequiredMessage(label),
+  }
+}
+
+/** Every banner entry for a blocked panel, in page order (see `locationBannerLines`). */
+export function locationBannerEntries(
+  name: string,
+  validation: LocationValidation,
+  panel: LegacyPanel,
+): BannerEntry[] {
+  const entries: BannerEntry[] = []
+  if (validation.nameError !== undefined) {
+    entries.push({
+      key: LOCATION_NAME_KEY,
+      rank: -1,
+      line: name === '' ? legacyRequiredMessage(LOCATION_NAME_LABEL) : validation.nameError,
+    })
+  }
+  for (const def of GRID_ORDER) {
+    for (const field of COLUMN_ORDER) {
+      const key = `${def.code}-${field}`
+      const entry = locationFieldBannerEntry(key, validation.fieldErrors[key], panel)
+      if (entry !== null) {
+        entries.push(entry)
+      }
+    }
+  }
+  return entries
 }
