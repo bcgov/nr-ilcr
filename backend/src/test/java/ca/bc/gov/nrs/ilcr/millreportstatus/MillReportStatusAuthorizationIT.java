@@ -27,9 +27,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * endpoint. Both production roles pass the gate: since #468 a SUBMITTER holds GENERATE_MILL_REPORTS
  * too, because legacy showed a Licensee the Generate Reports menu and let them open the mill
  * reports — scoped, as legacy's were ({@code MillReportStatusDAO.java:173}), to the mills they are
- * associated to. So the two submitter arms differ: an unassociated submitter is served an EMPTY
- * table, the canonical one (associated to every seeded mill) the full one. The no-groups arm is
- * what separates this gate from an absent one.
+ * associated to. So the submitter arms differ by IDENTITY: a submitter whose JWT carries no
+ * directory GUID is refused (403 — no identity is not "no mills"), one with a GUID no xref row
+ * associates is served an EMPTY table, and the canonical one (associated to every seeded mill) the
+ * full one. The no-groups arm is what separates this gate from an absent one.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/reports/mill-status — authorization on GENERATE_MILL_REPORTS (AD-7)")
@@ -48,6 +49,16 @@ class MillReportStatusAuthorizationIT extends AbstractOracleIT {
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 
+  /** A submitter with a real directory GUID that no seeded xref row associates to any mill. */
+  private RequestPostProcessor unassociatedSubmitter() {
+    return jwt()
+        .jwt(
+            j ->
+                j.claim("custom:idp_user_id", "UNASSOCIATEDSUBMITTERXXXX0000001")
+                    .claim("cognito:groups", List.of("ILCR_SUBMITTER")))
+        .authorities(j -> CONVERTER.convert(j).getAuthorities());
+  }
+
   @Test
   @DisplayName("no token (anonymous) -> 401")
   void anonymous_returns401() throws Exception {
@@ -57,16 +68,31 @@ class MillReportStatusAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("unassociated ILCR_SUBMITTER -> 200 with an EMPTY table: their mills, none (#468)")
-  void unassociatedSubmitter_returnsEmptyTable() throws Exception {
-    // Past the gate (the role holds the action), then scoped to nothing: this JWT carries no
-    // directory GUID, so no mill is theirs. "Nothing" must never read as "everything".
+  @DisplayName("ILCR_SUBMITTER whose JWT carries no directory GUID -> 403: no identity to scope by")
+  void submitterWithoutIdentity_returns403() throws Exception {
+    // Past the gate (the role holds the action), then refused: a missing custom:idp_user_id is a
+    // claim-mapping problem, and it must surface as an audited 403 — not masquerade as a user who
+    // happens to have no mills (#468 review).
     mockMvc
         .perform(
             get(ENDPOINT)
                 .param("year", SEEDED_YEAR)
                 .accept(MediaType.APPLICATION_JSON)
                 .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("unassociated ILCR_SUBMITTER -> 200 with an EMPTY table: their mills, none (#468)")
+  void unassociatedSubmitter_returnsEmptyTable() throws Exception {
+    // A real identity that no xref row associates to any mill: genuinely nothing to show, and
+    // "nothing" must never read as "everything".
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_JSON)
+                .with(unassociatedSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$").isArray())
         .andExpect(jsonPath("$", hasSize(0)));

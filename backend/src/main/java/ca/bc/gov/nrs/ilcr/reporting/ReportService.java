@@ -233,6 +233,11 @@ public class ReportService {
     // selection, so a submitter's PDF covers their associated mills and an administrator's every
     // mill. A submitter with nothing in scope gets the same "no mills" 404 an empty year does.
     Optional<Set<Long>> scope = millContextService.callerMillScope();
+    if (scope.isPresent() && scope.get().isEmpty()) {
+      // A submitter with no mills: nothing can match, so the year is not even read.
+      log.warn("Caller has no mills to report on for year {} — nothing to render", year);
+      throw new MillInformationNoMillsException();
+    }
     List<MillInformationSection> sections =
         millInformationService.findSections(year).stream()
             .filter(section -> scope.isEmpty() || scope.get().contains(section.millId()))

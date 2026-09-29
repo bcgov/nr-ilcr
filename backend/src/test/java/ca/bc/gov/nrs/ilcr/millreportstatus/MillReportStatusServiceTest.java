@@ -1,6 +1,9 @@
 package ca.bc.gov.nrs.ilcr.millreportstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
@@ -233,11 +236,13 @@ class MillReportStatusServiceTest {
 
   @Test
   @DisplayName("a submitter with no associated mills gets an empty table, never everyone's (#468)")
-  void submitterWithNoMillsSeesNothing() {
-    when(repository.findStatusRows(2021)).thenReturn(List.of(millWith(514, "9999")));
+  void submitterWithNoMillsSeesNothing_andNothingIsRead() {
     when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of()));
 
     assertThat(service.findRows(2021)).isEmpty();
+    // Nothing can match an empty scope, so the year is not read at all (strict Mockito would also
+    // flag a stubbed-but-unused repository here).
+    verify(repository, never()).findStatusRows(anyInt());
   }
 
   /** A row whose every text column carries a value unique to that column. */

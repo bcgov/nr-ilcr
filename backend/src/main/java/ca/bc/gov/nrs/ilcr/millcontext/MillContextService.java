@@ -11,8 +11,8 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.CallerIdentity;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
-import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import ca.bc.gov.nrs.ilcr.util.LegacyDateText;
 import java.util.ArrayList;
@@ -139,41 +139,47 @@ public class MillContextService {
    * the scope with it, so a licensee sees their mills in the reports exactly as they do on the Home
    * page — never every mill.
    *
-   * <p>Identity is derived as {@code MillContextController.currentUserGuid} derives it for the Home
-   * list: a FAM {@code Jwt}'s {@code custom:idp_user_id}, or the dev mock principal's stand-in GUID
-   * — so with security off the mock submitter is scoped here as on the Home page. (This is
-   * deliberately NOT {@link #validateMillAccess}'s non-{@code Jwt} exemption: that one is a
-   * recorded dev-mode choice for direct schedule access, pinned by its own test.)
+   * <p>Three states, kept distinct (#468 review):
    *
-   * @return empty when unscoped — the caller holds {@code ILCR_ADMIN}, who is tied to no mill
-   *     (DL-22); otherwise the caller's actively associated mill ids, an EMPTY set when they have
-   *     none or their identity cannot be resolved (fail-closed, like {@link #listMills})
+   * <ul>
+   *   <li><b>Unscoped</b> ({@code Optional.empty()}): the caller holds {@code ILCR_ADMIN}, who is
+   *       tied to no mill (DL-22).
+   *   <li><b>Scoped</b> ({@code Optional.of(ids)}): a submitter's actively associated mill ids — an
+   *       empty set when they genuinely have none, which reads as an empty table / no-mills 404.
+   *   <li><b>No identity</b>: the principal carries no directory GUID ({@link
+   *       CallerIdentity#currentUserGuid}). NOT an empty scope. A blank or missing {@code
+   *       custom:idp_user_id} — a claim-mapping regression, a token from the wrong issuer — must
+   *       not masquerade as "a user with no mills", or it would fail closed as plausible,
+   *       user-specific empty results and nobody would notice. It is refused outright: 403, audited
+   *       by the AccessDenied handler like every other scope refusal.
+   * </ul>
+   *
+   * <p>Identity comes from the same reader the Home list uses ({@link CallerIdentity}), so the two
+   * cannot drift, and the dev mock principal is scoped here as it is there. (Deliberately NOT
+   * {@link #validateMillAccess}'s non-{@code Jwt} exemption: that is a recorded dev-mode choice for
+   * direct schedule access, pinned by its own test.)
+   *
+   * @return empty when unscoped; otherwise the caller's associated mill ids (possibly none)
+   * @throws AccessDeniedException 403 — a non-admin caller whose directory identity cannot be
+   *     resolved
    */
   public Optional<Set<Long>> callerMillScope() {
     if (roleChecker.hasConcreteRole(Role.ADMIN.name())) {
       return Optional.empty();
     }
-    String userGuid = currentUserGuid();
-    if (userGuid == null || userGuid.isBlank()) {
-      return Optional.of(Set.of());
-    }
+    String userGuid =
+        CallerIdentity.currentUserGuid()
+            .orElseThrow(
+                () -> {
+                  // Identity only — never a token (NFR3/AD-11). Distinct wording from the
+                  // not-associated 403 so the two are tellable apart in the audit log.
+                  log.warn("Mill-scope 403: caller identity could not be resolved for a report");
+                  return new AccessDeniedException("Caller identity could not be resolved.");
+                });
     return Optional.of(
         repository.findMillsForUser(userGuid).stream()
             .map(MillSummary::millId)
             .collect(Collectors.toUnmodifiableSet()));
-  }
-
-  /** The caller's directory GUID: a FAM {@code Jwt}'s, the dev mock principal's, else blank. */
-  private static String currentUserGuid() {
-    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    Object principal = auth != null ? auth.getPrincipal() : null;
-    if (principal instanceof Jwt jwt) {
-      return JwtPrincipalUtil.getIdpUserId(jwt);
-    }
-    if (principal instanceof MockUserPrincipal mock) {
-      return mock.userGuid();
-    }
-    return "";
   }
 
   /**

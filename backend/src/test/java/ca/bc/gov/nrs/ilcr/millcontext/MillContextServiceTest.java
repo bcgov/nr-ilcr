@@ -186,10 +186,22 @@ class MillContextServiceTest {
   }
 
   @Test
-  void callerMillScope_submitterBlankGuid_isAnEmptyScope_failClosed() {
+  void callerMillScope_submitterBlankGuid_isRefused_notAnEmptyScope() {
+    // #468 review: "no identity" must not read as "a user with no mills". A blank claim is a
+    // token/claim-mapping problem and surfaces as an audited 403, never as an empty table.
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
     authenticateJwtWithGuid("");
-    assertEquals(Optional.of(Set.of()), service.callerMillScope());
+    assertThrows(AccessDeniedException.class, () -> service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_principalWithoutIdentity_isRefused() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken("some-other-principal", "N/A", List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertThrows(AccessDeniedException.class, () -> service.callerMillScope());
   }
 
   @Test

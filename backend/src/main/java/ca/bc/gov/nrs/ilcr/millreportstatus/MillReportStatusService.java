@@ -78,12 +78,17 @@ public class MillReportStatusService {
    * @return one row per mill in mill-id order; empty when the year has no mills the caller may see
    */
   public List<MillReportStatusRow> findRows(int year) {
-    Map<String, String> regions = zoneDescriptions();
     Optional<Set<Long>> scope = millContextService.callerMillScope();
+    if (scope.isPresent() && scope.get().isEmpty()) {
+      // A submitter with no mills: nothing can match, so nothing is read.
+      log.info("Read 0 mill report status rows for year {} (caller has no mills)", year);
+      return List.of();
+    }
+    Map<String, String> regions = zoneDescriptions();
     List<MillReportStatusRow> rows =
         repository.findStatusRows(year).stream()
-            .map(row -> toRow(row, region(regions, row)))
             .filter(row -> scope.isEmpty() || scope.get().contains(row.millId()))
+            .map(row -> toRow(row, region(regions, row)))
             .toList();
     // Count only. Mill names are commercial identifiers and the milestone strings are workflow
     // history; neither belongs in a log line (AD-11/NFR3).

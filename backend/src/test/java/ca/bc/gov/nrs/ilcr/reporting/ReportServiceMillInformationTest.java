@@ -120,14 +120,13 @@ class ReportServiceMillInformationTest {
   @Test
   @DisplayName(
       "a submitter with nothing in scope gets the no-mills 404, not everyone's report (#468)")
-  void submitterWithNoMillsInScopeRaisesNoMills() {
-    when(millInformationService.findSections(2021))
-        .thenReturn(List.of(section(730, "FIRST MILL", "7300")));
+  void submitterWithNoMillsInScopeRaisesNoMills_withoutReadingTheYear() {
     when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of()));
     ReportService service = service();
 
     assertThatThrownBy(() -> service.renderMillInformation(2021))
         .isInstanceOf(MillInformationNoMillsException.class);
+    verify(millInformationService, never()).findSections(anyInt());
   }
 
   @Test
