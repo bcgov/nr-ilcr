@@ -140,15 +140,20 @@ export function validateLocationForm(name: string, categories: CategoryForm): Lo
         const e = rangeError(value.distance, DISTANCE, VALIDATION_MESSAGES.distance)
         if (e) fieldErrors[`${def.code}-distance`] = e
       }
-      // BR-04, ALL-OR-NOTHING (advisory; mirrors DistanceCategoryCompleteValidator). A DELIBERATE FIX
-      // OF LEGACY BEHAVIOUR (Iman, 2026-09-29): legacy's conditional `required=` on these three rows
-      // (`schedule4ExistingLocation.xhtml:524,550,572` and the Crew/Rail twins — Distance required iff
-      // Volume or Cost; Volume and Cost required iff Distance) was effectively all-or-nothing, but it
-      // surfaced ONE missing field per attempt: a Volume alone asked only for the Distance, and the
-      // Cost only once the Distance was in. The rebuild reports every missing field of the row at
-      // once: once ANY of Distance/Volume/Cost holds a value, every blank one is required. The banner
-      // labels stay legacy's own. On a cell's change only that cell's entry here is read, so the
-      // changed cell is required iff another cell in its row holds a value.
+      // BR-04, ALL-OR-NOTHING (advisory; mirrors DistanceCategoryCompleteValidator).
+      // - Legacy's bug: on Truck Barge/Ferry, Crew Barge/Ferry and Rail Haul, a Volume or Cost entered
+      //   first revealed the other two required fields in steps — first the Distance, then, once the
+      //   Distance was in, the remaining amount — while a Distance (km) entered first showed both at
+      //   once (conditional `required=` at `schedule4ExistingLocation.xhtml:524,550,572`; Crew
+      //   Barge/Ferry `:607,632,654`; Rail Haul `:881,905,925`).
+      // - The decision: a deliberate fix of that legacy behaviour, by BA decision (2026-09-29). Once
+      //   any one of Distance/Volume/Cost has a value, all three are required and every missing one is
+      //   reported at once, so Check Status (or Save) shows every required field of the row in one go
+      //   instead of making the user discover them in several steps.
+      // - The set of VALID rows is unchanged: both rules accept only an all-empty or an all-filled row.
+      //   Only which missing fields are reported, and when, changes.
+      // The banner labels stay legacy's own. On a cell's change only that cell's entry here is read, so
+      // the changed cell is required iff another cell in its row holds a value.
       const present = CATEGORY_FIELD_KEYS.filter((field) => !isBlank(value[field]))
       if (present.length > 0) {
         for (const field of CATEGORY_FIELD_KEYS) {
@@ -189,8 +194,8 @@ type DistanceLabels = { distance: string; volume: string; cost: string }
  * - new/copy: `schedule4NewLocation.xhtml` — Truck Barge/Ferry `:138,143,146`, Crew Barge/Ferry
  *   `:153,158,161`, Rail Haul `:201,206,209`. Every Distance there is labelled plain `Distance (Km)`,
  *   and each Volume label carries the markup `m&lt;sup&gt;3&lt;/sup&gt;`. Legacy's escaping banner printed
- *   that markup literally; that is a legacy defect, so the unit is rendered as `m³` here (Iman,
- *   2026-09-28). The label text is otherwise verbatim.
+ *   that markup literally; that is a legacy defect, so the unit is rendered as `m³` here (#359
+ *   group B decision, 2026-09-28). The label text is otherwise verbatim.
  */
 const DISTANCE_LABELS: Record<LegacyPanel, Record<number, DistanceLabels>> = {
   existing: {

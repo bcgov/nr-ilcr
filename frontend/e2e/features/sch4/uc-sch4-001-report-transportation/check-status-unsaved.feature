@@ -1,6 +1,6 @@
 # UC-SCH4-001-S33 / S34 — Check Status and an UNSAVED location panel (bcgov/nr-ilcr#359, group B)
 #
-# WHAT LEGACY DID (observed by Iman on the legacy app, 2026-09-25): pressing Check Status ran the page's
+# WHAT LEGACY DID (observed on the legacy app, 2026-09-25): pressing Check Status ran the page's
 # own field validation over the OPEN panel's on-screen values — the same rules Save runs — before any
 # check. On the three distance categories (Truck Barge/Ferry, Crew Barge/Ferry, Rail Haul) a Distance
 # makes Volume and Cost required, and on a New or Copy panel the Location Name is required too. A
@@ -16,11 +16,16 @@
 # "requirements met" over an invalid panel. These scenarios are therefore GREEN with the fix and are not
 # tagged `@discovered-divergence`.
 #
-# WHY DISTANCE ONLY. A Distance entered alone asks for BOTH Volume and Cost in a single attempt, in
-# legacy and the rebuild alike. Legacy's Volume-first path revealed one missing field per attempt; since
-# 2026-09-29 the rebuild reports every missing cell of the row at once (a deliberate fix of legacy,
-# Iman — see `validation.feature` S22/S23), so a Volume-first entry would now ask for Distance AND Cost
-# too. These scenarios stay on the Distance, whose answer is the same before and after that fix.
+# WHY DISTANCE ONLY. Legacy's bug: on Truck Barge/Ferry, Crew Barge/Ferry and Rail Haul, a Volume or
+# Cost entered first revealed the other two required fields in steps — first the Distance, then, once
+# the Distance was in, the remaining amount — while a Distance (km) entered first showed both at once
+# (`schedule4ExistingLocation.xhtml:524,550,572`; Crew Barge/Ferry `:607,632,654`; Rail Haul
+# `:881,905,925`). The decision: a deliberate fix of that legacy behaviour, by BA decision
+# (2026-09-29) — once any one of Distance/Volume/Cost has a value, all three are required and every
+# missing one is reported at once, so Check Status (or Save) shows every required field of the row in
+# one go (see `validation.feature` S22/S23). The set of valid rows is unchanged (only an all-empty or
+# all-filled row passes, under either rule); only which missing fields are reported, and when,
+# changes. These scenarios enter the Distance, whose answer is the same before and after the fix.
 #
 # THE INLINE MARKER STAYS. The rebuild's own `Value Required` under each missing cell is an enhancement
 # legacy did not have; both are asserted, because the banner is where legacy's wording lives.

@@ -2421,7 +2421,7 @@ describe('Schedule4 Check Status evaluates the open panel (#359 group B)', () =>
     await userEvent.click(bottomCheckStatus())
     // JSF `required` passes a whitespace name, so the bean's own ERR-001 text is what legacy showed;
     // the Copy panel is `schedule4NewLocation.xhtml`, whose Distance is labelled `Distance (Km)`. A
-    // Volume alone now requires the Distance AND the Cost at once (all-or-nothing, Iman 2026-09-29).
+    // Volume alone now requires the Distance AND the Cost at once (all-or-nothing, BA decision 2026-09-29).
     await waitFor(() => {
       expect(errorBannerLines()).toEqual([
         'Location Name can not be empty. Please enter a description.',
@@ -2767,7 +2767,7 @@ describe('Schedule4 per-cell validation on change (#359 group B change log)', ()
   })
 })
 
-describe('Schedule4 BR-04 all-or-nothing on the distance rows (Iman, 2026-09-29)', () => {
+describe('Schedule4 BR-04 all-or-nothing on the distance rows (BA decision, 2026-09-29)', () => {
   test('a Volume typed into an empty row and left flags nothing yet; Save then lists Distance AND Cost at once', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule4()

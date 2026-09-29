@@ -341,7 +341,7 @@ class Schedule4WriteIT extends AbstractOracleIT {
   @DisplayName(
       "BR-04 all-or-nothing — volume ONLY -> 400 Value Required (distance AND cost missing)")
   void put_volumeOnly_returns400() throws Exception {
-    // The legacy fix (Iman, 2026-09-29): a Volume alone now fails on the Cost as well as the
+    // The legacy fix (BA decision, 2026-09-29): a Volume alone now fails on the Cost as well as the
     // Distance; the per-field list is pinned by DistanceCategoryCompleteValidatorTest.
     expect400Contains(
         body(8001, revisionOf(8001), "Existing Dump", cat(47, 200, null, null)), "Value Required");

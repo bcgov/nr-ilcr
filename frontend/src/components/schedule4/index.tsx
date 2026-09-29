@@ -441,7 +441,7 @@ const Schedule4: FC = () => {
   // The validation banner, one keyed line per failing field in panel order (#359 group B change log).
   // Save and Check Status REPLACE it with the full list; a category cell's change adds or removes only
   // its own line — a deliberate deviation from legacy, which replaced the banner on every change
-  // (Iman + BA). The Location Name has no change listener in legacy, so its line comes from Save /
+  // (BA ruling). The Location Name has no change listener in legacy, so its line comes from Save /
   // Check Status only.
   const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
   // The inline errors of the category grid. NOT derived on every keystroke any more: a cell is judged

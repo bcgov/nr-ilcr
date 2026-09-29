@@ -4,7 +4,7 @@
 #   - legacy rejected on each field's own JSF validator and listed one message per failing field in the
 #     `p:messages` banner: FLD-001/002/003 for a range, and for a blank required field JSF's `required`
 #     message as legacy overrode it — `{0}: Value is required.` (`common/validation.properties:11`), `{0}`
-#     being the input's own XHTML `label`. Since the #359 group B change log (Iman, 2026-09-28) the
+#     being the input's own XHTML `label`. Since the #359 group B decision (2026-09-28) the
 #     rewrite validates a category cell when it is CHANGED AND LEFT — legacy's `f:ajax event="change"`
 #     — no longer on every keystroke (the cell steps here blur after entering, so a cell's own error is
 #     asserted right after it), and renders the SAME
@@ -109,14 +109,20 @@ Feature: Schedule 4 — invalid location entries are rejected
       | Truck Barge/Ferry | distance | 0         |
       | Truck Barge/Ferry | distance | 999999    |
 
-  # S22 / S23 — BR-04 on the 3 distance-based categories is ALL-OR-NOTHING: once any of Distance,
-  # Volume or Cost holds a value, all three are required, and every missing one is reported at once.
-  # That is a DELIBERATE FIX OF LEGACY BEHAVIOUR (Iman, 2026-09-29): legacy's conditional `required=`
-  # (a Distance requires Volume and Cost; a Volume or Cost requires a Distance) was effectively
-  # all-or-nothing but revealed one missing field per attempt — a Volume alone asked only for the
-  # Distance, and the Cost only on the next Save. So every row below now asserts BOTH missing cells,
-  # inline and in the banner; the S22 rows (a Distance) were already all-at-once and are unchanged in
-  # meaning, the S23 rows (an amount) gain the other amount.
+  # S22 / S23 — BR-04 on the 3 distance-based categories is ALL-OR-NOTHING.
+  #   - Legacy's bug: on Truck Barge/Ferry, Crew Barge/Ferry and Rail Haul, a Volume or Cost entered
+  #     first revealed the other two required fields in steps — first the Distance, then, once the
+  #     Distance was in, the remaining amount — while a Distance (km) entered first showed both at
+  #     once (`schedule4ExistingLocation.xhtml:524,550,572`; Crew Barge/Ferry `:607,632,654`; Rail Haul
+  #     `:881,905,925`).
+  #   - The decision: a deliberate fix of that legacy behaviour, by BA decision (2026-09-29). Once any
+  #     one of Distance/Volume/Cost has a value, all three are required and every missing one is
+  #     reported at once, so Check Status (or Save) shows every required field of the row in one go
+  #     instead of making the user discover them in several steps.
+  #   - The set of VALID rows is unchanged: both rules accept only an all-empty or an all-filled row.
+  #     Only which missing fields are reported, and when, changes.
+  # So every row below asserts BOTH missing cells, inline and in the banner; the S22 rows (a Distance)
+  # were already all-at-once and are unchanged in meaning, the S23 rows (an amount) gain the other one.
   #
   # The MISSING cell is asserted AFTER Save, no longer live (#359 group B change log, legacy parity): a
   # cell is judged only when IT is changed and left, so entering the Distance judges the Distance alone

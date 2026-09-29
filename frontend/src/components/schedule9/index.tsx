@@ -137,7 +137,7 @@ const Schedule9: FC = () => {
 
   // The validation banner, one keyed line per failing field in page order (#359 group B change log).
   // Save and Check Status REPLACE it with the full list; a field's change adds or removes only its own
-  // line — a deliberate deviation from legacy, which replaced the banner on every change (Iman + BA).
+  // line — a deliberate deviation from legacy, which replaced the banner on every change (BA ruling).
   const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
   // Which row fields the user has changed since they were last committed ("change and leave"): a
   // focus-and-leave with no change validates nothing, as legacy's `f:ajax event="change"` did not fire.

@@ -18,10 +18,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * BR-04 on the three distance categories, ALL-OR-NOTHING (Iman, 2026-09-29): once any of distance,
- * volume or cost is present, every absent one is reported, all at once — a deliberate fix of
- * legacy's one-missing-field-per-attempt reveal. Each violation is {@code missingRequiredFieldMsg}
- * on the missing property.
+ * BR-04 on the three distance categories, ALL-OR-NOTHING (BA decision, 2026-09-29): once any of
+ * distance, volume or cost is present, every absent one is reported, all at once — a deliberate fix
+ * of legacy's one-missing-field-per-attempt reveal. Each violation is {@code
+ * missingRequiredFieldMsg} on the missing property.
  */
 class DistanceCategoryCompleteValidatorTest {
 

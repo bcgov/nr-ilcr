@@ -553,7 +553,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Priority / env:** p1 · local seeded DB · Chrome.
   - **Status:** **UN-RETIRED and FIXED on 2026-09-28 by #359 group B** — pending the e2e run to CLOSE.
     (The same change fixed Schedules 7A, 7B and 9, verified by backend unit/IT and Vitest; those
-    schedules have no e2e suite.) Legacy, observed by Iman on 2026-09-25: pressing Check Status first ran
+    schedules have no e2e suite.) Legacy, observed on the legacy app on 2026-09-25: pressing Check Status first ran
     the page's field validation over the OPEN panel's on-screen values — the rules Save runs (on the three
     distance categories a Distance makes Volume and Cost required, and the other way round; on a New or
     Copy panel the Location Name is required) — and listed each failing field in the banner as

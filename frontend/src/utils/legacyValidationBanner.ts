@@ -1,4 +1,4 @@
-// The top-of-page validation banner, as legacy rendered it (#359 group B, Iman 2026-09-28).
+// The top-of-page validation banner, as legacy rendered it (#359 group B decision, 2026-09-28).
 //
 // When a JSF field validator blocked Save or Check Status, legacy listed ONE message per failing
 // field in the page's `p:messages` banner. A required field that was left blank reported JSF's
@@ -70,7 +70,7 @@ export interface BannerEntry {
 /**
  * Put one field's line into the banner (or take it out, with `entry` null), keeping page order. Used
  * on a field's change: legacy re-rendered `p:messages` on every change, and on these pages the
- * banner deliberately ACCUMULATES rather than being replaced (Iman + BA ruling).
+ * banner deliberately ACCUMULATES rather than being replaced (BA ruling).
  */
 export const setBannerEntry = (
   entries: readonly BannerEntry[],

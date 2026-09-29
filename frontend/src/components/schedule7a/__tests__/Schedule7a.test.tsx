@@ -1153,7 +1153,7 @@ describe('Schedule 7A page', () => {
     expect(put).toBe(false)
   })
 
-  // Re-grounded 2026-09-29 (#359 group B change log, Iman): the error no longer clears on the first
+  // Re-grounded 2026-09-29 (#359 group B decision): the error no longer clears on the first
   // keystroke — like legacy's `f:ajax event="change"`, the field is re-judged when it is LEFT.
   test('an inline error clears when the user corrects that field and leaves it (AC8)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))

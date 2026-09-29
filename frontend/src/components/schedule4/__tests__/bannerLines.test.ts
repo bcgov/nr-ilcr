@@ -9,7 +9,7 @@ import {
 
 // Every label Schedule 4 can require, verbatim from the legacy XHTML (#359 group B):
 // existing — schedule4ExistingLocation.xhtml; new/copy — schedule4NewLocation.xhtml (its `m<sup>3</sup>`
-// markup rendered as `m³`, Iman's ruling).
+// markup rendered as `m³`, #359 group B decision 2026-09-28).
 const LABELS: Record<LegacyPanel, Record<number, [string, string, string]>> = {
   existing: {
     47: ['Truck Barge Ferry (Km)', 'Truck Barge Ferry Volume (m3)', 'Truck Barge Ferry (Cost $)'],
@@ -42,7 +42,7 @@ describe('locationBannerLines — every legacy label, both panels', () => {
     },
   )
 
-  // All-or-nothing since 2026-09-29 (Iman) — a deliberate fix of legacy, which asked for the Distance
+  // All-or-nothing since 2026-09-29 (BA decision) — a deliberate fix of legacy, which asked for the Distance
   // alone here and for the Cost only on the next attempt.
   test.each(cases)(
     '$panel panel, code $code: a Volume alone requires the Distance AND the Cost, at once',
@@ -92,7 +92,7 @@ describe('locationBannerLines — every legacy label, both panels', () => {
   })
 })
 
-describe('validateLocationForm BR-04 — all-or-nothing on the distance rows (Iman, 2026-09-29)', () => {
+describe('validateLocationForm BR-04 — all-or-nothing on the distance rows (BA decision, 2026-09-29)', () => {
   const required = VALIDATION_MESSAGES.required
   test.each([
     ['volume only', { volume: '5' }, ['distance', 'cost']],
