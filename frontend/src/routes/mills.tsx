@@ -29,7 +29,7 @@ const MillsRoute: FC = () => {
     if (millId == null) return
     // `replace`, so Back returns to the Users page rather than re-entering this one and
     // re-selecting a mill the administrator has already moved away from.
-    navigate({ search: {}, replace: true })
+    void navigate({ search: {}, replace: true })
   }, [millId, navigate])
 
   return <Mills carriedMillId={carried} />
