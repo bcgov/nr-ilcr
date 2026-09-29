@@ -564,11 +564,16 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     and 10 (group C).
     - **Closure evidence:**
       - Run command: `cd frontend/e2e && npx playwright test --grep "@sch4"`, then `--grep "@check-status-unsaved"`
-      - Date: 2026-09-28
+      - Date: 2026-09-29, re-run after the per-field and all-or-nothing follow-ups and a merge of main
+        (first run 2026-09-28)
       - Database: local stack, real-data extract
-      - Result: `@sch4` 266 passed + 5 failed, the 5 being the `@discovered-*` reds (DIV-7 ×2, BUG-1, BUG-4 ×2).
-        `@check-status-unsaved` 193 passed, 0 failed: both restored `@S33 @S34` scenarios green, and
-        Schedules 1, 2, 3 and 5 still green.
+      - Result:
+        - `@sch4`: the 92 scenarios gave 89 passed and 3 failed. All 3 are `@discovered-bug`
+          (BUG-1, BUG-4 ×2), and every setup/preflight check passed.
+        - The two DIV-7 `@discovered-divergence` scenarios, red on 2026-09-28, now pass after main's
+          #514. Retiring their tags belongs to that work, not #359.
+        - `@check-status-unsaved`: 219 passed, 0 failed. Both restored `@S33 @S34` scenarios are
+          green, and Schedules 1, 2, 3 and 5 are still green.
     - **Earlier history — RETIRED for Schedule 4 on 2026-09-18 (#465)**, not fixed, made moot. The scenario's
     premise was a saved Volume-only category that Check Status flags; under legacy parity (DIV-9) nothing
     saved on Schedule 4 can be flagged, and the one field the check does enforce — the description — cannot

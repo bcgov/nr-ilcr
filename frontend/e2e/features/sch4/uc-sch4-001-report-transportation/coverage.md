@@ -195,8 +195,8 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 > Counted from the generated specs on **2026-09-28** (#359 group B: `npm run bddgen`, then
 > `npx playwright test --list --project=chromium --grep @sch4` → 92 chromium tests; 5 scenarios carry a
 > `@discovered-*` tag) after `check-status-unsaved.feature` came back as two green `@S33 @S34` scenarios.
-> **Measured 2026-09-28** on the local stack (real-data extract): `@sch4` 266 passed + the 5 expected
-> `@discovered-*` reds. The earlier record — 72 / 90 on 2026-08-27, adjusted on 2026-09-18 for #326/#465 when
+> **Measured 2026-09-29** on the local stack (real-data extract): 92 `@sch4` scenarios, 89 passed + 3
+> `@discovered-bug` reds. The DIV-7 pair now passes after #514. The earlier record — 72 / 90 on 2026-08-27, adjusted on 2026-09-18 for #326/#465 when
 > DIV-2's S28 scenario and DIV-8's S33/S34 scenario were retired — is superseded by this count. The run rows above are the dated
 > authoring-time records and are left as written. No whole-suite total is written down anywhere by design —
 > the e2e [`README.md`](../../../README.md) gives the command to measure one.
