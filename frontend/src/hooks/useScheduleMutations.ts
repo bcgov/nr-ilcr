@@ -78,11 +78,17 @@ export function useScheduleMutations<TCheckResult>({
   /**
    * POST the check-status endpoint (default suffix {@code '/check-status'}).
    *
-   * <p>{@code body} carries the ON-SCREEN values where the endpoint accepts them (Schedules 5 and
-   * 6): legacy's Check Status describes the screen rather than the saved record. Omitting it posts
-   * no payload, which is still correct for the endpoints that have not been converted yet (issue
-   * #359). Schedule 5 is a special case — legacy's own Schedule 5 screen judges the saved record,
-   * and it sends a body only because the business area ruled it should match the others (#476).
+   * <p>{@code body} carries the ON-SCREEN values for any check-status endpoint that evaluates the
+   * screen: legacy's Check Status describes the screen rather than the saved record (issue #359).
+   * Such an endpoint REQUIRES the body (a POST without one is a 400), and the body's shape is that
+   * schedule's own {@code Schedule*CheckRequest}: every row, or only the open panel, depending on
+   * what the page shows. Omit it only for an endpoint that still judges the saved record. Schedule 5
+   * is a special case: legacy's own Schedule 5 screen judges the saved record, and it sends a body
+   * only because the business area ruled it should match the others (#476).
+   *
+   * <p>{@code stillWanted}, when given, is asked as the response lands. If it answers {@code false},
+   * the result is dropped, success or failure alike, so a check superseded by a later edit never
+   * paints a stale verdict or error.
    */
   const checkStatus = <T>(
     { onSuccess, fallback, suffix = '/check-status', stillWanted }: MutationOptions<T>,
