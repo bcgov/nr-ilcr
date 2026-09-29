@@ -17,6 +17,11 @@
 #    Its text is unchanged from the legacy wording (index.tsx:85-86), so only the control type moved.
 #  * ANCHORS: 12050/2022 (`SUBPAGE_EXISTING_ANCHOR`) and 13050/2022 (`SUBPAGE_NEW_ANCHOR`).
 #
+# S04's RETURN. Back from the sub-page lands on the camp list with the same camp still open in the panel,
+# and that camp's own row actions are frozen while it is open (#503 — the business adopted legacy
+# Schedule 8's freeze for every schedule). So the count is read from the still-open panel rather than
+# by re-clicking Edit, which is disabled; the legacy Gherkin's re-open is not a step the rewrite allows.
+#
 # S05 fills Isolated Camp as well as the name. The legacy scenario mentions only the name, but Isolated
 # Camp is a REQUIRED descriptor (S12) and the confirm's auto-save would be rejected without it — that
 # rejection is S12's subject, and letting it fire here would fail S05 for another slice's reason.
@@ -41,8 +46,8 @@ Feature: Report Camp and Access Expenses (Schedule 5) — the Other Camp/Access 
     When I save the Schedule 5 sub-page
     Then I should see the message "Data saved successfully"
     When I go back to the camp list
-    And I edit the "North Camp" camp
-    Then the "camp" link shows a count of 1
+    Then the "North Camp" camp is still open with its row actions frozen
+    And the "camp" link shows a count of 1
 
   @p1 @S05 @CFM-004
   Scenario: Add an Other Access Expense from a new, unsaved camp, confirming the auto-save first

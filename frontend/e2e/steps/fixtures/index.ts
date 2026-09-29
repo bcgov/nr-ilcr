@@ -10,6 +10,7 @@ import { sch5Test } from './sch5';
 import { sch6Test } from './sch6';
 import { sch11Test } from './sch11';
 import { secTest } from './sec';
+import { millTest } from './mill';
 
 /**
  * ============================================================================
@@ -43,6 +44,7 @@ export const test = mergeTests(
   sch6Test,
   sch11Test,
   secTest,
+  millTest,
 );
 
 export type { World } from './global';

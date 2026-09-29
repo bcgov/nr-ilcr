@@ -7,7 +7,9 @@ import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.text;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.whole;
 
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,7 +19,9 @@ import java.util.List;
  * <p>{@code HELI_DIR} and {@code HELI_DUMP} are the legacy enum LABELS ({@code Uphill} / {@code
  * Downhill}, {@code Water Dump} / {@code Land Dump}) — the enums overrode {@code toString()}.
  * {@code DEDUCTIONS} is gated on the ADDITIONS total being present, a legacy copy-paste kept
- * verbatim. {@code PAGE_NO} carries legacy's sample title, {@code "Sample # n - <contractor>"}.
+ * verbatim. A total is "present" only when at least one of its rate rows carries a costing rate —
+ * see {@link #legacyTotal}. {@code PAGE_NO} carries legacy's sample title, {@code "Sample # n -
+ * <contractor>"}.
  */
 public final class Schedule8SampleSection implements SectionBuilder {
 
@@ -101,8 +105,22 @@ public final class Schedule8SampleSection implements SectionBuilder {
     return "Sample # " + sampleNumber + " - " + contractor;
   }
 
+  /**
+   * The owner's served total, or null where legacy's total was null. Legacy summed through {@code
+   * CoreUtil.sumBigDecimalValues}, which returns null unless at least one rate is non-null ({@code
+   * Schedule8TTTExtract.java:67-68}), so a sample with no rate rows printed {@code -} and only a
+   * real sum printed {@code 0}. The owner seeds its totals at zero for the screen, so the absence
+   * is read off the rate rows it serves alongside them (#474).
+   */
+  static BigDecimal legacyTotal(List<RateRow> rates, BigDecimal servedTotal) {
+    boolean anyRate = rates != null && rates.stream().anyMatch(r -> r.costingRate() != null);
+    return anyRate ? servedTotal : null;
+  }
+
   private static String[] row(
       RowContext ctx, Page page, int pageNumber, Sample sample, int sampleNumber) {
+    BigDecimal additionsTotal = legacyTotal(sample.additions(), sample.additionsTotal());
+    BigDecimal deductionsTotal = legacyTotal(sample.deductions(), sample.deductionsTotal());
     String[] pageCells =
         Schedule8Section.samplePageCells(page, pageNumber, sampleTitle(sample, sampleNumber));
     String[] sampleCells = {
@@ -127,8 +145,8 @@ public final class Schedule8SampleSection implements SectionBuilder {
       whole(sample.deciduousVolume()),
       whole(sample.actualHarvested()),
       whole(sample.originalRate()),
-      whole(sample.additionsTotal()),
-      sample.additionsTotal() != null ? whole(sample.deductionsTotal()) : NULL_VALUE,
+      whole(additionsTotal),
+      additionsTotal != null ? whole(deductionsTotal) : NULL_VALUE,
       whole(sample.finalRate()),
       // Legacy read the sample's own COMMENTS column here. The owning Schedule 8 read has never
       // served a sample-level comments field (its document notes the gap), and the extract takes

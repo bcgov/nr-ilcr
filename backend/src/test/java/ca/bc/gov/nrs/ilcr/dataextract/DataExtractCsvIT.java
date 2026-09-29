@@ -713,10 +713,11 @@ class DataExtractCsvIT extends AbstractOracleIT {
       assertThat(sample.get(column(header, "CONIF_M3"))).isEqualTo("700");
       assertThat(sample.get(column(header, "DECID_M3"))).isEqualTo("300");
       assertThat(sample.get(column(header, "ACTUAL_M3"))).isEqualTo("1,000");
-      // No rate rows: additions roll up to 0, so the deductions gate is open and final = original.
+      // No rate rows: legacy's total is null, so both cells print the null marker rather than a 0
+      // that would read as "adjustments totalling zero" (#474), and final = original.
       assertThat(sample.get(column(header, "ORIG_TTT_RATE"))).isEqualTo("25");
-      assertThat(sample.get(column(header, "ADDITIONS"))).isEqualTo("0");
-      assertThat(sample.get(column(header, "DEDUCTIONS"))).isEqualTo("0");
+      assertThat(sample.get(column(header, "ADDITIONS"))).isEqualTo("-");
+      assertThat(sample.get(column(header, "DEDUCTIONS"))).isEqualTo("-");
       assertThat(sample.get(column(header, "FINAL_TTT_RATE"))).isEqualTo("25");
     }
 

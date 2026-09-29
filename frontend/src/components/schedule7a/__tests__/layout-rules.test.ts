@@ -13,7 +13,7 @@ import { describe, expect, test } from 'vitest'
  *     the stylesheet is never compiled or applied here. Nothing in this repo can assert that a field is
  *     wide enough for its value.
  *   - It therefore asserts the RULE TEXT, not behaviour. It fails if someone deletes or renames one of
- *     these rules; it CANNOT fail on a wrong number. Change `65rem` to `20rem`, or the money floor to
+ *     these rules; it CANNOT fail on a wrong number. Change `60rem` to `20rem`, or the money floor to
  *     `1ch`, and this file stays green while #295 comes straight back.
  *
  * What it is for: #295 was a layout regression that reached production behind a green suite, its fix is
@@ -113,7 +113,7 @@ describe('Schedule 7A layout rules (source tripwire, not a behaviour test)', () 
   test('the cost row still stacks on a browser without container queries', () => {
     // Without this, a non-supporting UA keeps three fixed tracks and the money boxes go back to ~54px.
     expect(source).toMatch(
-      /@supports not \(container-type: inline-size\)[\s\S]*?@media \(max-width: 66rem\)[\s\S]*?\.schedule-7a__cost-row/,
+      /@supports not \(container-type: inline-size\)[\s\S]*?@media \(max-width: 61rem\)[\s\S]*?\.schedule-7a__costs/,
     )
   })
 

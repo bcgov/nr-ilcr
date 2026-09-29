@@ -89,7 +89,14 @@ BEGIN
   -- sense that matters: after it runs, every mill is selectable. Only rows this patch created are
   -- ever updated (sentinel-keyed) — a real association that someone deliberately ended is left
   -- exactly as it is.
-  FOR m IN (SELECT x.ILCR_MILL_STATUS_XREF_ID mill FROM THE.ILCR_MILL_STATUS_XREF x) LOOP
+  --
+  -- ONE DELIBERATE EXCLUSION: the mill-admin status anchors (mill/mill-status-anchors.sql,
+  -- sentinel 'E2E_SEED_MILLSTAT'). Their active-user count IS their fixture — S03 deactivates a
+  -- mill that must have none, and the mill screen refuses while any is active — so an association
+  -- added here would turn S03 into S12. Nothing selects them on Home. The CI seed excludes them
+  -- the same way (its association INSERT is keyed on ENTRY_USERID = 'E2E_SEED').
+  FOR m IN (SELECT x.ILCR_MILL_STATUS_XREF_ID mill FROM THE.ILCR_MILL_STATUS_XREF x
+             WHERE NVL(x.ENTRY_USERID, '-') <> 'E2E_SEED_MILLSTAT') LOOP
     SELECT COUNT(*) INTO l_n
       FROM THE.ILCR_MILL_USER_XREF
      WHERE ILCR_MILL_ID = m.mill AND USER_GUID = c_guid
@@ -138,10 +145,11 @@ END;
 --    WHERE USER_GUID = 'CANONSUBMITTERBBBBCCCCDDDD000001'
 --      AND (ACTIVE_DATE IS NULL OR INACTIVE_DATE IS NOT NULL);
 -- Both MINUS queries must return no rows; together they prove the active scoped set matches the
--- full mill set in the extract:
+-- full mill set in the extract (less the excluded mill-admin status anchors):
 --   SELECT x.ILCR_MILL_STATUS_XREF_ID FROM THE.ILCR_MILL_STATUS_XREF x
 --    WHERE EXISTS (SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS s
 --                   WHERE s.ILCR_MILL_ID = x.ILCR_MILL_STATUS_XREF_ID)
+--      AND NVL(x.ENTRY_USERID, '-') <> 'E2E_SEED_MILLSTAT'
 --   MINUS
 --   SELECT u.ILCR_MILL_ID FROM THE.ILCR_MILL_USER_XREF u
 --    WHERE u.USER_GUID = 'CANONSUBMITTERBBBBCCCCDDDD000001'
