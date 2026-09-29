@@ -81,13 +81,19 @@ public class Schedule8CheckStatusResolver {
                 page ->
                     new Schedule8PageCheckResult(
                         page.id(),
+                        page.pageNumber(),
+                        page.pageLabel(),
                         page.met(),
                         resolveIssues(page.issues()),
                         page.samples().stream()
                             .map(
                                 sample ->
                                     new Schedule8SampleCheckResult(
-                                        sample.id(), sample.met(), resolveIssues(sample.issues())))
+                                        sample.id(),
+                                        sample.sampleNumber(),
+                                        sample.sampleLabel(),
+                                        sample.met(),
+                                        resolveIssues(sample.issues())))
                             .toList()))
             .toList();
     return new Schedule8CheckStatusResponse(raw.outcome(), messages, pages);
