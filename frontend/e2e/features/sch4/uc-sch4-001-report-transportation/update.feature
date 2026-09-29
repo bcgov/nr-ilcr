@@ -181,8 +181,14 @@ Feature: Schedule 4 — edit a saved location
       | Lakeside Dry Dump |          | 400    |      |
       | Water Dump        |          | 7      | 70   |
     # 2. Now empty the LAST value in that category. The amounts must go, not come back.
-    When I open the Schedule 4 location "E2E Clear Fixed" for edit
-    And I clear the Schedule 4 "Lakeside Dry Dump" "volume" cell
+    #
+    # No re-open here. A save keeps the record open in the panel (index.tsx handleSave: "Stay on the
+    # saved record"), and since #514 that record's own row actions are FROZEN while it is open — Edit is
+    # disabled, so re-clicking it is not a step the rewrite allows (the legacy re-open habit, as #514's
+    # Schedule 5 scenario records). Asserted rather than assumed, so a regression that closes the panel
+    # or unfreezes the row fails here instead of in the next click.
+    And the Schedule 4 location "E2E Clear Fixed" is still open with its row actions frozen
+    When I clear the Schedule 4 "Lakeside Dry Dump" "volume" cell
     And I save the Schedule 4 location
     Then I should see the message "Data saved successfully"
     And the stored Schedule 4 location "E2E Clear Fixed" has exactly these categories:
