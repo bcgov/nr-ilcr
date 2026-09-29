@@ -1,5 +1,8 @@
 package ca.bc.gov.nrs.ilcr.millreportstatus;
 
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -21,10 +24,13 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * {@code oauth2ResourceServer} chain + {@code @PreAuthorize}.
  *
  * <p>A 1:1 clone of {@code MillInformationReportAuthorizationIT}'s gate against this story's JSON
- * endpoint. The distinguishing case is the SUBMITTER: they hold VIEW_SCHEDULE and so may print
- * schedules, but the ministry mill reports were never theirs — legacy hid the whole Generate
- * Reports area from them. A submitter reaching this endpoint must be denied, which is what
- * separates this gate from the one on the schedule endpoints.
+ * endpoint. Both production roles pass the gate: since #468 a SUBMITTER holds GENERATE_MILL_REPORTS
+ * too, because legacy showed a Licensee the Generate Reports menu and let them open the mill
+ * reports — scoped, as legacy's were ({@code MillReportStatusDAO.java:173}), to the mills they are
+ * associated to. So the submitter arms differ by IDENTITY: a submitter whose JWT carries no
+ * directory GUID is refused (403 — no identity is not "no mills"), one with a GUID no xref row
+ * associates is served an EMPTY table, and the canonical one (associated to every seeded mill) the
+ * full one. The no-groups arm is what separates this gate from an absent one.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/reports/mill-status — authorization on GENERATE_MILL_REPORTS (AD-7)")
@@ -43,6 +49,16 @@ class MillReportStatusAuthorizationIT extends AbstractOracleIT {
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 
+  /** A submitter with a real directory GUID that no seeded xref row associates to any mill. */
+  private RequestPostProcessor unassociatedSubmitter() {
+    return jwt()
+        .jwt(
+            j ->
+                j.claim("custom:idp_user_id", "UNASSOCIATEDSUBMITTERXXXX0000001")
+                    .claim("cognito:groups", List.of("ILCR_SUBMITTER")))
+        .authorities(j -> CONVERTER.convert(j).getAuthorities());
+  }
+
   @Test
   @DisplayName("no token (anonymous) -> 401")
   void anonymous_returns401() throws Exception {
@@ -52,8 +68,11 @@ class MillReportStatusAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_SUBMITTER -> 403; holding VIEW_SCHEDULE is not enough for a ministry report")
-  void submitter_returns403() throws Exception {
+  @DisplayName("ILCR_SUBMITTER whose JWT carries no directory GUID -> 403: no identity to scope by")
+  void submitterWithoutIdentity_returns403() throws Exception {
+    // Past the gate (the role holds the action), then refused: a missing custom:idp_user_id is a
+    // claim-mapping problem, and it must surface as an audited 403 — not masquerade as a user who
+    // happens to have no mills (#468 review).
     mockMvc
         .perform(
             get(ENDPOINT)
@@ -64,17 +83,36 @@ class MillReportStatusAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("the canonical submitter, associated to every seeded mill, is still 403")
-  void associatedSubmitter_returns403() throws Exception {
-    // Mill association is irrelevant here: this is not a mill-scoped endpoint, it is an ADMIN-only
-    // one. A submitter who could reach every schedule still cannot reach the ministry status table.
+  @DisplayName("unassociated ILCR_SUBMITTER -> 200 with an EMPTY table: their mills, none (#468)")
+  void unassociatedSubmitter_returnsEmptyTable() throws Exception {
+    // A real identity that no xref row associates to any mill: genuinely nothing to show, and
+    // "nothing" must never read as "everything".
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_JSON)
+                .with(unassociatedSubmitter()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray())
+        .andExpect(jsonPath("$", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName(
+      "the canonical submitter, associated to every seeded mill, is served the rows (#468)")
+  void associatedSubmitter_returnsRows() throws Exception {
+    // Mill association is the whole point here (#468): the table is scoped to the caller's mills,
+    // as legacy's Restrictions.in made it, and this caller is associated to all of them.
     mockMvc
         .perform(
             get(ENDPOINT)
                 .param("year", SEEDED_YEAR)
                 .accept(MediaType.APPLICATION_JSON)
                 .with(canonicalSubmitter()))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray())
+        .andExpect(jsonPath("$", not(empty())));
   }
 
   @Test

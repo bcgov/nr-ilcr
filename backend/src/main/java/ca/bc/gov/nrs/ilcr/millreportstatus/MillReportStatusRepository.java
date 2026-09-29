@@ -27,11 +27,12 @@ public interface MillReportStatusRepository extends Repository<MillReportStatusR
    * visible in a side-by-side comparison, so read this before filing a bug against the row count.
    *
    * <ol>
-   *   <li><b>No user scope.</b> Legacy passed the logged-in user's associated mills into a {@code
-   *       Restrictions.in} ({@code MillReportStatusDAO.java:173}), but under DL-23 the Auditor role
-   *       is merged into ADMIN and this page is administrator-only, so the mill set is every mill.
-   *       There is deliberately no user or mill predicate — and therefore no reachable empty-{@code
-   *       IN ()} defect to port either.
+   *   <li><b>No user scope IN THE QUERY.</b> Legacy passed the logged-in user's associated mills
+   *       into a {@code Restrictions.in} ({@code MillReportStatusDAO.java:173}). Since #468 a
+   *       SUBMITTER reaches this page again, and {@code MillReportStatusService.findRows} applies
+   *       that scope to these rows (an administrator, into whom DL-23 merged the Auditor role, is
+   *       unscoped). The predicate lives in the service rather than here so the read keeps one
+   *       definition and there is no reachable empty-{@code IN ()} defect to port.
    *   <li><b>No "active today" filter.</b> That same mill list came from {@code
    *       getMillSelection(null, true)} → {@code UserSessionDAO.getActiveMills()}, which keeps only
    *       mills whose {@code ILCR_MILL_STATUS_XREF.ILCR_MILL_STATUS_CODE} is {@code 'ACT'} — the

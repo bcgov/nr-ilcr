@@ -21,9 +21,10 @@ public interface MillInformationRepository extends Repository<MillInformationRow
 
   /**
    * Every mill with a report-status row for the year — or ONE named mill's row — with its
-   * information, milestones, ownership and contacts. Unscoped by USER either way: the Administrator
-   * report covers all mills (BR-01), so there is deliberately no user or associated-mill predicate
-   * here.
+   * information, milestones, ownership and contacts. Unscoped by USER either way IN THE QUERY: the
+   * Administrator report covers all mills (BR-01), and since #468 a submitter's report is narrowed
+   * to their associated mills by {@code ReportService} over these rows — so there is deliberately
+   * no user or associated-mill predicate here, and the read keeps one definition.
    *
    * <p><b>One query serves both reports, and that is the requirement, not a convenience.</b> The
    * all-mills Mill Information PDF (Story 19.1, {@code millId} null) and the per-mill drill-down

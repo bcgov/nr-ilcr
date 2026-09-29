@@ -22,9 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>The schedule endpoints authorize on {@code VIEW_SCHEDULE} — printing is read-only for every
  * role (BR-01) — and validate a mill/year working context. The two Mill Information endpoints do
- * NEITHER: they are administrator-only ({@code GENERATE_MILL_REPORTS}) and answer for a chosen
- * report year rather than the Home selection, so there is no working context to validate. Both
- * differences are behaviour, not oversight.
+ * NEITHER: they authorize on {@code GENERATE_MILL_REPORTS} (both production roles, since #468 —
+ * legacy let a Licensee open the mill reports) and answer for a chosen report year rather than the
+ * Home selection, so there is no working context to validate. Both differences are behaviour, not
+ * oversight.
  *
  * <p>The per-mill drill-down DOES take a mill, and still runs no context guard — it must not, or a
  * closed mill would stop being drillable from a status table that deliberately lists it.
@@ -116,7 +117,10 @@ public class ReportController implements ReportApi {
     // reprinting a year in which such a mill was active is exactly what an administrator does.
     // BOTH validateMillYearActive overloads would refuse it (they apply submitter mill scope and
     // the active-mill rule), so neither is called. The year guard is the only guard, and the
-    // mill's existence in the year is answered by the read itself as a 404.
+    // mill's existence in the year is answered by the read itself as a 404. Since #468 a SUBMITTER
+    // holds GENERATE_MILL_REPORTS too; ReportService narrows the drill-down to their associated
+    // mills (403 before the read otherwise), which is the scope the status table it is launched
+    // from already has.
     int reportYear = reportYearGuard.requireOpenYear(year);
     ReportService.MillDrillDown drillDown = reportService.renderMillInformation(millId, reportYear);
     return pdfResponse(

@@ -112,7 +112,8 @@ public interface ReportApi {
    * belongs in the error rate.
    *
    * @param year the reporting year (optional raw String, so the guard owns the rejection text)
-   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — administrators only)
+   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — both production roles
+   *     since #468)
    * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
    */
   @GetMapping("/mill-information")
@@ -151,7 +152,8 @@ public interface ReportApi {
    *
    * @param millId the mill to report on — the mill id, NOT the mill number
    * @param year the reporting year (optional raw String, so the guard owns the rejection text)
-   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — administrators only)
+   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — both production roles
+   *     since #468)
    * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
    */
   @GetMapping("/mill-information/{millId}")

@@ -36,7 +36,8 @@ export const MOCK_GROUPS_HEADER = 'X-Mock-Groups';
  *  - `submitter` → `ILCR_SUBMITTER`, the legacy ILCR_LICENSEE: edits at Draft. Every feature file
  *    says "As a Licensee", so this is the suite's default.
  *  - `admin` → `ILCR_ADMIN`: edits at Submitted/Verified, and is the only role the admin-gated nav
- *    (Administration, Generate Reports) renders for.
+ *    (Administration, and Generate Reports → Data Extract) renders for. Generate Reports itself
+ *    renders for both roles since #468.
  */
 export type MockUserId = 'submitter' | 'admin';
 

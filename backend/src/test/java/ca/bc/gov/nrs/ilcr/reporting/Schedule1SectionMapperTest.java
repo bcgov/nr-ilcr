@@ -204,8 +204,8 @@ class Schedule1SectionMapperTest {
         new BigDecimal("0.24"),
         2,
         List.of(
-            new OtherCostRow(1, "Aerial survey", 1_200, new BigDecimal("0.10"), null),
-            new OtherCostRow(2, "Consulting", 1_800, new BigDecimal("0.14"), null)),
+            new OtherCostRow(1, "Aerial survey", 1_200, new BigDecimal("0.10")),
+            new OtherCostRow(2, "Consulting", 1_800, new BigDecimal("0.14"))),
         false,
         null);
   }

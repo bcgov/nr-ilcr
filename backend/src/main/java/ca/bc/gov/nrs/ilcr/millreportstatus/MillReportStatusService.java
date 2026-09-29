@@ -1,11 +1,14 @@
 package ca.bc.gov.nrs.ilcr.millreportstatus;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millinformation.MillInformationRepository;
 import ca.bc.gov.nrs.ilcr.millreportstatus.dto.MillReportStatusRow;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,6 +35,7 @@ public class MillReportStatusService {
 
   private final MillReportStatusRepository repository;
   private final MillInformationRepository millInformationRepository;
+  private final MillContextService millContextService;
 
   /**
    * Constructs a new MillReportStatusService.
@@ -41,11 +45,16 @@ public class MillReportStatusService {
    *     19.1's query rather than declaring a second copy keeps ONE definition of the read that has
    *     to survive a dangling PUBLIC synonym; the precedent for a service reaching another
    *     package's repository is {@code AssignmentService} → {@code MillContextRepository}
+   * @param millContextService the caller's mill scope (#468): an administrator sees every mill, a
+   *     submitter only their associated mills, as legacy's {@code Restrictions.in} did
    */
   public MillReportStatusService(
-      MillReportStatusRepository repository, MillInformationRepository millInformationRepository) {
+      MillReportStatusRepository repository,
+      MillInformationRepository millInformationRepository,
+      MillContextService millContextService) {
     this.repository = repository;
     this.millInformationRepository = millInformationRepository;
+    this.millContextService = millContextService;
   }
 
   /**
@@ -59,18 +68,35 @@ public class MillReportStatusService {
    * ({@code MillReportStatusDAO.java:96} returns null and {@code MillReportStatusMB} has no
    * try/catch); the controller's error banner is a recorded improvement on that.
    *
+   * <p>Scoped to the caller (#468): an administrator's table is every mill (DL-22); a submitter's
+   * is their actively associated mills, as legacy's {@code MillReportStatusDAO.java:173} {@code
+   * Restrictions.in} made it — an unassociated submitter gets an empty table, never everyone's. The
+   * query itself stays unscoped (see the repository) and the scope is applied here, so there is no
+   * empty-{@code IN ()} defect to port and the read has one definition.
+   *
    * @param year the reporting year
-   * @return one row per mill in mill-id order; empty when the year has no mills
+   * @return one row per mill in mill-id order; empty when the year has no mills the caller may see
    */
   public List<MillReportStatusRow> findRows(int year) {
+    Optional<Set<Long>> scope = millContextService.callerMillScope();
+    if (scope.isPresent() && scope.get().isEmpty()) {
+      // A submitter with no mills: nothing can match, so nothing is read.
+      log.info("Read 0 mill report status rows for year {} (caller has no mills)", year);
+      return List.of();
+    }
     Map<String, String> regions = zoneDescriptions();
     List<MillReportStatusRow> rows =
         repository.findStatusRows(year).stream()
+            .filter(row -> scope.isEmpty() || scope.get().contains(row.millId()))
             .map(row -> toRow(row, region(regions, row)))
             .toList();
     // Count only. Mill names are commercial identifiers and the milestone strings are workflow
     // history; neither belongs in a log line (AD-11/NFR3).
-    log.info("Read {} mill report status rows for year {}", rows.size(), year);
+    log.info(
+        "Read {} mill report status rows for year {} ({})",
+        rows.size(),
+        year,
+        scope.isEmpty() ? "unscoped" : "scoped to the caller's mills");
     return rows;
   }
 

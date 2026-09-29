@@ -101,6 +101,27 @@ class Schedule1OtherCostsServiceTest {
   }
 
   @Test
+  void getDocument_carriesEachRowsOwnStoredVolume_evenWithNoSharedVolumeRow() {
+    // The Data Extract prints each row's stored VOLUME (legacy Schedule1OtherExtract.java:77), so
+    // the read must not drop it — including when there is no shared null-description row (the
+    // mill 7777 / 2015 shape), where the screen's shared-volume figures are all null.
+    stubContext("D");
+    stubRows(
+        null,
+        List.of(
+            new OtherCostDetailRow(5051, "Row A", 25000, new BigDecimal("175000")),
+            new OtherCostDetailRow(5052, "Row B", 26250, new BigDecimal("125000"))));
+
+    OtherCostsDocument doc = service.getOtherCostsDocument(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertEquals(0, new BigDecimal("175000").compareTo(doc.rows().get(0).volume()));
+    assertEquals(0, new BigDecimal("125000").compareTo(doc.rows().get(1).volume()));
+    // The screen's figures are unchanged: they still derive from the (absent) shared volume.
+    assertNull(doc.volume());
+    assertNull(doc.rows().get(0).perUnit());
+  }
+
+  @Test
   void getDocument_editableFalseWhenNotDraft() {
     stubContext("S");
     stubRows(new BigDecimal("5000"), List.of());

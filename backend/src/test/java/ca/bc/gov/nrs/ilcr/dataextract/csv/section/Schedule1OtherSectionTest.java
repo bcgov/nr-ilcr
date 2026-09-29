@@ -12,11 +12,12 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit test — {@link Schedule1OtherSection}. Beyond the header and title locks, this pins the two
- * legacy quirks the section keeps verbatim: every itemized row shows the SHARED Other-Costs volume
- * (so the total's volume is that one figure times the row count, not a sum of distinct volumes),
- * and the total row formats the summed VOLUME to two decimals while formatting the summed COST to
- * none — the inverse of the rows above it.
+ * Unit test — {@link Schedule1OtherSection}. Beyond the header and title locks, this pins what
+ * legacy's {@code Schedule1OtherExtract} did: every itemized row shows its OWN stored volume and
+ * its own cost/volume (never the document's shared Other-Costs volume, nor the owner's per-row
+ * figure derived from it), the total's volume is the sum of those per-row volumes, and the total
+ * row formats the summed VOLUME to two decimals while formatting the summed COST to none — the
+ * inverse of the rows above it.
  */
 @DisplayName("Schedule1OtherSection — the itemized Other Costs rows and their Total row")
 class Schedule1OtherSectionTest {
@@ -74,7 +75,7 @@ class Schedule1OtherSectionTest {
     @DisplayName("each itemized cost becomes one row, then the Total row")
     void twoItems_becomeTwoRowsAndATotal() {
       OtherCostsDocument document =
-          document("1500", row("Aerial\tsurvey", 1_200, "0.8"), row("Consulting", 1_800, null));
+          document(null, row("Aerial\tsurvey", 1_200, "1500"), row("Consulting", 1_800, null));
 
       List<String[]> rows = section.rows(CTX, document);
 
@@ -89,31 +90,65 @@ class Schedule1OtherSectionTest {
               "1,500", // VOLUME — grouped, no decimals (###,###,##0)
               "1,200", // COST — likewise
               "0.80"); // CPU_$/M3 — always exactly two decimals
+      // A row with no stored volume shows the null marker in VOLUME, and so has no CPU either.
       assertThat(rows.get(1))
-          .containsExactly("670", "2021", "Draft", "514", "Consulting", "1,500", "1,800", "-");
+          .containsExactly("670", "2021", "Draft", "514", "Consulting", "-", "1,800", "-");
     }
 
     @Test
-    @DisplayName("every row carries the one SHARED volume, because no per-row volume is stored")
-    void everyRow_carriesTheSharedVolume() {
+    @DisplayName("each row shows its OWN stored volume, even with no shared volume row at all")
+    void eachRow_showsItsOwnVolume_whenTheSharedVolumeIsMissing() {
+      // The mill 7777 / 2015 shape: itemized item-19 rows each carrying a volume, and no
+      // null-description row, so the document's shared volume is null. Legacy printed each row's
+      // ocl.getVolume() and ocl.getCostVolume() (Schedule1OtherExtract.java:77, :79) and summed the
+      // per-row volumes into Total: (:81, :88), so none of these cells may collapse to "-".
       OtherCostsDocument document =
           document(
-              "1000",
-              row("First", 100, "0.1"),
-              row("Second", 100, "0.1"),
-              row("Third", 100, "0.1"));
+              null, row("OrtherCost1-1", 25_000, "175000"), row("Other Costs 2", 26_250, "125000"));
 
       List<String[]> rows = section.rows(CTX, document);
 
-      // Three distinct costs but one volume: the Other-Costs owner stamps the volume on the
-      // summary, not on the rows, and legacy's rows all showed that single figure.
-      assertThat(rows).hasSize(4);
-      assertThat(rows.get(0)[5]).isEqualTo("1,000");
-      assertThat(rows.get(1)[5]).isEqualTo("1,000");
-      assertThat(rows.get(2)[5]).isEqualTo("1,000");
-      // And so the total's volume is the shared figure times the row count, not a sum of three
-      // different volumes.
-      assertThat(rows.get(3)[5]).isEqualTo("3,000.00");
+      assertThat(rows).hasSize(3);
+      // 25000 / 175000 = 0.142857… -> 0.14; 26250 / 125000 = 0.21 — two DIFFERENT volumes, so a
+      // section that repeated one figure across the rows would fail one of them.
+      assertThat(rows.get(0))
+          .containsExactly(
+              "670", "2021", "Draft", "514", "OrtherCost1-1", "175,000", "25,000", "0.14");
+      assertThat(rows.get(1))
+          .containsExactly(
+              "670", "2021", "Draft", "514", "Other Costs 2", "125,000", "26,250", "0.21");
+      // Σvol 300000 (two decimals), Σcost 51250 (none), 51250 / 300000 = 0.170833… -> 0.17.
+      assertThat(rows.get(2))
+          .containsExactly("", "", "", "", "Total:", "300,000.00", "51,250", "0.17");
+    }
+
+    @Test
+    @DisplayName("a shared volume that differs from a row's own is ignored")
+    void sharedVolume_isNotReadByTheExtract() {
+      // The shared figure is the sub-page's (BR-06), not the extract's: legacy's extract never read
+      // it. 1000 here would give "1,000" / 0.30 / "1,000.00"; the row's own 4000 gives 0.08.
+      OtherCostsDocument document = document("1000", row("Fuel", 300, "4000"));
+
+      List<String[]> rows = section.rows(CTX, document);
+
+      assertThat(rows.get(0)[5]).isEqualTo("4,000");
+      assertThat(rows.get(0)[7]).isEqualTo("0.08");
+      assertThat(rows.get(1)).containsExactly("", "", "", "", "Total:", "4,000.00", "300", "0.08");
+    }
+
+    @Test
+    @DisplayName("the row CPU is the row's own cost/volume, not the owner's per-unit figure")
+    void rowCpu_isCostOverOwnVolume_notTheOwnersPerUnit() {
+      // Legacy's getCostVolume() is bigDecimalDivision(cost, volume) on the row itself
+      // (CostVolumeType.java:85-86). The owner's perUnit divides by the SHARED volume, so it is
+      // null whenever that row is missing — the very case this section must still print.
+      OtherCostRow withDecoy =
+          new OtherCostRow(
+              8_201, "Fuel", 300, new BigDecimal("4000"), new BigDecimal("9.99"), null);
+
+      List<String[]> rows = section.rows(CTX, document(null, withDecoy));
+
+      assertThat(rows.get(0)[7]).isEqualTo("0.08");
     }
 
     @Test
@@ -148,7 +183,7 @@ class Schedule1OtherSectionTest {
     @DisplayName("the summed volume gets two decimals and the summed cost gets none")
     void totalRow_invertsTheUsualDecimalPairing() {
       OtherCostsDocument document =
-          document("1500", row("Aerial survey", 1_200, "0.8"), row("Consulting", 1_800, null));
+          document(null, row("Aerial survey", 1_200, "1500"), row("Consulting", 1_800, "1500"));
 
       List<String[]> rows = section.rows(CTX, document);
 
@@ -162,7 +197,7 @@ class Schedule1OtherSectionTest {
     @Test
     @DisplayName("the Total row drops the four leading context cells")
     void totalRow_hasNoContextCells() {
-      OtherCostsDocument document = document("1500", row("Aerial survey", 1_200, "0.8"));
+      OtherCostsDocument document = document(null, row("Aerial survey", 1_200, "1500"));
 
       List<String[]> rows = section.rows(CTX, document);
 
@@ -172,15 +207,30 @@ class Schedule1OtherSectionTest {
     }
 
     @Test
+    @DisplayName("a row with no stored volume adds nothing to the volume total")
+    void totalRow_skipsARowWithNoVolume() {
+      OtherCostsDocument document =
+          document(null, row("Fuel", 300, "1000"), row("Freight", 700, null));
+
+      List<String[]> rows = section.rows(CTX, document);
+
+      // sumBigDecimalCosts skips a null term, so Σvol is Fuel's 1000 alone while Σcost is both
+      // costs: 1000 / 1000 -> 1.00.
+      assertThat(rows.get(2))
+          .containsExactly("", "", "", "", "Total:", "1,000.00", "1,000", "1.00");
+    }
+
+    @Test
     @DisplayName("the volume total's two decimals are decoration: each term is rounded whole first")
     void totalRow_volumeIsRoundedWholeThenPrintedWithTwoPlaces() {
-      OtherCostsDocument document = document("1234.40", row("Field crew", 1_000, "0.81"));
+      OtherCostsDocument document = document(null, row("Field crew", 1_000, "1234.40"));
 
       List<String[]> rows = section.rows(CTX, document);
 
       // sumBigDecimalCosts rounds every term to a whole number before adding, so the ".00" the
-      // total row prints can never carry the fractional part the shared volume actually has.
+      // total row prints can never carry the fractional part the row's volume actually has.
       assertThat(rows.get(0)[5]).isEqualTo("1,234"); // the row's own volume cell
+      assertThat(rows.get(0)[7]).isEqualTo("0.81"); // 1000 / 1234.40, the row's own CPU
       assertThat(rows.get(1))
           .containsExactly("", "", "", "", "Total:", "1,234.00", "1,000", "0.81");
     }
@@ -188,7 +238,7 @@ class Schedule1OtherSectionTest {
     @Test
     @DisplayName("the Total row's CPU divides the two-decimal sums, keeping the fraction")
     void totalRow_cpuDividesTheTwoDecimalSums() {
-      OtherCostsDocument document = document("1234.40", row("Field crew", 1_000, null));
+      OtherCostsDocument document = document(null, row("Field crew", 1_000, "1234.40"));
 
       List<String[]> rows = section.rows(CTX, document);
 
@@ -201,9 +251,9 @@ class Schedule1OtherSectionTest {
     @DisplayName("the CPU's divisor is the 2-dp volume sum, not the whole-rounded one shown")
     void totalRow_cpuDivisorIsTheTwoDecimalSumNotTheDisplayedWholeSum() {
       // Costs are Integer (OtherCostRow.cost), so sumCosts and sumCostsTwoDecimals agree on every
-      // cost sum; the only term that can carry a fraction is the shared VOLUME, repeated once per
-      // row. So the discrimination is on volumes. Three described rows (the section drops a blank
-      // description) at a shared 100.40 and costs 400 + 300 + 300 = 1000:
+      // cost sum; the only term that can carry a fraction is a row's VOLUME. So the discrimination
+      // is on volumes. Three described rows (the section drops a blank description) each at
+      // 100.40 and costs 400 + 300 + 300 = 1000:
       //   sumCosts(volumes)            = 100 + 100 + 100        = 300     (each term whole-rounded)
       //   sumCostsTwoDecimals(volumes) = 100.40 + 100.40 + 100.40 = 301.20 (each term 2-dp)
       //   CPU = 1000.00 / 301.20 = 3.32005312…  -> twoDecimals -> "3.32"
@@ -213,15 +263,15 @@ class Schedule1OtherSectionTest {
       // legacy's did (Schedule1OtherExtract.java:85-92).
       OtherCostsDocument document =
           document(
-              "100.40",
-              row("Camp water", 400, null),
-              row("Fuel", 300, null),
-              row("Freight", 300, null));
+              null,
+              row("Camp water", 400, "100.40"),
+              row("Fuel", 300, "100.40"),
+              row("Freight", 300, "100.40"));
 
       List<String[]> rows = section.rows(CTX, document);
 
       assertThat(rows).hasSize(4);
-      assertThat(rows.get(0)[5]).isEqualTo("100"); // each row's shared volume, whole
+      assertThat(rows.get(0)[5]).isEqualTo("100"); // each row's own volume, whole
       assertThat(rows.get(3)).containsExactly("", "", "", "", "Total:", "300.00", "1,000", "3.32");
     }
 
@@ -289,12 +339,16 @@ class Schedule1OtherSectionTest {
   // Fixtures
   // ---------------------------------------------------------------------------------------------
 
-  private static OtherCostRow row(String description, Integer cost, String perUnit) {
+  /** An itemized row carrying its own stored volume, and no owner per-unit figure. */
+  private static OtherCostRow row(String description, Integer cost, String volume) {
     return new OtherCostRow(
-        8_201, description, cost, perUnit == null ? null : new BigDecimal(perUnit));
+        8_201, description, cost, volume == null ? null : new BigDecimal(volume), null, null);
   }
 
-  /** Only the shared volume and the rows are read by this section; the rest is filler. */
+  /**
+   * Only the rows are read by this section. The shared volume is set by some tests purely to prove
+   * it is NOT read; the rest is filler.
+   */
   private static OtherCostsDocument document(String sharedVolume, OtherCostRow... rows) {
     return new OtherCostsDocument(
         sharedVolume == null ? null : new BigDecimal(sharedVolume),
