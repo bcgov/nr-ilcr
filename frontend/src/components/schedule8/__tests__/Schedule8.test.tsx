@@ -325,6 +325,8 @@ describe('Schedule8 page level', () => {
           pages: [
             {
               id: 8001,
+              pageNumber: 1,
+              pageLabel: 'Page # 1  -TSA: TSA1 -CP: CP1',
               met: false,
               issues: [
                 {
@@ -335,6 +337,8 @@ describe('Schedule8 page level', () => {
               samples: [
                 {
                   id: 8101,
+                  sampleNumber: 1,
+                  sampleLabel: 'Sample # 1 - C-1',
                   met: false,
                   issues: [
                     {
@@ -361,6 +365,12 @@ describe('Schedule8 page level', () => {
       await screen.findByText('The total percent value for skidding/yarding must be equal to 100%'),
     ).toBeInTheDocument()
     expect(screen.getByText('Value Required')).toBeInTheDocument()
+    // #461: each notice says WHICH page (and sample) it belongs to, using the wire labels — the same
+    // titles the Page Summary and sample list show. (The DOM collapses the label's double space.)
+    expect(screen.getByText('Page # 1 -TSA: TSA1 -CP: CP1 — Contact')).toBeInTheDocument()
+    expect(
+      screen.getByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 1 - C-1 — Skidding/Yarding'),
+    ).toBeInTheDocument()
   })
 
   test('editable:false renders View and disables Add/Copy/Delete (STA-001)', async () => {
@@ -810,11 +820,15 @@ describe('Schedule8 sample level', () => {
           pages: [
             {
               id: 8001,
+              pageNumber: 1,
+              pageLabel: 'Page # 1  -TSA: TSA1 -CP: CP1',
               met: false,
               issues: [],
               samples: [
                 {
                   id: 8101,
+                  sampleNumber: 1,
+                  sampleLabel: 'Sample # 1 - C-1',
                   met: false,
                   issues: [
                     {
@@ -837,6 +851,11 @@ describe('Schedule8 sample level', () => {
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText('Total value must be greater than 0.')).toBeInTheDocument()
+    // #461: the notice names the page and sample by their wire labels. (The DOM collapses the label's
+    // double space.)
+    expect(
+      screen.getByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 1 - C-1 — Actual Harvested'),
+    ).toBeInTheDocument()
   })
 
   test('Back from a dirty sample editor confirms before leaving (S13)', async () => {
