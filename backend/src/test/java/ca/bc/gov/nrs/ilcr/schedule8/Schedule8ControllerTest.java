@@ -253,6 +253,8 @@ class Schedule8ControllerTest {
             List.of(
                 new Schedule8PageCheckResult(
                     8001,
+                    1,
+                    "Page # 1  -TSA: TSA5 -CP: cp1",
                     false,
                     List.of(
                         new Schedule8CheckFieldIssue(
@@ -260,6 +262,8 @@ class Schedule8ControllerTest {
                     List.of(
                         new Schedule8SampleCheckResult(
                             9001,
+                            1,
+                            "Sample # 1 - C1",
                             false,
                             List.of(
                                 new Schedule8CheckFieldIssue(
@@ -280,6 +284,11 @@ class Schedule8ControllerTest {
     Schedule8PageCheckResult page = response.getBody().pages().get(0);
     assertEquals("resolved text", page.issues().get(0).message().text());
     assertEquals("resolved text", page.samples().get(0).issues().get(0).message().text());
+    // The where-it-belongs fields ride through resolution untouched (#461).
+    assertEquals(1, page.pageNumber());
+    assertEquals("Page # 1  -TSA: TSA5 -CP: cp1", page.pageLabel());
+    assertEquals(1, page.samples().get(0).sampleNumber());
+    assertEquals("Sample # 1 - C1", page.samples().get(0).sampleLabel());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 
@@ -289,7 +298,9 @@ class Schedule8ControllerTest {
         new Schedule8CheckStatusResponse(
             "MET",
             List.of(),
-            List.of(new Schedule8PageCheckResult(8001, true, List.of(), List.of())));
+            List.of(
+                new Schedule8PageCheckResult(
+                    8001, 2, "Page # 2  -TSA: TSA5 -CP:  - ", true, List.of(), List.of())));
     when(schedule8Service.checkStatusPage(MILL_ID, YEAR, 8001)).thenReturn(raw);
 
     ResponseEntity<Schedule8CheckStatusResponse> response =
