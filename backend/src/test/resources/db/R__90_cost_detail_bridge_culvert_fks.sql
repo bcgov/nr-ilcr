@@ -92,3 +92,17 @@ ALTER TABLE THE.ILCR_COST_REPORT_DETAIL
   ADD CONSTRAINT ILCR_LCRD_RM_RPT_FK
   FOREIGN KEY (ROAD_MAINTENANCE_REPORT_ID)
   REFERENCES THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID);
+
+-- THE FK INDEXES, which delivery carries on every one of the nine FK columns (all_ind_columns on THE,
+-- checked 2026-09-28 against the local delivery extract: ILCR_LCRD_<x>_FK_I, NONUNIQUE, one column
+-- each). Declaring the four constraints above WITHOUT them made the test schema stricter than delivery
+-- in a way that fails intermittently rather than loudly: with the child column unindexed, Oracle takes
+-- a table-level lock on ILCR_COST_REPORT_DETAIL for every delete of a parent row. Two Schedule 6 row
+-- deletes in flight at once — each has already deleted its own cost details, so each holds DML on the
+-- child table — then wait on each other's table lock, and one loses with ORA-00060, surfacing as the
+-- same 500 "Schedule could not be saved." (Spring: PessimisticLockingFailureException). The parallel
+-- e2e suite's sch6 cleanups hit exactly that (PR #501). Delivery's names are kept, as for the FKs.
+CREATE INDEX THE.ILCR_LCRD_BRG_RPT_FK_I ON THE.ILCR_COST_REPORT_DETAIL (BRIDGE_REPORT_ID);
+CREATE INDEX THE.ILCR_LCRD_CLV_RPT_FK_I ON THE.ILCR_COST_REPORT_DETAIL (CULVERT_REPORT_ID);
+CREATE INDEX THE.ILCR_LCRD_RCR_DTL_FK_I ON THE.ILCR_COST_REPORT_DETAIL (ROAD_CONSTRUCTION_REPRT_DTL_ID);
+CREATE INDEX THE.ILCR_LCRD_RM_RPT_FK_I ON THE.ILCR_COST_REPORT_DETAIL (ROAD_MAINTENANCE_REPORT_ID);

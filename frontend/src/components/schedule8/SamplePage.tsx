@@ -394,48 +394,50 @@ const SamplePage: FC<SamplePageProps> = ({
               <TableCell colSpan={2}>No samples have been added.</TableCell>
             </TableRow>
           ) : (
-            samples.map((sample, index) => (
-              <TableRow
-                key={sample.id}
-                className={
-                  panelOpen && sample.id != null && sample.id === editId
-                    ? 'schedule-8__row--editing'
-                    : undefined
-                }
-              >
-                <TableCell>{sampleLabel(sample, index)}</TableCell>
-                <TableCell>
-                  <div className="schedule-8__row-actions">
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      renderIcon={editable ? Edit : View}
-                      onClick={() => openEditOrView(sample, editable ? 'edit' : 'view')}
-                    >
-                      {editable ? 'Edit' : 'View'}
-                    </Button>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      disabled={!editable || busy}
-                      renderIcon={Copy}
-                      onClick={() => openCopy(sample)}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      kind="danger--tertiary"
-                      size="sm"
-                      disabled={!editable || busy}
-                      renderIcon={TrashCan}
-                      onClick={() => setConfirmDelete(sample)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+            samples.map((sample, index) => {
+              // The sample open in the panel cannot act on itself: its row actions grey out while it
+              // is open, as legacy's disableReport(report) did (Schedule8MB.java:135-137).
+              const isOpen = panelOpen && sample.id != null && sample.id === editId
+              return (
+                <TableRow
+                  key={sample.id}
+                  className={isOpen ? 'schedule-8__row--editing' : undefined}
+                >
+                  <TableCell>{sampleLabel(sample, index)}</TableCell>
+                  <TableCell>
+                    <div className="schedule-8__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={editable ? Edit : View}
+                        disabled={isOpen}
+                        onClick={() => openEditOrView(sample, editable ? 'edit' : 'view')}
+                      >
+                        {editable ? 'Edit' : 'View'}
+                      </Button>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        disabled={!editable || busy || isOpen}
+                        renderIcon={Copy}
+                        onClick={() => openCopy(sample)}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        kind="danger--tertiary"
+                        size="sm"
+                        disabled={!editable || busy || isOpen}
+                        renderIcon={TrashCan}
+                        onClick={() => setConfirmDelete(sample)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>
