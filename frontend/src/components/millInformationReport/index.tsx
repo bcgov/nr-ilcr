@@ -2,6 +2,8 @@ import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { Button, Column, Grid, InlineNotification, Select, SelectItem } from '@carbon/react'
 import { Download } from '@carbon/icons-react'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
+import useAuth from '@/context/auth/useAuth'
 import apiService from '@/service/api-service'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { extractDetail } from '@/utils/error'
@@ -19,8 +21,9 @@ const YEAR_REQUIRED = 'Report Year: Value is required.'
 const NO_OPEN_YEAR = 'No reporting period has been opened.'
 
 /**
- * Mill Information Report (UC-MRPT-003). Administrators pick a report year and download a PDF
- * covering every mill — one section per mill — for that year.
+ * Mill Information Report (UC-MRPT-003). The user picks a report year and downloads a PDF — one
+ * section per mill — for that year: every mill for an administrator, the mills associated with them
+ * for a submitter (#468, legacy parity; the scope is applied server-side).
  *
  * <p>Built on the Print Schedules page's shape (tombstone, grid, inline notifications, a single
  * action row) so the two report surfaces read as siblings. It carries the legacy screen's content —
@@ -31,6 +34,8 @@ const NO_OPEN_YEAR = 'No reporting period has been opened.'
  * opened reporting periods, newest first, and the newest is pre-selected.
  */
 const MillInformationReport: FC = () => {
+  const { hasRole } = useAuth()
+  const isAdmin = hasRole(ILCR_ROLES.admin)
   const [years, setYears] = useState<ReportingYear[]>([])
   const [selectedYear, setSelectedYear] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -109,12 +114,15 @@ const MillInformationReport: FC = () => {
           )}
 
           {/*
-            Legacy reads "the mill's associated with the current logged in user". Under DL-23 the
-            Administrator variant is the target and the report is unscoped, so that wording would
-            misdescribe what this build produces.
+            Legacy reads "the mill's associated with the current logged in user", and since #468 that
+            is again what a submitter gets: the PDF is scoped server-side to their associated mills.
+            An administrator is tied to no mill (DL-22), so their report is unscoped and the note
+            says so — the same fact the Mill Status Report table shows each role.
           */}
           <p className="mill-information-report__note">
-            The Mill Information Report created will include a report on every mill.
+            {isAdmin
+              ? 'The Mill Information Report created will include a report on every mill.'
+              : 'The Mill Information Report created will include a report on each mill associated with you.'}
           </p>
           {/*
             Legacy also promises "the information of the licensees and auditors currently associated

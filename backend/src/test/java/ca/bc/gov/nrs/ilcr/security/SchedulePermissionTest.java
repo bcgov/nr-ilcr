@@ -103,6 +103,15 @@ class SchedulePermissionTest {
   }
 
   @Test
+  void submitterGeneratesMillReports_butNotTheDataExtract() {
+    // #468: legacy showed a Licensee the Generate Reports menu and let them open the mill reports.
+    // The CSV extract under the same menu stays ADMIN-only.
+    assertTrue(permissions.grants(Role.SUBMITTER, Action.GENERATE_MILL_REPORTS));
+    assertTrue(permissions.grants(Role.ADMIN, Action.GENERATE_MILL_REPORTS));
+    assertFalse(permissions.grants(Role.SUBMITTER, Action.GENERATE_DATA_EXTRACT));
+  }
+
+  @Test
   void admin_deniedSubmitReport() {
     assertFalse(permissions.grants(Role.ADMIN, Action.SUBMIT_REPORT));
     assertFalse(permissions.hasPermission(auth("ILCR_ADMIN"), "SUBMIT_REPORT"));

@@ -53,7 +53,7 @@ const EXPECTED: { id: MockUserId; role: string; why: string }[] = [
   {
     id: 'admin',
     role: 'ILCR_ADMIN',
-    why: 'the @smoke shell scenario, whose nav assertion covers the adminOnly "Generate Reports" group',
+    why: 'the @smoke shell scenario opens the shell as the administrator (its nav assertion once hinged on the then-adminOnly "Generate Reports" group; both roles render it since #468)',
   },
 ];
 

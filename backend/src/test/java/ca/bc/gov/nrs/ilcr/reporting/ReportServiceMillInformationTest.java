@@ -2,8 +2,13 @@ package ca.bc.gov.nrs.ilcr.reporting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millinformation.MillInformationService;
 import ca.bc.gov.nrs.ilcr.millinformation.dto.MillInformationSection;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
@@ -20,6 +25,8 @@ import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Service;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Service;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.apache.pdfbox.Loader;
@@ -31,6 +38,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * Unit tests for the Mill Information render path.
@@ -64,6 +72,10 @@ class ReportServiceMillInformationTest {
   @Mock private Schedule11Service schedule11Service;
   @Mock private MillInformationService millInformationService;
 
+  // Unstubbed, Mockito answers Optional.empty(): the unscoped (administrator) render every existing
+  // case here exercises. The #468 cases stub a submitter's scope.
+  @Mock private MillContextService millContextService;
+
   private ReportService service() {
     return new ReportService(
         dataSource,
@@ -80,7 +92,54 @@ class ReportServiceMillInformationTest {
         schedule10Service,
         schedule11Service,
         millInformationService,
-        new ReportVirtualizerFactory("", 300, 4096, 100));
+        new ReportVirtualizerFactory("", 300, 4096, 100),
+        millContextService);
+  }
+
+  @Test
+  @DisplayName("a submitter's all-mills PDF covers only their associated mills (#468)")
+  void submitterScopeNarrowsTheSections() throws Exception {
+    when(millInformationService.findSections(2021))
+        .thenReturn(
+            List.of(section(730, "FIRST MILL", "7300"), section(731, "SECOND MILL", "7310")));
+    when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of(731L)));
+
+    byte[] pdf;
+    try (RenderedReport report = service().renderMillInformation(2021)) {
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      report.writeTo(out);
+      pdf = out.toByteArray();
+    }
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      assertThat(document.getNumberOfPages()).isEqualTo(1);
+      String text = new PDFTextStripper().getText(document);
+      assertThat(text).contains("SECOND MILL - 7310").doesNotContain("FIRST MILL");
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "a submitter with nothing in scope gets the no-mills 404, not everyone's report (#468)")
+  void submitterWithNoMillsInScopeRaisesNoMills() {
+    when(millInformationService.findSections(2021))
+        .thenReturn(List.of(section(730, "FIRST MILL", "7300")));
+    when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of()));
+    ReportService service = service();
+
+    assertThatThrownBy(() -> service.renderMillInformation(2021))
+        .isInstanceOf(MillInformationNoMillsException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "a submitter's drill-down into a mill outside their scope is 403 before any read (#468)")
+  void submitterDrillDownOutsideScopeIsDeniedBeforeTheRead() {
+    when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of(731L)));
+    ReportService service = service();
+
+    assertThatThrownBy(() -> service.renderMillInformation(730L, 2021))
+        .isInstanceOf(AccessDeniedException.class);
+    verify(millInformationService, never()).findSection(anyLong(), anyInt());
   }
 
   @Test

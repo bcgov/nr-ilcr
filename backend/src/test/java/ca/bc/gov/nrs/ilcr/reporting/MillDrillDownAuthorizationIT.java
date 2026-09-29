@@ -25,9 +25,11 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * {@code @PreAuthorize} omitted from one controller method is invisible to every other test here,
  * and this one carries client names, phone numbers and addresses.
  *
- * <p>As on the all-mills endpoint, the distinguishing case is the SUBMITTER: they hold
- * VIEW_SCHEDULE and so may print schedules, but the ministry mill reports were never theirs —
- * legacy hid the whole Generate Reports area from them.
+ * <p>As on the all-mills endpoint, both production roles pass the gate since #468 (legacy let a
+ * Licensee open the mill reports), and the drill-down is then narrowed to a submitter's associated
+ * mills — one row of the scoped status table it is launched from. So an unassociated submitter is
+ * 403 on a real mill AND on an unknown one (denied before the read, learning nothing), while the
+ * canonical submitter streams the PDF. The no-groups arm proves the gate is there at all.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName(
@@ -58,8 +60,10 @@ class MillDrillDownAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_SUBMITTER -> 403; holding VIEW_SCHEDULE is not enough for a ministry report")
-  void submitter_returns403() throws Exception {
+  @DisplayName("unassociated ILCR_SUBMITTER -> 403: the mill is not in their scope (#468)")
+  void unassociatedSubmitter_returns403() throws Exception {
+    // The role holds the action, so the gate passes; this JWT carries no directory GUID, so no
+    // mill is theirs and the scope check refuses before the read.
     mockMvc
         .perform(
             get(ENDPOINT, SEEDED_MILL)
@@ -67,6 +71,18 @@ class MillDrillDownAuthorizationIT extends AbstractOracleIT {
                 .accept(MediaType.APPLICATION_PDF)
                 .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName(
+      "the canonical submitter, associated to every seeded mill -> 200 and the PDF streams (#468)")
+  void associatedSubmitter_returnsPdf() throws Exception {
+    streamPdf(
+            get(ENDPOINT, SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_PDF)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isOk());
   }
 
   @Test
@@ -93,11 +109,12 @@ class MillDrillDownAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("a SUBMITTER is denied before the mill is ever read — 403, not the 404")
-  void submitterIsDeniedEvenForAnUnknownMill() throws Exception {
-    // Authorization precedes the read, so an unauthorized caller learns nothing about which mills
-    // exist. Were the order reversed, the 404/403 split would leak the year's mill set to a
-    // submitter who is not entitled to any of it.
+  @DisplayName(
+      "an unassociated SUBMITTER is denied before the mill is ever read — 403, not the 404")
+  void unassociatedSubmitterIsDeniedEvenForAnUnknownMill() throws Exception {
+    // The scope check precedes the read, so a submitter learns nothing about which mills exist: a
+    // real mill outside their scope and a mill that does not exist answer identically. Were the
+    // order reversed, the 404/403 split would leak the year's mill set.
     mockMvc
         .perform(
             get(ENDPOINT, 999_999)

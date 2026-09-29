@@ -20,22 +20,42 @@ describe('visibleNavigationItems', () => {
     ])
   })
 
-  test('the admin-only areas are hidden from non-admins; everything else stays', () => {
+  test('Administration is hidden from non-admins; everything else stays, Generate Reports included', () => {
     expect(names(false)).not.toContain('Administration')
-    // Generate Reports holds the ministry mill reports, which a Licensee never had access to.
-    expect(names(false)).not.toContain('Generate Reports')
+    // Generate Reports is visible to a submitter (#468): legacy showed a Licensee the menu and let
+    // them open the mill reports. Hiding it was a regression, not parity.
     expect(names(false)).toEqual([
       'Home',
       'Schedules',
       'Check Status',
+      'Generate Reports',
       'Print Schedules',
       'Submissions',
     ])
   })
 
-  test('exactly two items are admin-gated: Administration and Generate Reports', () => {
+  test('exactly one top-level item is admin-gated: Administration', () => {
     const gated = NAVIGATION_ITEMS.filter((item) => item.adminOnly)
-    expect(gated.map((item) => item.name)).toEqual(['Administration', 'Generate Reports'])
+    expect(gated.map((item) => item.name)).toEqual(['Administration'])
+  })
+
+  test('a submitter sees Generate Reports without Data Extract; an admin sees all three (#468)', () => {
+    const reportsFor = (isAdmin: boolean) =>
+      visibleNavigationItems(isAdmin).find((item) => item.name === 'Generate Reports')
+    const submitter = reportsFor(false)
+    expect(submitter && 'items' in submitter ? submitter.items.map((i) => i.name) : []).toEqual([
+      'Mill Information Report',
+      'Mill Status Report',
+    ])
+    const admin = reportsFor(true)
+    expect(admin && 'items' in admin ? admin.items.map((i) => i.name) : []).toEqual([
+      'Data Extract',
+      'Mill Information Report',
+      'Mill Status Report',
+    ])
+    // The filter returns copies: the source model still lists all three.
+    const source = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
+    expect(source && 'items' in source ? source.items.length : 0).toBe(3)
   })
 
   test('Generate Reports lists all three reports, in the legacy menu order', () => {
@@ -43,19 +63,26 @@ describe('visibleNavigationItems', () => {
     // Data Extract leading the submenu is legacy's own order, not an arbitrary append.
     const reports = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
     expect(reports?.items).toEqual([
-      { name: 'Data Extract', path: '/data-extract' },
+      { name: 'Data Extract', path: '/data-extract', adminOnly: true },
       { name: 'Mill Information Report', path: '/mill-information-report' },
       { name: 'Mill Status Report', path: '/mill-status-report' },
     ])
   })
 
-  test('Data Extract inherits the Generate Reports admin gate rather than declaring its own', () => {
-    // The page is administrator-only, and the guard must come from the parent menu's flag — that
-    // inheritance is what keeps ADMIN_ONLY_PATHS and the hidden menu from drifting apart.
+  test('Data Extract carries its own admin gate now that its parent menu has none (#468)', () => {
+    // The page is administrator-only (GENERATE_DATA_EXTRACT), and the guard must come from the
+    // entry's flag: the same flag hides the entry from a submitter, which is what keeps
+    // ADMIN_ONLY_PATHS and the hidden entry from drifting apart. The two mill reports carry none.
     const reports = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
-    const item = reports?.items?.find((child) => child.name === 'Data Extract')
-    expect(item?.path).toBe('/data-extract')
+    const extract = reports?.items?.find((child) => child.name === 'Data Extract')
+    expect(extract?.path).toBe('/data-extract')
+    expect(extract?.adminOnly).toBe(true)
     expect(isAdminOnlyPath('/data-extract')).toBe(true)
+    for (const name of ['Mill Information Report', 'Mill Status Report']) {
+      expect(reports?.items?.find((child) => child.name === name)?.adminOnly).toBeFalsy()
+    }
+    expect(isAdminOnlyPath('/mill-information-report')).toBe(false)
+    expect(isAdminOnlyPath('/mill-status-report')).toBe(false)
   })
 
   test('Administration runs in legacy order, under legacy labels', () => {
@@ -105,13 +132,13 @@ describe('visibleNavigationItems', () => {
 
 describe('admin-only paths (route guard source)', () => {
   test('derived from the same adminOnly items the nav hides', () => {
+    // Administration's five, from the menu-level flag, plus Data Extract from its own entry-level
+    // flag. The two mill reports left this list with #468.
     expect([...ADMIN_ONLY_PATHS].sort()).toEqual([
       '/code-tables',
       '/data-extract',
       '/home-content',
       '/mill-associations',
-      '/mill-information-report',
-      '/mill-status-report',
       '/mills',
       '/open-reporting-year',
     ])
@@ -122,8 +149,9 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/mill-associations')).toBe(true)
     expect(isAdminOnlyPath('/open-reporting-year')).toBe(true)
     expect(isAdminOnlyPath('/home-content')).toBe(true)
-    expect(isAdminOnlyPath('/mill-information-report')).toBe(true)
-    expect(isAdminOnlyPath('/mill-status-report')).toBe(true)
+    // Both roles open the mill reports (#468); the route guard must let a submitter through.
+    expect(isAdminOnlyPath('/mill-information-report')).toBe(false)
+    expect(isAdminOnlyPath('/mill-status-report')).toBe(false)
     expect(isAdminOnlyPath('/mills')).toBe(true)
     expect(isAdminOnlyPath('/data-extract')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)

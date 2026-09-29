@@ -12,11 +12,14 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import ca.bc.gov.nrs.ilcr.util.LegacyDateText;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -124,6 +127,53 @@ public class MillContextService {
       return List.of();
     }
     return repository.findMillsForUser(userGuid);
+  }
+
+  /**
+   * The mills a caller's REPORTS may cover (#468) — the report-side twin of {@link #listMills}.
+   *
+   * <p>Legacy scoped the Mill Status Report to the logged-in user's associated mills ({@code
+   * MillReportStatusDAO.java:173}, a {@code Restrictions.in} over {@code getMillSelection}), and
+   * the Mill Information PDF looped over that same list. The rewrite dropped the scope while the
+   * Generate Reports area was administrator-only; restoring the area to a SUBMITTER (#468) restores
+   * the scope with it, so a licensee sees their mills in the reports exactly as they do on the Home
+   * page — never every mill.
+   *
+   * <p>Identity is derived as {@code MillContextController.currentUserGuid} derives it for the Home
+   * list: a FAM {@code Jwt}'s {@code custom:idp_user_id}, or the dev mock principal's stand-in GUID
+   * — so with security off the mock submitter is scoped here as on the Home page. (This is
+   * deliberately NOT {@link #validateMillAccess}'s non-{@code Jwt} exemption: that one is a
+   * recorded dev-mode choice for direct schedule access, pinned by its own test.)
+   *
+   * @return empty when unscoped — the caller holds {@code ILCR_ADMIN}, who is tied to no mill
+   *     (DL-22); otherwise the caller's actively associated mill ids, an EMPTY set when they have
+   *     none or their identity cannot be resolved (fail-closed, like {@link #listMills})
+   */
+  public Optional<Set<Long>> callerMillScope() {
+    if (roleChecker.hasConcreteRole(Role.ADMIN.name())) {
+      return Optional.empty();
+    }
+    String userGuid = currentUserGuid();
+    if (userGuid == null || userGuid.isBlank()) {
+      return Optional.of(Set.of());
+    }
+    return Optional.of(
+        repository.findMillsForUser(userGuid).stream()
+            .map(MillSummary::millId)
+            .collect(Collectors.toUnmodifiableSet()));
+  }
+
+  /** The caller's directory GUID: a FAM {@code Jwt}'s, the dev mock principal's, else blank. */
+  private static String currentUserGuid() {
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    Object principal = auth != null ? auth.getPrincipal() : null;
+    if (principal instanceof Jwt jwt) {
+      return JwtPrincipalUtil.getIdpUserId(jwt);
+    }
+    if (principal instanceof MockUserPrincipal mock) {
+      return mock.userGuid();
+    }
+    return "";
   }
 
   /**

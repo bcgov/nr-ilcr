@@ -19,10 +19,12 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * Acceptance test for authorization on GENERATE_MILL_REPORTS (AD-7). Security ON; drives the real
  * {@code oauth2ResourceServer} chain + {@code @PreAuthorize}.
  *
- * <p>The distinguishing case is the SUBMITTER: they hold VIEW_SCHEDULE and so may print schedules,
- * but the ministry mill reports were never theirs — legacy hid the whole Generate Reports area from
- * them. A submitter reaching this endpoint must be denied, which is what separates this gate from
- * the one on the sibling report endpoints.
+ * <p>Both production roles pass the gate: since #468 a SUBMITTER holds GENERATE_MILL_REPORTS too,
+ * because legacy showed a Licensee the Generate Reports menu and let them open the mill reports —
+ * scoped, as legacy's were, to their associated mills. So an unassociated submitter passes the gate
+ * and then meets the no-mills 404 (nothing in scope), while the canonical submitter (associated to
+ * every seeded mill) streams the PDF. The no-groups arm is what separates this gate from an absent
+ * one.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/reports/mill-information — authorization on GENERATE_MILL_REPORTS (AD-7)")
@@ -50,15 +52,31 @@ class MillInformationReportAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_SUBMITTER -> 403; holding VIEW_SCHEDULE is not enough for a ministry report")
-  void submitter_returns403() throws Exception {
+  @DisplayName(
+      "unassociated ILCR_SUBMITTER -> past the gate, then 404: no mills in their scope (#468)")
+  void unassociatedSubmitter_returns404NoMills() throws Exception {
+    // The role holds the action, so the gate passes; this JWT carries no directory GUID, so no
+    // mill is in scope and the render has nothing to cover — the same no-mills 404 an empty year
+    // yields, and never everyone's report.
     mockMvc
         .perform(
             get(ENDPOINT)
                 .param("year", SEEDED_YEAR)
                 .accept(MediaType.APPLICATION_PDF)
                 .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName(
+      "the canonical submitter, associated to every seeded mill -> 200 and the PDF streams (#468)")
+  void associatedSubmitter_returnsPdf() throws Exception {
+    streamPdf(
+            get(ENDPOINT)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_PDF)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isOk());
   }
 
   @Test
