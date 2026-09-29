@@ -1,4 +1,7 @@
-import { When, Then, expect } from '../fixtures';
+import type { Page } from '@playwright/test';
+import { When, Then, expect, type World } from '../fixtures';
+import type { MillsPage } from '../../pages/mill/millsPage';
+import type { UsersPage } from '../../pages/usr/usersPage';
 import {
   type UsrAnchor,
   CARRIED_USER_FAILED,
@@ -25,6 +28,22 @@ const anchorFor = (world: { usrAnchors?: Record<string, UsrAnchor> }, key: strin
 
 // ---- mill -> user (UC-USR-002 S01) ----
 
+type MillToUserArgs = { millsPage: MillsPage; usersPage: UsersPage; page: Page; world: World };
+
+/** From a mill already selected on the Mills page, View one of its users and arrive with them selected. */
+const viewUserFromSelectedMill = async ({ millsPage, usersPage, page, world }: MillToUserArgs, a: UsrAnchor) => {
+  const carried = page.waitForRequest((req) => {
+    const url = new URL(req.url());
+    return url.pathname.endsWith('/api/v1/users/lookup') && url.searchParams.get('userGuid') === a.userGuid;
+  });
+  await millsPage.userViewButton(a.userGuid).click();
+  await carried;
+  await usersPage.expectLoaded();
+  // Arrived WITH the user: their details render. Only then is the carried user the selected one.
+  await expect(usersPage.userDetails).toContainText(directoryRecord(a).idpUsername);
+  world.usrSelected = a;
+};
+
 When(
   'I view the {word} user from mill {string} on the Mills page',
   async ({ millsPage, usersPage, page, world }, key, millNumber) => {
@@ -35,17 +54,15 @@ When(
     await millsPage.searchByNumber(millNumber);
     await millsPage.resultRow(millNumber).click();
     await expect(millsPage.searchDialog).toHaveCount(0);
+    await viewUserFromSelectedMill({ millsPage, usersPage, page, world }, a);
+  },
+);
 
-    const carried = page.waitForRequest((req) => {
-      const url = new URL(req.url());
-      return url.pathname.endsWith('/api/v1/users/lookup') && url.searchParams.get('userGuid') === a.userGuid;
-    });
-    await millsPage.userViewButton(a.userGuid).click();
-    await carried;
-    await usersPage.expectLoaded();
-    // Arrived WITH the user: their details render. Only then is the carried user the selected one.
-    await expect(usersPage.userDetails).toContainText(directoryRecord(a).idpUsername);
-    world.usrSelected = a;
+// The return leg of the S06 round trip: the mill is already selected (it arrived by carry), so no search.
+When(
+  'I view the {word} user from the selected mill',
+  async ({ millsPage, usersPage, page, world }, key) => {
+    await viewUserFromSelectedMill({ millsPage, usersPage, page, world }, anchorFor(world, key));
   },
 );
 
@@ -97,6 +114,13 @@ Then('I am on the Mills page with mill {string} selected', async ({ millsPage, p
   await expect(page).toHaveURL(/\/mills(\?.*)?$/);
   await expect(millsPage.detailsPanel).toContainText(m.millName);
   await expect(millsPage.changeMillButton).toBeVisible();
+  // Story 23.3 AC10: "the search dialog skipped" — selected by the carry, never through the search.
+  await expect(millsPage.searchDialog).toHaveCount(0);
+});
+
+// The Mills route consumes `?millId=` with a replace-navigation (BR-02), so a later visit cannot reopen it.
+Then('the carried mill has been consumed from the URL', async ({ page }) => {
+  await expect(page).toHaveURL(/\/mills$/);
 });
 
 When('I open the Users page again from the Administration menu', async ({ usersPage }) => {

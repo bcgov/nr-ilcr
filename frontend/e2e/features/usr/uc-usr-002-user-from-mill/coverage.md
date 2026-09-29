@@ -38,6 +38,12 @@ The fixture, the seed patch, the preflight and the DB bridge are shared with UC-
   (`0xC0000409`) in S04 mid-scenario, and the next repeat of S04 correctly refusing the row that crash left
   behind. That repeat's own teardown restored it (the at-rest step registers cleanup before it checks).
   S04 then went **5/5** serially
+- **S06 round trip, with bcgov/nr-ilcr#527 merged locally** (2026-09-29, #522 + #527 in one worktree,
+  `--grep @usr --workers=1`): **24/24**. DIV-1 is green, and the scenario now also drives the way back
+  (the mill's user View → Users). Two negative controls, mutating the app: with the Mills route no longer
+  clearing `?millId=`, the scenario went **red** at "the carried mill has been consumed from the URL". With
+  the carried arrival also opening the search dialog, it went **red** at "I am on the Mills page with mill
+  "9199" selected". `preflight/usr-anchors.setup.ts` 14/14 afterwards.
 - **every anchor at rest afterwards**, read at the DB: the twelve users' flags and assignments are exactly
   the seed; ...13/...14 have no account; no row has both dates set. `preflight/usr-anchors.setup.ts`
   (14 checks) green.

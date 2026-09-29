@@ -12,8 +12,9 @@ a narrative.
 - Story ACs — `_bmad-output/planning-artifacts/epics.md` Stories 23.1–23.4; the recorded deviations
   (B)–(P) are in `_bmad-output/implementation-artifacts/submitter-mill-2-2/-2-3/-2-4-*.md`
 
-**STATUS 2026-09-29 — 10 of 14 slices green; 1 red on purpose (S06); 3 not testable — S10 not applicable, S05/S14 blocked.** Story 23.4
-(bcgov/nr-ilcr#162). S06 (user → mill) is a deliberate red, DIV-1: the feature was never built. S10 is not
+**STATUS 2026-09-29 — 11 of 14 slices green; 3 not testable — S10 not applicable, S05/S14 blocked.** Story 23.4
+(bcgov/nr-ilcr#162). S06 (user → mill) went green with bcgov/nr-ilcr#527 (DIV-1, resolved) and is now one
+round-trip scenario, Users → Mills → Users, with an axe scan of the carried mill. S10 is not
 applicable (no role filter, VER-5). S05/S14 (ADAM Details) are BLOCKED on the directory, GAP-2. The
 Story 23.4 journey is one green scenario covering S13, S07, S01, S09, S08 and S02 in order.
 
@@ -27,9 +28,9 @@ Measured, never incremented — re-measure rather than editing these numbers by 
 features/usr/uc-usr-001-maintain-users/*.feature   6 files — journey, assignments, search,
                                                      cross-navigation, accessibility, access
 scenarios (bddgen, @UC-USR-001)               12 — journey 1, assignments 3, search 2,
-                                                 cross-navigation 1 (@discovered-divergence),
+                                                 cross-navigation 1,
                                                  accessibility 4, access 1
-  ...of which pass `npm run test:gate`          11 (the DIV-1 red is excluded by the gate's grep)
+  ...of which pass `npm run test:gate`          12 (needs bcgov/nr-ilcr#527 merged: S06 exercises it)
 preflight/usr-anchors.setup.ts                14 checks (shared with UC-USR-002) — the ten mills
                                                  listed, each of the 12 users at rest, the unknown
                                                  GUID unknown
@@ -37,7 +38,7 @@ pinned anchors                                10 mills 26064-26073 + 12 users ..
 DB bridge (scripts/usr_db_restore.py)          3 actions — read-account, drop-assignment,
                                                  drop-account
 stubbed requests                              1 — GET /api/v1/users/lookup (SPEC-1)
-@discovered-divergence / @discovered-bug      1 / 0 (DIV-1)
+@discovered-divergence / @discovered-bug      0 / 0 (DIV-1 resolved by bcgov/nr-ilcr#527)
 ```
 
 Verification runs are recorded once, for the whole `usr` domain, in
@@ -57,8 +58,8 @@ Verification runs are recorded once, for the whole `usr` domain, in
 | Deactivation blocked while assignments active | 23.4 AC1; S08; ERR-002 | 409 `error.user.deactivate.hasactivemills`, flag unchanged | journey `@S08` (DB read-back 'Y'), a11y `@S08` | covered | — |
 | Clear each assignment, then deactivate | 23.4 AC1; S08 recovery, S02; SUC-002 | PATCH end ×2, then PATCH {active:false} | journey `@S02` (DB read-back 'N') | covered | — |
 | Mill → associated user, pre-selected | 23.4 AC2; UC-USR-002 S01 | Mills page View → `?userGuid=` consumed | UC-USR-002 carried-user `@S01` | covered | — |
-| User → assigned mill, pre-selected | 23.4 AC2; S06; UC-MILL-002 S01 | **none — not built** | cross-navigation `@S06 @discovered-divergence` | red | DIV-1 |
-| WCAG violations zero or triaged | 23.4 AC3; 23.3 AC11 | axe, WCAG 2.1 AA | accessibility — 4 scenarios, 5 scans (nothing selected, no-match note, user selected, warning, error) | covered | GAP-1 (success banner) |
+| User → assigned mill, pre-selected | 23.4 AC2; S06; UC-MILL-002 S01 | Associated Mills row View → `/mills?millId=` consumed (#527) | cross-navigation `@S06` (the round trip, back via UC-USR-002 S01) | covered | DIV-1 (resolved) |
+| WCAG violations zero or triaged | 23.4 AC3; 23.3 AC11 | axe, WCAG 2.1 AA | accessibility — 4 scenarios, 5 scans (nothing selected, no-match note, user selected, warning, error); cross-navigation `@S06` scans the Mills page with a carried mill | covered | GAP-1 (success banner) |
 | Non-admin refused (UI + API) | retired Story 2.5 AC3 | adminOnly nav; MAINTAIN_USERS 403 | access `@BR-ADMIN` | covered | — |
 
 ## Slices
@@ -70,7 +71,7 @@ Verification runs are recorded once, for the whole `usr` domain, in
 | S03 re-activate an ended assignment | S03.feature; BR-07 | assign re-POST revives in place | assignments `@S03` | covered | — |
 | S04 change to a different user | S04.feature | picker replaces the selection in place (no Change User button) | search `@S04` | covered | re-grounded |
 | S05 ADAM details, user with mills | S05.feature | **not built** (23.3 AC9) | — | blocked | GAP-2 |
-| S06 jump to a related mill | S06.feature | **not built** (23.3 AC10) | cross-navigation `@S06` | red | DIV-1 |
+| S06 jump to a related mill | S06.feature | row View → Mills route consumes `?millId=` (#527) | cross-navigation `@S06` | covered | DIV-1 (resolved) |
 | S07 no matching user + retry | S07.feature ×2; ERR-001 | picker note; recast text | journey `@S07`; search `@S07` | covered | VER-2 |
 | S08 deactivate blocked + recovery | S08.feature ×2; ERR-002 | 409 hasactivemills | journey `@S08`; a11y `@S08` | covered | — |
 | S09 mill already assigned + add another | S09.feature ×2; WRN-001 | assign 200 + warning; second mill added | journey `@S09` | covered | — |

@@ -24,17 +24,19 @@ data 2026-09-29.
     "user → assigned mill lands on the Mills page pre-selected" (legacy UC-USR-001 S06, a View button
     on the mill row, and UC-MILL-002 S01). Actual: no control, no destination. The other direction
     (mill → user) works and is green (UC-USR-002 S01).
-  - **How it was caught:** `cross-navigation.feature` `@S06 @discovered-divergence` fails at "I open
+  - **How it was caught:** `cross-navigation.feature` `@S06 @discovered-divergence` failed at "I open
     mill "9199" from the selected user's associated mills" with *"the Associated mills row for 9199
     offers no way to open the mill"*. It looks for a link or a button named for the mill, so it does not
     dictate the control.
   - **History:** Story 23.3 wrote this as AC10 "[BLOCKED — do not build]" because the Mills page did not
     exist yet, and closed as done with AC10 unbuilt. Story 22.3 then built the Mills page and the
     mill → user half, but not this half. Nothing recorded it as deferred after that.
-  - **Needs:** a small frontend story (a row action + the Mills route consuming the carry, with the
-    Story 23.3 ruling (N) for a mill that fails to load), or a PO decision to drop the criterion. The
-    red test turns green on its own when it ships.
-  - **Status:** OPEN — for BA/QA triage.
+  - **Fix:** bcgov/nr-ilcr#527 (Story 23.3 AC10) — a View button on every Associated Mills row, and the
+    Mills route consuming `?millId=` with a replace-navigation. Run 2026-09-29 against the seeded stack
+    with #527 merged locally: the scenario went green, and the tag and red-title marker came off. The
+    scenario now drives the whole round trip (Users → Mills → Users) and axe-scans the carried-mill state.
+    **#522 must merge after #527**, or `test:gate` goes red on this scenario.
+  - **Status:** RESOLVED by bcgov/nr-ilcr#527, test green 2026-09-29 — CLOSED on BA/QA confirmation.
 
 **Coverage gaps:**
 
