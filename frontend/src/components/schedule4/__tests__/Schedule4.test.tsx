@@ -2420,11 +2420,13 @@ describe('Schedule4 Check Status evaluates the open panel (#359 group B)', () =>
 
     await userEvent.click(bottomCheckStatus())
     // JSF `required` passes a whitespace name, so the bean's own ERR-001 text is what legacy showed;
-    // the Copy panel is `schedule4NewLocation.xhtml`, whose Distance is labelled `Distance (Km)`.
+    // the Copy panel is `schedule4NewLocation.xhtml`, whose Distance is labelled `Distance (Km)`. A
+    // Volume alone now requires the Distance AND the Cost at once (all-or-nothing, Iman 2026-09-29).
     await waitFor(() => {
       expect(errorBannerLines()).toEqual([
         'Location Name can not be empty. Please enter a description.',
         'Distance (Km): Value is required.',
+        'Truck Barge Ferry (Cost $): Value is required.',
       ])
     })
   })
@@ -2590,29 +2592,6 @@ describe('Schedule4 Check Status evaluates the open panel (#359 group B)', () =>
     ).not.toBeInTheDocument()
   })
 
-  test('editing a field clears the validation banner lines; the name marker stays until the panel re-opens', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
-    renderSchedule4()
-    await screen.findByText('Harbour Dump')
-    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
-    await userEvent.type(await screen.findByLabelText('Rail Haul distance'), '12')
-
-    await userEvent.click(bottomCheckStatus())
-    await waitFor(() => {
-      expect(errorBannerLines()).toHaveLength(3)
-    })
-
-    // Legacy re-rendered its messages on each input's change, so a corrected field keeps no line.
-    await userEvent.type(screen.getByLabelText('Rail Haul volume'), '400')
-    expect(errorBannerLines()).toEqual([])
-    // The name is still blank and an action was blocked on this panel: its ERR-001 marker stays.
-    expect(
-      screen.getByText('Location Name can not be empty. Please enter a description.'),
-    ).toBeInTheDocument()
-    // Only the still-missing Cost keeps its inline marker.
-    expect(screen.getAllByText('Value Required')).toHaveLength(1)
-  })
-
   test('a FAILED check for a superseded panel snapshot is dropped too — no stale error banner', async () => {
     let releaseCheck!: () => void
     const checkGate = new Promise<void>((resolve) => {
@@ -2642,5 +2621,200 @@ describe('Schedule4 Check Status evaluates the open panel (#359 group B)', () =>
     })
     expect(screen.queryByText('Stale check failure detail')).not.toBeInTheDocument()
     expect(screen.queryByText('Unable to check status.')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B change log — the category grid is judged ON CHANGE (blur with a change), never per
+// keystroke, and the banner ACCUMULATES per cell.
+// ---------------------------------------------------------------------------------------------------
+
+describe('Schedule4 per-cell validation on change (#359 group B change log)', () => {
+  const openHarbour = async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+  }
+
+  test('typing shows NO error until the cell is left; leaving it shows the inline text and its banner line', async () => {
+    await openHarbour()
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '10000000')
+
+    expect(
+      screen.queryByText('Entered volume must be between 0 and 9,999,999.'),
+    ).not.toBeInTheDocument()
+    expect(errorBannerLines()).toEqual([])
+
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Entered volume must be between 0 and 9,999,999.'])
+    expect(
+      within(volume.closest('td') as HTMLElement).getByText(
+        'Entered volume must be between 0 and 9,999,999.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  test('a Distance changed to a value passes itself and says NOTHING about Volume/Cost until Save / Check', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Crew Barge/Ferry distance'), '50')
+    await userEvent.tab()
+
+    expect(errorBannerLines()).toEqual([])
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+
+    // Save judges the whole panel and replaces the banner with the full list, the name first.
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Location Name: Value is required.',
+        'Crew Barge Ferry (Volume m³): Value is required.',
+        'Crew Barge Ferry (Cost $): Value is required.',
+      ])
+    })
+    expect(screen.getAllByText('Value Required')).toHaveLength(2)
+  })
+
+  test('clearing a Distance while its Volume is present fails the Distance; a second failing cell adds a line; fixing the first removes only its own', async () => {
+    // Harbour's Truck Barge/Ferry holds distance 120.5, volume 500, cost 25000.
+    await openHarbour()
+    await userEvent.clear(screen.getByLabelText('Truck Barge/Ferry distance'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Truck Barge Ferry (Km): Value is required.'])
+
+    // A second failure, EARLIER in page order (Lakeside, code 40), lands above it.
+    const lakeside = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(lakeside)
+    await userEvent.type(lakeside, '100000000')
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual([
+      'Entered cost must be between -99,999,999 and 99,999,999.',
+      'Truck Barge Ferry (Km): Value is required.',
+    ])
+
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry distance'), '80')
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Entered cost must be between -99,999,999 and 99,999,999.'])
+    const distanceCell = screen
+      .getByLabelText('Truck Barge/Ferry distance')
+      .closest('td') as HTMLElement
+    expect(within(distanceCell).queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('clearing a Volume while its Distance is present fails the Volume only (Cost is not judged)', async () => {
+    await openHarbour()
+    await userEvent.clear(screen.getByLabelText('Truck Barge/Ferry volume'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Truck Barge Ferry Volume (m3): Value is required.'])
+  })
+
+  test('focusing and leaving a cell without a change judges nothing', async () => {
+    await openHarbour()
+    await userEvent.click(screen.getByLabelText('Rail Haul volume'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual([])
+  })
+
+  test('the Location Name is judged on Save / Check Status only, never on its own change', async () => {
+    await openHarbour()
+    const name = screen.getByLabelText('Location Name')
+    await userEvent.clear(name)
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual([])
+    expect(
+      screen.queryByText('Location Name can not be empty. Please enter a description.'),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Location Name: Value is required.'])
+    })
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+  })
+
+  test('after a blocked Check, a later cell change keeps the other lines (and the name marker)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Rail Haul distance'), '12')
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toHaveLength(3)
+    })
+
+    await userEvent.type(screen.getByLabelText('Rail Haul volume'), '400')
+    // Typing changes nothing yet…
+    expect(errorBannerLines()).toHaveLength(3)
+    await userEvent.tab()
+    // …leaving the corrected cell removes only its own line.
+    expect(errorBannerLines()).toEqual([
+      'Location Name: Value is required.',
+      'Rail Haul (Cost $): Value is required.',
+    ])
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Value Required')).toHaveLength(1)
+  })
+})
+
+describe('Schedule4 BR-04 all-or-nothing on the distance rows (Iman, 2026-09-29)', () => {
+  test('a Volume typed into an empty row and left flags nothing yet; Save then lists Distance AND Cost at once', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Location Name'), 'Named')
+    await userEvent.type(screen.getByLabelText('Rail Haul volume'), '400')
+    await userEvent.tab()
+    // Only the changed cell is judged on change, and it passes (its row had nothing else in it).
+    expect(errorBannerLines()).toEqual([])
+
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Distance (Km): Value is required.',
+        'Rail Haul (Cost $): Value is required.',
+      ])
+    })
+    const distanceCell = screen.getByLabelText('Rail Haul distance').closest('td') as HTMLElement
+    const costCell = screen.getByLabelText('Rail Haul cost').closest('td') as HTMLElement
+    expect(within(distanceCell).getByText('Value Required')).toBeInTheDocument()
+    expect(within(costCell).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('Check Status lists every missing cell of a Cost-only row at once', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await userEvent.type(await screen.findByLabelText('Crew Barge/Ferry cost'), '900')
+    await userEvent.tab()
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Crew Barge Ferry (Km): Value is required.',
+        'Crew Barge Ferry Volume (m3): Value is required.',
+      ])
+    })
+  })
+
+  test('on change: clearing a Distance while the Volume is present flags the Distance', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await userEvent.clear(await screen.findByLabelText('Truck Barge/Ferry distance'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Truck Barge Ferry (Km): Value is required.'])
   })
 })

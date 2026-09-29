@@ -253,7 +253,7 @@ export const LOCATION_MAX_LENGTH = LOCATION_MAX
 export const COMMENTS_MAX_LENGTH = COMMENTS_MAX
 
 /** Every bridge field in on-screen order (`BridgeFields.tsx`), which is the banner's line order. */
-const FIELD_ORDER: readonly (keyof BridgeFormValues)[] = [
+export const BRIDGE_FIELD_ORDER: readonly (keyof BridgeFormValues)[] = [
   'locationName',
   'builtDate',
   'constructionTypeCode',
@@ -330,7 +330,7 @@ const PREFIXED_FIELDS: ReadonlySet<keyof BridgeFormValues> = new Set<keyof Bridg
 export const bridgeBannerLines = (errors: BridgeErrors, rowCounter: number): string[] =>
   legacyBannerLines(
     errors,
-    FIELD_ORDER,
+    BRIDGE_FIELD_ORDER,
     BRIDGE_MESSAGES.valueRequired,
     (field) => {
       const label = REQUIRED_LABELS[field]
@@ -338,3 +338,10 @@ export const bridgeBannerLines = (errors: BridgeErrors, rowCounter: number): str
     },
     { rowNumber: rowCounter, fields: PREFIXED_FIELDS },
   )
+
+/** One field's legacy banner line on a bridge row (the same text `bridgeBannerLines` produces). */
+export const bridgeFieldBannerLine = (
+  field: keyof BridgeFormValues,
+  message: string,
+  rowCounter: number,
+): string => bridgeBannerLines({ [field]: message }, rowCounter)[0]

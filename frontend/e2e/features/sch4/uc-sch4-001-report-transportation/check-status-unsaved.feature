@@ -16,10 +16,11 @@
 # "requirements met" over an invalid panel. These scenarios are therefore GREEN with the fix and are not
 # tagged `@discovered-divergence`.
 #
-# WHY DISTANCE ONLY. A Distance entered alone is the one entry that already asks for BOTH Volume and
-# Cost in a single attempt. The Volume-first path is deliberately not exercised (Iman, 2026-09-25): it
-# reveals one missing field per attempt, an oddity logged for the business area, so a scenario pinned to
-# it would have to change the day that is decided.
+# WHY DISTANCE ONLY. A Distance entered alone asks for BOTH Volume and Cost in a single attempt, in
+# legacy and the rebuild alike. Legacy's Volume-first path revealed one missing field per attempt; since
+# 2026-09-29 the rebuild reports every missing cell of the row at once (a deliberate fix of legacy,
+# Iman — see `validation.feature` S22/S23), so a Volume-first entry would now ask for Distance AND Cost
+# too. These scenarios stay on the Distance, whose answer is the same before and after that fix.
 #
 # THE INLINE MARKER STAYS. The rebuild's own `Value Required` under each missing cell is an enhancement
 # legacy did not have; both are asserted, because the banner is where legacy's wording lives.

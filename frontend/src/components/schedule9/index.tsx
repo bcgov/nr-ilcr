@@ -28,13 +28,20 @@ import {
   buildBody,
   emptyRecordForm,
   formFromRecord,
+  RECORD_FIELD_ORDER,
   itemDescriptionEnabled,
-  recordBannerLines,
+  recordFieldBannerLine,
   sideSlopeEnabled,
   sourceDescriptionEnabled,
   unitDescriptionEnabled,
   validateRecord,
 } from './validation'
+import {
+  rowBannerEntries,
+  rowFieldRank,
+  setBannerEntry,
+  type BannerEntry,
+} from '@/utils/legacyValidationBanner'
 import './index.scss'
 
 // Client-only chrome; every success/error renders from the API (AD-8), never hardcoded.
@@ -107,10 +114,8 @@ const Schedule9: FC = () => {
     saving,
     message,
     actionError,
-    validationErrors,
     checkResult,
     setMessage,
-    setValidationErrors,
     setCheckResult,
     clearBanners: clearHookBanners,
     resetBanners,
@@ -122,18 +127,26 @@ const Schedule9: FC = () => {
   // never repaint a verdict over newer values.
   const checkSnapshotVersionRef = useRef(0)
 
-  // A checked value changed: the shown verdict (and any check in flight) describes the old screen, and
-  // the validation banner's lines no longer describe it either — legacy re-rendered `p:messages` on
-  // every input's change, so a corrected field did not keep its line.
+  // A checked value changed: the shown verdict (and any check in flight) describes the old screen.
+  // The validation banner is NOT wiped here: on this page it accumulates per field (see
+  // `commitRowFields`), so only the changed field's own line is recomputed, on its change.
   const invalidateCheckResult = () => {
     checkSnapshotVersionRef.current += 1
     setCheckResult(null)
-    setValidationErrors([])
   }
+
+  // The validation banner, one keyed line per failing field in page order (#359 group B change log).
+  // Save and Check Status REPLACE it with the full list; a field's change adds or removes only its own
+  // line — a deliberate deviation from legacy, which replaced the banner on every change (Iman + BA).
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // Which row fields the user has changed since they were last committed ("change and leave"): a
+  // focus-and-leave with no change validates nothing, as legacy's `f:ajax event="change"` did not fire.
+  const changedFieldsRef = useRef<Set<string>>(new Set())
 
   const clearBanners = () => {
     checkSnapshotVersionRef.current += 1
     clearHookBanners()
+    setBannerEntries([])
   }
 
   const [showAddPanel, setShowAddPanel] = useState(false)
@@ -150,6 +163,8 @@ const Schedule9: FC = () => {
 
   const resetTransient = useCallback(() => {
     resetBanners()
+    setBannerEntries([])
+    changedFieldsRef.current.clear()
     setShowAddPanel(false)
     setAddForm(emptyRecordForm())
     setAddErrors({})
@@ -178,6 +193,7 @@ const Schedule9: FC = () => {
   // keep unsaved edits (all rows are live at once). `savedId` is absent for add and delete.
   const applyDocument = (doc: Schedule9Response, savedId?: number) => {
     setData((prev) => (prev ? { ...doc, codeLists: doc.codeLists ?? prev.codeLists } : doc))
+    changedFieldsRef.current.clear()
     setPage((current) => Math.min(current, Math.max(1, Math.ceil(doc.records.length / PAGE_SIZE))))
     const surviving = new Set(doc.records.map((record) => record.id))
     setRowForms((prev) =>
@@ -213,22 +229,85 @@ const Schedule9: FC = () => {
     setAddErrors((prev) => clearFieldError(prev, key))
   }
 
+  /**
+   * Validate row fields on their change (#359 group B change log): legacy's `f:ajax event="change"`
+   * ran the changed field's own validators and re-rendered the banner. Each field turns red with its
+   * inline text and its legacy line joins the banner — or, passing, loses both. Only the given fields
+   * are judged; every other field waits for its own change, or for Save / Check Status. A text field
+   * commits on leaving it after a change; a select on selection, with its new value (`form`), and
+   * together with any dependent it just cleared (a disabled, emptied field must not keep a line).
+   */
+  const commitRowFields = (
+    record: ContractualWorkRecord,
+    keys: readonly (keyof RecordFormValues)[],
+    form?: RecordFormValues,
+  ) => {
+    const changed = keys.filter(
+      (key) => form !== undefined || changedFieldsRef.current.has(`${String(record.id)}:${key}`),
+    )
+    if (changed.length === 0 || !data) {
+      return
+    }
+    const errors = validateRecord(form ?? rowForms[record.id] ?? formFromRecord(record))
+    const rowIndex = data.records.indexOf(record)
+    for (const key of changed) {
+      const changedKey = `${String(record.id)}:${key}`
+      changedFieldsRef.current.delete(changedKey)
+      const message = errors[key]
+      setRowErrors((prev) => {
+        const row = prev[record.id] ?? {}
+        return {
+          ...prev,
+          [record.id]:
+            message === undefined ? clearFieldError(row, key) : { ...row, [key]: message },
+        }
+      })
+      const rank = rowFieldRank(rowIndex, RECORD_FIELD_ORDER.indexOf(key))
+      setBannerEntries((prev) =>
+        setBannerEntry(
+          prev,
+          changedKey,
+          message === undefined
+            ? null
+            : { key: changedKey, rank, line: recordFieldBannerLine(key, message, rowIndex + 1) },
+        ),
+      )
+    }
+  }
+
+  const SELECT_FIELDS: readonly (keyof RecordFormValues)[] = [
+    'contractualItemCode',
+    'unitCode',
+    'biogeoclimaticZone',
+    'sourceCode',
+  ]
+
   const setRowField = (
     record: ContractualWorkRecord,
     key: keyof RecordFormValues,
     value: string,
   ) => {
+    const current = rowForms[record.id] ?? formFromRecord(record)
+    const next = withConditionalClears(current, key, value)
+    changedFieldsRef.current.add(`${String(record.id)}:${key}`)
     setRowForms((prev) => ({
       ...prev,
       [record.id]: withConditionalClears(prev[record.id] ?? formFromRecord(record), key, value),
     }))
-    setRowErrors((prev) => ({
-      ...prev,
-      [record.id]: clearFieldError(prev[record.id] ?? {}, key),
-    }))
+    // The red box and its inline text are NOT cleared while typing: like legacy (and Schedule 4) the
+    // field is re-judged only when it is left after a change, or a select on selection
+    // (`commitRowFields`), and the box and its banner line update together then.
     // A check-status result names fields by value-at-the-time; once the user edits, it is stale — and
     // a check still in flight describes the old values, so its answer is dropped when it lands.
     invalidateCheckResult()
+    // A select's selection IS its change: validate it now, with the value just chosen, plus any
+    // dependent the selection cleared.
+    if (SELECT_FIELDS.includes(key)) {
+      const cleared = RECORD_FIELD_ORDER.filter(
+        (field) => field !== key && current[field] !== next[field],
+      )
+      commitRowFields(record, [key, ...cleared], next)
+    }
   }
 
   const handleAdd = () => {
@@ -268,8 +347,22 @@ const Schedule9: FC = () => {
     const errors = validateRecord(form)
     setRowErrors((prev) => ({ ...prev, [record.id]: errors }))
     if (Object.keys(errors).length > 0) {
-      // The top banner names each failing field of THIS row in legacy's wording (#359 group B).
-      setValidationErrors(recordBannerLines(errors, data.records.indexOf(record) + 1))
+      // The top banner names each failing field of THIS row in legacy's wording (#359 group B),
+      // replacing whatever it held.
+      const rowIndex = data.records.indexOf(record)
+      setBannerEntries(
+        rowBannerEntries(
+          [{ row: record, key: record.id, errors }],
+          RECORD_FIELD_ORDER,
+          (_record, _index, field, message) => recordFieldBannerLine(field, message, rowIndex + 1),
+        ).map((entry) => ({
+          ...entry,
+          rank: entry.rank + rowFieldRank(rowIndex, 0),
+        })),
+      )
+      for (const field of RECORD_FIELD_ORDER) {
+        changedFieldsRef.current.delete(`${String(record.id)}:${field}`)
+      }
       return
     }
     run(
@@ -316,22 +409,27 @@ const Schedule9: FC = () => {
     // failing a client rule must not block the check silently.
     if (data.editable) {
       const errorsByRow: Record<number, RecordErrors> = {}
-      const lines: string[] = []
+      const validated: { row: ContractualWorkRecord; key: number; errors: RecordErrors }[] = []
       let firstFailed = -1
       for (const [index, { record, form }] of forms.entries()) {
         const errors = validateRecord(form)
         errorsByRow[record.id] = errors
-        if (Object.keys(errors).length > 0) {
-          if (firstFailed === -1) {
-            firstFailed = index
-          }
-          lines.push(...recordBannerLines(errors, index + 1))
+        validated.push({ row: record, key: record.id, errors })
+        if (Object.keys(errors).length > 0 && firstFailed === -1) {
+          firstFailed = index
         }
       }
       // Replace wholesale rather than merging: a row that now passes must lose its old red text.
       setRowErrors(errorsByRow)
+      // Everything has now been validated, so no field is waiting on its own change any more.
+      changedFieldsRef.current.clear()
       if (firstFailed !== -1) {
-        setValidationErrors(lines)
+        // Check Status REPLACES the banner with the full list, row by row, field by field.
+        setBannerEntries(
+          rowBannerEntries(validated, RECORD_FIELD_ORDER, (_record, index, field, message) =>
+            recordFieldBannerLine(field, message, index + 1),
+          ),
+        )
         // Bring the first offender into view and open it, so its inline errors are reachable.
         setPage(Math.floor(firstFailed / PAGE_SIZE) + 1)
         setOpenIds((prev) => new Set(prev).add(forms[firstFailed].record.id))
@@ -401,7 +499,7 @@ const Schedule9: FC = () => {
           keyPrefix="record"
           message={message}
           actionError={actionError}
-          validationErrors={validationErrors}
+          validationErrors={bannerEntries.map((entry) => entry.line)}
           checkResult={checkResult}
         />
 
@@ -485,6 +583,7 @@ const Schedule9: FC = () => {
                       servedCostPerUnit={record.id in rowForms ? undefined : record.costPerUnit}
                       onChange={(key, value) => setRowField(record, key, value)}
                       onMask={(key) => maskRowField(record, key)}
+                      onCommit={(key) => commitRowFields(record, [key])}
                       originals={record.originalValues}
                     />
                     <div className="schedule-9__panel-actions">

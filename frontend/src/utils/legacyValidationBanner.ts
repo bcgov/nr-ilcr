@@ -54,3 +54,65 @@ export function legacyBannerLines<K extends string>(
   }
   return lines
 }
+
+/**
+ * One line of an ACCUMULATING validation banner (#359 group B change log, Schedules 4, 7A and 9).
+ * `key` names the field the line belongs to, so a later change to that field can replace or remove
+ * exactly its own line; `rank` is its page position (row, then field order), so the list always
+ * reads in the same order as the full Save / Check Status list.
+ */
+export interface BannerEntry {
+  readonly key: string
+  readonly rank: number
+  readonly line: string
+}
+
+/**
+ * Put one field's line into the banner (or take it out, with `entry` null), keeping page order. Used
+ * on a field's change: legacy re-rendered `p:messages` on every change, and on these pages the
+ * banner deliberately ACCUMULATES rather than being replaced (Iman + BA ruling).
+ */
+export const setBannerEntry = (
+  entries: readonly BannerEntry[],
+  key: string,
+  entry: BannerEntry | null,
+): readonly BannerEntry[] => {
+  const rest = entries.filter((existing) => existing.key !== key)
+  if (entry === null) {
+    return rest.length === entries.length ? entries : rest
+  }
+  return [...rest, entry].sort((a, b) => a.rank - b.rank)
+}
+
+/** The rank of a list-row field: rows in order, then the row's own field order. */
+export const rowFieldRank = (rowIndex: number, fieldIndex: number): number =>
+  rowIndex * 1000 + fieldIndex
+
+/**
+ * Every banner entry for a list page's rows, in page order — the full list Save / Check Status
+ * REPLACE the banner with. `lineFor` renders one field's legacy line from its inline message.
+ */
+export function rowBannerEntries<Row, K extends string>(
+  rows: readonly {
+    readonly row: Row
+    readonly key: string | number
+    readonly errors: Partial<Record<K, string>>
+  }[],
+  order: readonly K[],
+  lineFor: (row: Row, rowIndex: number, field: K, message: string) => string,
+): BannerEntry[] {
+  const entries: BannerEntry[] = []
+  rows.forEach(({ row, key, errors }, rowIndex) => {
+    order.forEach((field, fieldIndex) => {
+      const message = errors[field]
+      if (message !== undefined) {
+        entries.push({
+          key: `${String(key)}:${field}`,
+          rank: rowFieldRank(rowIndex, fieldIndex),
+          line: lineFor(row, rowIndex, field, message),
+        })
+      }
+    })
+  })
+  return entries
+}

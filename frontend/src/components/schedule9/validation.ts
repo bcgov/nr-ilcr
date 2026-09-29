@@ -278,7 +278,7 @@ export const previewCostPerUnit = (form: RecordFormValues): number | null => {
 export const COMMENTS_MAX_LENGTH = COMMENTS_MAX
 
 /** Every record field in on-screen order (`ContractualWorkFields.tsx`), the banner's line order. */
-const FIELD_ORDER: readonly (keyof RecordFormValues)[] = [
+export const RECORD_FIELD_ORDER: readonly (keyof RecordFormValues)[] = [
   'contractorId',
   'contractualItemCode',
   'itemDescription',
@@ -330,7 +330,7 @@ const PREFIXED_FIELDS: ReadonlySet<keyof RecordFormValues> = new Set<keyof Recor
 export const recordBannerLines = (errors: RecordErrors, rowNumber: number): string[] =>
   legacyBannerLines(
     errors,
-    FIELD_ORDER,
+    RECORD_FIELD_ORDER,
     RECORD_MESSAGES.valueRequired,
     (field) => {
       const label = REQUIRED_LABELS[field]
@@ -338,3 +338,10 @@ export const recordBannerLines = (errors: RecordErrors, rowNumber: number): stri
     },
     { rowNumber, fields: PREFIXED_FIELDS },
   )
+
+/** One field's legacy banner line on a record row (the same text `recordBannerLines` produces). */
+export const recordFieldBannerLine = (
+  field: keyof RecordFormValues,
+  message: string,
+  rowNumber: number,
+): string => recordBannerLines({ [field]: message }, rowNumber)[0]

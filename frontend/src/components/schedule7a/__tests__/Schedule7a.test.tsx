@@ -1153,7 +1153,9 @@ describe('Schedule 7A page', () => {
     expect(put).toBe(false)
   })
 
-  test('an inline error clears as soon as the user corrects that field (AC8)', async () => {
+  // Re-grounded 2026-09-29 (#359 group B change log, Iman): the error no longer clears on the first
+  // keystroke — like legacy's `f:ajax event="change"`, the field is re-judged when it is LEFT.
+  test('an inline error clears when the user corrects that field and leaves it (AC8)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7a />)
@@ -1164,6 +1166,8 @@ describe('Schedule 7A page', () => {
     expect(await screen.findByText('Value Required')).toBeInTheDocument()
 
     await user.type(field('Length (m)'), '15.0')
+    expect(screen.getByText('Value Required')).toBeInTheDocument()
+    await user.tab()
     expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
   })
 
@@ -2046,33 +2050,163 @@ describe('Schedule 7A Check Status evaluates the screen (#359 group B)', () => {
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
   })
+})
 
-  test('editing a field clears the validation banner lines; a row-2 range line carries its row prefix', async () => {
-    server.use(
-      http.get(URL, () =>
-        HttpResponse.json(doc({ bridges: [northFork, bridgeAt(7002, 2, { width: null })] })),
-      ),
-    )
+// ---------------------------------------------------------------------------------------------------
+// #359 group B change log — per-field validation ON CHANGE, and the ACCUMULATING banner.
+// ---------------------------------------------------------------------------------------------------
+
+describe('Schedule 7A per-field validation on change (#359 group B change log)', () => {
+  const twoRows = () => doc({ bridges: [northFork, bridgeAt(7002, 2)] })
+
+  test('a required field changed to blank and left turns red, shows inline Value Required and adds its banner line', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(twoRows())))
     const user = userEvent.setup()
     render(<Schedule7a />)
-    await openBridge(user, 2)
-    const distance = bridgePanel(7002).getByLabelText('Distance (km)')
-    await user.clear(distance)
-    await user.type(distance, '10000')
+    await openBridge(user, 1)
 
-    await user.click(checkStatusButton())
-    await waitFor(() => {
-      expect(errorBannerLines()).toEqual([
-        'Id: 2 - Width (m): Value is required.',
-        'Id: 2 - Entered bridge distance must be between 0.0 and 999.99',
-      ])
-    })
+    await user.clear(bridgePanel(7001).getByLabelText('Width (m)'))
+    // Typing alone shows no banner line — the change is judged when the field is left.
+    expect(errorBannerLines()).toEqual([])
+    await user.tab()
+
+    expect(errorBannerLines()).toEqual(['Id: 1 - Width (m): Value is required.'])
+    expect(bridgePanel(7001).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('lines ACCUMULATE in page order; fixing one field on change removes only its line', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(twoRows())))
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    await openBridge(user, 2)
+
+    // Row 2's distance (a range error) first, then row 1's width and name — the banner reads in page
+    // order (row 1 before row 2; name before width), not in the order the errors happened.
+    const distance2 = bridgePanel(7002).getByLabelText('Distance (km)')
+    await user.clear(distance2)
+    await user.type(distance2, '10000')
+    await user.tab()
+    await user.clear(bridgePanel(7001).getByLabelText('Width (m)'))
+    await user.tab()
+    await user.clear(bridgePanel(7001).getByLabelText('Name/Location of Bridge'))
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Name/Location of Bridge: Value is required.',
+      'Id: 1 - Width (m): Value is required.',
+      // A row's range line carries legacy's validatorMessage prefix (schedule7A.xhtml:867).
+      'Id: 2 - Entered bridge distance must be between 0.0 and 999.99',
+    ])
     // The inline text stays the bundle message, unprefixed.
     expect(
       bridgePanel(7002).getByText('Entered bridge distance must be between 0.0 and 999.99'),
     ).toBeInTheDocument()
 
-    await user.type(bridgePanel(7002).getByLabelText('Width (m)'), '4')
+    await user.type(bridgePanel(7001).getByLabelText('Width (m)'), '4')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Name/Location of Bridge: Value is required.',
+      'Id: 2 - Entered bridge distance must be between 0.0 and 999.99',
+    ])
+    // Its red box is gone; the name's stays.
+    expect(bridgePanel(7001).getAllByText('Value Required')).toHaveLength(1)
+  })
+
+  test('focusing and leaving a field without a change validates nothing, and untouched fields wait for Save / Check', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [bridgeAt(7001, 1, { distance: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    // The stored-blank Distance is never changed: tabbing through it judges nothing.
+    await user.click(bridgePanel(7001).getByLabelText('Distance (km)'))
+    await user.tab()
+    // A different field changed and left, and passing: still nothing about Distance.
+    await user.type(bridgePanel(7001).getByLabelText('Width (m)'), '5')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([])
+    expect(bridgePanel(7001).queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('Save and Check Status REPLACE the accumulated banner with the full list', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ bridges: [bridgeAt(7001, 1, { distance: null }), bridgeAt(7002, 2)] }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 2)
+    await user.clear(bridgePanel(7002).getByLabelText('Width (m)'))
+    await user.tab()
+    expect(errorBannerLines()).toEqual(['Id: 2 - Width (m): Value is required.'])
+
+    const full = [
+      'Id: 1 - Distance (km): Value is required.',
+      'Id: 2 - Width (m): Value is required.',
+    ]
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(full)
+    })
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(full)
+    })
+  })
+
+  test('a dropdown is judged on selection: choosing a value removes its line', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [bridgeAt(7001, 1, { deckTypeCode: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await screen.findByRole('button', { name: 'Bridge report Id: 1' })
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 1 - Decking Type: Value is required.'])
+    })
+
+    await user.click(bridgePanel(7001).getByRole('combobox', { name: /Decking Type/i }))
+    await user.click(await bridgePanel(7001).findByRole('option', { name: 'Wood' }))
+    expect(errorBannerLines()).toEqual([])
+  })
+})
+
+describe('Schedule 7A: a red field stays red while typing (#359 group B change log)', () => {
+  test('typing into a red field keeps box and line; leaving it with a valid value clears both together', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [bridgeAt(7001, 1, { width: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 1 - Width (m): Value is required.'])
+    })
+    const width = bridgePanel(7001).getByLabelText('Width (m)')
+    expect(width).toHaveAttribute('aria-invalid', 'true')
+
+    await user.type(width, '4')
+    // Still red, still inline, still in the banner — nothing is re-judged mid-typing.
+    expect(width).toHaveAttribute('aria-invalid', 'true')
+    expect(bridgePanel(7001).getByText('Value Required')).toBeInTheDocument()
+    expect(errorBannerLines()).toEqual(['Id: 1 - Width (m): Value is required.'])
+
+    await user.tab()
+    expect(width).not.toHaveAttribute('aria-invalid', 'true')
+    expect(bridgePanel(7001).queryByText('Value Required')).not.toBeInTheDocument()
     expect(errorBannerLines()).toEqual([])
   })
 })

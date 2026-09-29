@@ -1210,29 +1210,139 @@ describe('Schedule9 Check Status evaluates the screen (#359 group B)', () => {
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
   })
+})
 
-  test('editing a field clears the validation banner lines; a row-2 range line carries its row prefix', async () => {
+// ---------------------------------------------------------------------------------------------------
+// #359 group B change log — per-field validation ON CHANGE, and the ACCUMULATING banner.
+// ---------------------------------------------------------------------------------------------------
+
+describe('Schedule9 per-field validation on change (#359 group B change log)', () => {
+  test('a required field changed to blank and left turns red, shows inline Value Required and adds its banner line', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.clear(recordPanel(9101).getByLabelText('Company ID'))
+    expect(errorBannerLines()).toEqual([])
+    await user.tab()
+
+    expect(errorBannerLines()).toEqual(['Id: 1 - Company: Value is required.'])
+    expect(recordPanel(9101).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('lines ACCUMULATE in page order (row 2 range line prefixed); fixing one removes only its line', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ records: [recordAt(9101), recordAt(9102)] }))),
     )
     const user = userEvent.setup()
     renderPage()
+    await openRecord(user, 9101)
     await openRecord(user, 9102)
-    const units = recordPanel(9102).getByLabelText('Number of Units')
-    await user.clear(units)
-    await user.type(units, '100000')
 
-    await user.click(checkStatusButton())
-    await waitFor(() => {
-      expect(errorBannerLines()).toEqual([
-        'Id: 2 - Entered number of units must be between 0.0 and 99,999.9.',
-      ])
-    })
+    const units2 = recordPanel(9102).getByLabelText('Number of Units')
+    await user.clear(units2)
+    await user.type(units2, '100000')
+    await user.tab()
+    await user.clear(recordPanel(9101).getByLabelText('Company ID'))
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Company: Value is required.',
+      // A row's range line carries legacy's validatorMessage prefix (schedule9.xhtml:533).
+      'Id: 2 - Entered number of units must be between 0.0 and 99,999.9.',
+    ])
+    // Inline stays the bundle text, unprefixed.
     expect(
       recordPanel(9102).getByText('Entered number of units must be between 0.0 and 99,999.9.'),
     ).toBeInTheDocument()
 
+    await user.type(recordPanel(9101).getByLabelText('Company ID'), 'CTR-9')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 2 - Entered number of units must be between 0.0 and 99,999.9.',
+    ])
+    expect(recordPanel(9101).queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('focusing and leaving without a change validates nothing; untouched fields wait for Check Status, which replaces the banner', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ records: [recordAt(9101, { source: null })] }))),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.click(recordPanel(9101).getByLabelText('Cost'))
+    await user.tab()
+    const units = recordPanel(9101).getByLabelText('Number of Units')
     await user.clear(units)
+    await user.type(units, '100000')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Entered number of units must be between 0.0 and 99,999.9.',
+    ])
+
+    // Check Status judges everything and REPLACES the banner with the full list.
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Id: 1 - Entered number of units must be between 0.0 and 99,999.9.',
+        'Id: 1 - Source: Value is required.',
+      ])
+    })
+  })
+
+  test('a select switched off a road item clears the side slope AND its line (the dependent is re-judged)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            records: [
+              recordAt(9101, {
+                contractualItem: { code: '111', description: 'Semi-permanent Road Deactivation' },
+                sideSlopePct: 50,
+              }),
+            ],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+    const slope = recordPanel(9101).getByLabelText('Side Slope (%)')
+    await user.clear(slope)
+    await user.type(slope, '101')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Side slope (%): percentage must be between 0 and 100.',
+    ])
+
+    await user.click(recordPanel(9101).getByRole('combobox', { name: /Contractual Item/i }))
+    await user.click(await recordPanel(9101).findByRole('option', { name: 'Cattleguard' }))
+    expect(errorBannerLines()).toEqual([])
+  })
+})
+
+describe('Schedule9: a red field stays red while typing (#359 group B change log)', () => {
+  test('typing into a red field keeps box and line; leaving it with a valid value clears both together', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+    const company = recordPanel(9101).getByLabelText('Company ID')
+    await user.clear(company)
+    await user.tab()
+    expect(errorBannerLines()).toEqual(['Id: 1 - Company: Value is required.'])
+    expect(company).toHaveAttribute('aria-invalid', 'true')
+
+    await user.type(company, 'CTR-9')
+    // Still red, still inline, still in the banner — nothing is re-judged mid-typing.
+    expect(company).toHaveAttribute('aria-invalid', 'true')
+    expect(recordPanel(9101).getByText('Value Required')).toBeInTheDocument()
+    expect(errorBannerLines()).toEqual(['Id: 1 - Company: Value is required.'])
+
+    await user.tab()
+    expect(company).not.toHaveAttribute('aria-invalid', 'true')
+    expect(recordPanel(9101).queryByText('Value Required')).not.toBeInTheDocument()
     expect(errorBannerLines()).toEqual([])
   })
 })

@@ -47,13 +47,15 @@ import {
   checkStatusFieldLabel,
   checkStatusLocationName,
   isLocationFormValid,
-  locationBannerLines,
+  locationBannerEntries,
+  locationFieldBannerEntry,
   validateLocationForm,
   type CategoryForm,
   type LegacyPanel,
 } from './validation'
 import { isUnusableEntry } from '@/utils/derivedMath'
 import { deriveCategoryPerUnits } from './derived'
+import { setBannerEntry, type BannerEntry } from '@/utils/legacyValidationBanner'
 import SubPage from './SubPage'
 import { SUB_PAGE_DEFS, type SubPageDef } from './subPageDefs'
 import './index.scss'
@@ -334,11 +336,9 @@ const Schedule4: FC = () => {
     saving,
     message: saveMessage,
     actionError: saveError,
-    validationErrors,
     checkResult,
     setMessage: setSaveMessage,
     setActionError: setSaveError,
-    setValidationErrors,
     setCheckResult,
     clearBanners,
     resetBanners,
@@ -431,13 +431,24 @@ const Schedule4: FC = () => {
   const checkSnapshotVersionRef = useRef(0)
 
   // A checked panel value changed (or the panel went away): the shown verdict, and any check in flight,
-  // describe the old screen, and so do the validation banner's lines — legacy re-rendered `p:messages`
-  // on every input's change, so a corrected field did not keep its line.
+  // describe the old screen. The validation banner is NOT wiped here: it accumulates per cell (see
+  // `commitCategoryField`), so only a changed cell's own line is recomputed, on its change.
   const invalidateCheckResult = () => {
     checkSnapshotVersionRef.current += 1
     setCheckResult(null)
-    setValidationErrors([])
   }
+
+  // The validation banner, one keyed line per failing field in panel order (#359 group B change log).
+  // Save and Check Status REPLACE it with the full list; a category cell's change adds or removes only
+  // its own line — a deliberate deviation from legacy, which replaced the banner on every change
+  // (Iman + BA). The Location Name has no change listener in legacy, so its line comes from Save /
+  // Check Status only.
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // The inline errors of the category grid. NOT derived on every keystroke any more: a cell is judged
+  // when it is changed and left (legacy `f:ajax event="change"`), and the whole panel by Save / Check.
+  const [panelFieldErrors, setPanelFieldErrors] = useState<Record<string, string>>({})
+  // The cells changed since they were last judged — a focus-and-leave with no change judges nothing.
+  const changedCellsRef = useRef<Set<string>>(new Set())
 
   // ERR-001 marks the name once an action has been blocked on this panel, and stays until the panel is
   // re-opened: clearing the banner on the next keystroke must not also hide the name's own marker while
@@ -450,6 +461,9 @@ const Schedule4: FC = () => {
     checkSnapshotVersionRef.current += 1
     clearBanners()
     setWarnMessage(null)
+    setBannerEntries([])
+    setPanelFieldErrors({})
+    changedCellsRef.current.clear()
   }
 
   const openNew = () => {
@@ -508,6 +522,10 @@ const Schedule4: FC = () => {
   // A verdict (or a check in flight) on the closed panel's values is stale the moment it closes.
   const closePanel = () => {
     invalidateCheckResult()
+    // Lines and red cells about a panel that is gone describe nothing on screen.
+    setBannerEntries([])
+    setPanelFieldErrors({})
+    changedCellsRef.current.clear()
     setPanelMode('closed')
   }
 
@@ -554,6 +572,7 @@ const Schedule4: FC = () => {
   const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
     // A shown verdict described the panel before this edit; a check in flight is dropped on landing.
     invalidateCheckResult()
+    changedCellsRef.current.add(`${code}-${field}`)
     // value is already the raw digit string (CommaNumberInput strips its display grouping).
     setPanelCategories((prev) => ({
       ...prev,
@@ -565,11 +584,32 @@ const Schedule4: FC = () => {
   // An invalid or unusable entry holds its previous committed value rather than driving the $/m³ from
   // something the server would refuse (ruled 2026-08-21 after code review).
   const commitCategoryField = (code: number, field: CategoryField) => () => {
-    // Validated here rather than read from `fieldErrors`, which is computed further down (after the
-    // early returns); same source of truth, and it only runs on blur.
-    const invalid = Boolean(
-      validateLocationForm(panelName, panelCategories).fieldErrors[`${code}-${field}`],
-    )
+    const key = `${code}-${field}`
+    // The same rules Save runs, read for THIS cell only: the Distance ⇄ Volume/Cost rule is judged
+    // for the cell just changed, against the other cells' current values.
+    const message = validateLocationForm(panelName, panelCategories).fieldErrors[key]
+    const invalid = message !== undefined
+    // Changed and left → judge this cell (#359 group B change log): red + its legacy banner line, or,
+    // passing, neither. A focus-and-leave with no change judges nothing.
+    if (changedCellsRef.current.has(key)) {
+      changedCellsRef.current.delete(key)
+      setPanelFieldErrors((prev) => {
+        if (message === undefined) {
+          if (!(key in prev)) return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        }
+        return { ...prev, [key]: message }
+      })
+      setBannerEntries((prev) =>
+        setBannerEntry(
+          prev,
+          key,
+          locationFieldBannerEntry(key, message, legacyPanelFor(panelMode)),
+        ),
+      )
+    }
     setPanelCommitted((prev) => {
       const live = panelCategories[code] ?? { volume: '', cost: '', distance: '' }
       const committed = prev[code] ?? { volume: '', cost: '', distance: '' }
@@ -623,7 +663,10 @@ const Schedule4: FC = () => {
       // A shown "requirements met" must never sit beside the lines saying the panel is incomplete.
       invalidateCheckResult()
       setNameMarked(true)
-      setValidationErrors(locationBannerLines(panelName, validation, legacyPanelFor(panelMode)))
+      // Save judges the whole panel and REPLACES the banner with the full list.
+      setPanelFieldErrors(validation.fieldErrors)
+      changedCellsRef.current.clear()
+      setBannerEntries(locationBannerEntries(panelName, validation, legacyPanelFor(panelMode)))
       return
     }
     clearMessages()
@@ -738,12 +781,12 @@ const Schedule4: FC = () => {
 
   useEffect(() => {
     if (!focusVerdictRef.current) return
-    if (checkResult === null && saveError === null && validationErrors.length === 0) return
+    if (checkResult === null && saveError === null && bannerEntries.length === 0) return
     focusVerdictRef.current = false
     // Whichever landed: the verdict column on success, the "Action failed" column on an error or on a
     // panel the validation gate blocked.
     ;(verdictRef.current ?? actionErrorRef.current)?.focus()
-  }, [checkResult, saveError, validationErrors])
+  }, [checkResult, saveError, bannerEntries])
 
   // The Check Status body (#359): the open panel as it is on screen, or null with no panel open. An
   // open existing location (edit, or view) carries its id; a New/Copy panel is unsaved, so id null.
@@ -769,7 +812,9 @@ const Schedule4: FC = () => {
       const validation = validateLocationForm(panelName, panelCategories)
       if (!isLocationFormValid(validation)) {
         setNameMarked(true)
-        setValidationErrors(locationBannerLines(panelName, validation, legacyPanelFor(panelMode)))
+        // Check Status judges the whole panel and REPLACES the banner with the full list.
+        setPanelFieldErrors(validation.fieldErrors)
+        setBannerEntries(locationBannerEntries(panelName, validation, legacyPanelFor(panelMode)))
         return
       }
     }
@@ -873,7 +918,9 @@ const Schedule4: FC = () => {
   }
 
   const validation = validateLocationForm(panelName, panelCategories)
-  const fieldErrors = panelMode === 'view' ? {} : validation.fieldErrors
+  // The name's ERR-001 still reads the live `validation` (shown once `nameMarked`); the grid shows
+  // only what a change or Save / Check Status has judged.
+  const fieldErrors = panelMode === 'view' ? {} : panelFieldErrors
   const panelOpen = panelMode !== 'closed'
   const readOnlyPanel = panelMode === 'view'
   const panelLocation =
@@ -1159,7 +1206,7 @@ const Schedule4: FC = () => {
             <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
           </Column>
         )}
-        {(saveError || validationErrors.length > 0) && (
+        {(saveError || bannerEntries.length > 0) && (
           <Column sm={4} md={8} lg={16} ref={actionErrorRef} tabIndex={-1}>
             {saveError && (
               <InlineNotification
@@ -1170,7 +1217,7 @@ const Schedule4: FC = () => {
               />
             )}
             {/* The validation banner: one legacy line per failing field, in panel order. */}
-            {validationErrors.map((line, index) => (
+            {bannerEntries.map(({ line }, index) => (
               <InlineNotification
                 key={`validation-${String(index)}`}
                 kind="error"

@@ -9,14 +9,15 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Class-level constraint enforcing BR-04 (bidirectional required) on a {@link CategoryInput} for
- * the 3 distance-based codes (47 Truck Barge/Ferry, 48 Crew Barge/Ferry, 52 Rail Haul), transcribed
- * from legacy {@code schedule4NewLocation.xhtml} {@code required} expressions (Story 4.2, S22/S23):
+ * Class-level constraint enforcing BR-04 (all-or-nothing) on a {@link CategoryInput} for the 3
+ * distance-based codes (47 Truck Barge/Ferry, 48 Crew Barge/Ferry, 52 Rail Haul) (Story 4.2,
+ * S22/S23): once ANY of Distance, Volume or Cost is entered, all three are required, and every
+ * missing one is reported at once.
  *
- * <ul>
- *   <li>a Distance entered obliges both Volume and Cost (distance ⇒ volume + cost), and
- *   <li>a Volume or Cost entered obliges a Distance (volume|cost ⇒ distance).
- * </ul>
+ * <p>A deliberate fix of legacy behaviour (Iman, 2026-09-29). Legacy's conditional {@code required}
+ * expressions ({@code schedule4ExistingLocation.xhtml} / {@code schedule4NewLocation.xhtml}: a
+ * Distance obliges Volume and Cost; a Volume or Cost obliges a Distance) were effectively
+ * all-or-nothing but surfaced one missing field per attempt. The rebuild reports them all together.
  *
  * <p>Non-distance (fixed) codes are unaffected. Each violation carries the verbatim {@code
  * missingRequiredFieldMsg} ("Value Required") on the specific missing field (AD-8), so the 400

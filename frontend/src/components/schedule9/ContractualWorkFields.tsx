@@ -37,6 +37,11 @@ type Props = {
   // Re-apply a numeric field's legacy display mask once the user leaves it (blur, not change).
   readonly onMask: (key: MaskedField) => void
   /**
+   * Leaving a text field (or the comments) — the row's per-field "change" validation (#359 group B
+   * change log). Absent on the Add panel, which keeps validating on Add only.
+   */
+  readonly onCommit?: (key: keyof RecordFormValues) => void
+  /**
    * The Licensee's submitted values for this row (Story 16.2, BR-04) — undefined on the Add panel,
    * null at Draft.
    */
@@ -52,6 +57,7 @@ const ContractualWorkFields: FC<Props> = ({
   servedCostPerUnit,
   onChange,
   onMask,
+  onCommit,
   originals,
 }) => {
   // Legacy rendered twelve indicators on this row (Schedule9DO.java:438-476 minus the unused
@@ -96,7 +102,10 @@ const ContractualWorkFields: FC<Props> = ({
         autoComplete="off"
         onChange={(event) => onChange(field, event.target.value)}
         inputMode={inputProps.inputMode}
-        onBlur={inputProps.onBlur}
+        onBlur={() => {
+          inputProps.onBlur?.()
+          onCommit?.(field)
+        }}
       />
       {indicator(field, label, field === 'comments' ? false : undefined)}
     </div>
@@ -202,6 +211,7 @@ const ContractualWorkFields: FC<Props> = ({
           invalid={Boolean(errors.comments)}
           invalidText={errors.comments}
           onChange={(event) => onChange('comments', event.target.value)}
+          onBlur={() => onCommit?.('comments')}
         />
       </Column>
     </Grid>

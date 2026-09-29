@@ -19,14 +19,22 @@ import ScheduleBanners from '@/components/core/ScheduleBanners'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import BridgeFields from './BridgeFields'
 import {
+  BRIDGE_FIELD_ORDER,
+  CODE_FIELDS,
   COST_FIELDS,
-  bridgeBannerLines,
+  bridgeFieldBannerLine,
   emptyBridgeForm,
   parseDecimalInput,
   roundCost,
   validateBridge,
 } from './validation'
 import { deriveBridgeTotals } from './derived'
+import {
+  rowBannerEntries,
+  rowFieldRank,
+  setBannerEntry,
+  type BannerEntry,
+} from '@/utils/legacyValidationBanner'
 import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
@@ -137,10 +145,8 @@ const Schedule7a: FC = () => {
     saving,
     message,
     actionError,
-    validationErrors,
     checkResult,
     setMessage,
-    setValidationErrors,
     setCheckResult,
     clearBanners: clearHookBanners,
     resetBanners,
@@ -152,18 +158,26 @@ const Schedule7a: FC = () => {
   // never repaint a verdict over newer values.
   const checkSnapshotVersionRef = useRef(0)
 
-  // A checked value changed: the shown verdict (and any check in flight) describes the old screen, and
-  // the validation banner's lines no longer describe it either — legacy re-rendered `p:messages` on
-  // every input's change, so a corrected field did not keep its line.
+  // A checked value changed: the shown verdict (and any check in flight) describes the old screen.
+  // The validation banner is NOT wiped here: on this page it accumulates per field (see
+  // `commitRowField`), so only the changed field's own line is recomputed, on its change.
   const invalidateCheckResult = () => {
     checkSnapshotVersionRef.current += 1
     setCheckResult(null)
-    setValidationErrors([])
   }
+
+  // The validation banner, one keyed line per failing field in page order (#359 group B change log).
+  // Save and Check Status REPLACE it with the full list; a field's change adds or removes only its own
+  // line — a deliberate deviation from legacy, which replaced the banner on every change (Iman + BA).
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // Which row fields the user has changed since they were last committed ("change and leave"): a
+  // focus-and-leave with no change validates nothing, as legacy's `f:ajax event="change"` did not fire.
+  const changedFieldsRef = useRef<Set<string>>(new Set())
 
   const clearBanners = () => {
     checkSnapshotVersionRef.current += 1
     clearHookBanners()
+    setBannerEntries([])
   }
 
   const [showAddPanel, setShowAddPanel] = useState(false)
@@ -205,6 +219,8 @@ const Schedule7a: FC = () => {
   // cannot strand an open panel, a stale banner, or a page number past the end of the new list.
   const resetTransient = useCallback(() => {
     resetBanners()
+    setBannerEntries([])
+    changedFieldsRef.current.clear()
     setShowAddPanel(false)
     setAddForm(emptyBridgeForm())
     setAddCommitted(emptyBridgeForm())
@@ -237,6 +253,7 @@ const Schedule7a: FC = () => {
   // where nothing the user typed into an existing row is at stake.
   const applyDocument = (doc: Schedule7aResponse, savedId?: number) => {
     setData(doc)
+    changedFieldsRef.current.clear()
     // Deleting the last bridge of a page leaves `page` past the end of the new list. Clamp it as the
     // document arrives — every mutation response funnels through here — rather than during render,
     // where setting state is a re-entrant update React can warn about, or in an effect, which costs
@@ -297,9 +314,51 @@ const Schedule7a: FC = () => {
     setAddErrors((prev) => clearFieldError(prev, key))
   }
 
+  /**
+   * Validate ONE row field on its change (#359 group B change log): legacy's `f:ajax event="change"`
+   * ran that field's own validators and re-rendered the banner. The field turns red with its inline
+   * text and its legacy line joins the banner — or, passing, loses both. Only this field is judged;
+   * every other field waits for its own change, or for Save / Check Status. A text field commits on
+   * leaving it after a change (`onCommit`); a dropdown on selection, with its new value (`form`).
+   */
+  const commitRowField = (bridge: Bridge, key: keyof BridgeFormValues, form?: BridgeFormValues) => {
+    const id = bridge.bridgeReportId
+    const changedKey = `${String(id)}:${key}`
+    if (form === undefined && !changedFieldsRef.current.has(changedKey)) {
+      return
+    }
+    changedFieldsRef.current.delete(changedKey)
+    if (!data) {
+      return
+    }
+    const message = validateBridge(form ?? rowForms[id] ?? formFromBridge(bridge))[key]
+    setRowErrors((prev) => {
+      const row = prev[id] ?? {}
+      return {
+        ...prev,
+        [id]: message === undefined ? clearFieldError(row, key) : { ...row, [key]: message },
+      }
+    })
+    const rank = rowFieldRank(data.bridges.indexOf(bridge), BRIDGE_FIELD_ORDER.indexOf(key))
+    setBannerEntries((prev) =>
+      setBannerEntry(
+        prev,
+        changedKey,
+        message === undefined
+          ? null
+          : { key: changedKey, rank, line: bridgeFieldBannerLine(key, message, bridge.rowCounter) },
+      ),
+    )
+  }
+
   // The first edit to an untouched row seeds its form from the served bridge, so the other 26 fields
   // survive the change instead of collapsing to blanks.
   const setRowField = (bridge: Bridge, key: keyof BridgeFormValues, value: string) => {
+    const next = {
+      ...(rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge)),
+      [key]: value,
+    }
+    changedFieldsRef.current.add(`${String(bridge.bridgeReportId)}:${key}`)
     setRowForms((prev) => ({
       ...prev,
       [bridge.bridgeReportId]: {
@@ -307,13 +366,16 @@ const Schedule7a: FC = () => {
         [key]: value,
       },
     }))
-    setRowErrors((prev) => ({
-      ...prev,
-      [bridge.bridgeReportId]: clearFieldError(prev[bridge.bridgeReportId] ?? {}, key),
-    }))
+    // The red box and its inline text are NOT cleared while typing: like legacy (and Schedule 4) the
+    // field is re-judged only when it is left after a change, or a select on selection
+    // (`commitRowField`), and the box and its banner line update together then.
     // A check-status result names fields by value-at-the-time; once the user edits, it is stale — and
     // a check still in flight describes the old values, so its answer is dropped when it lands.
     invalidateCheckResult()
+    // A dropdown's selection IS its change: validate it now, with the value just chosen.
+    if ((CODE_FIELDS as readonly string[]).includes(key)) {
+      commitRowField(bridge, key, next)
+    }
   }
 
   const handleAdd = () => {
@@ -366,21 +428,27 @@ const Schedule7a: FC = () => {
     const forms = currentForms(bridges)
     const errorsByRow: Record<number, BridgeErrors> = {}
     const failedRows: Bridge[] = []
-    const lines: string[] = []
-    for (const { bridge, form } of forms) {
+    const validated = forms.map(({ bridge, form }) => {
       const errors = validateBridge(form)
       errorsByRow[bridge.bridgeReportId] = errors
       if (Object.keys(errors).length > 0) {
         failedRows.push(bridge)
-        lines.push(...bridgeBannerLines(errors, bridge.rowCounter))
       }
-    }
+      return { row: bridge, key: bridge.bridgeReportId, errors }
+    })
     // Replace wholesale rather than merging: a row that now passes must lose its old red text.
     setRowErrors(errorsByRow)
+    // Everything has now been validated, so no field is waiting on its own change any more.
+    changedFieldsRef.current.clear()
     if (failedRows.length === 0) {
       return forms
     }
-    setValidationErrors(lines)
+    // Save / Check Status REPLACE the banner with the full list, row by row, field by field.
+    setBannerEntries(
+      rowBannerEntries(validated, BRIDGE_FIELD_ORDER, (bridge, _index, field, message) =>
+        bridgeFieldBannerLine(field, message, bridge.rowCounter),
+      ),
+    )
     // Bring the first offender into view and open it, so the inline errors are actually reachable.
     const first = failedRows[0]
     setPage(Math.floor(bridges.indexOf(first) / PAGE_SIZE) + 1)
@@ -517,7 +585,7 @@ const Schedule7a: FC = () => {
           keyPrefix="bridge"
           message={message}
           actionError={actionError}
-          validationErrors={validationErrors}
+          validationErrors={bannerEntries.map((entry) => entry.line)}
           checkResult={checkResult}
           rowMessages={checkResult?.bridgeMessages}
         />
@@ -601,6 +669,7 @@ const Schedule7a: FC = () => {
                       }
                       onChange={(key, value) => setRowField(bridge, key, value)}
                       onGroup={(key) => groupRowField(bridge, key)}
+                      onCommit={(key) => commitRowField(bridge, key)}
                       originals={bridge.originalValues}
                     />
                     {/* Delete is the ONLY per-row control in legacy (schedule7A.xhtml:1237).

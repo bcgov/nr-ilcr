@@ -42,12 +42,26 @@ describe('locationBannerLines — every legacy label, both panels', () => {
     },
   )
 
+  // All-or-nothing since 2026-09-29 (Iman) — a deliberate fix of legacy, which asked for the Distance
+  // alone here and for the Cost only on the next attempt.
   test.each(cases)(
-    '$panel panel, code $code: a Volume alone requires the Distance',
+    '$panel panel, code $code: a Volume alone requires the Distance AND the Cost, at once',
     ({ panel, code, labels }) => {
       const validation = validateLocationForm('Named', one(code, { volume: '5' }))
       expect(locationBannerLines('Named', validation, panel)).toEqual([
         `${labels[0]}: Value is required.`,
+        `${labels[2]}: Value is required.`,
+      ])
+    },
+  )
+
+  test.each(cases)(
+    '$panel panel, code $code: a Cost alone requires the Distance AND the Volume, at once',
+    ({ panel, code, labels }) => {
+      const validation = validateLocationForm('Named', one(code, { cost: '5' }))
+      expect(locationBannerLines('Named', validation, panel)).toEqual([
+        `${labels[0]}: Value is required.`,
+        `${labels[1]}: Value is required.`,
       ])
     },
   )
@@ -75,5 +89,27 @@ describe('locationBannerLines — every legacy label, both panels', () => {
       'Rail Haul Volume (m3): Value is required.',
       'Rail Haul (Cost $): Value is required.',
     ])
+  })
+})
+
+describe('validateLocationForm BR-04 — all-or-nothing on the distance rows (Iman, 2026-09-29)', () => {
+  const required = VALIDATION_MESSAGES.required
+  test.each([
+    ['volume only', { volume: '5' }, ['distance', 'cost']],
+    ['cost only', { cost: '5' }, ['distance', 'volume']],
+    ['distance only', { distance: '5' }, ['volume', 'cost']],
+    ['distance + volume', { distance: '5', volume: '5' }, ['cost']],
+    ['all three', { distance: '5', volume: '5', cost: '5' }, []],
+    ['none', {}, []],
+    ['typed zeros count as present', { distance: '0', volume: '0', cost: '0' }, []],
+  ] as const)('%s', (_name, entry, missing) => {
+    const { fieldErrors } = validateLocationForm('Named', one(48, entry))
+    expect(fieldErrors).toEqual(
+      Object.fromEntries(missing.map((field) => [`48-${field}`, required])),
+    )
+  })
+
+  test('a fixed category never gets BR-04', () => {
+    expect(validateLocationForm('Named', one(40, { volume: '5' })).fieldErrors).toEqual({})
   })
 })
