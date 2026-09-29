@@ -1500,6 +1500,115 @@ describe('Mills page — the jump-to-user link (AC8, S10)', () => {
   })
 })
 
+describe('Mills page — a mill carried from the Users page (UC-MILL-002 S01)', () => {
+  test('the carried mill is read and selected, and the search dialog is skipped', async () => {
+    const seen: string[] = []
+    usersAre(ACTIVE_ROW)
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId`, ({ params }) => {
+        seen.push(String(params.millId))
+        return HttpResponse.json(CLOSED)
+      }),
+    )
+    render(<Mills carriedMillId={671} />)
+
+    expect(await screen.findByText(/671 - Closed Mill/)).toBeInTheDocument()
+    expect(seen).toEqual(['671'])
+    // STA-001, reached exactly as a Select would reach it (BR-01): Change Mill in place of the two
+    // entry buttons, no dialog, and the mill's own panels loaded.
+    expect(within(detailPanel()).getByRole('button', { name: 'Change Mill' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Select Mill' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Import Mill' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await within(usersTable()).findByText(GUID)).toBeInTheDocument()
+  })
+
+  test('a carried mill that cannot be read renders NO selection, and says why', async () => {
+    // Story 23.3's ruling (N): the destination opens without a selection and shows the reason.
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId`, () => problemBody(404, 'Mill 999 was not found.')),
+    )
+    render(<Mills carriedMillId={999} />)
+
+    expect(
+      await screen.findByText('Mill 999 was not found.', { normalizer: verbatim }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select Mill' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('table', { name: /associated licensee user/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a failure with no ProblemDetail falls back to the page-owned sentence', async () => {
+    server.use(http.get(`${ADMIN_MILLS}/:millId`, () => new HttpResponse(null, { status: 500 })))
+    render(<Mills carriedMillId={999} />)
+
+    expect(await screen.findByText(/carried over from the Users page/i)).toBeInTheDocument()
+  })
+
+  test('a slow carried read cannot stomp a mill the administrator selected meanwhile', async () => {
+    const user = userEvent.setup()
+    let releaseCarried!: () => void
+    const carriedHeld = new Promise<void>((resolve) => {
+      releaseCarried = resolve
+    })
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId`, async ({ params }) => {
+        if (params.millId === '671') {
+          await carriedHeld
+          return HttpResponse.json(CLOSED)
+        }
+        return HttpResponse.json(CEDAR)
+      }),
+    )
+    render(<Mills carriedMillId={671} />)
+
+    // The administrator outruns the read and picks Cedar through Select Mill.
+    await selectCedar(user)
+
+    releaseCarried()
+    await drainEventLoop()
+    expect(screen.getByText(/670 - Cedar Mill/)).toBeInTheDocument()
+    expect(screen.queryByText(/671 - Closed Mill/)).not.toBeInTheDocument()
+  })
+
+  test('a slow carried FAILURE posts no banner over a mill selected meanwhile', async () => {
+    const user = userEvent.setup()
+    let releaseCarried!: () => void
+    const carriedHeld = new Promise<void>((resolve) => {
+      releaseCarried = resolve
+    })
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId`, async () => {
+        await carriedHeld
+        return problemBody(404, 'Mill 671 was not found.')
+      }),
+    )
+    render(<Mills carriedMillId={671} />)
+    await selectCedar(user)
+
+    releaseCarried()
+    await drainEventLoop()
+    expect(screen.queryByText('Mill 671 was not found.')).not.toBeInTheDocument()
+  })
+
+  test('with NO carried mill the page mounts exactly as it always has', async () => {
+    let reads = 0
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId`, () => {
+        reads += 1
+        return HttpResponse.json(CEDAR)
+      }),
+    )
+    render(<Mills />)
+    await screen.findByRole('button', { name: 'Select Mill' })
+    await drainEventLoop()
+
+    expect(reads).toBe(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
 // Pins from the 2026-09-10 adversarial review — each test names the finding it holds closed.
 describe('Mills page — review round 1 pins', () => {
   const IMPORTABLE_ROW = { millId: 750, millNumber: '750', millName: 'Fresh Mill' }

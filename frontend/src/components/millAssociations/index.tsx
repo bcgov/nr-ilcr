@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
   Column,
@@ -13,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Misuse } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Misuse, View } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import SubPanel from '@/components/core/SubPanel'
@@ -77,6 +78,8 @@ type MillAssociationsProps = {
 }
 
 const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
+  const navigate = useNavigate()
+
   const [mills, setMills] = useState<MillSummary[]>([])
   const [selectedMill, setSelectedMill] = useState<MillSummary | null>(null)
 
@@ -461,6 +464,21 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
                                 Activate
                               </Button>
                             )}
+                            {/* UC-MILL-002 S01, on EVERY row — legacy's View carries no `rendered`
+                              guard (users.xhtml:85), so an ended assignment's mill opens too. The
+                              mirror of the Mills page's per-row View; it carries the id, and the
+                              Mills route consumes it (routes/mills.tsx). */}
+                            <Button
+                              kind="tertiary"
+                              size="sm"
+                              aria-label={`View mill ${dash(row.millNumber)}`}
+                              renderIcon={View}
+                              onClick={() =>
+                                navigate({ to: '/mills', search: { millId: row.millId } })
+                              }
+                            >
+                              View
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>

@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -75,6 +75,9 @@ const STATUS_FAILED = 'The mill status could not be changed.'
 const IMPORT_FAILED = 'The mill could not be imported.'
 const ADD_FAILED = 'The user could not be added to the mill.'
 const TOGGLE_FAILED = 'The association could not be changed.'
+/** The hand-off's own fallback, the mirror of the Users page's CARRIED_USER_FAILED. */
+const CARRIED_MILL_FAILED =
+  'The mill carried over from the Users page could not be loaded, so no mill is selected.'
 
 const formFor = (mill: AdminMill): ContactForm => ({
   // ABSENT means never set, and D5 refuses to guess: legacy defaulted the control to "No" and the
@@ -104,7 +107,16 @@ const formFor = (mill: AdminMill): ContactForm => ({
  * cannot reach. Its `run()` also takes a pre-built promise, which has already been dispatched by
  * the time the lock could refuse it.
  */
-const Mills: FC = () => {
+type MillsProps = {
+  /**
+   * A mill handed over from the Users page's per-row `View` (UC-MILL-002 S01), already CONSUMED
+   * from the URL by the route (BR-02). Absent means absent — nothing below it runs, so the shipped
+   * suite's bare renders are unchanged.
+   */
+  readonly carriedMillId?: number
+}
+
+const Mills: FC<MillsProps> = ({ carriedMillId }) => {
   const navigate = useNavigate()
 
   const [mill, setMill] = useState<AdminMill | null>(null)
@@ -214,6 +226,34 @@ const Mills: FC = () => {
     loadContacts(next.millId)
     loadUsers(next.millId)
   }
+
+  // `adopt` closes over fresh state every render; read through a ref at call time so the resolve
+  // below fires on the carried id ALONE (the Users page's selectUserRef, for the same reason).
+  const adoptRef = useRef(adopt)
+  adoptRef.current = adopt
+
+  // Resolves the carried mill exactly once, skipping the search dialog as legacy's view action did
+  // (UC-MILL-002 BR-01, MillsMB.init()). Guarded by a ref as well as the dependency list: under
+  // StrictMode the mount effect runs twice, and the second read would land over the first.
+  const carriedRef = useRef(false)
+  useEffect(() => {
+    if (carriedMillId == null || carriedRef.current) return
+    carriedRef.current = true
+    api()
+      .get<AdminMill>(`${ADMIN_MILLS}/${carriedMillId}`)
+      .then((response) => {
+        // The administrator outran the read and chose a mill through Select or Import meanwhile:
+        // the navigation that preceded it must not stomp that choice.
+        if (millIdRef.current != null) return
+        adoptRef.current(response.data)
+      })
+      .catch((failure: unknown) => {
+        if (millIdRef.current != null) return
+        // Story 23.3's ruling (N), inherited by 22.3 AC8 for the other leg: render WITHOUT a
+        // selection and say why, rather than an unexplained Select/Import state.
+        setError(extractDetail(failure) || CARRIED_MILL_FAILED)
+      })
+  }, [carriedMillId])
 
   /**
    * Re-read one mill after a conflict, so the next attempt carries a live revision. The staged
