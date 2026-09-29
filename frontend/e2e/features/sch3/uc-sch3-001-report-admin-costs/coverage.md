@@ -97,17 +97,17 @@ both are covered as of 2026-08-26. S19 was covered by a deliberate red until DIV
 > **DIV-5** (row delete confirm) lost its tag and marker on **2026-09-29** with the #362 fix
 > (re-measured that day: `--list` gives 49, `--grep @discovered-divergence` 0). **DIV-6 ×3** (`@S12`, `@S25`, `@S26` —
 > Check Status on unsaved edits) lost their tags and markers on **2026-09-25** with the #359 group A fix;
-> The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios). Re-measured **2026-09-25** by counting the generated specs rather than by
+> The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios), and for DIV-5 on **2026-09-29** on the local real-data seeded DB (`--workers=1 --grep "@other-costs|@row-delete-confirm|@unacceptable-costs|@subpage"` — 233 passed: 220 setup/preflight + 13 scenarios across the Schedule 1 and 3 sub-pages). Re-measured **2026-09-29** by counting the generated specs rather than by
 > decrementing the previous figure. Priorities are **unchanged** at **5 × p0, 31 × p1, 13 × p2** (= 49):
 > the three lost only their `@discovered-divergence` tags and keep their `@p1`, so the green/red split
 > moved and the priority split did not. That sum is worth re-checking whenever you edit this — a breakdown that no
 > longer adds up to its total is how three of these numbers went stale unnoticed.
 >
-> How the 2026-09-25 figures were derived, so the next person can reproduce rather than trust them:
+> How the 2026-09-29 figures were derived, so the next person can reproduce rather than trust them:
 > `npm run bddgen`, then `npx playwright test --list --project=chromium` filtered to `uc-sch3-001` gives
 > **49**; the same command with `--grep @p0` / `@p1` / `@p2` gives 5 / 31 / 13; with
-> `--grep @discovered-divergence` it gives **1** and with `--grep @discovered-bug`, **0**. Green is then
-> 49 − 1.
+> `--grep @discovered-divergence` it gives **0** and with `--grep @discovered-bug`, **0**. Green is then
+> 49 − 0.
 >
 > Every other file that used to restate these numbers now points here instead, because they moved four
 > times in three days and the copies disagreed each time. If you change a scenario, re-measure with

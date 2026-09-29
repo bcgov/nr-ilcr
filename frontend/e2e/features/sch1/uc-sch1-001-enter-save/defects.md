@@ -231,16 +231,16 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **FIXED 2026-09-29 (#362), together with Schedule 3's DIV-5.** `useEditableCostRows` now splits the click from the delete — the trash button calls
     `requestRemove`, which only records the pending row, and the shared `EditableSubPageLayout` mounts
     `components/core/ConfirmDeleteModal` (legacy header "Confirmation", `confirmDeleteMsg` verbatim,
-    Yes/No) while one is pending. Yes calls the unchanged `removeRow`, so the persist-on-answer and the
-    #332/#506 rollback are as before; No sends nothing. Legacy also persisted on the click, so
+    Yes/No) while one is pending. Yes calls `removeRow`, so the persist-on-answer and the #332/#506
+    rollback are as before; No and Escape send nothing. A follow-up on the same branch matches
+    legacy's `process="@this"` Delete: an invalid edit in ANOTHER row no longer blocks the
+    delete — that row is sent with its saved values and the grid is re-seeded from the server. Legacy also persisted on the click, so
     deferring the delete to Save would have been a new divergence, not a fix.
     S12's assertions are unchanged; only the `@discovered-divergence` tag and title marker came off.
-    **Not verified live here:** on the local DB used for the 2026-09-29 run the S12 precondition itself
-    fails (the API seed `POST other-costs 9050/2017` answers 404 — no saved Schedule 1 on that anchor
-    there), identically with and without the fix, so the scenario never reaches the Remove click. The
-    same two assertions on the same shared hook went GREEN on Schedule 3 in that run, and the unit
-    tests pin the prompt on this page; CI is the confirming run for S12.
-  - **Status:** CLOSED (fixed) 2026-09-29 — pending S12's first green in CI. Found 2026-08
+    **Verified live — S12 GREEN** **2026-09-29** on the local real-data seeded DB (`--workers=1 --grep "@other-costs|@row-delete-confirm|@unacceptable-costs|@subpage"` — 233 passed: 220 setup/preflight + 13 scenarios across the Schedule 1 and 3 sub-pages). (A first run earlier the same day, on a DB without a saved
+    Schedule 1 on 9050/2017, could not reach the Remove click — its API seed answered 404 with or
+    without the fix; the seeded DB has the anchor.)
+  - **Status:** CLOSED (fixed and verified) 2026-09-29. Found 2026-08
     (EditableSubPage rewrite); legacy-source-confirmed 2026-08-07 (sidecars) and 2026-08-26 (legacy
     code); ticketed 2026-08-26.
   - **Test:** `other-costs.feature` `@S12 @p1` — tag retired, assertions untouched. It was RED on

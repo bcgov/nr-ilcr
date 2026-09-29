@@ -276,14 +276,17 @@ count does.
   - **FIXED 2026-09-29 (#362).** `useEditableCostRows` now splits the click from the delete — the trash button calls
     `requestRemove`, which only records the pending row, and the shared `EditableSubPageLayout` mounts
     `components/core/ConfirmDeleteModal` (legacy header "Confirmation", `confirmDeleteMsg` verbatim,
-    Yes/No) while one is pending. Yes calls the unchanged `removeRow`, so the persist-on-answer and the
-    #332/#506 rollback are as before; No sends nothing. Legacy also persisted on the click, so
+    Yes/No) while one is pending. Yes calls `removeRow`, so the persist-on-answer and the #332/#506
+    rollback are as before; No and Escape send nothing. A follow-up on the same branch matches
+    legacy's `process="@this"` Delete: an invalid edit in ANOTHER row no longer blocks the
+    delete — that row is sent with its saved values and the grid is re-seeded from the server. Legacy also persisted on the click, so
     deferring the delete to Save would have been a new divergence, not a fix.
     **`row-delete-confirm.feature` went green with no assertion edited** — only its
     `@discovered-divergence` tag and title marker came off. One green scenario had to change:
     `other-costs.feature` `@S04` removes its row as part of the add/edit/remove round trip, and now
     answers the prompt (`And I confirm the row deletion`) before asserting the delete — the legacy flow.
-    Verified live 2026-09-29, `--workers=1`: both scenarios GREEN. The whole-schedule Delete and the
+    Verified live 2026-09-29, `--workers=1`: both scenarios GREEN, and again after the review patches
+    and the follow-up, **2026-09-29** on the local real-data seeded DB (`--workers=1 --grep "@other-costs|@row-delete-confirm|@unacceptable-costs|@subpage"` — 233 passed: 220 setup/preflight + 13 scenarios across the Schedule 1 and 3 sub-pages). The whole-schedule Delete and the
     "Leave Schedule 3" prompt are untouched (separate components).
   - **Status:** CLOSED (fixed and verified) 2026-09-29. Found 2026-08-24 (bundled inside DIV-3), split
     out and legacy-source-confirmed 2026-08-25 at the repo owner's direction; ticketed 2026-08-26; fixed

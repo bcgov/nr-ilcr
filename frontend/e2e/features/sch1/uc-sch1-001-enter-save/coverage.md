@@ -62,11 +62,11 @@ this matrix:
 > ### Suite state — the ONE place this is recorded
 > **30 scenarios / 42 tests after Scenario-Outline expansion: no deliberate reds.** **S12 / DIV-3** (row
 > delete confirm) lost its tag and marker on **2026-09-29** with the #362 fix (re-measured that day:
-> `--list` gives 42, `--grep @discovered-divergence` 0; S12's first green is expected from CI — see
-> defects.md DIV-3 for why it could not run locally). **S27/S28 / DIV-6** lost their
-> tags and markers on 2026-09-25 with the #359 group A fix. Re-measured **2026-09-25** from the generated
+> `--list` gives 42, `--grep @discovered-divergence` 0). **S27/S28 / DIV-6** lost their
+> tags and markers on 2026-09-25 with the #359 group A fix. Re-measured **2026-09-29** from the generated
 > specs: `npm run bddgen`, then `npx playwright test --list --project=chromium` filtered to `uc-sch1-001`
-> gives **42**, and with `--grep @discovered-divergence`, **1**. The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
+> gives **42**, and with `--grep @discovered-divergence`, **0**. The confirming e2e run for S12 passed on
+> **2026-09-29** on the local real-data seeded DB (`--workers=1 --grep "@other-costs|@row-delete-confirm|@unacceptable-costs|@subpage"` — 233 passed: 220 setup/preflight + 13 scenarios across the Schedule 1 and 3 sub-pages); for S27/S28 on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
 >
 > Counts used to be restated three times in this section, from three different runs and on two different
 > denominators (57 was this UC alone; 163 and 164 included the 126-check preflight, which has itself grown).
@@ -81,6 +81,9 @@ this matrix:
 A clean run needs `npm run test:gate`, which excludes every `@discovered-*` red.
 
 **What moved the numbers, in order (history — the state above is current):**
+- **2026-09-29 — S12 retired as a tracked red** (#362: Remove on the three cost sub-pages now asks
+  first, through the shared `ConfirmDeleteModal`). Only the `@discovered-divergence` tag and title marker
+  came off; no assertion changed. Verified GREEN on the seeded DB the same day. Reds 1 → 0.
 - **2026-09-25 — S27/S28 retired as tracked reds** (#359 group A: Schedules 1, 2 and 3 now send the screen
   with Check Status). Only the `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off,
   together; no assertion, step or fixture changed. Reds 3 → 1.
