@@ -94,6 +94,11 @@ Then('I should not see the message {string}', async ({ page }, message) => {
   await expect(page.getByText(message)).toHaveCount(0);
 });
 
+Then('the {string} dialog closes', async ({ page }, name) => {
+  // A Carbon Modal is unmounted (or hidden) on close; either way it stops being an accessible dialog.
+  await expect(page.getByRole('dialog', { name })).toHaveCount(0);
+});
+
 Then('I should see the warning {string}', async ({ page }, message) => {
   // A non-blocking warning notification (Carbon warning InlineNotification subtitle). .first() as above.
   await expect(page.getByText(message).first()).toBeVisible();
