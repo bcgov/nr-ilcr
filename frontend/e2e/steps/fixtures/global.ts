@@ -158,6 +158,14 @@ export type World = {
   // --- sec ---
   /** The URL of the Schedule 1 GET fired on nav — proves the SAVED Home context drove the request (UC-SEC-001). */
   schedule1RequestUrl?: string;
+
+  // --- mill ---
+  /**
+   * The tracked mill the scenario works on — set by its precondition, read by every later step and by
+   * the Thens' API read-back. Mill-keyed rather than (mill, year)-keyed: the Mills page has no reporting
+   * year anywhere on it, so `scheduleKey` does not apply.
+   */
+  millAnchor?: import('../../fixtures/mill/mills-test-data').AdminMillAnchor;
 };
 
 export type GlobalFixtures = {
