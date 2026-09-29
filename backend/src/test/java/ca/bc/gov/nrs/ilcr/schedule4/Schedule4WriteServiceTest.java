@@ -25,6 +25,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,9 +39,13 @@ import org.springframework.dao.DataIntegrityViolationException;
  * Unit test for the Schedule 4 location write path (Story 4.2). Mocked repository — no DB, no
  * Spring — so it isolates the family write model: create (insert primary + bump 0→1 + fixed on
  * primary + distance child), edit (bump expected + rename + update-in-place), the
- * delete-when-emptied distance child, server-side name uniqueness (ERR-002), the Draft gate,
- * optimistic-lock handling, idempotent delete, delete cascade, cross-context (mill/year-scoped)
- * edit rejection, and persistence-failure rollback translation.
+ * delete-when-emptied distance child, the #335 complete-state write (a category the request does
+ * not send is written as empty and so cleared — fixed detail rows in one set-based delete, every
+ * distance child deleted — an all-null fixed category deletes rather than inserts, a legacy
+ * family's identity report is never deleted, and duplicate children for one code collapse),
+ * server-side name uniqueness (ERR-002), the Draft gate, optimistic-lock handling, idempotent
+ * delete, delete cascade, cross-context (mill/year-scoped) edit rejection, and persistence-failure
+ * rollback translation.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4WriteServiceTest {
@@ -70,6 +75,15 @@ class Schedule4WriteServiceTest {
     lenient().when(repository.findSubPageRows(MILL, YEAR)).thenReturn(List.of());
   }
 
+  /** The nine fixed codes in the order the write path walks them. */
+  private static final List<Integer> ALL_FIXED = List.of(40, 41, 42, 44, 45, 49, 50, 51, 53);
+
+  /** The fixed codes a request that sends only {@code kept} leaves empty — the set-based delete. */
+  private static List<Integer> fixedExcept(Integer... kept) {
+    List<Integer> keep = List.of(kept);
+    return ALL_FIXED.stream().filter(code -> !keep.contains(code)).toList();
+  }
+
   @Test
   void save_create_insertsPrimaryBumpsAndWritesFixedPlusDistanceChild() {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
@@ -78,7 +92,6 @@ class Schedule4WriteServiceTest {
     when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), isNull(), eq(USER)))
         .thenReturn(9001);
     when(repository.bumpRevision(9001, 0, MILL, YEAR, null, USER)).thenReturn(1);
-    when(repository.findDistanceReportId(MILL, YEAR, "New Dump", 47)).thenReturn(Optional.empty());
     when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), eq(bd("60.0")), eq(USER)))
         .thenReturn(9002);
     stubRecompute();
@@ -132,8 +145,8 @@ class Schedule4WriteServiceTest {
     when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Renamed Dump", "Existing Dump")).thenReturn(false);
     when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
-    when(repository.findDistanceReportId(MILL, YEAR, "Renamed Dump", 47))
-        .thenReturn(Optional.of(8002));
+    when(repository.findDistanceChildren(MILL, YEAR, "Renamed Dump"))
+        .thenReturn(Map.of(47, List.of(8002)));
     stubRecompute();
 
     service.saveLocation(
@@ -190,8 +203,8 @@ class Schedule4WriteServiceTest {
     when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
     when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
-    when(repository.findDistanceReportId(MILL, YEAR, "Existing Dump", 47))
-        .thenReturn(Optional.of(8002));
+    when(repository.findDistanceChildren(MILL, YEAR, "Existing Dump"))
+        .thenReturn(Map.of(47, List.of(8002)));
     stubRecompute();
 
     // A distance category with all-null amounts clears it: the child report is deleted.
@@ -205,6 +218,230 @@ class Schedule4WriteServiceTest {
 
     verify(repository).deleteReport(8002);
     verify(repository, never()).updateReportDistance(anyInt(), any(), anyString());
+  }
+
+  // ---- #335: the request's category list is the location's complete desired state on an edit.
+  // A category the client no longer sends — the user emptied its last value, so `buildRequest`
+  // omits it — must be cleared, not left as it was stored.
+
+  @Test
+  void save_edit_omittedFixedCategory_deletesItsDetailRow() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    // Stored: fixed 40 and 41. Sent: only 41 — the user cleared 40's last value.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(41, bd("7"), 70, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(8001, 41, bd("7"), 70, USER); // the survivor is written
+    // Every fixed code not sent goes in ONE statement — 40 among them, 41 never.
+    verify(repository).deleteDetails(8001, fixedExcept(41));
+  }
+
+  @Test
+  void save_edit_omittedDistanceCategory_deletesItsChildReport() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    // Stored: distance child 8002 for code 47; 48 and 52 were never entered. ONE read serves all
+    // three codes.
+    when(repository.findDistanceChildren(MILL, YEAR, "Existing Dump"))
+        .thenReturn(Map.of(47, List.of(8002)));
+    stubRecompute();
+
+    // Sent: only fixed 40 — the user emptied Truck Barge/Ferry's distance, volume and cost.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001,
+            0,
+            "Existing Dump",
+            null,
+            List.of(new CategoryInput(40, bd("1500"), 60000, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(8001, 40, bd("1500"), 60000, USER);
+    verify(repository).deleteReport(8002); // the omitted distance child goes
+    verify(repository).deleteDetails(8001, fixedExcept(40)); // the sent fixed category stays
+    // Never-entered distance codes have no child to delete, and nothing is inserted for them.
+    verify(repository).findDistanceChildren(MILL, YEAR, "Existing Dump");
+    verify(repository, never()).insertReport(anyLong(), anyInt(), anyString(), any(), anyString());
+  }
+
+  @Test
+  void save_clearFixedCategory_allNull_deletesDetail_neverInsertsAnEmptyRow() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    // A fixed category sent with all-null amounts is the explicit form of "cleared": the same
+    // outcome as omitting it, and never an all-null row (which the read would list as a category).
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(40, null, null, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).deleteDetails(8001, ALL_FIXED); // 40 is in the delete like any absent code
+    verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
+  }
+
+  @Test
+  void save_edit_partialClear_keepsTheCategoryAndWritesTheNullThrough() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    // The other half of the #335 boundary: Cost emptied, Volume kept. The category is still
+    // sent, so it is upserted with the null — this already worked and must keep working.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(40, bd("400"), null, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(8001, 40, bd("400"), null, USER);
+    verify(repository).deleteDetails(8001, fixedExcept(40)); // 40 is kept out of the delete
+  }
+
+  @Test
+  void save_create_runsTheSameWritePath_itsClearsAreNoOps() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.nameExists(MILL, YEAR, "New Dump", null)).thenReturn(false);
+    when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), isNull(), eq(USER)))
+        .thenReturn(9001);
+    when(repository.bumpRevision(9001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    stubRecompute();
+
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            null, null, "New Dump", null, List.of(new CategoryInput(40, bd("1000"), 50000, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(9001, 40, bd("1000"), 50000, USER);
+    // No create-vs-edit branch: the empties are written as clears, which touch nothing on a fresh
+    // family — one no-op delete on the new primary, one read that finds no children.
+    verify(repository).deleteDetails(9001, fixedExcept(40));
+    verify(repository).findDistanceChildren(MILL, YEAR, "New Dump");
+    verify(repository, never()).deleteReport(anyInt());
+  }
+
+  // ---- #335 review (PR #510): legacy-shaped families the 546/547 fixtures never are.
+
+  @Test
+  void save_edit_legacyFamilyWithoutPrimary_neverDeletesTheIdentityReport() {
+    // No distance-null primary, so the document serves the lowest report id — 7001, a code-47
+    // child that also carries the fixed rows — as the location's id, and that is what the edit is
+    // addressed to. Clearing 47 must clear that report's 47 detail, not delete the report (and with
+    // it the fixed rows just upserted onto it and the location itself).
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(7001, MILL, YEAR)).thenReturn(Optional.of("Old Dump"));
+    when(repository.nameExists(MILL, YEAR, "Old Dump", "Old Dump")).thenReturn(false);
+    when(repository.bumpRevision(7001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    when(repository.findDistanceChildren(MILL, YEAR, "Old Dump"))
+        .thenReturn(Map.of(47, List.of(7001), 48, List.of(7002)));
+    stubRecompute();
+
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            7001, 0, "Old Dump", null, List.of(new CategoryInput(40, bd("1000"), 50000, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).upsertDetail(7001, 40, bd("1000"), 50000, USER); // fixed row on the identity
+    verify(repository).deleteDetails(7001, List.of(47)); // its own code: the detail goes…
+    verify(repository, never()).deleteReport(7001); // …the report never does
+    verify(repository).deleteReport(7002); // an ordinary child goes whole
+  }
+
+  @Test
+  void save_edit_duplicateChildrenForOneCode_clearingDeletesEveryOne() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    // Legacy data: two children for code 47. A first-row-only lookup deleted 8101 and left 8105 to
+    // bring its figures back on the next read, save after save.
+    when(repository.findDistanceChildren(MILL, YEAR, "Existing Dump"))
+        .thenReturn(Map.of(47, List.of(8101, 8105)));
+    stubRecompute();
+
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001,
+            0,
+            "Existing Dump",
+            null,
+            List.of(new CategoryInput(40, bd("1500"), 60000, null))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).deleteReport(8101);
+    verify(repository).deleteReport(8105);
+  }
+
+  @Test
+  void save_edit_duplicateChildrenForOneCode_keepingCollapsesIntoTheFirst() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    when(repository.findDistanceChildren(MILL, YEAR, "Existing Dump"))
+        .thenReturn(Map.of(47, List.of(8101, 8105)));
+    stubRecompute();
+
+    // The form has one cell per code, so one child per code is the desired state: the first is
+    // updated with what was entered and the duplicate goes.
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001,
+            0,
+            "Existing Dump",
+            null,
+            List.of(new CategoryInput(47, bd("250"), 9000, bd("70.0")))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).updateReportDistance(8101, bd("70.0"), USER);
+    verify(repository).upsertDetail(8101, 47, bd("250"), 9000, USER);
+    verify(repository).deleteReport(8105);
+    verify(repository, never()).insertReport(anyLong(), anyInt(), anyString(), any(), anyString());
   }
 
   @Test
