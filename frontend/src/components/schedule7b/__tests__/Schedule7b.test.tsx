@@ -434,10 +434,13 @@ describe('Schedule 7B page', () => {
     await savePage(user)
 
     // Legacy prefixed the row id onto the cost validator message on list rows only, and the
-    // page-level Save is exactly the case where the reporter needs to know which row failed.
+    // page-level Save is exactly the case where the reporter needs to know which row failed. The same
+    // verbatim line shows inline AND in the top banner (#359 group B).
     expect(
-      await screen.findByText('Id: 1 - Entered cost must be between -99,999,999 and 99,999,999.'),
-    ).toBeInTheDocument()
+      await screen.findAllByText(
+        'Id: 1 - Entered cost must be between -99,999,999 and 99,999,999.',
+      ),
+    ).toHaveLength(2)
     expect(put).toBe(false)
   })
 
@@ -461,8 +464,9 @@ describe('Schedule 7B page', () => {
 
     await savePage(user)
 
-    // Without the banner the button reads as dead: no request, no error, no way to find the row.
-    expect(await screen.findByText(/Cannot save.*Culvert report Id: 6/)).toBeInTheDocument()
+    // Without the banner the button reads as dead: no request, no error, no way to find the row. The
+    // banner names the failing field of row 6 in legacy's wording (#359 group B).
+    expect(await screen.findByText('Id: 6 - No of pieces: Value is required.')).toBeInTheDocument()
     expect(called).toBe(false)
     // And the offending row is actually reachable — paged to and EXPANDED, not merely named. Asserted
     // on aria-expanded, not toBeVisible(): Carbon collapses an accordion with CSS, which jsdom does not
@@ -496,7 +500,7 @@ describe('Schedule 7B page', () => {
     // tracking just "the row Save revealed" left the prop stuck at true and this second Save named the
     // row in the banner without ever reopening it.
     await savePage(user)
-    expect(await screen.findByText(/Cannot save.*Culvert report Id: 1/)).toBeInTheDocument()
+    expect(await screen.findByText('Id: 1 - No of pieces: Value is required.')).toBeInTheDocument()
     await waitFor(() => {
       expect(row).toHaveAttribute('aria-expanded', 'true')
     })
@@ -1730,5 +1734,309 @@ describe('Schedule 7B at Submitted — the ministry correction journey (Story 16
     // The document on screen is untouched by the check.
     expect(culvertPanel(7801).getByLabelText('Span (mm)')).toHaveValue('1,200')
     expect(screen.getByText('5,500')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B — Check Status evaluates the SCREEN, not the saved record.
+// ---------------------------------------------------------------------------------------------------
+
+// Every error banner's subtitle, in render order — the validation banner is one line per failing field.
+const errorBannerLines = () =>
+  Array.from(
+    document.querySelectorAll(
+      '.cds--inline-notification--error .cds--inline-notification__subtitle',
+    ),
+  ).map((node) => node.textContent)
+
+const checkStatusButton = () => screen.getAllByRole('button', { name: 'Check Status' })[0]
+
+const MET_RESPONSE = {
+  requirementsMet: true,
+  errors: [],
+  requirementsMetMessage: {
+    key: 'scheduleRequirementsMetMsg',
+    text: 'All requirements for this schedule have been met',
+  },
+}
+
+describe('Schedule 7B Check Status evaluates the screen (#359 group B)', () => {
+  test('the body carries EVERY culvert as on screen, in order — blank → null, typed 0 stays 0, other pages included, no Add draft', async () => {
+    const culverts = Array.from({ length: 7 }, (_, index) => culvertAt(7801 + index, index + 1))
+    let body: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ culverts }))),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // Row 1 (page 1): clear the length, type a zero material cost.
+    await user.clear(culvertPanel(7801).getByLabelText('Length (m)'))
+    const material = culvertPanel(7801).getByLabelText('Material costs ($)')
+    await user.clear(material)
+    await user.type(material, '0')
+
+    // Row 6 (page 2): an edit made on another paginator page.
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await openCulvert(user, 6)
+    const span6 = culvertPanel(7806).getByLabelText('Span (mm)')
+    await user.clear(span6)
+    await user.type(span6, '777')
+    await user.click(screen.getByRole('button', { name: /previous page/i }))
+
+    // An Add draft on screen is never part of the check (Add saves at once in legacy).
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(addPanel().getByLabelText('Span (mm)'), '4242')
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    const served = {
+      culvertTypeCode: 'R',
+      spanSize: 1200,
+      length: 12.5,
+      culvertPieceCount: 3,
+      materialCost: 4000,
+      installCost: 1500,
+    }
+    expect(body).toEqual({
+      culverts: [
+        { ...served, length: null, materialCost: 0, comments: 'Culvert 1' },
+        { ...served, comments: 'Culvert 2' },
+        { ...served, comments: 'Culvert 3' },
+        { ...served, comments: 'Culvert 4' },
+        { ...served, comments: 'Culvert 5' },
+        { ...served, spanSize: 777, comments: 'Culvert 6' },
+        { ...served, comments: 'Culvert 7' },
+      ],
+    })
+  })
+
+  test('a cleared optional field is sent as null, never 0, and a blank type as null', async () => {
+    let body: { culverts: Record<string, unknown>[] } | null = null
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            culverts: [
+              culvertAt(7801, 1, {
+                culvertTypeCode: null,
+                spanSize: null,
+                length: null,
+                materialCost: null,
+                installCost: null,
+                comments: null,
+              }),
+            ],
+          }),
+        ),
+      ),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as { culverts: Record<string, unknown>[] }
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+
+    // The type is Save-required, so a blank one blocks the check; fill it so the request goes out
+    // with every OPTIONAL field still blank.
+    await openCulvert(user, 1)
+    await user.click(culvertPanel(7801).getByRole('combobox', { name: /Type/i }))
+    await user.click(await culvertPanel(7801).findByRole('option', { name: 'Others' }))
+    await user.click(checkStatusButton())
+    await screen.findByText('All requirements for this schedule have been met')
+
+    expect(body).toEqual({
+      culverts: [
+        {
+          culvertTypeCode: 'O',
+          spanSize: null,
+          length: null,
+          culvertPieceCount: 3,
+          materialCost: null,
+          installCost: null,
+          comments: null,
+        },
+      ],
+    })
+  })
+
+  test("Check Status is gated on Save's validator: no request, the banner names each field verbatim, inline Value Required stays", async () => {
+    const culverts = Array.from({ length: 7 }, (_, index) =>
+      culvertAt(7801 + index, index + 1, index === 5 ? { culvertPieceCount: null } : {}),
+    )
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ culverts }))),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+    // Row 1 (page 1): the piece count cleared, and an out-of-range cost whose validator text already
+    // carries the row prefix. Row 6 (page 2) holds a stored NULL piece count.
+    await user.clear(culvertPanel(7801).getByLabelText('No of Pieces'))
+    const material = culvertPanel(7801).getByLabelText('Material costs ($)')
+    await user.clear(material)
+    await user.type(material, '100000000')
+
+    await user.click(checkStatusButton())
+
+    // Row by row, field by field in screen order, in legacy's words.
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Id: 1 - No of pieces: Value is required.',
+        'Id: 1 - Entered cost must be between -99,999,999 and 99,999,999.',
+        'Id: 6 - No of pieces: Value is required.',
+      ])
+    })
+    expect(posts).toBe(0)
+    expect(
+      screen.queryByText('Please correct the highlighted fields before saving.'),
+    ).not.toBeInTheDocument()
+    // The inline marker stays the rebuild's own `Value Required` (plus the row-prefixed range text).
+    expect(culvertPanel(7801).getByText('Value Required')).toBeInTheDocument()
+
+    // Row 6, on the other page, carries its inline marker too.
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await openCulvert(user, 6)
+    expect(culvertPanel(7806).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('Save and Check Status show the SAME verbatim banner lines for the same blocked screen', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            culverts: [culvertAt(7801, 1, { culvertTypeCode: null, culvertPieceCount: null })],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+    const expected = [
+      'Id: 1 - Type: Value is required.',
+      'Id: 1 - No of pieces: Value is required.',
+    ]
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(culvertPanel(7801).getAllByText('Value Required')).toHaveLength(2)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(culvertPanel(7801).getAllByText('Value Required')).toHaveLength(2)
+  })
+
+  test('editing a row after a check clears the shown verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_RESPONSE)),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    await user.type(culvertPanel(7801).getByLabelText('Span (mm)'), '1')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a check in flight locks every checked editor, so no edit can outrun its verdict', async () => {
+    // The snapshot guard (`checkSnapshotVersionRef`) drops a response for superseded values; on this
+    // page the editors are ALSO disabled for the whole request (`controlsDisabled` covers `saving`),
+    // so no edit can reach the screen before the verdict does. Pinned here, because that lock is what
+    // makes the verdict always describe the values it was computed from.
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(checkStatusButton()).toBeDisabled()
+    })
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeDisabled()
+    expect(culvertPanel(7801).getByLabelText('Material costs ($)')).toBeDisabled()
+
+    releaseCheck()
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeEnabled()
+  })
+
+  test('whitespace-only comments are sent as typed, not trimmed to null (the server rule is untrimmed)', async () => {
+    let body: { culverts: Record<string, unknown>[] } | null = null
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ culverts: [culvertAt(7801, 1, { culvertTypeCode: 'O', comments: '   ' })] }),
+        ),
+      ),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as { culverts: Record<string, unknown>[] }
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+
+    await user.click(checkStatusButton())
+    await screen.findByText('All requirements for this schedule have been met')
+    expect(body!.culverts[0].comments).toBe('   ')
+  })
+
+  test('editing a field clears the validation banner lines (legacy re-rendered its messages on change)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ culverts: [culvertAt(7801, 1, { culvertPieceCount: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 1 - No of pieces: Value is required.'])
+    })
+    await user.type(culvertPanel(7801).getByLabelText('No of Pieces'), '2')
+    expect(errorBannerLines()).toEqual([])
   })
 })

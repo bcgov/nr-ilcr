@@ -46,3 +46,39 @@ export interface BridgeSaveAllRequest {
     readonly bridge: BridgeRequest
   }[]
 }
+
+/**
+ * The Check Status body — every bridge as it is ON SCREEN, mirroring the backend
+ * `Schedule7aCheckRequest` (#359). Legacy's check read the bean's in-memory document, which every row
+ * input wrote into on change, so the verdict described the screen (rows on other paginator pages
+ * included) rather than the saved record. Rows are numbered server-side by their ORDINAL here, so they
+ * must be sent in document order. The Add panel's draft is never part of it (Add saves at once).
+ *
+ * ⚠ Every member is nullable and `null` MUST stay null: the server's check is a pure null test (a
+ * typed `0` passes), so coercing a blank field to `0` turns a missing value into a pass. The five
+ * codes and the comments are not checked and are not sent.
+ */
+export interface BridgeCheckEntry {
+  readonly locationName: string | null
+  /** `yyyy-MM`, as typed. */
+  readonly builtDate: string | null
+  readonly lifeSpan: number | null
+  readonly abutmentHeight: number | null
+  readonly length: number | null
+  readonly width: number | null
+  readonly distance: number | null
+  readonly sitePlanCost: number | null
+  readonly superstructureMaterialCost: number | null
+  readonly superstructureDeliverCost: number | null
+  readonly superstructureInstallCost: number | null
+  readonly abutmentMaterialCost: number | null
+  readonly abutmentDeliverCost: number | null
+  readonly abutmentInstallCost: number | null
+  readonly approachCost: number | null
+  readonly afterInstallCost: number | null
+  readonly otherCost: number | null
+}
+
+export interface Schedule7aCheckRequest {
+  readonly bridges: readonly BridgeCheckEntry[]
+}

@@ -15,6 +15,7 @@ import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.CostRow;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.RecordRow;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecord;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
@@ -575,32 +576,134 @@ public class Schedule9Service {
   // ===============================================================================================
 
   /**
-   * Check Status for Schedule 9 (S09). Walks every stored record in served (id) order; a record
+   * Check Status for Schedule 9 (S09) against the SCREEN — the endpoint's entry point
+   * (bcgov/nr-ilcr#359). Legacy's check read the bean's in-memory document with no reload ({@code
+   * Schedule9MB.java:106-108} → {@code Schedule9CheckStatus.java:35}), into which every row input
+   * wrote on change ({@code schedule9.xhtml:431-435}), so the verdict described every row on screen
+   * — unsaved edits and other paginator pages included. The candidates are {@code
+   * request.records()} in payload order, numbered by 1-based payload ordinal; nothing is read from
+   * or written to the database. The rules are {@link #evaluate}, shared with {@link
+   * #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the on-screen contractual-work rows
+   * @return the check-status result with fully composed, resolved message text
+   */
+  public Schedule9CheckStatusResponse checkStatus(
+      long millId, int year, Schedule9CheckRequest request) {
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (Schedule9CheckRequest.RecordEntry entry : request.records()) {
+      // Values taken VERBATIM, nulls included — the required checks are null/blank tests, so a
+      // coerced 0 would turn a missing value into a pass.
+      candidates.add(
+          new CheckCandidate(
+              entry.contractorId(),
+              entry.contractualItemCode(),
+              entry.sideSlopePct(),
+              entry.numberOfUnits(),
+              entry.unitCode(),
+              entry.biogeoclimaticZone(),
+              entry.cost(),
+              entry.sourceCode()));
+    }
+    return evaluate(candidates, this::resolve);
+  }
+
+  /**
+   * Check Status for Schedule 9 (S09) over the SAVED records — the stored-data counterpart of
+   * {@link #checkStatus}, for report-level callers (the Check Status sweep and the submit gate)
+   * that have no screen to describe. Walks every stored record in served (id) order; a record
    * passes iff all eight checks pass. On an all-met schedule the SUC-002 banner is returned and the
    * error list is empty; otherwise the per-field lines are returned verbatim and no banner.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–3, 5 and 6: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @return the check-status result with fully composed, resolved message text
    */
   @Transactional(readOnly = true)
-  public Schedule9CheckStatusResponse checkStatus(long millId, int year) {
+  public Schedule9CheckStatusResponse checkStatusStored(long millId, int year) {
     Map<Integer, CostRow> costByRecord =
         repository.findCostLines(millId, year).stream()
             .collect(
                 Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
     List<RecordRow> records = repository.findRecords(millId, year);
 
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (RecordRow row : records) {
+      CostRow cost = costByRecord.get(row.id());
+      candidates.add(
+          new CheckCandidate(
+              row.contractorId(),
+              cost == null ? null : cost.itemCode(),
+              row.sideSlopePct(),
+              row.numberOfUnits(),
+              row.unitCode(),
+              row.becCode(),
+              cost == null ? null : cost.cost(),
+              row.sourceCode()));
+    }
+    return evaluate(candidates, this::resolve);
+  }
+
+  /**
+   * The Schedule 9 values one record's check judges, from either source — the screen ({@link
+   * #checkStatus}) or the database ({@link #checkStatusStored}).
+   *
+   * @param contractorId the Company ID
+   * @param itemCode the contractual item code (drives whether Side Slope is checked)
+   * @param sideSlopePct the side slope percentage
+   * @param numberOfUnits the number of units
+   * @param unitCode the unit type code
+   * @param becCode the biogeoclimatic zone code
+   * @param cost the cost
+   * @param sourceCode the source code
+   */
+  record CheckCandidate(
+      String contractorId,
+      Integer itemCode,
+      Integer sideSlopePct,
+      BigDecimal numberOfUnits,
+      String unitCode,
+      String becCode,
+      Integer cost,
+      String sourceCode) {}
+
+  /**
+   * Resolves a bundle key (with optional arguments) to its verbatim text. Passed into {@link
+   * #evaluate} so the verdict stays a pure function of its candidates.
+   */
+  @FunctionalInterface
+  interface CheckText {
+    String resolve(String key, Object... args);
+  }
+
+  /**
+   * The BR-08 verdict, source-agnostic and pure: candidates in display order, numbered 1-based.
+   * Neither {@link #checkStatus} nor {@link #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the records to judge, in display order
+   * @param text resolves a bundle key to its verbatim text
+   * @return the check-status result with fully composed, resolved message text
+   */
+  static Schedule9CheckStatusResponse evaluate(List<CheckCandidate> candidates, CheckText text) {
     List<MessageInfo> errors = new ArrayList<>();
     int rowNumber = 1;
-    for (RecordRow row : records) {
-      evaluateRecord(rowNumber, row, costByRecord.get(row.id()), errors);
+    for (CheckCandidate candidate : candidates) {
+      evaluateRecord(rowNumber, candidate, errors, text);
       rowNumber++;
     }
 
     if (errors.isEmpty()) {
       return new Schedule9CheckStatusResponse(
-          true, List.of(), new MessageInfo(MSG_REQUIREMENTS_MET, resolve(MSG_REQUIREMENTS_MET)));
+          true,
+          List.of(),
+          new MessageInfo(MSG_REQUIREMENTS_MET, text.resolve(MSG_REQUIREMENTS_MET)));
     }
     return new Schedule9CheckStatusResponse(false, errors, null);
   }
@@ -608,15 +711,15 @@ public class Schedule9Service {
   /**
    * The eight checks for one record, in legacy validateSchedule order, appended to {@code errors}.
    */
-  private void evaluateRecord(
-      int rowNumber, RecordRow row, CostRow cost, List<MessageInfo> errors) {
-    Integer itemCode = cost == null ? null : cost.itemCode();
+  private static void evaluateRecord(
+      int rowNumber, CheckCandidate row, List<MessageInfo> errors, CheckText text) {
+    Integer itemCode = row.itemCode();
 
     if (StringUtils.isBlank(row.contractorId())) {
-      errors.add(valueRequired(rowNumber, CHECK_COMPANY_ID));
+      errors.add(valueRequired(rowNumber, CHECK_COMPANY_ID, text));
     }
     if (itemCode == null) {
-      errors.add(valueRequired(rowNumber, CHECK_CONTRACTUAL_ITEM));
+      errors.add(valueRequired(rowNumber, CHECK_CONTRACTUAL_ITEM, text));
     }
     // Side Slope is checked ONLY when enabled (item 111/112); required-when-enabled AND range
     // 0..99.
@@ -625,34 +728,34 @@ public class Schedule9Service {
             && (itemCode == ITEM_ROAD_DEACTIVATE_SEMI || itemCode == ITEM_ROAD_DEACTIVATE_PERM);
     if (sideSlopeEnabled) {
       if (row.sideSlopePct() == null) {
-        errors.add(valueRequired(rowNumber, CHECK_SIDE_SLOPE));
+        errors.add(valueRequired(rowNumber, CHECK_SIDE_SLOPE, text));
       } else if (outOfRange(row.sideSlopePct(), SIDE_SLOPE_CHECK_MAX)) {
         errors.add(
-            rangeError(rowNumber, CHECK_SIDE_SLOPE, SIDE_SLOPE_CHECK_MAX, FORMAT_SIDE_SLOPE));
+            rangeError(rowNumber, CHECK_SIDE_SLOPE, SIDE_SLOPE_CHECK_MAX, FORMAT_SIDE_SLOPE, text));
       }
     }
     // Number of Units — always checked; blank is flagged (the Save-vs-Check gap), range
     // 0..99,999.9.
     if (row.numberOfUnits() == null) {
-      errors.add(valueRequired(rowNumber, CHECK_NUMBER_OF_UNITS));
+      errors.add(valueRequired(rowNumber, CHECK_NUMBER_OF_UNITS, text));
     } else if (outOfRange(row.numberOfUnits(), UNITS_MAX)) {
-      errors.add(rangeError(rowNumber, CHECK_NUMBER_OF_UNITS, UNITS_MAX, FORMAT_UNITS));
+      errors.add(rangeError(rowNumber, CHECK_NUMBER_OF_UNITS, UNITS_MAX, FORMAT_UNITS, text));
     }
     if (StringUtils.isBlank(row.unitCode())) {
-      errors.add(valueRequired(rowNumber, CHECK_UNIT_TYPE));
+      errors.add(valueRequired(rowNumber, CHECK_UNIT_TYPE, text));
     }
     if (StringUtils.isBlank(row.becCode())) {
-      errors.add(valueRequired(rowNumber, CHECK_BEC_ZONE));
+      errors.add(valueRequired(rowNumber, CHECK_BEC_ZONE, text));
     }
     // Cost$ — always checked; blank is flagged (the Save-vs-Check gap), range 0..9,999,999.
-    Integer costValue = cost == null ? null : cost.cost();
+    Integer costValue = row.cost();
     if (costValue == null) {
-      errors.add(valueRequired(rowNumber, CHECK_COST));
+      errors.add(valueRequired(rowNumber, CHECK_COST, text));
     } else if (outOfRange(BigDecimal.valueOf(costValue), COST_MAX)) {
-      errors.add(rangeError(rowNumber, CHECK_COST, COST_MAX, FORMAT_COST));
+      errors.add(rangeError(rowNumber, CHECK_COST, COST_MAX, FORMAT_COST, text));
     }
     if (StringUtils.isBlank(row.sourceCode())) {
-      errors.add(valueRequired(rowNumber, CHECK_SOURCE));
+      errors.add(valueRequired(rowNumber, CHECK_SOURCE, text));
     }
   }
 
@@ -664,9 +767,10 @@ public class Schedule9Service {
   /**
    * {@code "Contractual Work Report Id : {row}{segment}: Value Required"} — the legacy composition.
    */
-  private MessageInfo valueRequired(int rowNumber, String segment) {
-    String text = CHECK_TITLE_PREFIX + rowNumber + segment + ": " + resolve(MSG_VALUE_REQUIRED);
-    return new MessageInfo(MSG_VALUE_REQUIRED, text);
+  private static MessageInfo valueRequired(int rowNumber, String segment, CheckText text) {
+    String line =
+        CHECK_TITLE_PREFIX + rowNumber + segment + ": " + text.resolve(MSG_VALUE_REQUIRED);
+    return new MessageInfo(MSG_VALUE_REQUIRED, line);
   }
 
   /**
@@ -675,12 +779,13 @@ public class Schedule9Service {
    * legacy base validator passes {@code lowerLimitFormat} for both), so the output matches the
    * running app.
    */
-  private MessageInfo rangeError(int rowNumber, String segment, double max, String pattern) {
+  private static MessageInfo rangeError(
+      int rowNumber, String segment, double max, String pattern, CheckText text) {
     String lower = new DecimalFormat(pattern, NUMBER_SYMBOLS).format(0.0);
     String upper = new DecimalFormat(pattern, NUMBER_SYMBOLS).format(max);
-    String range = resolve(MSG_INVALID_RANGE, lower, upper);
-    String text = CHECK_TITLE_PREFIX + rowNumber + segment + ": " + range;
-    return new MessageInfo(MSG_INVALID_RANGE, text);
+    String range = text.resolve(MSG_INVALID_RANGE, lower, upper);
+    String line = CHECK_TITLE_PREFIX + rowNumber + segment + ": " + range;
+    return new MessageInfo(MSG_INVALID_RANGE, line);
   }
 
   private String resolve(String key, Object... args) {

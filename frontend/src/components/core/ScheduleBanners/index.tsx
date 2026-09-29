@@ -15,6 +15,12 @@ type ScheduleBannersProps = {
   readonly message: string | null
   /** A failed action: the API's ProblemDetail detail, or the page's own save-gate text. */
   readonly actionError: string | null
+  /**
+   * The client-side validation banner: one legacy line per failing field, in page order
+   * (`utils/legacyValidationBanner.ts`). Each renders as its own error notification, the way the
+   * Check Status errors below do, since legacy listed each failing field as its own message.
+   */
+  readonly validationErrors?: readonly string[]
   readonly checkResult: CheckResult | null
   /** Per-row "requirements met" lines, for the schedules whose API emits them. */
   readonly rowMessages?: readonly MessageInfo[]
@@ -33,6 +39,7 @@ type ScheduleBannersProps = {
 const ScheduleBanners: FC<ScheduleBannersProps> = ({
   message,
   actionError,
+  validationErrors = [],
   checkResult,
   rowMessages,
   keyPrefix,
@@ -42,6 +49,15 @@ const ScheduleBanners: FC<ScheduleBannersProps> = ({
     {actionError && (
       <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
     )}
+    {validationErrors.map((line, index) => (
+      <NotificationColumn
+        // Two rows can fail the same field with the same text, so the index keeps them distinct.
+        key={`${keyPrefix}-validation-${String(index)}`}
+        kind="error"
+        title="Action failed"
+        subtitle={line}
+      />
+    ))}
     {checkResult && (
       <CheckStatusNotifications
         keyPrefix={keyPrefix}

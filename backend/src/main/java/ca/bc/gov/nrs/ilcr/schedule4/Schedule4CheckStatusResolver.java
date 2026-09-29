@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,8 @@ public class Schedule4CheckStatusResolver {
   private final MessageSource messageSource;
 
   /**
-   * Evaluate and resolve Schedule 4 for a validated mill/year — the whole check in one call.
+   * Evaluate and resolve the SAVED Schedule 4 for a validated mill/year — the whole check in one
+   * call. The stored-data path: the report-level sweep's entry point.
    *
    * <p><strong>The caller MUST validate the mill/year context first</strong> (AD-4, {@code
    * MillContextService.validateMillYearActive}). This method does not, and the failure mode is
@@ -42,8 +44,30 @@ public class Schedule4CheckStatusResolver {
    * @param year the reporting year
    * @return the verdict with every message's verbatim text populated
    */
-  public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
-    return resolve(schedule4Service.checkStatus(millId, year));
+  public Schedule4CheckStatusResponse checkStatusStored(long millId, int year) {
+    return resolve(schedule4Service.checkStatusStored(millId, year));
+  }
+
+  /**
+   * Evaluate and resolve Schedule 4 against the SCREEN — the endpoint's entry point (#359).
+   *
+   * <p>Differs from {@link #checkStatusStored} only in its source: the body's open location panel
+   * is overlaid onto the stored locations before the identical rule runs, so a per-location met
+   * message carries the ON-SCREEN name. Named apart so a caller cannot reach for the wrong one by
+   * autocomplete; a sweep that read a screen, or an endpoint that ignored one, would both fail
+   * silently.
+   *
+   * <p>The same mill/year precondition applies as for {@link #checkStatusStored}: the CALLER must
+   * have validated the context first (AD-4).
+   *
+   * @param millId the mill id (context already validated by the caller)
+   * @param year the reporting year
+   * @param request the location panel on screen, if any
+   * @return the verdict with every message's verbatim text populated
+   */
+  public Schedule4CheckStatusResponse checkStatus(
+      long millId, int year, Schedule4CheckRequest request) {
+    return resolve(schedule4Service.checkStatus(millId, year, request));
   }
 
   /**

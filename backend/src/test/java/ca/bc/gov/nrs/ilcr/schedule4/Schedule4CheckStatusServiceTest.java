@@ -15,6 +15,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.util.List;
@@ -27,11 +28,11 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for {@code Schedule4Service.checkStatus} (Story 4.4) — the requirement rule (AD-5) as
- * re-grounded by issue #465: legacy's Schedule 4 check required the location description and
- * nothing else. Mocked repository so it isolates that rule — a null Cost on a category or a
- * sub-page row is NOT a finding, a blank description is — plus per-location aggregation and the
- * schedule all-or-nothing MET.
+ * Unit test for {@code Schedule4Service.checkStatusStored} / {@code checkStatus} (Story 4.4, #359)
+ * — the requirement rule (AD-5) as re-grounded by issue #465: legacy's Schedule 4 check required
+ * the location description and nothing else. Mocked repository so it isolates that rule — a null
+ * Cost on a category or a sub-page row is NOT a finding, a blank description is — plus per-location
+ * aggregation and the schedule all-or-nothing MET.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4CheckStatusServiceTest {
@@ -64,7 +65,7 @@ class Schedule4CheckStatusServiceTest {
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(List.of(new DetailRow(1, 40, bd("100"), 5000)));
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
     assertEquals(1, r.messages().size()); // schedule banner present
@@ -87,7 +88,7 @@ class Schedule4CheckStatusServiceTest {
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(List.of(new DetailRow(1, 40, bd("100"), null))); // Volume, no Cost
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
     assertEquals("scheduleRequirementsMetMsg", r.messages().get(0).key());
@@ -110,7 +111,7 @@ class Schedule4CheckStatusServiceTest {
         .thenReturn(
             List.of(new DetailRow(1, 40, bd("100"), 5000), new DetailRow(2, 47, bd("50"), null)));
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
     assertTrue(r.locations().get(0).issues().isEmpty());
@@ -130,7 +131,7 @@ class Schedule4CheckStatusServiceTest {
                 new SubPageRowRow(
                     2, "Loc A", 43, "Towing", bd("10"), null, bd("5"), null))); // cost null
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
     assertTrue(r.locations().get(0).met());
@@ -150,7 +151,7 @@ class Schedule4CheckStatusServiceTest {
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(List.of(new DetailRow(1, 40, bd("100"), 5000))); // Cost present — irrelevant
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("ISSUES", r.outcome());
     assertTrue(r.messages().isEmpty()); // no schedule banner on ISSUES
@@ -169,7 +170,7 @@ class Schedule4CheckStatusServiceTest {
         .thenReturn(List.of(new LocationRow(1, null, null, null, 0)));
     lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("ISSUES", r.outcome());
     assertEquals(FieldIssue.LOCATION_DESCRIPTION, r.locations().get(0).issues().get(0).code());
@@ -189,7 +190,7 @@ class Schedule4CheckStatusServiceTest {
                 new DetailRow(1, 40, bd("100"), null), // Pass Loc: Volume-only, still passes
                 new DetailRow(2, 41, bd("200"), 300))); // blank name fails regardless of its Cost
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("ISSUES", r.outcome()); // all-or-nothing: one failure fails the schedule
     assertTrue(r.messages().isEmpty());
@@ -203,9 +204,110 @@ class Schedule4CheckStatusServiceTest {
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
 
-    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+    Schedule4CheckStatusResponse r = service.checkStatusStored(MILL, YEAR);
 
     assertEquals("MET", r.outcome());
     assertTrue(r.locations().isEmpty());
+  }
+
+  // ===============================================================================================
+  // #359 — the SCREEN path: the open panel overlaid onto the stored locations
+  // ===============================================================================================
+
+  private Schedule4CheckStatusResponse screen(Integer id, String name) {
+    return service.checkStatus(
+        MILL, YEAR, new Schedule4CheckRequest(new Schedule4CheckRequest.LocationEntry(id, name)));
+  }
+
+  private void storedTwoNamed() {
+    draft();
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new LocationRow(1, "Loc A", null, null, 0),
+                new LocationRow(2, "Loc B", null, null, 0)));
+    lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+  }
+
+  @Test
+  void screen_openExistingPanelRenamed_carriesTheOnScreenName_inPlace() {
+    storedTwoNamed();
+
+    Schedule4CheckStatusResponse r = screen(1, "Loc A renamed");
+
+    assertEquals("MET", r.outcome());
+    assertEquals(2, r.locations().size());
+    assertEquals(1, r.locations().get(0).id());
+    assertEquals("Loc A renamed", r.locations().get(0).name());
+    assertEquals("Loc B", r.locations().get(1).name());
+  }
+
+  @Test
+  void screen_openExistingPanelCleared_isAFinding_storedNameIgnored() {
+    storedTwoNamed();
+
+    Schedule4CheckStatusResponse r = screen(2, "  ");
+
+    assertEquals("ISSUES", r.outcome());
+    assertTrue(r.locations().get(0).met());
+    LocationCheckResult b = r.locations().get(1);
+    assertEquals(2, b.id());
+    assertFalse(b.met());
+    assertEquals(FieldIssue.LOCATION_DESCRIPTION, b.issues().get(0).code());
+  }
+
+  @Test
+  void screen_unsavedFix_blankStoredNameTypedOnScreen_met() {
+    draft();
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(List.of(new LocationRow(1, "", null, null, 0)));
+    lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+
+    assertEquals("ISSUES", service.checkStatusStored(MILL, YEAR).outcome());
+    assertEquals("MET", screen(1, "Now named").outcome());
+  }
+
+  @Test
+  void screen_newOrCopyPanel_isAnExtraLocation_afterTheStoredOnes() {
+    storedTwoNamed();
+
+    Schedule4CheckStatusResponse blank = screen(null, null);
+    assertEquals("ISSUES", blank.outcome());
+    assertEquals(3, blank.locations().size());
+    assertEquals(null, blank.locations().get(2).id());
+    assertFalse(blank.locations().get(2).met());
+
+    Schedule4CheckStatusResponse named = screen(null, "Brand new");
+    assertEquals("MET", named.outcome());
+    assertEquals("Brand new", named.locations().get(2).name());
+  }
+
+  @Test
+  void screen_unknownIdPanel_isEvaluatedNotDropped_withANullId() {
+    storedTwoNamed();
+
+    Schedule4CheckStatusResponse r = screen(99, "");
+
+    assertEquals("ISSUES", r.outcome());
+    assertEquals(3, r.locations().size());
+    assertEquals(null, r.locations().get(2).id());
+  }
+
+  @Test
+  void screen_noPanel_isTheStoredVerdict_exactly() {
+    draft();
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new LocationRow(1, "Pass Loc", null, null, 0),
+                new LocationRow(2, "", null, null, 0)));
+    lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+
+    Schedule4CheckStatusResponse stored = service.checkStatusStored(MILL, YEAR);
+
+    assertEquals("ISSUES", stored.outcome());
+    assertEquals(stored, service.checkStatus(MILL, YEAR, new Schedule4CheckRequest(null)));
+    // A panel repeating a stored location's own name is the stored verdict too.
+    assertEquals(stored, screen(1, "Pass Loc"));
   }
 }

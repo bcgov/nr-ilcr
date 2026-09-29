@@ -25,6 +25,8 @@ import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest.CulvertEntry;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
@@ -307,7 +309,7 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(culvert));
       when(repository.findCostDetails(MILL, YEAR))
           .thenReturn(bothCosts(culvert.culvertReportId(), material, install));
-      return service.checkStatus(MILL, YEAR);
+      return service.checkStatusStored(MILL, YEAR);
     }
 
     private List<String> texts(Schedule7bCheckStatusResponse response) {
@@ -504,7 +506,7 @@ class Schedule7bServiceTest {
                   cost(1, 7801, 77, 4000), cost(2, 7801, 78, 1500),
                   cost(3, 7802, 77, 100), cost(4, 7802, 78, 50)));
 
-      Schedule7bCheckStatusResponse response = service.checkStatus(MILL, YEAR);
+      Schedule7bCheckStatusResponse response = service.checkStatusStored(MILL, YEAR);
 
       assertThat(response.requirementsMet()).isFalse();
       assertThat(texts(response))
@@ -531,11 +533,202 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of());
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
-      Schedule7bCheckStatusResponse response = service.checkStatus(MILL, YEAR);
+      Schedule7bCheckStatusResponse response = service.checkStatusStored(MILL, YEAR);
 
       assertThat(response.requirementsMet()).isTrue();
       verify(repository, never()).updateCulvert(any(), anyLong(), anyInt(), anyInt(), anyString());
       verify(repository, never()).insertCulvert(any(), anyLong(), anyInt(), anyString());
+    }
+  }
+
+  // ===============================================================================================
+  // Check Status against the SCREEN (#359) — the endpoint's path
+  // ===============================================================================================
+
+  @Nested
+  @DisplayName("Check Status on the screen (#359) — the body is the only source")
+  class CheckStatusScreen {
+
+    private CulvertEntry entry(
+        String type,
+        Integer span,
+        BigDecimal length,
+        Integer pieces,
+        Integer material,
+        Integer install,
+        String comments) {
+      return new CulvertEntry(type, span, length, pieces, material, install, comments);
+    }
+
+    private CulvertEntry completeRoundEntry() {
+      return entry("R", 1200, new BigDecimal("12.5"), 3, 4000, 1500, "Main haul road");
+    }
+
+    private Schedule7bCheckStatusResponse screen(CulvertEntry... entries) {
+      return service.checkStatus(MILL, YEAR, new Schedule7bCheckRequest(List.of(entries)));
+    }
+
+    /** Stored data that DISAGREES with every body below: one complete Round culvert. */
+    private void storedIsComplete() {
+      lenient().when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      lenient()
+          .when(repository.findCostDetails(MILL, YEAR))
+          .thenReturn(bothCosts(7801, 4000, 1500));
+    }
+
+    private List<String> texts(Schedule7bCheckStatusResponse response) {
+      return response.errors().stream().map(MessageInfo::text).toList();
+    }
+
+    @Test
+    @DisplayName("unsaved clear: length emptied on screen, stored length present -> flagged")
+    void unsavedClear_isFlagged() {
+      storedIsComplete();
+
+      Schedule7bCheckStatusResponse response =
+          screen(entry("R", 1200, null, 3, 4000, 1500, "Main haul road"));
+
+      assertThat(response.requirementsMet()).isFalse();
+      assertThat(texts(response)).containsExactly("Culvert Report Id: 1 - Length : Value Required");
+      verify(repository, never()).findCulverts(anyLong(), anyInt());
+      verify(repository, never()).findCostDetails(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("unsaved fix: stored-missing values typed on screen -> met, other rows unchanged")
+    void unsavedFix_passes() {
+      // Stored: 7803 would flag span, length and install (the IT seed). The screen supplies them.
+      lenient()
+          .when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(List.of(row(7803, "R", null, null, null, 1, null)));
+      lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7803, 900, null));
+
+      Schedule7bCheckStatusResponse response =
+          screen(completeRoundEntry(), entry("R", 600, new BigDecimal("4.0"), 1, 900, 250, null));
+
+      assertThat(response.requirementsMet()).isTrue();
+      assertThat(response.errors()).isEmpty();
+      assertThat(response.requirementsMetMessage().key()).isEqualTo("scheduleRequirementsMetMsg");
+    }
+
+    @Test
+    @DisplayName("other page: row 11 of 12 is evaluated and numbered by its payload ordinal")
+    void otherPageRow_isEvaluatedByOrdinal() {
+      CulvertEntry[] rows = new CulvertEntry[12];
+      for (int i = 0; i < rows.length; i++) {
+        rows[i] = completeRoundEntry();
+      }
+      rows[10] = entry("R", 1200, new BigDecimal("12.5"), 3, 4000, null, null);
+
+      assertThat(texts(screen(rows)))
+          .containsExactly("Culvert Report Id: 11 - Install Cost : Value Required");
+    }
+
+    @Test
+    @DisplayName(
+        "type switch: Others -> Round on screen with no span -> the span line (type from body)")
+    void typeSwitchToRound_readsTypeFromBody() {
+      // Stored: an Others culvert with comments and no span — passes stored.
+      lenient()
+          .when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(List.of(row(7802, "O", null, null, new BigDecimal("8.0"), 2, "box")));
+      lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7802, 2500, 700));
+
+      Schedule7bCheckStatusResponse response =
+          screen(entry("R", null, new BigDecimal("8.0"), 2, 2500, 700, "box"));
+
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Round - Span size: Value Required");
+    }
+
+    @Test
+    @DisplayName("type switch: Round -> Others with no comments -> the comments line")
+    void typeSwitchToOthers_readsTypeFromBody() {
+      assertThat(texts(screen(entry("O", 1200, new BigDecimal("12.5"), 3, 4000, 1500, null))))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
+    }
+
+    @Test
+    @DisplayName(
+        "Others with WHITESPACE-only comments on screen PASSES, exactly as the stored path does")
+    void othersWithWhitespaceComments_passesLikeStored() {
+      // The page sends comments as typed (#359 group B review): the rule is legacy's untrimmed
+      // isEmpty test, so "   " is a value on BOTH paths.
+      lenient()
+          .when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(List.of(row(7801, "O", null, null, new BigDecimal("8.0"), 2, "   ")));
+      lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 2500, 700));
+
+      Schedule7bCheckStatusResponse onScreen =
+          screen(entry("O", null, new BigDecimal("8.0"), 2, 2500, 700, "   "));
+      Schedule7bCheckStatusResponse stored = service.checkStatusStored(MILL, YEAR);
+
+      assertThat(onScreen.requirementsMet()).isTrue();
+      assertThat(onScreen.errors()).isEmpty();
+      assertThat(onScreen).usingRecursiveComparison().isEqualTo(stored);
+    }
+
+    @Test
+    @DisplayName("a typed 0 PASSES every null test — zero is a value, not a blank")
+    void typedZero_passes() {
+      Schedule7bCheckStatusResponse response =
+          screen(entry("R", 0, BigDecimal.ZERO, 0, 0, 0, null));
+
+      assertThat(response.requirementsMet()).isTrue();
+      assertThat(response.errors()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("null is never coerced: every blank on screen is its own line, legacy order")
+    void blanksAreReportedNotCoerced() {
+      assertThat(texts(screen(entry("R", null, null, null, null, null, null))))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Round - Span size: Value Required",
+              "Culvert Report Id: 1 - Length : Value Required",
+              "Culvert Report Id: 1 - Piece Count : Value Required",
+              "Culvert Report Id: 1 - Material Cost : Value Required",
+              "Culvert Report Id: 1 - Install Cost : Value Required");
+    }
+
+    @Test
+    @DisplayName("an empty screen is vacuously met, as an empty stored schedule is")
+    void emptyScreen_isMet() {
+      assertThat(screen().requirementsMet()).isTrue();
+    }
+
+    @Test
+    @DisplayName(
+        "parity: a body mirroring the stored rows yields the stored verdict, byte for byte")
+    void mirroringBody_equalsStoredVerdict() {
+      when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  completeRound(7801),
+                  row(7802, "O", null, null, new BigDecimal("8.0"), 2, ""),
+                  row(7803, "R", null, null, null, 1, null),
+                  row(7804, null, null, null, new BigDecimal("1.0"), null, "   ")));
+      when(repository.findCostDetails(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  cost(1, 7801, 77, 4000),
+                  cost(2, 7801, 78, 1500),
+                  cost(3, 7802, 77, 2500),
+                  cost(4, 7802, 78, 700),
+                  cost(5, 7803, 77, 900),
+                  cost(6, 7803, 78, null)));
+
+      Schedule7bCheckStatusResponse stored = service.checkStatusStored(MILL, YEAR);
+      Schedule7bCheckStatusResponse payload =
+          screen(
+              completeRoundEntry(),
+              entry("O", null, new BigDecimal("8.0"), 2, 2500, 700, ""),
+              entry("R", null, null, 1, 900, null, null),
+              entry(null, null, new BigDecimal("1.0"), null, null, null, "   "));
+
+      assertThat(stored.requirementsMet()).isFalse();
+      assertThat(payload).isEqualTo(stored);
     }
   }
 

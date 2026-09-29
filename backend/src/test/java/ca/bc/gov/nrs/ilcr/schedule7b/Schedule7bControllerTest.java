@@ -2,8 +2,11 @@ package ca.bc.gov.nrs.ilcr.schedule7b;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +16,7 @@ import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
@@ -202,12 +206,15 @@ class Schedule7bControllerTest {
   void checkStatusDelegates() {
     contextResolves();
     Schedule7bCheckStatusResponse result = new Schedule7bCheckStatusResponse(true, List.of(), null);
-    when(schedule7bService.checkStatus(MILL, YEAR)).thenReturn(result);
+    Schedule7bCheckRequest request = new Schedule7bCheckRequest(List.of());
+    when(schedule7bService.checkStatus(MILL, YEAR, request)).thenReturn(result);
 
     ResponseEntity<Schedule7bCheckStatusResponse> response =
-        controller.checkStatus(MILL_PARAM, YEAR_PARAM, authentication);
+        controller.checkStatus(MILL_PARAM, YEAR_PARAM, request, authentication);
 
+    // The SCREEN path (#359) with the very body posted — never the stored one.
     assertThat(response.getBody()).isSameAs(result);
     verify(millContextService).validateMillYearActive(MILL_PARAM, YEAR_PARAM);
+    verify(schedule7bService, never()).checkStatusStored(anyLong(), anyInt());
   }
 }

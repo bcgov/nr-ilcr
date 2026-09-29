@@ -350,11 +350,16 @@ count does.
     one schedule implements the rule and eleven do not.
   - **Scope — 11 of 12 schedules (wire contract verified for all; end-to-end proven for Schedule 3):**
 
-    | Schedule | check-status request | Verdict |
-    |---|---|---|
-    | 6 | `@RequestBody Schedule6CheckRequest`, page posts a body | **correct — the precedent for the fix** |
-    | 1, 2, 3, 4, 5, 8 | no body; shared `useScheduleMutations.checkStatus` posts no payload | affected |
-    | 7a, 7b, 9, 10, 11 | no body; each page's own `.post(CHECK_STATUS_PATH + query)` with no second argument | affected |
+    | Schedule | check-status request (as found, 2026-08-25) | Verdict | Now |
+    |---|---|---|---|
+    | 6 | `@RequestBody Schedule6CheckRequest`, page posts a body | **correct — the precedent for the fix** | — |
+    | 1, 2, 3 | no body; shared `useScheduleMutations.checkStatus` posts no payload | affected | **FIXED** by #359 group A (2026-09-25) |
+    | 4 | same | affected | **FIXED** by #359 group B (2026-09-28): the body carries the one open panel, and the panel's field validation gates the check — green in the e2e run of 2026-09-28 |
+    | 5 | same | affected | correct since #476 |
+    | 8 | same | affected | **OPEN** — #359 group C |
+    | 7a, 7b, 9 | no body; each page's own `.post(CHECK_STATUS_PATH + query)` with no second argument | affected | **fixed by #359 group B (2026-09-28) — verified by backend unit/IT and Vitest; no e2e suite exists for this schedule**. Every row is sent as on screen, gated on Save's validator |
+    | 10 | same | affected | **OPEN** — #359 group C |
+    | 11 | same | affected | re-grounded by Story 26.2 under ruling D7(a) — a recorded deviation, not fixed by #359 |
 
     Schedule 8 has a second surface with the same shape — its sample sub-page posts
     `/v1/schedule8/pages/{pageId}/check-status?…` with no body (`schedule8/SamplePage.tsx:239-244`).
@@ -384,8 +389,11 @@ count does.
   - **Priority / env:** p1 · branch `test/schedule-3-e2e` · local seeded DB · Chrome.
   - **Status:** **CLOSED 2026-09-25 for Schedule 3 (#359 group A — Schedules 1, 2 and 3).** Found
     2026-08-25 by the repo owner; legacy-source-confirmed and scoped across the app the same day.
-    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10. Schedules 5 (#476) and 6 were already
-    correct; Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a) (see "Where they stand").
+    **#359 itself stays OPEN** for Schedules 8 and 10 (group C). Schedules 7A, 7B and 9 were
+    fixed by #359 group B on 2026-09-28 — verified by backend unit/IT and Vitest; no e2e suite exists for
+    these schedules. Schedule 4 was fixed in the same change, with its e2e confirmation pending (sch4 DIV-8).
+    See the scope table. Schedules 5 (#476) and 6 were already correct;
+    Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a) (see "Where they stand").
   - **HOW IT WAS FIXED (2026-09-25, #359 group A).** A legacy restoration, unlike #476: `POST
     /api/v1/schedule3/check-status` now takes a required body, `Schedule3CheckRequest` — the eleven fixed
     lines' Harvest/PO&P, both timber volumes and the Override, as typed. `Schedule3Service` splits into
@@ -427,7 +435,7 @@ count does.
     | sch3 (here) | `@S12` Override · `@S25` cleared amount · `@S26` the mirror | — |
     | sch1 | `@S27` / `@S28` | sch1 DIV-6 |
     | sch2 | `@S17` / `@S18` | sch2 DIV-2 |
-    | sch4 | ~~`@S33 @S34`~~ RETIRED 2026-09-18 — since #465 nothing saved on Schedule 4 can be flagged, so no instance is producible | sch4 DIV-8 |
+    | sch4 | `@S33 @S34` ×2 — retired 2026-09-18 (since #465 nothing SAVED can be flagged), RE-AUTHORED 2026-09-28 by #359 group B as two GREEN scenarios: Check Status validates the open panel's on-screen entry first | sch4 DIV-8 |
     | sch11 | `@S21` / `@S22` (inline row editor, NOT the Add panel) | sch11 DIV-5 |
 
     Ex-**GAP-4** tracked the absence of these and was CLOSED by writing them.
@@ -436,6 +444,10 @@ count does.
     sch4 retired (above). sch11 was NOT fixed by #359: Story 26.2 re-grounded S21/S22 green under Scho's
     ruling D7(a) (Check Status keeps judging saved data and is greyed while anything is unsaved), and sch11
     DIV-5 is CLOSED as a recorded deviation. #359 stays open for Schedules 4, 7A, 7B, 8, 9 and 10.
+
+    **Update, 2026-09-28 (#359 group B):** Schedules 7A, 7B and 9 fixed by #359 group B — verified by
+    backend unit/IT and Vitest; no e2e suite exists for these schedules. Schedule 4 fixed in the same change:
+    its `@S33 @S34` are back as two green scenarios (sch4 DIV-8 — green in the e2e run of 2026-09-28). #359 stays open for Schedules 8 and 10 (group C).
   - **CLOSE-OUT CHECKLIST — QA must not close this family on the fix alone.** When #359 lands all TEN go
     green on their own. Then, per domain: retire the `@discovered-divergence` tag AND the `[DISCOVERED …]`
     title marker together, close that domain's pointer entry with the date and the fixing PR, and correct its

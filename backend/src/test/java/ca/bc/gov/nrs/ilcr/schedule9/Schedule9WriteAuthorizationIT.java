@@ -42,6 +42,20 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
 
   private static final String RECORDS = "/api/v1/schedule9/records";
   private static final String CHECK_STATUS = "/api/v1/schedule9/check-status";
+
+  /**
+   * Since #359 the endpoint requires every on-screen row. 702 as served (V20260815): 9140 (item
+   * 108) and 9141 (item 111, slope 50), both complete — so the submitter case still reads MET.
+   */
+  private static final String CHECK_BODY_702 =
+      "{\"records\":["
+          + "{\"contractorId\":\"CTR-OK1\",\"contractualItemCode\":108,\"sideSlopePct\":null,"
+          + "\"numberOfUnits\":15.0,\"unitCode\":\"M3\",\"biogeoclimaticZone\":\"BZ1\","
+          + "\"cost\":5000,\"sourceCode\":\"A\"},"
+          + "{\"contractorId\":\"CTR-OK2\",\"contractualItemCode\":111,\"sideSlopePct\":50,"
+          + "\"numberOfUnits\":25.0,\"unitCode\":\"M3\",\"biogeoclimaticZone\":\"BZ1\","
+          + "\"cost\":6000,\"sourceCode\":\"A\"}]}";
+
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
@@ -113,6 +127,8 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY_702)
                 .with(csrf())
                 .param("millId", "702")
                 .param("year", "2021")
@@ -126,6 +142,8 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY_702)
                 .with(csrf())
                 .param("millId", "702")
                 .param("year", "2021")

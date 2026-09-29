@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.checkstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
@@ -192,15 +193,16 @@ class CheckStatusSweepServiceTest {
       case SCHEDULE_2 -> when(schedule2.checkStatusStored(MILL, YEAR)).thenReturn(schedule2(met));
       case SCHEDULE_3 ->
           when(schedule3Service.checkStatusStored(MILL, YEAR)).thenReturn(schedule3(met));
-      case SCHEDULE_4 -> when(schedule4.checkStatus(MILL, YEAR)).thenReturn(schedule4(met));
+      case SCHEDULE_4 -> when(schedule4.checkStatusStored(MILL, YEAR)).thenReturn(schedule4(met));
       case SCHEDULE_5 -> when(schedule5.checkStatusStored(MILL, YEAR)).thenReturn(schedule5(met));
       case SCHEDULE_6 -> when(schedule6.checkStatusStored(MILL, YEAR)).thenReturn(schedule6(met));
       case SCHEDULE_7A ->
-          when(schedule7aService.checkStatus(MILL, YEAR)).thenReturn(schedule7a(met));
+          when(schedule7aService.checkStatusStored(MILL, YEAR)).thenReturn(schedule7a(met));
       case SCHEDULE_7B ->
-          when(schedule7bService.checkStatus(MILL, YEAR)).thenReturn(schedule7b(met));
+          when(schedule7bService.checkStatusStored(MILL, YEAR)).thenReturn(schedule7b(met));
       case SCHEDULE_8 -> when(schedule8.checkStatus(MILL, YEAR)).thenReturn(schedule8(met));
-      case SCHEDULE_9 -> when(schedule9Service.checkStatus(MILL, YEAR)).thenReturn(schedule9(met));
+      case SCHEDULE_9 ->
+          when(schedule9Service.checkStatusStored(MILL, YEAR)).thenReturn(schedule9(met));
       case SCHEDULE_10 -> when(schedule10.checkStatus(MILL, YEAR)).thenReturn(schedule10(met));
       case SCHEDULE_11 ->
           when(schedule11Service.checkStatus(MILL, YEAR)).thenReturn(schedule11(met));
@@ -277,7 +279,7 @@ class CheckStatusSweepServiceTest {
     Schedule5CheckStatusResponse schedule5Issues = schedule5(false);
     when(schedule5.checkStatusStored(MILL, YEAR)).thenReturn(schedule5Issues);
     Schedule9CheckStatusResponse schedule9Issues = schedule9(false);
-    when(schedule9Service.checkStatus(MILL, YEAR)).thenReturn(schedule9Issues);
+    when(schedule9Service.checkStatusStored(MILL, YEAR)).thenReturn(schedule9Issues);
 
     List<ScheduleCheckResult> results = service.sweep(MILL, YEAR).schedules1To10().schedules();
 
@@ -376,6 +378,23 @@ class CheckStatusSweepServiceTest {
   }
 
   @Test
+  @DisplayName("#359: the sweep judges the SAVED record — 4, 7A, 7B and 9 never take a screen path")
+  void sweep_usesStoredPath_neverThePayloadPath() {
+    allMet();
+
+    service.sweep(MILL, YEAR);
+
+    verify(schedule4).checkStatusStored(MILL, YEAR);
+    verify(schedule7aService).checkStatusStored(MILL, YEAR);
+    verify(schedule7bService).checkStatusStored(MILL, YEAR);
+    verify(schedule9Service).checkStatusStored(MILL, YEAR);
+    verify(schedule4, never()).checkStatus(anyLong(), anyInt(), any());
+    verify(schedule7aService, never()).checkStatus(anyLong(), anyInt(), any());
+    verify(schedule7bService, never()).checkStatus(anyLong(), anyInt(), any());
+    verify(schedule9Service, never()).checkStatus(anyLong(), anyInt(), any());
+  }
+
+  @Test
   @DisplayName("checkTrack(11) evaluates Schedule 11 alone")
   void checkTrack_schedule11_alone() {
     stub(CheckedSchedule.SCHEDULE_11, false);
@@ -407,7 +426,7 @@ class CheckStatusSweepServiceTest {
       "S02: a re-check after a correction reflects the corrected schedule — nothing cached")
   void reCheck_reflectsCorrection() {
     allMet();
-    when(schedule4.checkStatus(MILL, YEAR)).thenReturn(schedule4(false), schedule4(true));
+    when(schedule4.checkStatusStored(MILL, YEAR)).thenReturn(schedule4(false), schedule4(true));
 
     CheckStatusSweepResponse first = service.sweep(MILL, YEAR);
     CheckStatusSweepResponse second = service.sweep(MILL, YEAR);
