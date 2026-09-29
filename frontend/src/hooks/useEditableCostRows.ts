@@ -166,6 +166,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     setAddDescription('')
     setAddValues(emptyValues(fieldKeys))
     setAddErrors({})
+    setPendingRemoveKey(null)
     /* eslint-enable @eslint-react/set-state-in-effect */
     let active = true
     apiService
@@ -336,7 +337,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
   }
 
   const requestRemove = (key: number) => {
-    if (!saving) {
+    if (!saving && pendingRemoveKey === null) {
       setPendingRemoveKey(key)
     }
   }
@@ -344,6 +345,9 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
   const cancelRemove = () => setPendingRemoveKey(null)
 
   const confirmRemove = () => {
+    if (saving) {
+      return
+    }
     const key = pendingRemoveKey
     setPendingRemoveKey(null)
     if (key !== null) {

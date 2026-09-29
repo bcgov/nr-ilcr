@@ -376,6 +376,30 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
     expect(putCalled).toBe(false)
   })
 
+  test('pressing Escape closes the prompt, sends nothing and keeps the row', async () => {
+    let putCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, () => {
+        putCalled = true
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Consulting')
+    await user.click(within(rowOf('Consulting')).getByRole('button', { name: /^remove$/i }))
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('presentation')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    expect(putCalled).toBe(false)
+  })
+
   test('Remove answered Yes deletes at once (legacy): PUT with intent=delete + the deleted message', async () => {
     let captured: unknown = null
     let intent: string | null = null

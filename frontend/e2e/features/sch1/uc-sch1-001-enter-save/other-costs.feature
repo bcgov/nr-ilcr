@@ -74,10 +74,9 @@ Feature: Report Average Cost of Logging (Schedule 1) — maintain Subtotal Other
       | cost out of range  | 150000000 | Entered cost must be between -99,999,999 and 99,999,999. |
       | non-numeric cost   | abc       | Entered cost is invalid.                                |
 
-  # DIVERGENCE — this scenario is DELIBERATELY RED. It reproduces defects.md DIV-3, tracked upstream as
-  # bcgov/nr-ilcr#362, and stays failing until the confirmation is restored. Do not weaken it, skip it,
-  # or "fix" it by asserting the current behaviour: the failing state IS the tracking signal. Filter it
-  # out of a fresh-failures run with `npm run test:gate`.
+  # FORMER DIVERGENCE — defects.md DIV-3, bcgov/nr-ilcr#362. FIXED: this scenario was a deliberate red
+  # until the row delete was put behind the shared confirmation, and went green with no assertion edited;
+  # only the @discovered-divergence tag and the title marker came off. It now guards the prompt.
   #
   # It asserts the LEGACY guarantee — Remove asks first (`confirmDeleteMsg`), and the row survives until
   # the prompt is answered — not any particular modal chrome, which is the fixer's choice.
