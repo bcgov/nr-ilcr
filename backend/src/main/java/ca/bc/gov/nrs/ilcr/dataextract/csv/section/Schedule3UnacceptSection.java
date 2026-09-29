@@ -32,11 +32,16 @@ public final class Schedule3UnacceptSection implements SectionBuilder {
     return HEADER.clone();
   }
 
-  /** The rows for one (mill, year), or the seven-cell marker when it holds no item-38 rows. */
+  /**
+   * The rows for one (mill, year), or the seven-cell marker when it holds no item-38 rows AND no
+   * non-zero rents figure — legacy counted a non-null, non-zero rents figure as one unacceptable
+   * cost when deciding emptiness (Schedule3DO.java:396-403, Schedule3UnacceptExtract.java:53).
+   */
   public List<String[]> rows(RowContext ctx, UnacceptableDocument document) {
     List<UnacceptableRow> items =
         document == null || document.rows() == null ? List.of() : document.rows();
-    if (items.isEmpty()) {
+    Integer annualRents = document == null ? null : document.annualRentsTotal();
+    if (items.isEmpty() && (annualRents == null || annualRents == 0)) {
       return List.<String[]>of(ctx.with(NO_DATA_FOUND, "", ""));
     }
     List<String[]> rows = new ArrayList<>();
