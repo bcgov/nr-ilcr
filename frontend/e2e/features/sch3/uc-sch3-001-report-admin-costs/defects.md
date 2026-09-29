@@ -273,16 +273,24 @@ count does.
     entry) and the related-ticket comparison (#292, #296 — neither concerns confirming a destructive
     action).
   - **Priority / env:** p1 · branch `test/schedule-3-e2e` · local seeded DB · Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to gate
-    `useEditableCostRows.removeRow` behind a confirmation in the shared `EditableSubPageLayout`, without
-    disturbing the whole-schedule Delete or the "Leave Schedule 3" prompt (both asserted by this suite);
-    QA re-verifies and closes this entry and Schedule 1's DIV-3 together when the fix lands. Found
-    2026-08-24 (bundled inside DIV-3), split out and legacy-source-confirmed 2026-08-25 at the repo
-    owner's direction; ticketed 2026-08-26.
-  - **Test:** `features/sch3/uc-sch3-001-report-admin-costs/row-delete-confirm.feature` (S04,
-    `@discovered-divergence`) — and, tracking the same ticket from the other side, Schedule 1's
-    `other-costs.feature` `@S12 @discovered-divergence`. Both assert that a confirmation is *shown*, not
-    any particular chrome, so one fix turns both green with no test change.
+  - **FIXED 2026-09-29 (#362).** `useEditableCostRows` now splits the click from the delete — the trash button calls
+    `requestRemove`, which only records the pending row, and the shared `EditableSubPageLayout` mounts
+    `components/core/ConfirmDeleteModal` (legacy header "Confirmation", `confirmDeleteMsg` verbatim,
+    Yes/No) while one is pending. Yes calls the unchanged `removeRow`, so the persist-on-answer and the
+    #332/#506 rollback are as before; No sends nothing. Legacy also persisted on the click, so
+    deferring the delete to Save would have been a new divergence, not a fix.
+    **`row-delete-confirm.feature` went green with no assertion edited** — only its
+    `@discovered-divergence` tag and title marker came off. One green scenario had to change:
+    `other-costs.feature` `@S04` removes its row as part of the add/edit/remove round trip, and now
+    answers the prompt (`And I confirm the row deletion`) before asserting the delete — the legacy flow.
+    Verified live 2026-09-29, `--workers=1`: both scenarios GREEN. The whole-schedule Delete and the
+    "Leave Schedule 3" prompt are untouched (separate components).
+  - **Status:** CLOSED (fixed and verified) 2026-09-29. Found 2026-08-24 (bundled inside DIV-3), split
+    out and legacy-source-confirmed 2026-08-25 at the repo owner's direction; ticketed 2026-08-26; fixed
+    by #362 together with Schedule 1's DIV-3.
+  - **Test:** `features/sch3/uc-sch3-001-report-admin-costs/row-delete-confirm.feature` (S04) — GREEN,
+    tag retired, assertions untouched — and, from the other side, Schedule 1's `other-costs.feature`
+    `@S12`, likewise untagged.
 
 - **DIV-6 — Check Status judges the SAVED schedule and silently ignores what is on screen. Legacy judged
   the screen. Affects 11 of the 12 schedules.**

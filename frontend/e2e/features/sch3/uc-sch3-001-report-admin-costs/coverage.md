@@ -93,8 +93,9 @@ both are covered as of 2026-08-26. S19 was covered by a deliberate red until DIV
 2026-09-18; it is an ordinary green now.
 
 > ### Suite state — the ONE place this is recorded
-> **40 scenarios / 49 tests after Scenario-Outline expansion: 48 green + 1 deliberate
-> `@discovered-divergence` RED** — DIV-5 (row delete confirm, #362). **DIV-6 ×3** (`@S12`, `@S25`, `@S26` —
+> **40 scenarios / 49 tests after Scenario-Outline expansion: all 49 green, no deliberate reds.**
+> **DIV-5** (row delete confirm) lost its tag and marker on **2026-09-29** with the #362 fix
+> (re-measured that day: `--list` gives 49, `--grep @discovered-divergence` 0). **DIV-6 ×3** (`@S12`, `@S25`, `@S26` —
 > Check Status on unsaved edits) lost their tags and markers on **2026-09-25** with the #359 group A fix;
 > The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios). Re-measured **2026-09-25** by counting the generated specs rather than by
 > decrementing the previous figure. Priorities are **unchanged** at **5 × p0, 31 × p1, 13 × p2** (= 49):
@@ -113,8 +114,8 @@ both are covered as of 2026-08-26. S19 was covered by a deliberate red until DIV
 > `npx playwright test --list --project=chromium` and edit **this block only**.
 
 A clean run is `npm run test:gate` (regenerates the features first and excludes every `@discovered-*`
-red). The one red is DIV-5 (row delete has no confirm, [#362](https://github.com/bcgov/nr-ilcr/issues/362)).
-It asserts the correct legacy behaviour, so it goes green on its own when its fix lands — as DIV-7's S19
+red). There are none today: the last, DIV-5 (row delete had no confirm,
+[#362](https://github.com/bcgov/nr-ilcr/issues/362)), went green on its own on 2026-09-29 — as DIV-7's S19
 did on 2026-09-18, and DIV-6's three did on 2026-09-25 ([#359](https://github.com/bcgov/nr-ilcr/issues/359)
 group A), with no assertion edited.
 
@@ -213,7 +214,7 @@ recorded rather than silently dropped:
 | Itemize grouped other-acceptable costs; count + subtotal follow on return | `S04`, BR-06, CNT-001 | `Schedule3Service.addOtherAcceptable` / `saveOtherAcceptable` | `other-costs.feature` `@p1 @S04` | `covered` | — |
 | …and an in-place row edit persisted by the sub-page Save | `S04` (grid inputs) | `useEditableCostRows.persist` | `other-costs.feature` `@p1 @S04` | `covered` | — |
 | …and a row removed again | `S04` (row Delete) | `removeRow` → batch PUT `intent=delete` | `other-costs.feature` `@p1 @S04` | `covered` | — |
-| …and the removal asks for confirmation FIRST | `S04` (legacy `p:confirm` on the row Delete) | **not implemented** — `removeRow` persists at once | `row-delete-confirm.feature` `@discovered-divergence @p1 @S04` | `divergence` | **DIV-5** → [#362](https://github.com/bcgov/nr-ilcr/issues/362) |
+| …and the removal asks for confirmation FIRST | `S04` (legacy `p:confirm` on the row Delete) | `requestRemove` opens `ConfirmDeleteModal`; Yes → `removeRow` persists (#362) | `row-delete-confirm.feature` `@p1 @S04` | `covered` | ex-**DIV-5**, fixed by [#362](https://github.com/bcgov/nr-ilcr/issues/362) 2026-09-29 |
 | Itemize included-unacceptable costs; count + total follow | `S05`, BR-07 | `Schedule3Service.addUnacceptable` | `unacceptable-costs.feature` `@p1 @S05` | `covered` | — (DIV-4 retracted: legacy counts it the same way) |
 | The read-only Annual Rents (Forest Act, S111) figure on the sub-page | `S05`, BR-04 | `#annualRentsS111`, `buildUnacceptableDocument` | `unacceptable-costs.feature` `@p1 @S05` | `covered` | — |
 | Crown Timber volume change pushed to an open Schedule 1 | `S06`, WRN-001, BR-09 | `Schedule1Service.applyCrownTimberVolume` | `crown-push.feature` `@p0 @S06` | `covered` | — |
@@ -361,7 +362,7 @@ The mirror-matrix smell test — one arm covered but not the other:
 | Out of range / not a number | yes — both are Examples rows of the same outlines |
 | Rejection on the main page / on a sub-page | yes — `@S20`/`@S22` ∥ `@S21`/`@S23`/`@S24` |
 | Blank description refused — Other Acceptable / Included Unacceptable | yes — `@S23` ∥ `@S24` |
-| Sub-page row added / edited / removed | yes — all three in `other-costs` `@S04`, each read back; the missing removal confirm is the DIV-5 red |
+| Sub-page row added / edited / removed | yes — all three in `other-costs` `@S04`, each read back; the removal answers the confirm (ex-DIV-5) |
 | Count on the link / rows on the sub-page | yes — asserted on both sides of every navigation (the +1 for Annual Rents is legacy-faithful) |
 | Client-rejected write / server-rejected write | yes — `validation` (spy proves 0 requests) ∥ `save-error` (500, read-back proves nothing stored) |
 | Guard 409 (closed mill) / 404 (no report-status row) | yes — `render-states` `@S14` ∥ `@S16` |
@@ -390,8 +391,8 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-25. *
 - **P0: 100%** — all 5 P0 items exercised and all 5 GREEN: the happy path (entry, save, full derived
   arithmetic, reload), the BR-09 crown push, both Check Status headline outcomes, and the never-started
   schedule opening enterable (`no-create.feature` — the ex-DIV-1 red, green since #296).
-- **P1: 100%** of P1 items covered — 31 tests, 30 green plus the DIV-5 red, which **counts as covered** (it
-  maps to S04's confirm-before-delete and is red on purpose). DIV-6's three (S12/S25/S26) were untagged
+- **P1: 100%** of P1 items covered — 31 tests, all 31 green (the DIV-5 red, S04's confirm-before-delete,
+  went green with #362 on 2026-09-29). DIV-6's three (S12/S25/S26) were untagged
   2026-09-25.
 - **Overall: 26/26 slices `covered`.** S18/S19 stopped being `not-applicable` when #296 made their state
   reachable; S25/S26 arrived upstream with ilcr-bmad PR #92, were covered by DIV-6's own reds rather than

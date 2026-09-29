@@ -157,7 +157,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     setRowDescription,
     setRowValue,
     handleAdd,
-    removeRow,
+    requestRemove,
     saving,
   } = editor
 
@@ -308,7 +308,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
               iconDescription="Remove"
               renderIcon={TrashCan}
               disabled={saving}
-              onClick={() => removeRow(row.key)}
+              onClick={() => requestRemove(row.key)}
             />
           </TableCell>
         </>

@@ -5,8 +5,9 @@ import { type Locator, type Page, expect } from '@playwright/test';
  * Schedule 1 page. Add form is `#add-description` / `#add-cost` / the "Add" button (rendered only when
  * editable). Rows live in the aria-labelled "Other Cost List" table; on an editable Draft each row's
  * description is an inline TextInput (accessible name "Edit description") and the per-row delete is an
- * icon-only "Remove" button that persists the whole set IMMEDIATELY with no confirm modal (bcgov's
- * EditableSubPage rewrite dropped the legacy per-row confirm). Selectors live here, never in steps.
+ * icon-only "Remove" button that opens the legacy "Confirmation" prompt; Yes persists the whole set
+ * (#362 restored the per-row confirm the EditableSubPage rewrite had dropped). Selectors live here,
+ * never in steps.
  */
 export class OtherCostsPage {
   constructor(private readonly page: Page) {}
@@ -47,7 +48,7 @@ export class OtherCostsPage {
    * confirmation first — deliberately NOT pinned to a particular heading or body text, because the
    * chrome a fix would use is the developer's choice (the repo already has `ConfirmDeleteModal`). What
    * the legacy guarantee requires is that SOMETHING asks before the row is destroyed. Same shape as
-   * `Schedule3SubPage.anyDialog`, since one fix in the shared hook turns both suites green.
+   * `Schedule3SubPage.anyDialog`: the prompt lives in the shared hook (#362).
    */
   get anyDialog(): Locator {
     return this.page.getByRole('dialog');
@@ -76,9 +77,9 @@ export class OtherCostsPage {
   }
 
   /**
-   * Remove a listed row by its description. The per-row action is now an icon-only "Remove" button that
-   * deletes immediately (no confirm modal). Description inputs and Remove buttons share row order, so the
-   * value's index selects the matching Remove button.
+   * Press a listed row's icon-only "Remove" button, by its description. This only opens the delete
+   * confirmation (#362); nothing is removed until it is answered. Description inputs and Remove buttons
+   * share row order, so the value's index selects the matching Remove button.
    */
   async deleteRow(text: string): Promise<void> {
     const idx = (await this.descriptions()).indexOf(text);

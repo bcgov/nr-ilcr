@@ -18,8 +18,8 @@ import { ROUTE_SCHEDULE_3 } from '../../fixtures/sch3/schedule3-test-data';
  *   `#annualRentsS111`   the read-only Annual Rents (Forest Act, S111) figure (Unacceptable page only).
  *
  * BEHAVIOUR THE STEPS DEPEND ON (`hooks/useEditableCostRows`): Add, Remove and Save each persist the
- * WHOLE row set in one PUT (the server reconciles insert/update/delete) — Add and Remove immediately,
- * Save on demand. A row that fails the advisory validation is NOT sent at all: the inline error renders
+ * WHOLE row set in one PUT (the server reconciles insert/update/delete) — Add immediately, Remove once
+ * its "Confirmation" prompt is answered Yes (#362), Save on demand. A row that fails the advisory validation is NOT sent at all: the inline error renders
  * and no request is made, which is what the zero-write assertions prove.
  */
 export class Schedule3SubPage {
@@ -140,7 +140,10 @@ export class Schedule3SubPage {
     return ((await cell.textContent()) ?? '').trim().replaceAll(',', '');
   }
 
-  /** The per-row delete — an icon-only "Remove" button that persists the whole set immediately. */
+  /**
+   * The per-row delete — an icon-only "Remove" button. It only opens the delete confirmation; the row
+   * is removed and the whole set persisted when `confirmDelete` answers Yes (legacy p:confirm, #362).
+   */
   async removeRow(title: string, description: string): Promise<void> {
     const index = await this.rowIndex(title, description);
     await this.table(title).getByRole('button', { name: 'Remove' }).nth(index).click();
@@ -194,6 +197,17 @@ export class Schedule3SubPage {
     return this.page.getByRole('button', { name: 'Back', exact: true }).first();
   }
 
+  /** The row-delete confirmation (`components/core/ConfirmDeleteModal`, legacy header "Confirmation"). */
+  get deleteDialog(): Locator {
+    return this.page.getByRole('dialog', { name: 'Confirmation' });
+  }
+
+  /** Answer Yes to the row-delete confirmation opened by `removeRow`. */
+  async confirmDelete(): Promise<void> {
+    await this.deleteDialog.getByRole('button', { name: 'Yes', exact: true }).click();
+    await expect(this.deleteDialog).toBeHidden();
+  }
+
   /** The unsaved-edits guard shown by Back after an in-place edit (`modalHeading="Leave page"`). */
   get leaveDialog(): Locator {
     return this.page.getByRole('dialog', { name: 'Leave page' });
@@ -231,8 +245,8 @@ export class Schedule3SubPage {
   }
 
   /**
-   * ANY open dialog on the sub-page. Used by the DIV-5 red, which asserts that removing a row asks for
-   * confirmation first — deliberately NOT pinned to a particular heading or body text, because the
+   * ANY open dialog on the sub-page. Used by the DIV-5 guard (a tracked red until #362), which asserts
+   * that removing a row asks for confirmation first — deliberately NOT pinned to a particular heading or body text, because the
    * chrome a fix would use is the developer's choice (the repo already has `ConfirmDeleteModal`). What
    * the legacy guarantee requires is that SOMETHING asks before the row is destroyed.
    */

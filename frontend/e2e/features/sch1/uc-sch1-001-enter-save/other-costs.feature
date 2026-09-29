@@ -5,20 +5,21 @@
 # /api/v1/schedule1/other-costs; success text is the API's verbatim SUC-002 (AD-8). Add validation is
 # advisory client-side (components/schedule1OtherCosts/validation.ts) mirroring the backend DTO.
 #
-# S12 IS NOW A TRACKED RED (2026-08-26) — ticket bcgov/nr-ilcr#362, defects.md DIV-3.
+# S12 WAS A TRACKED RED (2026-08-26) and is GREEN since #362 — ticket bcgov/nr-ilcr#362, defects.md
+# DIV-3 (FIXED). No assertion was edited; only the `@discovered-divergence` tag and title marker came off.
 # Legacy required a PrimeFaces confirm dialog (`confirmDeleteMsg`) before removing a row; the shared
-# EditableSubPage rewrite dropped it, so Remove deletes immediately. From 2026-08-07 to 2026-08-26 this
+# EditableSubPage rewrite had dropped it, so Remove deleted immediately. From 2026-08-07 to 2026-08-26 this
 # scenario was RE-GROUNDED to the app's actual no-confirm behaviour and passed — which was the wrong
 # call, and the repo owner has since ruled it so: re-grounding a scenario onto a divergence makes the
 # suite ratify the defect instead of tracking it, and the green hid the regression for three weeks.
 # The open question that deferral rested on ("does legacy actually prompt?") is now closed against the
 # legacy SOURCE, not the sidecars: `webapp/schedule1OtherCosts.xhtml:94-96` carries
 # `<p:confirm message="#{msg.confirmDeleteMsg}">` on the per-row Delete. So the scenario now asserts the
-# legacy guarantee and fails until it is restored.
+# legacy guarantee, and #362 restored it.
 #
-# SHARED, NOT SCHEDULE-1-SPECIFIC. The behaviour lives in `useEditableCostRows.removeRow` ->
-# `persist(next, 'delete')`, so Schedule 3's two cost sub-pages have the same defect (`sch3` DIV-5,
-# `row-delete-confirm.feature`). ONE ticket covers all three pages, and one fix turns all of them green.
+# SHARED, NOT SCHEDULE-1-SPECIFIC. The prompt lives in `useEditableCostRows.requestRemove` and the shared
+# `EditableSubPageLayout`, so Schedule 3's two cost sub-pages share it (`sch3` DIV-5,
+# `row-delete-confirm.feature`). ONE ticket covered all three pages, and one fix turned them green.
 #
 # Each mutating scenario owns a DEDICATED editable Draft (S09 add → 25050/2017; S12 remove → 9050/2017) and
 # self-cleans its rows via the API cleanup registry (marker-keyed). S12 seeds its row through the real API
@@ -80,8 +81,8 @@ Feature: Report Average Cost of Logging (Schedule 1) — maintain Subtotal Other
   #
   # It asserts the LEGACY guarantee — Remove asks first (`confirmDeleteMsg`), and the row survives until
   # the prompt is answered — not any particular modal chrome, which is the fixer's choice.
-  @S12 @p1 @discovered-divergence
-  Scenario: Removing an Other Cost line item asks for confirmation before deleting it [DISCOVERED DIVERGENCE — the row delete has no confirmation; defects.md DIV-3 / issue #362]
+  @S12 @p1
+  Scenario: Removing an Other Cost line item asks for confirmation before deleting it
     Given an itemized Other Cost line item exists to remove
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1

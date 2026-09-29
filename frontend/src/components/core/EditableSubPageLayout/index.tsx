@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
 import { ArrowLeft, Save } from '@carbon/icons-react'
+import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -33,7 +34,8 @@ interface Props<TDoc extends EditableRowsDoc> {
 /**
  * Shared chrome for the editable cost sub-pages (Schedule 1 Other Costs, Schedule 3 Included
  * Unacceptable / Other Costs): page title, the mill-year / loading / load-error guard states, the
- * success/error notifications, the Save + Back action row, and the unsaved-changes Back modal. Pages
+ * success/error notifications, the Save + Back action row, the unsaved-changes Back modal, and the
+ * row-delete confirmation. Pages
  * supply only their own panels via {@code children}; all shared behaviour lives in
  * {@link useEditableCostRows}. Keeps the pages free of duplicated boilerplate.
  */
@@ -62,6 +64,9 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
     handleBack,
     confirmBack,
     onBack,
+    pendingRemoveKey,
+    confirmRemove,
+    cancelRemove,
   } = editor
 
   // Match the schedule pages' tombstone header: the parent schedule is the title, and the sub-page
@@ -152,6 +157,10 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
         >
           {CONFIRM_NAVIGATION}
         </ConfirmNavigationModal>
+      )}
+
+      {pendingRemoveKey !== null && (
+        <ConfirmDeleteModal onCancel={cancelRemove} onConfirm={confirmRemove} />
       )}
     </div>
   )

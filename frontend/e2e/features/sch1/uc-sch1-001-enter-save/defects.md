@@ -228,16 +228,23 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     exists; #296 — Schedule 1 and 3 empty data set. Neither concerns confirming a destructive action).
   - **Priority / env:** p1 · local seeded DB · Chrome. Real data loss, but bounded: the click is
     deliberate and the row can be retyped, so it is not p0.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to gate
-    `useEditableCostRows.removeRow` behind a confirmation in the shared `EditableSubPageLayout` (the
-    `components/core/ConfirmDeleteModal` primitive already exists), without disturbing the
-    whole-schedule Delete or the "Leave Schedule 1" prompt; QA re-verifies and closes this entry and
-    Schedule 3's DIV-5 together when the fix lands. Found 2026-08 (EditableSubPage rewrite);
-    legacy-source-confirmed 2026-08-07 (sidecars) and 2026-08-26 (legacy code); ticketed 2026-08-26.
-  - **Test:** `other-costs.feature` `@S12 @p1 @discovered-divergence` — **RED on purpose** since
-    2026-08-26. Asserts that Remove asks first and that the row survives until the prompt is answered;
-    it does not pin any modal chrome, so it goes green on its own when the confirmation is restored, with
-    no test change needed. The seeded row is cleaned by the marker registry whichever way the assertion
+  - **FIXED 2026-09-29 (#362), together with Schedule 3's DIV-5.** `useEditableCostRows` now splits the click from the delete — the trash button calls
+    `requestRemove`, which only records the pending row, and the shared `EditableSubPageLayout` mounts
+    `components/core/ConfirmDeleteModal` (legacy header "Confirmation", `confirmDeleteMsg` verbatim,
+    Yes/No) while one is pending. Yes calls the unchanged `removeRow`, so the persist-on-answer and the
+    #332/#506 rollback are as before; No sends nothing. Legacy also persisted on the click, so
+    deferring the delete to Save would have been a new divergence, not a fix.
+    S12's assertions are unchanged; only the `@discovered-divergence` tag and title marker came off.
+    **Not verified live here:** on the local DB used for the 2026-09-29 run the S12 precondition itself
+    fails (the API seed `POST other-costs 9050/2017` answers 404 — no saved Schedule 1 on that anchor
+    there), identically with and without the fix, so the scenario never reaches the Remove click. The
+    same two assertions on the same shared hook went GREEN on Schedule 3 in that run, and the unit
+    tests pin the prompt on this page; CI is the confirming run for S12.
+  - **Status:** CLOSED (fixed) 2026-09-29 — pending S12's first green in CI. Found 2026-08
+    (EditableSubPage rewrite); legacy-source-confirmed 2026-08-07 (sidecars) and 2026-08-26 (legacy
+    code); ticketed 2026-08-26.
+  - **Test:** `other-costs.feature` `@S12 @p1` — tag retired, assertions untouched. It was RED on
+    purpose from 2026-08-26 to 2026-09-29. The seeded row is cleaned by the marker registry whichever way the assertion
     goes, so the red leaves no residue (verified: anchor 9050/2017 clean after the run).
 
 - **DIV-4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
