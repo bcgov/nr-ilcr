@@ -98,7 +98,18 @@ export interface AdminMillAnchor {
   status?: {
     /** Every user GUID with an ACTIVE assignment at rest, sorted. Empty for "no active users". */
     activeUserGuids: readonly string[];
+    /**
+     * Every user GUID with an ENDED assignment at rest, sorted. The S09 / S13 activate targets —
+     * the cleanup ends them again, and the preflight fails if one is found active.
+     */
+    endedUserGuids: readonly string[];
   };
+  /**
+   * The mill's current-year report-record set at rest — what activate branches on. Defaults to
+   * `complete` (status row + eleven categories): activate then writes the status alone. Only the two
+   * GAP-6 mills differ: `none` is what activate ENROLS, `partial` (the status row alone) what it REFUSES.
+   */
+  currentYearRecords?: 'complete' | 'none' | 'partial';
 }
 
 /** The contacts on 25050's client location, 00001500/00 (REVELSTOKE DIVISION). */
@@ -161,8 +172,29 @@ export const S01_EDIT = {
  * 25050's (the delivery THE.MILL requires one), which is why the contacts below are S01's.
  */
 
-/** S12's one active licensee — a synthetic GUID, never a real directory identifier. */
-export const S12_LICENSEE_GUID = 'E2EMILLSTATUSLICENSEE00000000001';
+/**
+ * The seeded licensees — synthetic GUIDs, never real directory identifiers, all role LICENSEE.
+ * `licensee(n)` is `E2E0000000000000000000000000000<n>`, exactly as the patch builds them.
+ * They MUST be 32 hex characters, like real directory GUIDs: the Users page route drops any
+ * `?userGuid=` that is not (`routes/mill-associations.tsx` USER_GUID_PATTERN), and S10's View would
+ * then land with nobody carried. "E2E" is hex, which keeps them recognisable.
+ */
+const licensee = (n: number): string => `E2E0000000000000000000000000000${n}`;
+
+/** S12's one active licensee. */
+export const S12_LICENSEE_GUID = licensee(1);
+/** S08 deactivates this one (26053, ACTIVE at rest). */
+export const S08_LICENSEE_GUID = licensee(2);
+/** S09 activates this one (26058, ENDED at rest). */
+export const S09_LICENSEE_GUID = licensee(3);
+/** S13 tries to activate this one on a closed mill (26054, ENDED at rest). */
+export const S13_LICENSEE_GUID = licensee(4);
+/** S07 re-adds and S10 views this one (26055, ACTIVE at rest) — read-only. */
+export const READONLY_LICENSEE_GUID = licensee(5);
+/** S05 adds this one to 26056. Seeded as an account with NO association anywhere. */
+export const S05_LICENSEE_GUID = licensee(6);
+/** GAP-7 adds this one to 26063. NOT seeded at all — no ILCR_USER row — so the add provisions it. */
+export const NEW_ACCOUNT_GUID = licensee(7);
 
 const statusAnchor = (
   millId: number,
@@ -170,6 +202,8 @@ const statusAnchor = (
   millName: string,
   statusCode: 'ACT' | 'CLS',
   activeUserGuids: readonly string[],
+  endedUserGuids: readonly string[] = [],
+  extra: Partial<Pick<AdminMillAnchor, 'atRest' | 'currentYearRecords'>> = {},
 ): AdminMillAnchor => ({
   millId,
   millNumber,
@@ -181,7 +215,8 @@ const statusAnchor = (
   contacts: [CONTACT_ADMN_1, CONTACT_OPERATIONS_2],
   // Seeded with the indicator set and no contact; no status slice touches the panel.
   atRest: { headOfficeContactInd: 'Y', headOfficeContactId: null, divisionContactId: null },
-  status: { activeUserGuids },
+  status: { activeUserGuids, endedUserGuids },
+  ...extra,
 });
 
 /** S03 — "Deactivate (Close) an Active Mill With No Active Users". */
@@ -193,15 +228,159 @@ export const S04_MILL = statusAnchor(26051, '9182', 'E2E-ACTIVATE-TEST', 'CLS', 
 /** S12 — "Deactivation Blocked by Active Users", then deactivated once its one user is. */
 export const S12_MILL = statusAnchor(26052, '9183', 'E2E-BLOCKED-TEST', 'ACT', [S12_LICENSEE_GUID]);
 
-/** The status anchors by the slice id the feature names them with. */
+/*
+ * THE ASSOCIATION-PANEL MILLS — same patch, same shape, and one mill per WRITER again. S08 and S09
+ * each have their own: they touch different rows, but every precondition and cleanup checks the mill's
+ * WHOLE user set, so one's activated user would fail the other's check mid-run (seen 2026-09-29 as a
+ * cleanup red under parallel repeats). S07, S10 and the a11y sweeps share 26055 because none writes.
+ */
+
+/** S08 — deactivate an active association on an Active mill. */
+export const USERS_MILL = statusAnchor(26053, '9184', 'E2E-USERS-TEST', 'ACT', [S08_LICENSEE_GUID]);
+
+/** S09 — activate an ended association on an Active mill. */
+export const ACTIVATE_USER_MILL = statusAnchor(
+  26058,
+  '9189',
+  'E2E-ACTIVATE-USER-TEST',
+  'ACT',
+  [],
+  [S09_LICENSEE_GUID],
+);
+
+/** S13 — activating an association on a CLOSED mill is refused; activating the mill first lets it. */
+export const CLOSED_USERS_MILL = statusAnchor(
+  26054,
+  '9185',
+  'E2E-CLOSED-USERS-TEST',
+  'CLS',
+  [],
+  [S13_LICENSEE_GUID],
+);
+
+/** S07 / S10 — READ-ONLY: the duplicate add writes nothing, and View only navigates. */
+export const READONLY_USERS_MILL = statusAnchor(
+  26055,
+  '9186',
+  'E2E-READONLY-USERS-TEST',
+  'ACT',
+  [READONLY_LICENSEE_GUID],
+);
+
+/** S05 — add a user. No users at rest; the scenario's one new row is deleted by its cleanup. */
+export const ADD_USER_MILL = statusAnchor(26056, '9187', 'E2E-ADD-USER-TEST', 'ACT', []);
+
+/*
+ * THE COVERAGE-GAP MILLS (defects.md GAP-1, -4, -6, -7) — same patch, one per concern.
+ */
+
+/** GAP-1 — clear a contact to "(None)". Both contacts set at rest; the contacts cleanup restores them. */
+export const CONTACTS_MILL = statusAnchor(26059, '9190', 'E2E-CONTACTS-TEST', 'ACT', [], [], {
+  atRest: {
+    headOfficeContactInd: 'Y',
+    headOfficeContactId: CONTACT_ADMN_1.clientContactId,
+    divisionContactId: CONTACT_OPERATIONS_2.clientContactId,
+  },
+});
+
+/** GAP-4 — a Closed mill NO scenario writes, so a Status search can rely on it staying Closed. */
+export const STATUS_SEARCH_MILL = statusAnchor(26060, '9191', 'E2E-STATUS-SEARCH-TEST', 'CLS', []);
+
+/** GAP-6 — Closed with NO current-year records: activate enrols it (rows the DB cleanup deletes). */
+export const ENROL_MILL = statusAnchor(26061, '9192', 'E2E-ENROL-TEST', 'CLS', [], [], {
+  currentYearRecords: 'none',
+});
+
+/** GAP-6 — Closed with the current-year status row ALONE: activate refuses it and rolls back. */
+export const PARTIAL_MILL = statusAnchor(26062, '9193', 'E2E-PARTIAL-TEST', 'CLS', [], [], {
+  currentYearRecords: 'partial',
+});
+
+/** GAP-7 — add a user who has no ILCR account yet. No users at rest. */
+export const ADD_NEW_USER_MILL = statusAnchor(26063, '9194', 'E2E-ADD-NEW-USER-TEST', 'ACT', []);
+
+/** `error.mill.activate.partialrecords` (messages.properties:616), verbatim. */
+export const PARTIAL_RECORDS_ERROR =
+  "The selected mill's report records for the current year are incomplete, so it cannot be activated. "
+  + 'Please refer to logs.';
+
+/** The mills whose editable PANEL a scenario saves, by the id the feature names them with. */
+export const CONTACTS_MILLS: Readonly<Record<string, AdminMillAnchor>> = {
+  S01: S01_MILL,
+  'GAP-1': CONTACTS_MILL,
+};
+
+/** The dedicated mills by the slice id the feature names them with. */
 export const STATUS_MILLS: Readonly<Record<string, AdminMillAnchor>> = {
   S03: S03_MILL,
   S04: S04_MILL,
   S12: S12_MILL,
+  S05: ADD_USER_MILL,
+  S07: READONLY_USERS_MILL,
+  S08: USERS_MILL,
+  S09: ACTIVATE_USER_MILL,
+  S10: READONLY_USERS_MILL,
+  S13: CLOSED_USERS_MILL,
+  'GAP-1': CONTACTS_MILL,
+  'GAP-4': STATUS_SEARCH_MILL,
+  'GAP-6-enrol': ENROL_MILL,
+  'GAP-6-partial': PARTIAL_MILL,
+  'GAP-7': ADD_NEW_USER_MILL,
 };
 
 /** Every mill a mills scenario operates on — the preflight's and the CI-seed gate's input. */
-export const ADMIN_MILL_ANCHORS: readonly AdminMillAnchor[] = [S01_MILL, S03_MILL, S04_MILL, S12_MILL];
+export const ADMIN_MILL_ANCHORS: readonly AdminMillAnchor[] = [
+  S01_MILL,
+  S03_MILL,
+  S04_MILL,
+  S12_MILL,
+  USERS_MILL,
+  ACTIVATE_USER_MILL,
+  CLOSED_USERS_MILL,
+  READONLY_USERS_MILL,
+  ADD_USER_MILL,
+  CONTACTS_MILL,
+  STATUS_SEARCH_MILL,
+  ENROL_MILL,
+  PARTIAL_MILL,
+  ADD_NEW_USER_MILL,
+];
+
+/**
+ * S02 / S14 — the IMPORTABLE mill: a THE.MILL row and nothing else, so it is listed by the importable
+ * search and by no tracked-mill surface. NOT in ADMIN_MILL_ANCHORS, whose members are all tracked; the
+ * preflight and the parity gate check it has NO xref instead. Importing it creates the xref (CLS, head
+ * office Y — BR-03) and its current-year records, which `scripts/mill_db_restore.py forget-import`
+ * deletes afterwards.
+ */
+export const IMPORT_MILL = { millId: 26057, millNumber: '9188', millName: 'E2E-IMPORT-TEST' } as const;
+
+/**
+ * A directory record for the Find and Add User stub. The directory (NR User Lookup, DL-27) is OFF in
+ * every environment (`ilcr.user-lookup.enabled: false`, so `/api/v1/users/lookup` 404s), so S05 / S07 /
+ * S10 answer that ONE browser request with a record shaped exactly like the backend's `DirectoryUser`.
+ * Everything after the pick — the add, the association list, the messages — is the real backend.
+ */
+export interface DirectoryUserRecord {
+  userGuid: string;
+  displayName: string;
+  idpUsername: string;
+  identityProvider: string;
+  firstName: string;
+  lastName: string;
+}
+
+export const directoryUser = (userGuid: string, n: number): DirectoryUserRecord => ({
+  userGuid,
+  displayName: `E2E Licensee ${n}`,
+  idpUsername: `e2elicensee${n}`,
+  identityProvider: 'BCEIDBUSINESS',
+  firstName: 'E2E',
+  lastName: `Licensee ${n}`,
+});
+
+/** The picker's option label (DirectoryPicker.tsx `candidateLabel`): `displayName (idpUsername)`. */
+export const candidateLabel = (u: DirectoryUserRecord): string => `${u.displayName} (${u.idpUsername})`;
 
 /**
  * The page's own "no contact" option label (components/mills/index.tsx NO_CONTACT). Every contact

@@ -59,3 +59,18 @@ Feature: Maintain Mills — update an existing mill's head-office indicator and 
     Then I should see the message "Mill 9171 - BCOVEY-TEST has been saved."
     And the mill's head-office indicator and contacts are persisted as edited
     And the Mill Details panel shows the saved mill's last-edited details
+
+  # GAP-1. Legacy's slice catalogue excluded a blank contact as "no distinct outcome" (its message is the
+  # same), but here a blank IS a delete: the column is cleared, which is why the page leads both
+  # dropdowns with an explicit "(None)". On its own mill (26059), so it never races S01.
+  @p2 @GAP-1
+  Scenario: Choosing "(None)" for a contact and saving clears that contact
+    Given the GAP-1 mill is at rest with its head-office indicator and contacts
+    And I am acting as the Ministry Administrator
+    When I open Mills from the Administration menu
+    And I search for the mill by its number and select it
+    And I clear the Division Contact to "(None)"
+    And I save the mill
+    Then I should see the message "Mill 9190 - E2E-CONTACTS-TEST has been saved."
+    And the mill's division contact is persisted as cleared and nothing else on the panel moved
+    And the Division Contact shows "(None)"

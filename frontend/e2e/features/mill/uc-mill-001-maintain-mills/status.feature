@@ -78,3 +78,30 @@ Feature: Maintain Mills — deactivate and activate a mill
     Then I should see the message "Mill 9183 - E2E-BLOCKED-TEST has been deactivated."
     And the mill's status is persisted as "CLS"
     And "Activate" is offered and "Deactivate" is not
+
+  # GAP-6. The two branches of BR-07 that S04 cannot reach. 26061 has NO current-year records, so
+  # activating it ENROLS them (the precondition sees the working context 404 first; the DB cleanup
+  # deletes what the activation wrote). 26062 has the status row ALONE, so activate refuses it (22.1 D7)
+  # and rolls the whole activation back.
+  @p1 @GAP-6
+  Scenario: Activating a Closed mill with no current-year records creates them
+    Given the GAP-6-enrol mill is at rest with its status and active users
+    And I am acting as the Ministry Administrator
+    When I open Mills from the Administration menu
+    And I search for the mill by its number and select it
+    And I activate the mill
+    Then I should see the message "Mill 9192 - E2E-ENROL-TEST has been activated."
+    And the mill's status is persisted as "ACT"
+    And the mill has its report records for the current reporting year and its schedules open
+
+  @p1 @GAP-6
+  Scenario: Activating a Closed mill whose current-year records are incomplete is refused
+    Given the GAP-6-partial mill is at rest with its status and active users
+    And I am acting as the Ministry Administrator
+    When I open Mills from the Administration menu
+    And I search for the mill by its number and select it
+    And I activate the mill
+    Then I should see the error "The selected mill's report records for the current year are incomplete, so it cannot be activated. Please refer to logs."
+    And the mill's status is persisted as "CLS"
+    And "Activate" is offered and "Deactivate" is not
+    And the mill's current-year records are still only partial

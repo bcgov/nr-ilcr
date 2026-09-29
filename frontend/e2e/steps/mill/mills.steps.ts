@@ -1,10 +1,10 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   type AdminMillAnchor,
+  CONTACTS_MILLS,
   MILL_NOT_ACTIVE_MESSAGE,
   NO_CONTACT_LABEL,
   S01_EDIT,
-  S01_MILL,
   STATUS_MILLS,
 } from '../../fixtures/mill/mills-test-data';
 import { scheduleUrl } from '../../fixtures/sch1/schedule1-test-data';
@@ -12,7 +12,9 @@ import { MOCK_GROUPS_HEADER } from '../../pages/common/mockUser';
 import {
   activeUserGuids,
   atRest,
+  endedUserGuids,
   currentReportingYear,
+  millContextStatus,
   readContactOptions,
   readMill,
   readMillContext,
@@ -38,20 +40,22 @@ const contactLabel = (anchor: AdminMillAnchor, id: number | null): string =>
 // ---- preconditions ----
 
 Given(
-  'the S01 mill is at rest with its head-office indicator and contacts',
-  async ({ request, world, millContactsCleanup }) => {
+  'the {word} mill is at rest with its head-office indicator and contacts',
+  async ({ request, world, millContactsCleanup }, slice) => {
+    const anchor = CONTACTS_MILLS[slice];
+    expect(anchor, `no contacts anchor is pinned for ${slice} (fixtures/mill/mills-test-data.ts)`).toBeTruthy();
     // Re-checked per scenario, not only in preflight: a previous run that died between its Save and its
     // cleanup leaves the row edited, and this scenario would then "change" values to what they already
     // are and pass without proving anything.
-    const mill = await readMill(request, S01_MILL.millId);
+    const mill = await readMill(request, anchor.millId);
     expect(
-      atRest(mill, S01_MILL),
-      `mill ${S01_MILL.millId} is not at rest — a previous run left it edited: ${JSON.stringify(mill)}. `
+      atRest(mill, anchor),
+      `mill ${anchor.millId} is not at rest — a previous run left it edited: ${JSON.stringify(mill)}. `
         + 'preflight/mill-anchors.setup.ts names the values to restore.',
     ).toBe(true);
-    world.millAnchor = S01_MILL;
+    world.millAnchor = anchor;
     // Registered BEFORE the Save, so a failure after the click still restores the row.
-    millContactsCleanup.push(S01_MILL);
+    millContactsCleanup.push(anchor);
   },
 );
 
@@ -209,7 +213,7 @@ Then(
 
 Given(
   'the {word} mill is at rest with its status and active users',
-  async ({ request, world, millStatusCleanup }, slice) => {
+  async ({ request, world, millStatusCleanup, millDbCleanup }, slice) => {
     const anchor = STATUS_MILLS[slice];
     expect(anchor, `no status anchor is pinned for ${slice} (fixtures/mill/mills-test-data.ts)`).toBeTruthy();
     // Re-checked per scenario, as S01 does: a run that died between its click and its cleanup leaves the
@@ -224,6 +228,22 @@ Given(
       await activeUserGuids(request, anchor.millId),
       `mill ${anchor.millId}'s active users are not at rest`,
     ).toEqual([...anchor.status!.activeUserGuids]);
+    expect(
+      await endedUserGuids(request, anchor.millId),
+      `mill ${anchor.millId}'s ended users are not at rest`,
+    ).toEqual([...anchor.status!.endedUserGuids]);
+    if (anchor.currentYearRecords === 'none') {
+      // The enrol branch is only exercised if the set is really absent — a run that died before its
+      // DB cleanup leaves it enrolled, and activate would then write the status alone.
+      const year = await currentReportingYear(request);
+      expect(
+        await millContextStatus(request, anchor.millId, year),
+        `mill ${anchor.millId} already has ${year} report records — run `
+          + `scripts/mill_db_restore.py forget-enrolment ${anchor.millId}.`,
+      ).toBe(404);
+      // Registered before the click: the delete is idempotent.
+      millDbCleanup.enrolments.push(anchor.millId);
+    }
     world.millAnchor = anchor;
     // Registered BEFORE the click, so a failure after it still restores the mill.
     millStatusCleanup.push(anchor);
@@ -299,7 +319,7 @@ Then(
 Then('every associated user is shown as active', async ({ millsPage, world }) => {
   const anchor = anchorOf(world);
   for (const guid of anchor.status!.activeUserGuids) {
-    await expect(millsPage.userRow(guid)).toContainText('Active');
+    await expect(millsPage.userStatusCell(guid, 'Active')).toBeVisible();
     await expect(millsPage.userDeactivateButton(guid)).toBeVisible();
   }
 });
@@ -321,6 +341,6 @@ Then('no associated user is active any more', async ({ millsPage, request, world
   const anchor = anchorOf(world);
   await expect.poll(() => activeUserGuids(request, anchor.millId)).toEqual([]);
   for (const guid of anchor.status!.activeUserGuids) {
-    await expect(millsPage.userRow(guid)).toContainText('Inactive');
+    await expect(millsPage.userStatusCell(guid, 'Inactive')).toBeVisible();
   }
 });

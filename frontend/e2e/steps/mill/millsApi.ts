@@ -1,8 +1,12 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { type APIRequestContext, expect } from '@playwright/test';
 import { MOCK_GROUPS_HEADER } from '../../pages/common/mockUser';
 import {
   type AdminMillAnchor,
   type MillContact,
+  ADMIN_MILLS_URL,
   REPORTING_YEARS_URL,
   contactOptionsUrl,
   millContextUrl,
@@ -165,17 +169,35 @@ export async function changeUserStatus(
   ).toBeOK();
 }
 
+/** The GUIDs with an ENDED assignment, sorted. */
+export async function endedUserGuids(request: APIRequestContext, millId: number): Promise<string[]> {
+  return (await readMillUsers(request, millId))
+    .filter((u) => u.status === 'ENDED')
+    .map((u) => u.userGuid)
+    .sort();
+}
+
 /**
- * Put a status anchor back: its ACT/CLS status, then every user it pins as active — in that order,
- * because the users surface refuses to activate an assignment on a closed mill
- * (`error.user.activate.millinactive`). Each step is a no-op when already at rest, so a scenario that
- * failed before its click adds no audit stamp. Users the anchor does NOT pin are never touched.
+ * Put a status anchor back, in the one order both guards allow:
+ *  1. end every user it pins as ENDED that is now active — deactivating an association has no guard,
+ *     and a mill cannot be closed while one is active (`error.mill.deactivate.hasactiveusers`);
+ *  2. its ACT/CLS status;
+ *  3. activate every user it pins as ACTIVE that is not — only possible once the mill is open
+ *     (`error.user.activate.millinactive`).
+ * Each step is a no-op when already at rest, so a scenario that failed before its click adds no audit
+ * stamp. Users the anchor does NOT pin are never touched.
  */
 export async function restoreMillStatus(
   request: APIRequestContext,
   anchor: AdminMillAnchor,
 ): Promise<void> {
   expect(anchor.status, `mill ${anchor.millId} is not a status anchor`).toBeTruthy();
+  const activeNow = new Set(await activeUserGuids(request, anchor.millId));
+  for (const guid of anchor.status!.endedUserGuids) {
+    if (activeNow.has(guid)) {
+      await changeUserStatus(request, anchor.millId, guid, 'deactivate');
+    }
+  }
   const current = await readMill(request, anchor.millId);
   if (current.millStatusCode !== anchor.statusCode) {
     // Restoring to ACT needs a mill that may have active users: activate has no guard. Restoring to
@@ -201,7 +223,80 @@ export async function restoreMillStatus(
     await activeUserGuids(request, anchor.millId),
     `mill ${anchor.millId}'s active users did not return to their at-rest set`,
   ).toEqual([...anchor.status!.activeUserGuids]);
+  expect(
+    await endedUserGuids(request, anchor.millId),
+    `mill ${anchor.millId}'s ended users did not return to their at-rest set`,
+  ).toEqual([...anchor.status!.endedUserGuids]);
 }
+
+// ---- import (S02 / S14) and the rows no endpoint removes ----
+
+/** One importable mill, as `GET /api/v1/admin/mills/importable` serves it. */
+export interface ImportableMillRecord {
+  millId: number;
+  millNumber: string;
+  millName: string;
+}
+
+export async function readImportable(
+  request: APIRequestContext,
+  millNumber: string,
+): Promise<ImportableMillRecord[]> {
+  const res = await request.get(`${ADMIN_MILLS_URL}/importable`, {
+    headers: ADMIN,
+    params: { millNumber },
+  });
+  await expect(res, `GET importable ${millNumber} -> HTTP ${res.status()}`).toBeOK();
+  return (await res.json()) as ImportableMillRecord[];
+}
+
+/** The HTTP status `GET /admin/mills/{id}` answers — 404 is "not tracked", the importable state. */
+export async function trackedStatus(request: APIRequestContext, millId: number): Promise<number> {
+  return (await request.get(millUrl(millId), { headers: ADMIN })).status();
+}
+
+const BRIDGE = fileURLToPath(new URL('../../scripts/mill_db_restore.py', import.meta.url));
+
+/** The reproducible venv first (`npm run setup:python`), as schedule1DbRestore.ts does. */
+function resolvePython(): string {
+  if (process.env.PYTHON) return process.env.PYTHON;
+  const venvPosix = fileURLToPath(new URL('../../scripts/.venv/bin/python', import.meta.url));
+  const venvWin = fileURLToPath(new URL('../../scripts/.venv/Scripts/python.exe', import.meta.url));
+  if (existsSync(venvPosix)) return venvPosix;
+  if (existsSync(venvWin)) return venvWin;
+  return 'python';
+}
+
+/**
+ * The DB-level undo for the two writes no endpoint removes (scripts/mill_db_restore.py, guarded to
+ * the dedicated mills). Synchronous and throwing, so a cleanup failure fails loud.
+ */
+export const forgetImport = (millId: number): void => {
+  execFileSync(resolvePython(), [BRIDGE, 'forget-import', String(millId)], { stdio: 'pipe' });
+};
+
+export const forgetEnrolment = (millId: number): void => {
+  execFileSync(resolvePython(), [BRIDGE, 'forget-enrolment', String(millId)], { stdio: 'pipe' });
+};
+
+/**
+ * The HTTP status the working context answers for a (mill, year): 200 when the mill has that year's
+ * report-status row, 404 ("Mill or Reporting Year not found.") when it has none. It cannot see the
+ * category rows, which is why a PARTIAL set reads 200 here and is told apart only by activate itself.
+ */
+export async function millContextStatus(
+  request: APIRequestContext,
+  millId: number,
+  year: number,
+): Promise<number> {
+  return (await request.get(millContextUrl(millId, year), { headers: ADMIN })).status();
+}
+
+export const dropAssociation = (millId: number, userGuid: string): void => {
+  execFileSync(resolvePython(), [BRIDGE, 'drop-association', String(millId), userGuid], {
+    stdio: 'pipe',
+  });
+};
 
 /** The current reporting year — the highest opened one, which is the year activate enrols. */
 export async function currentReportingYear(request: APIRequestContext): Promise<number> {

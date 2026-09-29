@@ -1,7 +1,16 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN_MILL_ANCHORS } from '../fixtures/mill/mills-test-data';
+import {
+  ADD_NEW_USER_MILL,
+  ADMIN_MILL_ANCHORS,
+  IMPORT_MILL,
+  NEW_ACCOUNT_GUID,
+} from '../fixtures/mill/mills-test-data';
 import {
   activeUserGuids,
+  endedUserGuids,
+  millContextStatus,
+  readImportable,
+  trackedStatus,
   atRest,
   currentReportingYear,
   readContactOptions,
@@ -60,11 +69,28 @@ for (const anchor of ADMIN_MILL_ANCHORS) {
         + 'on the Mills page; if a patch associated a user, it must skip the E2E_SEED_MILLSTAT sentinel '
         + '(real-test-data-patches/common/mock-submitter-associations.sql).',
     ).toEqual([...anchor.status.activeUserGuids]);
+    expect(
+      await endedUserGuids(request, anchor.millId),
+      `mill ${anchor.millId}'s ENDED user assignments moved. A run that died mid-scenario leaves an `
+        + 'S09/S13 user active: deactivate it on the Mills page (on the S13 mill, before closing it).',
+    ).toEqual([...anchor.status.endedUserGuids]);
 
     // And its current-year report set must exist, or `activate` ENROLS the mill — rows no endpoint
     // removes, so the cleanup could never put the database back. The status row is what the working
     // context reports; the eleven category rows travel with it in the patch and the seed.
     const year = await currentReportingYear(request);
+    if (anchor.currentYearRecords === 'none') {
+      // GAP-6's enrol mill is defined by having NO records: a run that died before its DB cleanup
+      // leaves it enrolled, and its activate would then write the status alone and prove nothing.
+      expect(
+        await millContextStatus(request, anchor.millId, year),
+        `mill ${anchor.millId} has ${year} report records but is pinned as having none — run `
+          + `scripts/mill_db_restore.py forget-enrolment ${anchor.millId}.`,
+      ).toBe(404);
+      return;
+    }
+    // Complete AND partial both carry the status row (the context cannot see the category rows; the
+    // parity gate checks those in the seed, and GAP-6's partial scenario proves the refusal itself).
     const context = await readMillContext(request, anchor.millId, year);
     expect(
       context.schedules1To10Status,
@@ -75,3 +101,25 @@ for (const anchor of ADMIN_MILL_ANCHORS) {
     ).toBeTruthy();
   });
 }
+
+test(`GAP-7's user ${NEW_ACCOUNT_GUID} has no association anywhere (so the add provisions its account)`, async ({ request }) => {
+  // No endpoint lists accounts, so "no account" is read as "no association on the mill it is added
+  // to"; the parity gate checks the seed carries no ILCR_USER row for it at all.
+  expect(await activeUserGuids(request, ADD_NEW_USER_MILL.millId)).toEqual([]);
+  expect(await endedUserGuids(request, ADD_NEW_USER_MILL.millId)).toEqual([]);
+});
+
+test(`import mill ${IMPORT_MILL.millId} (${IMPORT_MILL.millNumber} - ${IMPORT_MILL.millName}) is importable and not tracked`, async ({ request }) => {
+  // S02/S14 import it. A run that died between the import and its cleanup leaves it tracked, and the
+  // importable search would then (correctly) list nothing.
+  expect(
+    await trackedStatus(request, IMPORT_MILL.millId),
+    `mill ${IMPORT_MILL.millId} is tracked — a previous import was not cleaned up. Run `
+      + `scripts/mill_db_restore.py forget-import ${IMPORT_MILL.millId}.`,
+  ).toBe(404);
+  expect(
+    await readImportable(request, IMPORT_MILL.millNumber),
+    `mill ${IMPORT_MILL.millId} is not offered for import. In CI this means R__80 lost its THE.MILL row; `
+      + 'locally, real-test-data-patches/mill/mill-status-anchors.sql is not applied.',
+  ).toContainEqual(IMPORT_MILL);
+});

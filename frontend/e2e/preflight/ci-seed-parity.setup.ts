@@ -9,7 +9,12 @@ import {
   scanAnchorKeys,
   type AnchorKey,
 } from './anchor-keys';
-import { ADMIN_MILL_ANCHORS } from '../fixtures/mill/mills-test-data';
+import {
+  ADMIN_MILL_ANCHORS,
+  IMPORT_MILL,
+  NEW_ACCOUNT_GUID,
+  S05_LICENSEE_GUID,
+} from '../fixtures/mill/mills-test-data';
 
 /**
  * PREFLIGHT — the CI seed carries every anchor the fixtures pin.
@@ -850,9 +855,10 @@ test('seed parity: every mill-administration anchor is seeded with its location,
     for (const anchor of statusAnchors) {
       const at = `status anchor ${anchor.millId} (${anchor.millNumber} - ${anchor.millName})`;
       const pinnedActive = [...anchor.status!.activeUserGuids];
-      if (!reportStatus.has(`${anchor.millId}/${currentYear}`)) {
-        problems.push(`${at}: no ILCR_MILL_REPORT_STATUS row for the current year ${currentYear}`);
-      }
+      // The record STATE is the fixture: complete (status row + 11 categories) for every status anchor
+      // but GAP-6's two, which are pinned as none and partial (the status row alone).
+      const records = anchor.currentYearRecords ?? 'complete';
+      const hasStatus = reportStatus.has(`${anchor.millId}/${currentYear}`);
       const cats = new Set(
         categories
           .filter(
@@ -860,10 +866,12 @@ test('seed parity: every mill-administration anchor is seeded with its location,
           )
           .map((c) => c.ILCR_CATEGORY_ID),
       );
-      if (cats.size !== 11) {
+      const expected = { complete: [true, 11], partial: [true, 0], none: [false, 0] }[records];
+      if (hasStatus !== expected[0] || cats.size !== expected[1]) {
         problems.push(
-          `${at}: ${cats.size} of 11 ILCR_REPORT_CATEGORY rows for ${currentYear} — activate reads a `
-            + 'partial set as a 409',
+          `${at}: pinned as ${records} for ${currentYear}, but the seed has `
+            + `${hasStatus ? 'a' : 'no'} ILCR_MILL_REPORT_STATUS row and ${cats.size} of 11 `
+            + 'ILCR_REPORT_CATEGORY rows — activate branches on exactly this',
         );
       }
       const active = assignments
@@ -875,7 +883,17 @@ test('seed parity: every mill-administration anchor is seeded with its location,
           `${at}: active assignments are [${active.join(', ')}], expected [${pinnedActive.join(', ')}]`,
         );
       }
-      for (const guid of pinnedActive) {
+      const pinnedEnded = [...anchor.status!.endedUserGuids];
+      const ended = assignments
+        .filter((u) => u.ILCR_MILL_ID === String(anchor.millId) && u.INACTIVE_DATE)
+        .map((u) => u.USER_GUID!)
+        .sort();
+      if (JSON.stringify(ended) !== JSON.stringify(pinnedEnded)) {
+        problems.push(
+          `${at}: ended assignments are [${ended.join(', ')}], expected [${pinnedEnded.join(', ')}]`,
+        );
+      }
+      for (const guid of [...pinnedActive, ...pinnedEnded]) {
         if (!users.has(guid)) problems.push(`${at}: no ILCR_USER row for ${guid}`);
       }
       if (xrefs.get(String(anchor.millId))?.ENTRY_USERID === 'E2E_SEED') {
@@ -885,6 +903,34 @@ test('seed parity: every mill-administration anchor is seeded with its location,
         );
       }
     }
+
+    // S05 adds a user whose ACCOUNT must already exist (so the add writes one association row, which
+    // is all its cleanup deletes) and who must be associated with NOTHING.
+    if (!users.has(S05_LICENSEE_GUID)) problems.push(`S05: no ILCR_USER row for ${S05_LICENSEE_GUID}`);
+    const s05Pairs = assignments.filter((u) => u.USER_GUID === S05_LICENSEE_GUID);
+    if (s05Pairs.length > 0) {
+      problems.push(`S05: ${S05_LICENSEE_GUID} is already associated with mill(s) ${s05Pairs.map((u) => u.ILCR_MILL_ID).join(', ')}`);
+    }
+    // GAP-7 is the opposite: its user must have NO account, or the add never provisions one.
+    if (users.has(NEW_ACCOUNT_GUID)) {
+      problems.push(`GAP-7: ${NEW_ACCOUNT_GUID} has an ILCR_USER row, so the add would not provision it`);
+    }
+    if (assignments.some((u) => u.USER_GUID === NEW_ACCOUNT_GUID)) {
+      problems.push(`GAP-7: ${NEW_ACCOUNT_GUID} is already associated with a mill`);
+    }
+  }
+
+  // The import mill is the one anchor defined by what it LACKS: a THE.MILL row, and no ILCR tracking at
+  // all. Seeding its xref would make it unimportable, and S02/S14 would find nothing to import.
+  const importAt = `import mill ${IMPORT_MILL.millId} (${IMPORT_MILL.millNumber} - ${IMPORT_MILL.millName})`;
+  const importMill = mills.get(String(IMPORT_MILL.millId));
+  if (!importMill) {
+    problems.push(`${importAt}: no THE.MILL row`);
+  } else if (importMill.MILL_NUMBER !== IMPORT_MILL.millNumber || importMill.MILL_NAME !== IMPORT_MILL.millName) {
+    problems.push(`${importAt}: THE.MILL reads ${importMill.MILL_NUMBER} - ${importMill.MILL_NAME}`);
+  }
+  if (xrefs.has(String(IMPORT_MILL.millId))) {
+    problems.push(`${importAt}: has an ILCR_MILL_STATUS_XREF row, so it is tracked and cannot be imported`);
   }
 
   expect(

@@ -2,7 +2,13 @@ import { test as base } from 'playwright-bdd';
 
 import { MillsPage } from '../../pages/mill/millsPage';
 import { type AdminMillAnchor } from '../../fixtures/mill/mills-test-data';
-import { restoreMillContacts, restoreMillStatus } from '../mill/millsApi';
+import {
+  dropAssociation,
+  forgetEnrolment,
+  forgetImport,
+  restoreMillContacts,
+  restoreMillStatus,
+} from '../mill/millsApi';
 
 /**
  * Mill administration (mill) fixtures — page object and cleanup registry owned by UC-MILL-001. Nothing
@@ -32,6 +38,23 @@ export type MillFixtures = {
    * is a no-op; fails loud on residue.
    */
   millStatusCleanup: AdminMillAnchor[];
+  /**
+   * Cleanup registry for the two writes NO endpoint undoes, put back at the DB through
+   * scripts/mill_db_restore.py (guarded to the dedicated seeded mills):
+   *  - `imports`: mill ids a scenario may IMPORT (S02 / S14) — their xref and current-year records
+   *    are deleted, returning the mill to importable;
+   *  - `enrolments`: mill ids a scenario may ACTIVATE while they have no current-year records (GAP-6)
+   *    — the report rows the activation enrols are deleted;
+   *  - `associations`: (mill, user) pairs a scenario may ADD (S05, GAP-7) — that association row is
+   *    deleted, and the account too when the add provisioned it.
+   * Register before the click, as above; both deletes are idempotent, so a scenario that failed first
+   * costs nothing. Fails loud.
+   */
+  millDbCleanup: {
+    imports: number[];
+    enrolments: number[];
+    associations: { millId: number; userGuid: string }[];
+  };
 };
 
 export const millTest = base.extend<MillFixtures>({
@@ -78,6 +101,48 @@ export const millTest = base.extend<MillFixtures>({
         '[cleanup] mill status / user assignments not restored — the seeded DB is left mutated: '
           + `${residue.join('; ')}. Put it back before re-running (preflight/mill-anchors.setup.ts `
           + 'will name the mill).',
+      );
+    }
+  },
+
+  // Depends on millStatusCleanup ONLY for ordering: Playwright tears a fixture down before the ones it
+  // depends on, so the DB deletes run FIRST. That matters for S05 — the status restore verifies the
+  // mill's association set, and the added row must already be gone when it looks.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  millDbCleanup: async ({ millStatusCleanup }, use) => {
+    const registrations = {
+      imports: [] as number[],
+      enrolments: [] as number[],
+      associations: [] as { millId: number; userGuid: string }[],
+    };
+    await use(registrations);
+
+    const residue: string[] = [];
+    for (const millId of registrations.imports) {
+      try {
+        forgetImport(millId);
+      } catch (err) {
+        residue.push(`import of ${millId}: ${(err as Error).message}`);
+      }
+    }
+    for (const millId of registrations.enrolments) {
+      try {
+        forgetEnrolment(millId);
+      } catch (err) {
+        residue.push(`enrolment of ${millId}: ${(err as Error).message}`);
+      }
+    }
+    for (const { millId, userGuid } of registrations.associations) {
+      try {
+        dropAssociation(millId, userGuid);
+      } catch (err) {
+        residue.push(`association ${millId}/${userGuid}: ${(err as Error).message}`);
+      }
+    }
+    if (residue.length > 0) {
+      throw new Error(
+        `[cleanup] mill DB restore failed — the seeded DB is left mutated: ${residue.join('; ')}. `
+          + 'Run scripts/mill_db_restore.py by hand (its docstring names both actions).',
       );
     }
   },
