@@ -225,6 +225,38 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     expect(putCalled).toBe(false)
   })
 
+  test('an invalid edit in ANOTHER row does not block Remove, and is not saved (legacy Delete submits only itself)', async () => {
+    // Legacy's per-row Delete is process="@this": the other rows' inputs are not submitted, so a bad
+    // value typed into one of them neither blocks the delete nor reaches the database. The row is
+    // written as last stored, and the grid is re-read from the server afterwards.
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...doc,
+          count: 1,
+          rows: [{ id: 5052, description: 'Existing Row B', cost: null, perUnit: null }],
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+    render(<OtherCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Existing Row B')
+    await user.clear(within(rowOf('Existing Row B')).getByLabelText('Edit description'))
+    await user.click(within(rowOf('Existing Row A')).getByRole('button', { name: /^remove$/i }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(captured).toEqual({ rows: [{ id: 5052, description: 'Existing Row B', cost: null }] })
+    // Re-seeded from the server: the blanked description is back to its stored value.
+    expect(screen.getByDisplayValue('Existing Row B')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Existing Row A')).not.toBeInTheDocument()
+  })
+
   test('Remove answered Yes deletes at once (legacy): PUT with intent=delete + the deleted message', async () => {
     let captured: unknown = null
     let intent: string | null = null

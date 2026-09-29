@@ -237,6 +237,9 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     }
     if (Object.keys(errs).length > 0) {
       setRowErrors(errs)
+      // Nothing is sent, so a caller that already changed local state (Remove) must undo it — else
+      // the row vanishes from the grid while it is still stored.
+      rollback?.()
       return
     }
     setRowErrors({})
@@ -327,7 +330,21 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     // position, into whatever the grid holds by then: the row inputs stay live during the request,
     // so replacing the whole array from this closure would discard edits made to other rows in the
     // meantime (SScholefield, #506). A failed Save/Add keeps the entered values on screen already.
-    persist(next, 'delete', () =>
+    //
+    // Legacy's Delete submits only itself (process="@this" on all three pages), so an invalid edit in
+    // ANOTHER row neither blocks it nor reaches the database: legacy refused that value when it was
+    // typed, and the delete wrote the row as last stored. So such a row is sent with its saved values
+    // (and one never saved is left out); success then re-seeds the grid from the server, as legacy
+    // re-read the schedule after update().
+    const savedById = new Map(data ? rowsFromDoc(data).map((r) => [r.id, r]) : [])
+    const toSend = next.flatMap((r) => {
+      if (!hasErrors(validate(r.description, r.values))) {
+        return [r]
+      }
+      const saved = r.id === null ? undefined : savedById.get(r.id)
+      return saved ? [{ ...r, description: saved.description, values: saved.values }] : []
+    })
+    persist(toSend, 'delete', () =>
       setRows((current) =>
         current.some((r) => r.key === key)
           ? current
