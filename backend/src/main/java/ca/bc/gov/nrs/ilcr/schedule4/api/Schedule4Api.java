@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule4.api;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
@@ -150,17 +151,28 @@ public interface Schedule4Api {
 
   /**
    * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year —
-   * read-only (AD-5), mutates nothing, no request body (Story 4.4, S28–S31). Returns 200 with a
-   * per-location breakdown: {@code outcome = "MET"} only when every location's in-scope Costs are
-   * present, else {@code "ISSUES"} with per-field {@code Value Required} findings. Same
-   * no-summary-required context guards as the read: 400 / 404 / 409 / 403 ({@code VIEW_SCHEDULE}).
+   * read-only (AD-5), mutates nothing (Story 4.4, S28–S31). Returns 200 with a per-location
+   * breakdown: {@code outcome = "MET"} only when every location passes (the one live rule is a
+   * non-blank location name, #465), else {@code "ISSUES"} with per-field {@code Value Required}
+   * findings. Same no-summary-required context guards as the read: 400 / 404 / 409 / 403 ({@code
+   * VIEW_SCHEDULE}).
+   *
+   * <p>{@code request} carries the location panel currently ON SCREEN, if one is open (#359): it is
+   * overlaid onto the stored locations by id (an unsaved rename applies), and a panel with no id (a
+   * new or copied location) is evaluated as an extra location. A null {@code location} evaluates
+   * the stored locations alone. The body is REQUIRED — an absent one is a clean 400 — but its
+   * members are unvalidated, because reporting missing values is the check's whole job.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param request the open location panel, if any
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
    * @return 200 with the {@link Schedule4CheckStatusResponse} (outcome + per-location results)
    */
   @PostMapping("/check-status")
   ResponseEntity<Schedule4CheckStatusResponse> checkStatus(
-      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule4CheckRequest request,
+      Authentication authentication);
 }

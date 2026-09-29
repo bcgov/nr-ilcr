@@ -979,3 +979,370 @@ describe('Schedule9 — detail-less error fallbacks (#332)', () => {
     expect(screen.getAllByRole('button', { name: 'Check Status' })[0]).toBeEnabled()
   })
 })
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B — Check Status evaluates the SCREEN, not the saved record.
+// ---------------------------------------------------------------------------------------------------
+
+// Every error banner's subtitle, in render order — the validation banner is one line per failing field.
+const errorBannerLines = () =>
+  Array.from(
+    document.querySelectorAll(
+      '.cds--inline-notification--error .cds--inline-notification__subtitle',
+    ),
+  ).map((node) => node.textContent)
+
+const checkStatusButton = () => screen.getAllByRole('button', { name: 'Check Status' })[0]
+
+const MET_RESPONSE = {
+  requirementsMet: true,
+  errors: [],
+  requirementsMetMessage: {
+    key: 'scheduleRequirementsMetMsg',
+    text: 'All requirements for this schedule have been met',
+  },
+}
+
+const recordAt = (
+  id: number,
+  overrides: Partial<ContractualWorkRecord> = {},
+): ContractualWorkRecord => ({ ...record108, id, contractorId: `CTR-${String(id)}`, ...overrides })
+
+// The check entry a served, untouched `record108`-shaped record produces.
+const servedEntry = (contractorId: string) => ({
+  contractorId,
+  contractualItemCode: 108,
+  sideSlopePct: null,
+  numberOfUnits: 12.5,
+  unitCode: 'M3',
+  biogeoclimaticZone: 'BZ1',
+  cost: 5000,
+  sourceCode: 'A',
+})
+
+describe('Schedule9 Check Status evaluates the screen (#359 group B)', () => {
+  test('the body carries EVERY record as on screen, in order — blank → null, typed 0 stays 0, other pages included, no Add draft', async () => {
+    const records = Array.from({ length: 7 }, (_, index) => recordAt(9101 + index))
+    let body: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ records }))),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    // Row 1 (page 1): units cleared (optional at Save), cost typed 0.
+    await user.clear(recordPanel(9101).getByLabelText('Number of Units'))
+    const cost = recordPanel(9101).getByLabelText('Cost')
+    await user.clear(cost)
+    await user.type(cost, '0')
+
+    // Row 6 (page 2): an edit made on another paginator page.
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await openRecord(user, 9106)
+    const cost6 = recordPanel(9106).getByLabelText('Cost')
+    await user.clear(cost6)
+    await user.type(cost6, '321')
+    await user.click(screen.getByRole('button', { name: /previous page/i }))
+
+    // An Add draft on screen is never part of the check (Add saves at once in legacy).
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(addPanel().getByLabelText('Company ID'), 'CTR-DRAFT')
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    expect(body).toEqual({
+      records: [
+        { ...servedEntry('CTR-9101'), numberOfUnits: null, cost: 0 },
+        servedEntry('CTR-9102'),
+        servedEntry('CTR-9103'),
+        servedEntry('CTR-9104'),
+        servedEntry('CTR-9105'),
+        { ...servedEntry('CTR-9106'), cost: 321 },
+        servedEntry('CTR-9107'),
+      ],
+    })
+  })
+
+  test('an item switched to a road item with a blank side slope sends the item and a null slope', async () => {
+    let body: { records: Record<string, unknown>[] } | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as { records: Record<string, unknown>[] }
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.click(recordPanel(9101).getByRole('combobox', { name: /Contractual Item/i }))
+    await user.click(
+      await recordPanel(9101).findByRole('option', { name: 'Semi-permanent Road Deactivation' }),
+    )
+    await user.click(checkStatusButton())
+    await screen.findByText('All requirements for this schedule have been met')
+
+    expect(body).toEqual({
+      records: [{ ...servedEntry('CTR-001'), contractualItemCode: 111, sideSlopePct: null }],
+    })
+  })
+
+  test("Check Status is gated on Save's validator over EVERY record: no request, the banner names each field verbatim, inline Value Required stays", async () => {
+    const records = [recordAt(9101), recordAt(9102, { source: null, biogeoclimaticZone: null })]
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ records }))),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    // Row 1: the company cleared, and an out-of-range cost. Row 2 holds a stored null zone + source.
+    await user.clear(recordPanel(9101).getByLabelText('Company ID'))
+    const cost = recordPanel(9101).getByLabelText('Cost')
+    await user.clear(cost)
+    await user.type(cost, '10000000')
+
+    await user.click(checkStatusButton())
+
+    // Rows numbered by position (legacy's `rowNumber`), fields in screen order, legacy's words.
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Id: 1 - Company: Value is required.',
+        // A row's range line carries legacy's `validatorMessage` prefix (`schedule9.xhtml:641`).
+        'Id: 1 - Entered cost must be between 0 and 9,999,999.',
+        'Id: 2 - Biogeoclimatic Zone: Value is required.',
+        'Id: 2 - Source: Value is required.',
+      ])
+    })
+    expect(posts).toBe(0)
+    expect(recordPanel(9101).getByText('Value Required')).toBeInTheDocument()
+    await openRecord(user, 9102)
+    expect(recordPanel(9102).getAllByText('Value Required')).toHaveLength(2)
+  })
+
+  test("a row's Save names that row's failing fields verbatim in the banner; inline Value Required stays", async () => {
+    let puts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ records: [recordAt(9101), recordAt(9102)] }))),
+      http.put(`${RECORDS_URL}/9102`, () => {
+        puts += 1
+        return HttpResponse.json(doc())
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9102)
+
+    await user.clear(recordPanel(9102).getByLabelText('Company ID'))
+    await user.click(recordPanel(9102).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 2 - Company: Value is required.'])
+    })
+    expect(puts).toBe(0)
+    expect(recordPanel(9102).getByText('Value Required')).toBeInTheDocument()
+
+    // Check Status over the same screen reports the same line.
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 2 - Company: Value is required.'])
+    })
+  })
+
+  test('editing a row after a check clears the shown verdict', async () => {
+    server.use(http.post(CHECK_URL, () => HttpResponse.json(MET_RESPONSE)))
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    await user.type(recordPanel(9101).getByLabelText('Cost'), '1')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a check in flight locks every checked editor, so no edit can outrun its verdict', async () => {
+    // The snapshot guard (`checkSnapshotVersionRef`) drops a response for superseded values; on this
+    // page the editors are ALSO disabled for the whole request (`controlsDisabled` covers `saving`),
+    // so no edit can reach the screen before the verdict does.
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(checkStatusButton()).toBeDisabled()
+    })
+    expect(recordPanel(9101).getByLabelText('Cost')).toBeDisabled()
+    expect(recordPanel(9101).getByLabelText('Company ID')).toBeDisabled()
+
+    releaseCheck()
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B change log — per-field validation ON CHANGE, and the ACCUMULATING banner.
+// ---------------------------------------------------------------------------------------------------
+
+describe('Schedule9 per-field validation on change (#359 group B change log)', () => {
+  test('a required field changed to blank and left turns red, shows inline Value Required and adds its banner line', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.clear(recordPanel(9101).getByLabelText('Company ID'))
+    expect(errorBannerLines()).toEqual([])
+    await user.tab()
+
+    expect(errorBannerLines()).toEqual(['Id: 1 - Company: Value is required.'])
+    expect(recordPanel(9101).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('lines ACCUMULATE in page order (row 2 range line prefixed); fixing one removes only its line', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ records: [recordAt(9101), recordAt(9102)] }))),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+    await openRecord(user, 9102)
+
+    const units2 = recordPanel(9102).getByLabelText('Number of Units')
+    await user.clear(units2)
+    await user.type(units2, '100000')
+    await user.tab()
+    await user.clear(recordPanel(9101).getByLabelText('Company ID'))
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Company: Value is required.',
+      // A row's range line carries legacy's validatorMessage prefix (schedule9.xhtml:533).
+      'Id: 2 - Entered number of units must be between 0.0 and 99,999.9.',
+    ])
+    // Inline stays the bundle text, unprefixed.
+    expect(
+      recordPanel(9102).getByText('Entered number of units must be between 0.0 and 99,999.9.'),
+    ).toBeInTheDocument()
+
+    await user.type(recordPanel(9101).getByLabelText('Company ID'), 'CTR-9')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 2 - Entered number of units must be between 0.0 and 99,999.9.',
+    ])
+    expect(recordPanel(9101).queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('focusing and leaving without a change validates nothing; untouched fields wait for Check Status, which replaces the banner', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ records: [recordAt(9101, { source: null })] }))),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+
+    await user.click(recordPanel(9101).getByLabelText('Cost'))
+    await user.tab()
+    const units = recordPanel(9101).getByLabelText('Number of Units')
+    await user.clear(units)
+    await user.type(units, '100000')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Entered number of units must be between 0.0 and 99,999.9.',
+    ])
+
+    // Check Status judges everything and REPLACES the banner with the full list.
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Id: 1 - Entered number of units must be between 0.0 and 99,999.9.',
+        'Id: 1 - Source: Value is required.',
+      ])
+    })
+  })
+
+  test('a select switched off a road item clears the side slope AND its line (the dependent is re-judged)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            records: [
+              recordAt(9101, {
+                contractualItem: { code: '111', description: 'Semi-permanent Road Deactivation' },
+                sideSlopePct: 50,
+              }),
+            ],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+    const slope = recordPanel(9101).getByLabelText('Side Slope (%)')
+    await user.clear(slope)
+    await user.type(slope, '101')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Side slope (%): percentage must be between 0 and 100.',
+    ])
+
+    await user.click(recordPanel(9101).getByRole('combobox', { name: /Contractual Item/i }))
+    await user.click(await recordPanel(9101).findByRole('option', { name: 'Cattleguard' }))
+    expect(errorBannerLines()).toEqual([])
+  })
+})
+
+describe('Schedule9: a red field stays red while typing (#359 group B change log)', () => {
+  test('typing into a red field keeps box and line; leaving it with a valid value clears both together', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openRecord(user, 9101)
+    const company = recordPanel(9101).getByLabelText('Company ID')
+    await user.clear(company)
+    await user.tab()
+    expect(errorBannerLines()).toEqual(['Id: 1 - Company: Value is required.'])
+    expect(company).toHaveAttribute('aria-invalid', 'true')
+
+    await user.type(company, 'CTR-9')
+    // Still red, still inline, still in the banner — nothing is re-judged mid-typing.
+    expect(company).toHaveAttribute('aria-invalid', 'true')
+    expect(recordPanel(9101).getByText('Value Required')).toBeInTheDocument()
+    expect(errorBannerLines()).toEqual(['Id: 1 - Company: Value is required.'])
+
+    await user.tab()
+    expect(company).not.toHaveAttribute('aria-invalid', 'true')
+    expect(recordPanel(9101).queryByText('Value Required')).not.toBeInTheDocument()
+    expect(errorBannerLines()).toEqual([])
+  })
+})

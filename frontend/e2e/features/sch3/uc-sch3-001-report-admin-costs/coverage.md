@@ -127,7 +127,8 @@ suite's pre-existing `@S12`. One command runs them all: `npm test -- --grep @che
 them red. sch1 ×2, sch2 ×2 and sch3 ×3 went green unedited with #359 group A and were untagged. sch5 ×3 went
 green with #476. sch11 ×2 were re-grounded green by Story 26.2 under Scho's ruling D7(a): Schedule 11 keeps
 judging the saved data and greys Check Status while anything is unsaved (sch11 DIV-5 CLOSED as a recorded
-deviation). sch4's pair was retired under #465. The "ten" above is the historical count.
+deviation). sch4's pair was retired under #465 and re-authored 2026-09-28 as two green scenarios by #359
+group B (sch4 DIV-8). The "ten" above is the historical count.
 Ex-**GAP-4** tracked the missing nine and was CLOSED 2026-08-27 by writing them.
 
 ## Story AC traceability — bcgov/nr-ilcr#83 (Story 28.3, epic #226)

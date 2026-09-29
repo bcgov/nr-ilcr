@@ -171,9 +171,16 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
   'check-distance': at(MILL_7777, 24050, 2019, 'S29 (re-grounded) — Distance is not enforced'),
   'check-comments': at(MILL_7777, 24050, 2020, 'S30 (re-grounded) — Comments are a soft gate'),
   // RELEASED 2026-09-18 (#465): `check-issue-label` (24050/2021, ex-DIV-2 / #326) — there is no finding
-  // left to label; and `check-unsaved` (9050/2015, S33/S34 / DIV-8 / #359) — nothing saved can be flagged,
-  // so the unsaved-panel arms have no Schedule 4 instance. 9050/2015 is a SEEDED Draft
-  // (`real-test-data-patches/sch4/unsaved-check-anchors.sql`); its teardown may now be applied.
+  // left to label.
+  //
+  // RE-CLAIMED 2026-09-28 (#359 group B): `check-unsaved` — Check Status runs the open panel's field
+  // validation over its ON-SCREEN values before checking, so an unsaved Distance-only entry on a SAVED
+  // location is a Schedule 4 instance of the unsaved-panel case again (S33/S34, DIV-8). SEEDED, not
+  // discovered: `real-test-data-patches/sch4/unsaved-check-anchors.sql` adds the Draft status row (and
+  // the CI seed carries the same row), because no free Draft mill-year was left in the extract. Only
+  // the saved-location scenario writes here (its Given, through the API); nothing the scenario does on
+  // screen is ever saved.
+  'check-unsaved': at(MILL_760, 9050, 2015, 'S33/S34 — Check Status validates an unsaved panel entry (#359)'),
 
   // --- the unsaved-change / recompute divergences ---------------------------------------------------
   // DIV-3 (#324) is FIXED (2026-09-22); these three are ordinary NAV-001 regression guards now.
@@ -539,8 +546,6 @@ export const CLIENT = {
   nameEmpty: 'Location Name can not be empty. Please enter a description.',
   /** BR-04's inline marker on whichever of Distance/Volume/Cost is missing. */
   valueRequired: 'Value Required',
-  /** The advisory gate that blocks a doomed Save round-trip when a field is invalid. */
-  correctBeforeSaving: 'Please correct the highlighted fields before saving.',
   /** EF2-001 — the mill/year suppression banner. */
   millYearNotSelected: 'Please Select Mill and Reporting Year in the Home Page.',
   millYearNotSelectedTitle: 'Mill and Reporting Year required',

@@ -337,6 +337,24 @@ class Schedule4WriteIT extends AbstractOracleIT {
         body(8001, revisionOf(8001), "Existing Dump", cat(47, 200, 8000, null)), "Value Required");
   }
 
+  @Test
+  @DisplayName(
+      "BR-04 all-or-nothing — volume ONLY -> 400 Value Required (distance AND cost missing)")
+  void put_volumeOnly_returns400() throws Exception {
+    // The legacy fix (BA decision, 2026-09-29): a Volume alone now fails on the Cost as well as the
+    // Distance; the per-field list is pinned by DistanceCategoryCompleteValidatorTest.
+    expect400Contains(
+        body(8001, revisionOf(8001), "Existing Dump", cat(47, 200, null, null)), "Value Required");
+  }
+
+  @Test
+  @DisplayName(
+      "BR-04 all-or-nothing — cost ONLY -> 400 Value Required (distance AND volume missing)")
+  void put_costOnly_returns400() throws Exception {
+    expect400Contains(
+        body(8001, revisionOf(8001), "Existing Dump", cat(47, null, 8000, null)), "Value Required");
+  }
+
   private void expect400(String requestBody, String verbatimDetail) throws Exception {
     int before = revisionOf(8001);
     mockMvc

@@ -88,6 +88,11 @@ type Props = {
   // than on change so inserting a separator mid-word cannot move the caret while typing.
   readonly onGroup: (key: CostField) => void
   /**
+   * Leaving a text field (or the comments) — the row's per-field "change" validation (#359 group B
+   * change log). Absent on the Add panel, which keeps validating on Add only.
+   */
+  readonly onCommit?: (key: keyof BridgeFormValues) => void
+  /**
    * The Licensee's submitted values for this bridge (Story 16.2, BR-04) — undefined on the Add
    * panel, null at Draft.
    */
@@ -103,6 +108,7 @@ const BridgeFields: FC<Props> = ({
   totals,
   onChange,
   onGroup,
+  onCommit,
   originals,
 }) => {
   // Legacy rendered 23 indicators on a bridge — thirteen attributes plus ten costs
@@ -148,6 +154,10 @@ const BridgeFields: FC<Props> = ({
           invalidText={errors[field]}
           onChange={(event) => onChange(field, event.target.value)}
           {...inputProps}
+          onBlur={() => {
+            inputProps.onBlur?.()
+            onCommit?.(field)
+          }}
         />
         {indicator(
           field,
@@ -314,6 +324,7 @@ const BridgeFields: FC<Props> = ({
               invalid={Boolean(errors.comments)}
               invalidText={errors.comments}
               onChange={(event) => onChange('comments', event.target.value)}
+              onBlur={() => onCommit?.('comments')}
             />
           </div>
           <div className="schedule-7a__cost-secondary" data-area="og">

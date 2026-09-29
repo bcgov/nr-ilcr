@@ -6,6 +6,7 @@ import { escapeRegExp } from '../common/urlMatch';
 import {
   ACTION,
   CATEGORY_CODE_BY_LABEL,
+  CLIENT,
   FIELD_ID,
   MILL_YEAR_STORAGE_KEY,
   MODAL,
@@ -517,6 +518,18 @@ export class Schedule4Page {
    */
   notification(text: string): Locator {
     return this.page.getByRole('status').filter({ hasText: text });
+  }
+
+  /**
+   * The error banner's lines, in render order — each "Action failed" notification's subtitle. When the
+   * client-side validation blocks Save or Check Status, the banner lists one legacy line per failing
+   * field (#359 group B), so this is how a scenario reads that list exactly, order included.
+   */
+  async errorBannerLines(): Promise<string[]> {
+    const banners = this.page.getByRole('status').filter({ hasText: CLIENT.titleActionFailed });
+    return (await banners.locator('.cds--inline-notification__subtitle').allInnerTexts()).map(
+      (text) => text.replace(/\s+/g, ' ').trim(),
+    );
   }
 
   /** Every Check Status notification currently rendered, as its visible text. */
