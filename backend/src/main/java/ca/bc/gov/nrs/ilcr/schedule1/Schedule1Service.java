@@ -502,6 +502,8 @@ public class Schedule1Service {
                         r.id(),
                         r.description(),
                         r.cost(),
+                        // The row's own volume; read by the Data Extract only.
+                        r.volume(),
                         // Per-row $/m³ uses the shared volume (BR-06), matching legacy
                         // otherCostItemCal.
                         perUnit(

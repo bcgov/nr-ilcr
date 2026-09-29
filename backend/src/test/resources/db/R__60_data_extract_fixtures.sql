@@ -161,6 +161,16 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
   VALUES (9004, 1300, 19, 5000, 3000, 'Extract Other Cost', 'SEED');
 
+-- Mill 761's Schedule 1 Other Costs: itemized item-19 rows and NO null-description shared row --
+-- the seeded mill 7777 / 2015 shape. Legacy's extract printed each row's own VOLUME and
+-- cost/volume (Schedule1OtherExtract.java:77, :79), so the shared lookup coming back empty must
+-- not blank them. Two DIFFERENT volumes, so a section repeating one figure is caught:
+-- 25000 / 175000 -> 0.14, 26250 / 125000 -> 0.21; Total: 300,000.00 / 51,250 / 0.17.
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9005, 1310, 19, 175000, 25000, 'Extract Own Volume A', 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9006, 1310, 19, 125000, 26250, 'Extract Own Volume B', 'SEED');
+
 -- Mill 760's Schedule 3 sub-pages on summary 1301 (V19 shape). Other Acceptable is a TOT + PO&P
 -- PAIR of item-124 rows sharing a description and a SCH3_2_{TOT|POP}_GRP{n} COMMENTS key:
 -- 800 / 300 -> derived CROWN 500. Included Unacceptable is one item-38 row (250), and the section's

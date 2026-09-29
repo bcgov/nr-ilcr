@@ -489,12 +489,12 @@ class DataExtractCsvIT extends AbstractOracleIT {
     }
 
     @Test
-    @DisplayName("Other Costs lists the itemized row with the SHARED volume, then a Total: row")
+    @DisplayName("Other Costs lists the itemized row with its own volume, then a Total: row")
     void otherCostsRowsThenTotal() throws Exception {
-      // 760 has a shared item-19 volume of 5000 and one itemized item-19 row of 3000. Every
-      // itemized row shows the shared volume (the owner stamps no per-row volume), and the Total:
-      // row formats the summed VOLUME to two decimals but the summed COST to none — legacy's
-      // inversion, kept by Schedule1OtherSection.
+      // 760 has a shared item-19 volume of 5000 and one itemized item-19 row of 3000 stored at
+      // volume 5000. The row shows its own stored volume, and the Total: row formats the summed
+      // VOLUME to two decimals but the summed COST to none — legacy's inversion, kept by
+      // Schedule1OtherSection.
       List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 1\"]")));
       String title = "**** Schedule 1 - Other Costs ****";
 
@@ -504,6 +504,27 @@ class DataExtractCsvIT extends AbstractOracleIT {
               "7600", "2020", statusOf("V"), "760", "Extract Other Cost", "5,000", "3,000", "0.60");
       assertThat(bodyRow(rows, title, 2))
           .containsExactly("", "", "", "", "Total:", "5,000.00", "3,000", "0.60");
+    }
+
+    @Test
+    @DisplayName("Other Costs prints each row's own volume when there is no shared volume row")
+    void otherCostsWithNoSharedRowPrintTheirOwnVolumes() throws Exception {
+      // 761's itemized item-19 rows carry volumes 175000 and 125000 and there is NO
+      // null-description shared row — the seeded mill 7777 / 2015 shape, where the rebuilt extract
+      // printed "-" in every VOLUME and CPU cell. Legacy printed each row's own figures
+      // (Schedule1OtherExtract.java:77, :79) and summed them into Total: (:88).
+      List<String> rows = rows(extract(body(2020, 2020, "[761]", "[\"Schedule 1\"]")));
+      String title = "**** Schedule 1 - Other Costs ****";
+      String status = statusOf("V");
+
+      assertThat(bodyRow(rows, title, 1))
+          .containsExactly(
+              "7610", "2020", status, "761", "Extract Own Volume A", "175,000", "25,000", "0.14");
+      assertThat(bodyRow(rows, title, 2))
+          .containsExactly(
+              "7610", "2020", status, "761", "Extract Own Volume B", "125,000", "26,250", "0.21");
+      assertThat(bodyRow(rows, title, 3))
+          .containsExactly("", "", "", "", "Total:", "300,000.00", "51,250", "0.17");
     }
 
     @Test
