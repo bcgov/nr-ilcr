@@ -9,6 +9,12 @@ import {
   scanAnchorKeys,
   type AnchorKey,
 } from './anchor-keys';
+import {
+  ADMIN_MILL_ANCHORS,
+  IMPORT_MILL,
+  NEW_ACCOUNT_GUID,
+  S05_LICENSEE_GUID,
+} from '../fixtures/mill/mills-test-data';
 
 /**
  * PREFLIGHT — the CI seed carries every anchor the fixtures pin.
@@ -104,6 +110,25 @@ const FIX_IT =
   `Add the row to ${SEED}, following that file's own conventions — plain INSERTs with pre-claimed ids `
   + 'against an empty schema, NOT the guarded PL/SQL the patches use — and extend its ID CLAIMS header. '
   + 'If the anchor is meant to have NO row, list it in DELIBERATELY_ABSENT in this file with the reason.';
+
+/**
+ * Fixture domains whose anchors are MILLS, not (mill, year) cells, and so contribute no key to the
+ * schedule scan by design — each with the reason and the check that covers it instead.
+ *
+ * Enumerated, never inferred, for the same reason as DELIBERATELY_ABSENT: the "every domain contributes
+ * keys" check below exists because a renamed or restructured fixture silently reads as a domain with
+ * nothing pinned. Exempting a domain from it is only honest if something else asserts that domain's
+ * data — which is what 'every mill-administration anchor is seeded' does for `mill`. Shrink-only: an
+ * entry whose fixture directory is gone fails.
+ */
+const MILL_KEYED_DOMAINS = new Map<string, string>([
+  [
+    'mill',
+    "UC-MILL-001 works on the mill's own ILCR_MILL_STATUS_XREF row and its client-location contacts; "
+      + 'the Mills page has no reporting year anywhere on it. Its anchors are ADMIN_MILL_ANCHORS, '
+      + 'checked against the seed by the mill-administration test in this file.',
+  ],
+]);
 
 /**
  * Pinned (mill, year) keys that must NOT have an ILCR_MILL_REPORT_STATUS row, and what each absence buys.
@@ -460,11 +485,22 @@ test('seed parity: the scan sees every domain, and the SQL parser still binds', 
 
   // Every domain must contribute keys. A fixture that was renamed or restructured otherwise reads as a
   // domain with nothing pinned, which passes every check below.
-  const silent = files.filter((f) => scanAnchorKeys(fs.readFileSync(f.file, 'utf8')).length === 0);
+  const silent = files.filter(
+    (f) => !MILL_KEYED_DOMAINS.has(f.domain)
+      && scanAnchorKeys(fs.readFileSync(f.file, 'utf8')).length === 0,
+  );
   expect(
     silent.map((f) => f.domain),
     'these domains contributed NO anchor keys — their fixture no longer declares anchors in a shape '
       + 'anchor-keys.ts recognises, so nothing about them is being checked',
+  ).toEqual([]);
+
+  // The exemption above is shrink-only: a mill-keyed domain that no longer has a fixture is cover.
+  const scanned = new Set(files.map((f) => f.domain));
+  const deadExemptions = [...MILL_KEYED_DOMAINS.keys()].filter((d) => !scanned.has(d));
+  expect(
+    deadExemptions,
+    `MILL_KEYED_DOMAINS exempts domains with no fixture any more — delete these: ${deadExemptions.join(', ')}`,
   ).toEqual([]);
 
   const seeded = statusKeys(readMigrations().all);
@@ -577,6 +613,9 @@ const EXPLICIT_ID_COLUMNS: Record<string, string> = {
   ROAD_MAINTENANCE_REPORT: 'ROAD_MAINTENANCE_REPORT_ID',
   BASIC_SILVICULTURE_REPORT: 'BASIC_SILVICULTURE_REPORT_ID',
   BIOGEOCLIMATIC_CATALOGUE: 'BIOGEOCLIMATIC_CATALOGUE_ID',
+  // Mill administration (2026-09-28): db/R__75 seeds its own contacts (7551-7561) for the ITs, and a
+  // reused id is ORA-00001 at migrate time exactly like every other table here.
+  CLIENT_CONTACT: 'CLIENT_CONTACT_ID',
 };
 
 test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented', async () => {
@@ -709,13 +748,207 @@ test('seed parity: every INSERT this gate cannot read is a known, harmless one',
   ).toEqual([]);
 });
 
+test('seed parity: every mill-administration anchor is seeded with its location, contacts and panel', async () => {
+  // The mill-keyed half of the gate (MILL_KEYED_DOMAINS). A mills scenario leans on four things the
+  // schedule anchors never need, and each is a row this seed must carry or the scenario fails ONLY in
+  // CI: the mill's client location on THE.MILL (the BR-09 join that populates both contact dropdowns),
+  // the CLIENT_LOCATION row itself, one CLIENT_CONTACT per pinned option — same id, same location, same
+  // name, because the scenario asserts the option LABELS — and the xref row's at-rest indicator and
+  // contact ids, which the scenario checks before it edits and the cleanup restores. The audit stamp
+  // is required non-null because the scenario asserts the "Last Edited by" line against it.
+  expect(ADMIN_MILL_ANCHORS.length, 'the mill fixture declares no anchors').toBeGreaterThan(0);
+
+  const { all } = readMigrations();
+  const mills = new Map(parseInserts(all, 'MILL').map((r) => [r.MILL_ID, r]));
+  const xrefs = new Map(
+    parseInserts(all, 'ILCR_MILL_STATUS_XREF').map((r) => [r.ILCR_MILL_STATUS_XREF_ID, r]),
+  );
+  const locations = new Set(
+    parseInserts(all, 'CLIENT_LOCATION').map((r) => `${r.CLIENT_NUMBER}/${r.CLIENT_LOCN_CODE}`),
+  );
+  const contacts = parseInserts(all, 'CLIENT_CONTACT');
+
+  const problems: string[] = [];
+  for (const anchor of ADMIN_MILL_ANCHORS) {
+    const at = `mill ${anchor.millId} (${anchor.millNumber} - ${anchor.millName})`;
+    const location = `${anchor.clientNumber}/${anchor.clientLocnCode}`;
+
+    const mill = mills.get(String(anchor.millId));
+    if (!mill) {
+      problems.push(`${at}: no THE.MILL row`);
+    } else {
+      if (mill.MILL_NUMBER !== anchor.millNumber || mill.MILL_NAME !== anchor.millName) {
+        problems.push(`${at}: THE.MILL reads ${mill.MILL_NUMBER} - ${mill.MILL_NAME}`);
+      }
+      if (`${mill.CLIENT_NUMBER}/${mill.CLIENT_LOCN_CODE}` !== location) {
+        problems.push(
+          `${at}: THE.MILL client location is ${mill.CLIENT_NUMBER}/${mill.CLIENT_LOCN_CODE}, expected `
+            + `${location} — without it the mill is offered no contact at all`,
+        );
+      }
+    }
+    if (!locations.has(location)) {
+      problems.push(`${at}: no THE.CLIENT_LOCATION row for ${location}`);
+    }
+
+    // Exactly the pinned set on that location — an extra contact is an extra dropdown option, which
+    // the scenario's BR-09 assertion would report as a defect.
+    const seeded = contacts
+      .filter((c) => `${c.CLIENT_NUMBER}/${c.CLIENT_LOCN_CODE}` === location)
+      .map((c) => `${c.CLIENT_CONTACT_ID}:${c.CONTACT_NAME}`)
+      .sort();
+    const pinned = anchor.contacts.map((c) => `${c.clientContactId}:${c.contactName}`).sort();
+    if (JSON.stringify(seeded) !== JSON.stringify(pinned)) {
+      problems.push(
+        `${at}: contacts on ${location} are [${seeded.join(', ')}], expected [${pinned.join(', ')}]`,
+      );
+    }
+
+    const xref = xrefs.get(String(anchor.millId));
+    if (!xref) {
+      problems.push(`${at}: no THE.ILCR_MILL_STATUS_XREF row`);
+    } else {
+      const served = {
+        status: xref.ILCR_MILL_STATUS_CODE,
+        headOfficeContactInd: xref.HEAD_OFFICE_CONTACT_IND ?? null,
+        headOfficeContactId: xref.HEAD_OFFICE_CONTACT_ID ?? null,
+        divisionContactId: xref.DIVISION_CONTACT_ID ?? null,
+      };
+      const expected = {
+        status: anchor.statusCode,
+        headOfficeContactInd: anchor.atRest.headOfficeContactInd,
+        headOfficeContactId: anchor.atRest.headOfficeContactId?.toString() ?? null,
+        divisionContactId: anchor.atRest.divisionContactId?.toString() ?? null,
+      };
+      if (JSON.stringify(served) !== JSON.stringify(expected)) {
+        problems.push(
+          `${at}: xref row is ${JSON.stringify(served)}, expected ${JSON.stringify(expected)}`,
+        );
+      }
+      if (!xref.UPDATE_USERID) {
+        problems.push(
+          `${at}: xref row has no UPDATE_USERID, so the page's "Last Edited by" line is empty`,
+        );
+      }
+    }
+  }
+
+  // The STATUS anchors (S03 / S04 / S12) lean on three more things, each CI-only if missing:
+  //  - a COMPLETE report set for the seed's current year (its highest ILCR_REPORTING_PERIOD) — the
+  //    status row AND all eleven category rows, because `activate` counts both and answers 409 PARTIAL
+  //    on a status row alone, and would ENROL (unremovable rows) on neither;
+  //  - exactly the pinned ACTIVE assignments, each with its ILCR_USER row;
+  //  - an xref ENTRY_USERID other than 'E2E_SEED', which the mock-submitter association INSERT at the
+  //    end of the seed keys on — it would hand every such mill an active user, and S03 would 409.
+  const statusAnchors = ADMIN_MILL_ANCHORS.filter((a) => a.status);
+  if (statusAnchors.length > 0) {
+    const currentYear = Math.max(
+      ...parseInserts(all, 'ILCR_REPORTING_PERIOD').map((r) => Number(r.REPORT_YEAR)),
+    );
+    const reportStatus = new Set(
+      parseInserts(all, 'ILCR_MILL_REPORT_STATUS').map((r) => `${r.ILCR_MILL_ID}/${r.REPORT_YEAR}`),
+    );
+    const categories = parseInserts(all, 'ILCR_REPORT_CATEGORY');
+    const assignments = parseInserts(all, 'ILCR_MILL_USER_XREF');
+    const users = new Set(parseInserts(all, 'ILCR_USER').map((r) => r.USER_GUID));
+
+    for (const anchor of statusAnchors) {
+      const at = `status anchor ${anchor.millId} (${anchor.millNumber} - ${anchor.millName})`;
+      const pinnedActive = [...anchor.status!.activeUserGuids];
+      // The record STATE is the fixture: complete (status row + 11 categories) for every status anchor
+      // but GAP-6's two, which are pinned as none and partial (the status row alone).
+      const records = anchor.currentYearRecords ?? 'complete';
+      const hasStatus = reportStatus.has(`${anchor.millId}/${currentYear}`);
+      const cats = new Set(
+        categories
+          .filter(
+            (c) => c.ILCR_MILL_ID === String(anchor.millId) && c.REPORT_YEAR === String(currentYear),
+          )
+          .map((c) => c.ILCR_CATEGORY_ID),
+      );
+      const expected = { complete: [true, 11], partial: [true, 0], none: [false, 0] }[records];
+      if (hasStatus !== expected[0] || cats.size !== expected[1]) {
+        problems.push(
+          `${at}: pinned as ${records} for ${currentYear}, but the seed has `
+            + `${hasStatus ? 'a' : 'no'} ILCR_MILL_REPORT_STATUS row and ${cats.size} of 11 `
+            + 'ILCR_REPORT_CATEGORY rows — activate branches on exactly this',
+        );
+      }
+      const active = assignments
+        .filter((u) => u.ILCR_MILL_ID === String(anchor.millId) && u.ACTIVE_DATE && !u.INACTIVE_DATE)
+        .map((u) => u.USER_GUID!)
+        .sort();
+      if (JSON.stringify(active) !== JSON.stringify(pinnedActive)) {
+        problems.push(
+          `${at}: active assignments are [${active.join(', ')}], expected [${pinnedActive.join(', ')}]`,
+        );
+      }
+      const pinnedEnded = [...anchor.status!.endedUserGuids];
+      const ended = assignments
+        .filter((u) => u.ILCR_MILL_ID === String(anchor.millId) && u.INACTIVE_DATE)
+        .map((u) => u.USER_GUID!)
+        .sort();
+      if (JSON.stringify(ended) !== JSON.stringify(pinnedEnded)) {
+        problems.push(
+          `${at}: ended assignments are [${ended.join(', ')}], expected [${pinnedEnded.join(', ')}]`,
+        );
+      }
+      for (const guid of [...pinnedActive, ...pinnedEnded]) {
+        if (!users.has(guid)) problems.push(`${at}: no ILCR_USER row for ${guid}`);
+      }
+      if (xrefs.get(String(anchor.millId))?.ENTRY_USERID === 'E2E_SEED') {
+        problems.push(
+          `${at}: its xref row is ENTRY_USERID 'E2E_SEED', so the seed's closing association INSERT `
+            + 'gives it an active mock-submitter assignment',
+        );
+      }
+    }
+
+    // S05 adds a user whose ACCOUNT must already exist (so the add writes one association row, which
+    // is all its cleanup deletes) and who must be associated with NOTHING.
+    if (!users.has(S05_LICENSEE_GUID)) problems.push(`S05: no ILCR_USER row for ${S05_LICENSEE_GUID}`);
+    const s05Pairs = assignments.filter((u) => u.USER_GUID === S05_LICENSEE_GUID);
+    if (s05Pairs.length > 0) {
+      problems.push(`S05: ${S05_LICENSEE_GUID} is already associated with mill(s) ${s05Pairs.map((u) => u.ILCR_MILL_ID).join(', ')}`);
+    }
+    // GAP-7 is the opposite: its user must have NO account, or the add never provisions one.
+    if (users.has(NEW_ACCOUNT_GUID)) {
+      problems.push(`GAP-7: ${NEW_ACCOUNT_GUID} has an ILCR_USER row, so the add would not provision it`);
+    }
+    if (assignments.some((u) => u.USER_GUID === NEW_ACCOUNT_GUID)) {
+      problems.push(`GAP-7: ${NEW_ACCOUNT_GUID} is already associated with a mill`);
+    }
+  }
+
+  // The import mill is the one anchor defined by what it LACKS: a THE.MILL row, and no ILCR tracking at
+  // all. Seeding its xref would make it unimportable, and S02/S14 would find nothing to import.
+  const importAt = `import mill ${IMPORT_MILL.millId} (${IMPORT_MILL.millNumber} - ${IMPORT_MILL.millName})`;
+  const importMill = mills.get(String(IMPORT_MILL.millId));
+  if (!importMill) {
+    problems.push(`${importAt}: no THE.MILL row`);
+  } else if (importMill.MILL_NUMBER !== IMPORT_MILL.millNumber || importMill.MILL_NAME !== IMPORT_MILL.millName) {
+    problems.push(`${importAt}: THE.MILL reads ${importMill.MILL_NUMBER} - ${importMill.MILL_NAME}`);
+  }
+  if (xrefs.has(String(IMPORT_MILL.millId))) {
+    problems.push(`${importAt}: has an ILCR_MILL_STATUS_XREF row, so it is tracked and cannot be imported`);
+  }
+
+  expect(
+    problems,
+    `${SEED} does not carry the mill-administration anchors fixtures/mill/mills-test-data.ts pins:\n`
+      + `${problems.join('\n')}\n${FIX_IT}`,
+  ).toEqual([]);
+});
+
 test('seed parity: the e2e-only seed carries no anchor no fixture pins', async ({}, testInfo) => {
   // ADVISORY, not a failure. An unreferenced row is harmless headroom, and the sec domain leans on the
   // Home lists these rows populate. But a row left behind by a retired anchor is also how the seed
   // grows a state nobody can explain, so it is surfaced rather than ignored.
   const keys = collectAnchorKeys(FIXTURES_DIR);
+  // The mill-keyed status anchors' report rows are pinned by the mill-administration check, not a key.
+  const millKeyed = new Set(ADMIN_MILL_ANCHORS.map((a) => String(a.millId)));
   const orphans = [...statusKeys(readMigrations().e2eOnly).keys()]
-    .filter((key) => !keys.has(key))
+    .filter((key) => !keys.has(key) && !millKeyed.has(key.split('/')[0]))
     .sort(byMillThenYear);
 
   if (orphans.length > 0) {
