@@ -3,6 +3,8 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -226,23 +228,41 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
    */
   @Query(
       """
-      SELECT tr.TRANSPORTATION_REPORT_ID
-        FROM THE.TRANSPORTATION_REPORT tr
-        JOIN THE.ILCR_COST_REPORT_DETAIL d
-          ON d.TRANSPORTATION_REPORT_ID = tr.TRANSPORTATION_REPORT_ID
+      SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.TRANSPORTATION_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
+             d.VOLUME, d.COST, d.ITEM_DESCRIPTION
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.TRANSPORTATION_REPORT tr
+          ON tr.TRANSPORTATION_REPORT_ID = d.TRANSPORTATION_REPORT_ID
        WHERE tr.ILCR_MILL_ID = :millId
          AND tr.REPORT_YEAR = :year
          AND tr.ILCR_CATEGORY_ID = '4'
          AND tr.LOCATION_DESCRIPTION = :name
-         AND d.ILCR_REPORT_COST_ITEM_ID = :code
-       ORDER BY tr.TRANSPORTATION_REPORT_ID
-       FETCH FIRST 1 ROWS ONLY
+         AND d.ILCR_REPORT_COST_ITEM_ID IN (47,48,52)
+       ORDER BY d.TRANSPORTATION_REPORT_ID, d.ILCR_COST_REPORT_DETAIL_ID
       """)
-  Optional<Integer> findDistanceReportId(
-      @Param("millId") long millId,
-      @Param("year") int year,
-      @Param("name") String name,
-      @Param("code") int code);
+  List<CostReportDetailEntity> findDistanceChildEntities(
+      @Param("millId") long millId, @Param("year") int year, @Param("name") String name);
+
+  /**
+   * Every report in a location family that carries a distance-category detail, keyed by code
+   * (47/48/52) with the report ids ascending. One read per save covers all three codes (#335).
+   *
+   * <p>A list, not a single id: the write path treats the request as the family's complete state
+   * and must reach EVERY child for a cleared code — legacy data can hold two children for one code,
+   * and a first-row-only lookup left the second one (and its figures) behind on every save. The
+   * lowest id may also be the location's own identity report on a legacy family with no
+   * distance-null primary (§Decision 2 fallback), which the service must not delete.
+   */
+  default Map<Integer, List<Integer>> findDistanceChildren(long millId, int year, String name) {
+    Map<Integer, List<Integer>> byCode = new HashMap<>();
+    for (CostReportDetailEntity d : findDistanceChildEntities(millId, year, name)) {
+      List<Integer> ids = byCode.computeIfAbsent(d.costItemCode(), k -> new ArrayList<>());
+      if (!ids.contains(d.transportationReportId())) {
+        ids.add(d.transportationReportId());
+      }
+    }
+    return byCode;
+  }
 
   // ---- name uniqueness (BR-02, case-insensitive) — branch on excludeName to avoid binding a null
   // ---- into UPPER(:excludeName) (ojdbc treats it as CLOB → ORA-22848).
@@ -557,21 +577,22 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("user") String user);
 
   /**
-   * Remove ONE category's detail row from a report — how a fixed category
-   * (40/41/42/44/45/49/50/51/53) on the primary report is cleared (#335). Returns rows affected: 0
-   * when the category had no row, which is the normal case for a category that was never entered,
-   * so callers need not look first. Legacy never created a row for an empty category and the read
-   * lists only stored rows, so "cleared" and "absent" are the same state and the row goes rather
-   * than being nulled.
+   * Remove the detail rows for a set of category codes from one report, in a single statement — how
+   * cleared fixed categories (40/41/42/44/45/49/50/51/53) leave the primary, and how a cleared
+   * distance code leaves a report that must itself survive (#335). Returns rows affected: usually
+   * fewer than {@code codes.size()}, since a category that was never entered has no row, so callers
+   * need not look first. Legacy never created a row for an empty category and the read lists only
+   * stored rows, so "cleared" and "absent" are the same state and the row goes rather than being
+   * nulled.
    */
   @Modifying
   @Query(
       """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE TRANSPORTATION_REPORT_ID = :reportId
-         AND ILCR_REPORT_COST_ITEM_ID = :code
+         AND ILCR_REPORT_COST_ITEM_ID IN (:codes)
       """)
-  int deleteDetail(@Param("reportId") int reportId, @Param("code") int code);
+  int deleteDetails(@Param("reportId") int reportId, @Param("codes") Collection<Integer> codes);
 
   @Modifying
   @Query("DELETE FROM THE.ILCR_COST_REPORT_DETAIL WHERE TRANSPORTATION_REPORT_ID = :reportId")

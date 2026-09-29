@@ -202,7 +202,14 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     `Schedule4WriteServiceTest` (omitted fixed → detail deleted; omitted distance → child deleted; all-null
     fixed → deleted, never inserted; partial clear still upserts the null; create does not reconcile) and
     `Schedule4WriteIT.put_edit_omittedCategories_areCleared` on its own fixture (mill 547, `R__45`), which
-    walks the same partial-then-full boundary against Oracle.
+    walks the same partial-then-full boundary against Oracle. **Review of PR #510 (2026-09-29)** hardened
+    the fix for legacy-shaped families the 54x fixtures never had: a family with NO distance-null primary
+    (the document then serves its lowest child as the location's id — deleting that "cleared" child would
+    have deleted the location and the fixed rows just written) and a family with TWO children for one
+    distance code (a first-row-only lookup left the second to resurrect its figures). The identity report
+    now only ever loses the code's detail, every child of a cleared code goes, and duplicates collapse into
+    the first on a keep. `Schedule4WriteIT.put_edit_legacyFamilyWithoutPrimary_…` (mill 548, `R__46`) and
+    three `Schedule4WriteServiceTest` cases pin it.
 
 **Divergences:**
 
