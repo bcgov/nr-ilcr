@@ -2,7 +2,10 @@ package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -12,6 +15,7 @@ import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
@@ -197,12 +201,15 @@ class Schedule7aControllerTest {
         .thenReturn(new MillYearContext(514L, 2021));
     Schedule7aCheckStatusResponse readiness =
         new Schedule7aCheckStatusResponse(true, List.of(), List.of(), null);
-    when(schedule7aService.checkStatus(514L, 2021)).thenReturn(readiness);
+    Schedule7aCheckRequest request = new Schedule7aCheckRequest(List.of());
+    when(schedule7aService.checkStatus(514L, 2021, request)).thenReturn(readiness);
 
     ResponseEntity<Schedule7aCheckStatusResponse> result =
-        controller.checkStatus("514", "2021", authentication);
+        controller.checkStatus("514", "2021", request, authentication);
 
+    // The SCREEN path (#359) with the very body posted — never the stored one.
     assertThat(result.getBody()).isSameAs(readiness);
-    verify(schedule7aService).checkStatus(514L, 2021);
+    verify(schedule7aService).checkStatus(514L, 2021, request);
+    verify(schedule7aService, never()).checkStatusStored(anyLong(), anyInt());
   }
 }

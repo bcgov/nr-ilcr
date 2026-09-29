@@ -51,6 +51,10 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/schedule7b";
   private static final String CULVERTS = ENDPOINT + "/culverts";
   private static final String CHECK_STATUS = ENDPOINT + "/check-status";
+
+  /** Since #359 the endpoint requires the on-screen body; its content is irrelevant to authz. */
+  private static final String CHECK_BODY = "{\"culverts\":[]}";
+
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -142,6 +146,8 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
                 .param("millId", "514")
                 .param("year", "2021")
                 .with(jwtWithGroups(List.of())))
@@ -154,6 +160,8 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
                 .param("millId", "514")
                 .param("year", "2021")
                 .accept(MediaType.APPLICATION_JSON)

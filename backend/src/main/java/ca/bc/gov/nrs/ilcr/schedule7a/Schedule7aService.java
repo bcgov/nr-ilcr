@@ -12,6 +12,7 @@ import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
@@ -25,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -464,36 +464,144 @@ public class Schedule7aService {
   // ===============================================================================================
 
   /**
-   * Walk every stored bridge in the exact legacy field order ({@code Schedule7aMB.java:206-289}),
+   * Check Status against the SCREEN — the endpoint's entry point (bcgov/nr-ilcr#359). Legacy's
+   * check read the bean's in-memory document with no reload ({@code Schedule7aMB.java:194-196}),
+   * into which every row input wrote on change ({@code schedule7A.xhtml:582-587}), so the verdict
+   * described every row on screen — unsaved edits and other paginator pages included. The
+   * candidates are {@code request.bridges()} in payload order, numbered by 1-based payload ordinal;
+   * nothing is read from or written to the database. The rules are {@link #evaluate}, shared with
+   * {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the on-screen bridge rows
+   * @return the flags and verbatim messages; nothing is mutated
+   */
+  public Schedule7aCheckStatusResponse checkStatus(
+      long millId, int year, Schedule7aCheckRequest request) {
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (Schedule7aCheckRequest.BridgeEntry entry : request.bridges()) {
+      // Values taken VERBATIM, nulls included — every rule is a null test, so a coerced 0 would
+      // turn a missing value into a pass. A HashMap, because a null cost must stay a null entry.
+      Map<Integer, Integer> costs = new HashMap<>();
+      costs.put(ITEM_SS_MATERIAL, entry.superstructureMaterialCost());
+      costs.put(ITEM_SS_DELIVER, entry.superstructureDeliverCost());
+      costs.put(ITEM_SS_INSTALL, entry.superstructureInstallCost());
+      costs.put(ITEM_ABUT_MATERIAL, entry.abutmentMaterialCost());
+      costs.put(ITEM_ABUT_DELIVER, entry.abutmentDeliverCost());
+      costs.put(ITEM_ABUT_INSTALL, entry.abutmentInstallCost());
+      costs.put(ITEM_SITE_PLAN, entry.sitePlanCost());
+      costs.put(ITEM_APPROACH, entry.approachCost());
+      costs.put(ITEM_AFTER_INSTALL, entry.afterInstallCost());
+      costs.put(ITEM_OTHER, entry.otherCost());
+      candidates.add(
+          new CheckCandidate(
+              entry.locationName(),
+              // A blank month field is no value; the served shape of a stored date is never blank.
+              entry.builtDate() == null || entry.builtDate().isBlank() ? null : entry.builtDate(),
+              entry.lifeSpan(),
+              entry.abutmentHeight(),
+              entry.length(),
+              entry.width(),
+              entry.distance(),
+              costs));
+    }
+    return evaluate(candidates, this::resolveText);
+  }
+
+  /**
+   * Walk every STORED bridge in the exact legacy field order ({@code Schedule7aMB.java:206-289}),
    * flagging each missing required value with {@code missingRequiredFieldMsg} = "Value Required".
    * When at least one bridge fails, each bridge that passes gets an SUC-005 all-met line; when
    * EVERY bridge passes the response carries the SUC-004 schedule-wide message alone and no
-   * per-bridge lines (legacy's per-bridge loop ran only in the schedule-failed branch).
+   * per-bridge lines (legacy's per-bridge loop ran only in the schedule-failed branch). The
+   * stored-data counterpart of {@link #checkStatus}, for report-level callers (the Check Status
+   * sweep and the submit gate) that have no screen to describe.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–3, 5 and 6: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
    *
    * <p>Recorded deviation: the legacy abutment-height check ({@code Schedule7aCheckStatus.java:23}
    * {@code getBridgeAbutHtM().equals(null)}) never fires and NPEs on null; here it is implemented
    * correctly as {@code abutmentHeight == null}.
    */
   @Transactional(readOnly = true)
-  public Schedule7aCheckStatusResponse checkStatus(long millId, int year) {
+  public Schedule7aCheckStatusResponse checkStatusStored(long millId, int year) {
     List<BridgeReportEntity> bridgeRows = repository.findBridges(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
         costsByBridge(repository.findCostDetails(millId, year));
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (BridgeReportEntity row : bridgeRows) {
+      candidates.add(
+          new CheckCandidate(
+              row.locationName(),
+              formatBuiltDate(row.builtDate()),
+              row.lifeSpan(),
+              row.abutmentHeight(),
+              row.length(),
+              row.deckWidth(),
+              row.distance(),
+              costs.getOrDefault(row.bridgeReportId(), Map.of())));
+    }
+    return evaluate(candidates, this::resolveText);
+  }
 
+  /**
+   * The Schedule 7A values one bridge's check judges, from either source — the screen ({@link
+   * #checkStatus}) or the database ({@link #checkStatusStored}).
+   *
+   * @param locationName the name / location of the bridge
+   * @param builtDate the built date ({@code yyyy-MM}), or null when absent
+   * @param lifeSpan the expected life span
+   * @param abutmentHeight the abutments height
+   * @param length the length (m)
+   * @param width the deck width (m)
+   * @param distance the distance from storage (km)
+   * @param costs the ten costs by cost-item id; an absent or null entry is a missing cost
+   */
+  record CheckCandidate(
+      String locationName,
+      String builtDate,
+      Integer lifeSpan,
+      BigDecimal abutmentHeight,
+      BigDecimal length,
+      BigDecimal width,
+      Integer distance,
+      Map<Integer, Integer> costs) {}
+
+  /**
+   * Resolves a bundle key (with optional arguments) to its verbatim text. Passed into {@link
+   * #evaluate} so the verdict stays a pure function of its candidates.
+   */
+  @FunctionalInterface
+  interface CheckText {
+    String resolve(String key, Object... args);
+  }
+
+  /**
+   * The BR-08 verdict, source-agnostic and pure: candidates in display order, numbered 1-based.
+   * Neither {@link #checkStatus} nor {@link #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the bridges to judge, in display order
+   * @param text resolves a bundle key to its verbatim text
+   * @return the flags and verbatim messages
+   */
+  static Schedule7aCheckStatusResponse evaluate(List<CheckCandidate> candidates, CheckText text) {
     List<MessageInfo> errors = new ArrayList<>();
     List<Integer> passingRows = new ArrayList<>();
     boolean allMet = true;
 
     int rowCounter = 1;
-    for (BridgeReportEntity row : bridgeRows) {
-      Map<Integer, Integer> cost = costs.getOrDefault(row.bridgeReportId(), Map.of());
-      List<String> missing = missingLabels(row, cost);
+    for (CheckCandidate candidate : candidates) {
+      List<String> missing = missingLabels(candidate);
       if (missing.isEmpty()) {
         passingRows.add(rowCounter);
       } else {
         allMet = false;
         for (String label : missing) {
-          errors.add(new MessageInfo(MSG_VALUE_REQUIRED, missingText(rowCounter, label)));
+          errors.add(new MessageInfo(MSG_VALUE_REQUIRED, missingText(rowCounter, label, text)));
         }
       }
       rowCounter++;
@@ -508,27 +616,28 @@ public class Schedule7aService {
         allMet
             ? List.of()
             : passingRows.stream()
-                .map(counter -> new MessageInfo(MSG_BRIDGE_MET, bridgeMetText(counter)))
+                .map(
+                    counter ->
+                        new MessageInfo(MSG_BRIDGE_MET, text.resolve(MSG_BRIDGE_MET, counter)))
                 .toList();
 
     MessageInfo requirementsMetMessage =
-        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET)) : null;
+        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, text.resolve(MSG_REQUIREMENTS_MET)) : null;
     return new Schedule7aCheckStatusResponse(
         allMet, errors, bridgeMessages, requirementsMetMessage);
   }
 
   /** One required-value check: the "is this value missing?" test paired with its verbatim label. */
-  private record RequiredCheck(
-      BiPredicate<BridgeReportEntity, Map<Integer, Integer>> missing, String label) {}
+  private record RequiredCheck(Predicate<CheckCandidate> missing, String label) {}
 
   /** A required-attribute check on the bridge row itself. */
-  private static RequiredCheck attrCheck(Predicate<BridgeReportEntity> missing, String label) {
-    return new RequiredCheck((r, c) -> missing.test(r), label);
+  private static RequiredCheck attrCheck(Predicate<CheckCandidate> missing, String label) {
+    return new RequiredCheck(missing, label);
   }
 
-  /** A required-cost check: the cost item has no stored detail row for the bridge. */
+  /** A required-cost check: the bridge has no value for the cost item. */
   private static RequiredCheck costCheck(int itemId, String label) {
-    return new RequiredCheck((r, c) -> c.get(itemId) == null, label);
+    return new RequiredCheck(c -> c.costs().get(itemId) == null, label);
   }
 
   /**
@@ -546,7 +655,7 @@ public class Schedule7aService {
           attrCheck(r -> r.lifeSpan() == null, " - Expected Life Span "),
           attrCheck(r -> r.abutmentHeight() == null, " - Abutments heigth value "),
           attrCheck(r -> r.length() == null, " - Length (m) "),
-          attrCheck(r -> r.deckWidth() == null, " - Width (m) "),
+          attrCheck(r -> r.width() == null, " - Width (m) "),
           attrCheck(r -> r.distance() == null, " - Distance (km) "),
           costCheck(ITEM_SS_MATERIAL, " - Superstructure - Materil Cost "),
           costCheck(ITEM_SS_DELIVER, " - Superstructure - Deliver Cost "),
@@ -562,10 +671,10 @@ public class Schedule7aService {
   /**
    * The missing required-field labels for one bridge, in the exact legacy order (verbatim text).
    */
-  private static List<String> missingLabels(BridgeReportEntity row, Map<Integer, Integer> cost) {
+  private static List<String> missingLabels(CheckCandidate candidate) {
     List<String> missing = new ArrayList<>();
     for (RequiredCheck check : REQUIRED_CHECKS) {
-      if (check.missing().test(row, cost)) {
+      if (check.missing().test(candidate)) {
         missing.add(check.label());
       }
     }
@@ -582,17 +691,18 @@ public class Schedule7aService {
    * rendered line reads {@code "... - Length (m) : Value Required"} — the same shape Schedule 7B
    * composes ({@code Schedule7bService.missingText}).
    */
-  private String missingText(int rowCounter, String label) {
-    return "Bridge Report Id : " + rowCounter + label + ": " + resolveText(MSG_VALUE_REQUIRED);
+  private static String missingText(int rowCounter, String label, CheckText text) {
+    return "Bridge Report Id : " + rowCounter + label + ": " + text.resolve(MSG_VALUE_REQUIRED);
   }
 
-  private String bridgeMetText(int rowCounter) {
+  /**
+   * The bundle lookup behind {@link CheckText}: the key itself is the default, and arguments are
+   * passed only when present — {@code bridgeRequirementsMetMsg} takes the row counter, the other
+   * two keys take none, exactly as the pre-#359 lookups did.
+   */
+  private String resolveText(String key, Object... args) {
     return messageSource.getMessage(
-        MSG_BRIDGE_MET, new Object[] {rowCounter}, MSG_BRIDGE_MET, LocaleContextHolder.getLocale());
-  }
-
-  private String resolveText(String key) {
-    return messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale());
+        key, args.length == 0 ? null : args, key, LocaleContextHolder.getLocale());
   }
 
   // ===============================================================================================

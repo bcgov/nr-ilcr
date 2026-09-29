@@ -20,3 +20,19 @@ export default interface Schedule4LocationRequest {
   readonly comments: string | null
   readonly categories: CategoryInput[]
 }
+
+/**
+ * The Check Status body — the ONE open location panel as it is on screen, mirroring the backend
+ * `Schedule4CheckRequest` (#359). Overlaid on the stored locations: an open existing location replaces
+ * its stored self (`id` set); an unsaved New/Copy panel (`id` null) is evaluated as an extra location.
+ * `location` is null when no panel is open. Closed locations and sub-page rows are never sent — the
+ * server reads them from the database.
+ *
+ * ⚠ A blank name is sent as `null`, never as a placeholder: "location name blank" is the check.
+ */
+export interface Schedule4CheckRequest {
+  readonly location: {
+    readonly id: number | null
+    readonly name: string | null
+  } | null
+}

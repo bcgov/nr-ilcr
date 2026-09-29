@@ -9,6 +9,7 @@
 // (BR-07). Do not tighten them.
 
 import { utf8Length } from '@/utils/forms'
+import { legacyBannerLines, legacyRowLabel } from '@/utils/legacyValidationBanner'
 import { parseDecimalInput, roundCost } from '@/utils/number'
 
 // Re-exported so this module stays the single validation surface the page imports from.
@@ -262,3 +263,37 @@ export const previewTotalCost = (form: CulvertFormValues): number | null => {
 }
 
 export const COMMENTS_MAX_LENGTH = COMMENTS_MAX
+
+/** Every culvert field in on-screen order (`CulvertFields.tsx`), which is the banner's line order. */
+const FIELD_ORDER: readonly (keyof CulvertFormValues)[] = [
+  'culvertTypeCode',
+  'spanSize',
+  'riseSize',
+  'length',
+  'culvertPieceCount',
+  'materialCost',
+  'installCost',
+  'comments',
+]
+
+/**
+ * The list-row `label` of each field Save can require, verbatim from `schedule7B.xhtml` (`Id:
+ * #{obj.rowCounter} - Type`, `:308`; `Id: #{obj.rowCounter} - No of pieces`, `:398`). Only
+ * Type and No of pieces carry `required="true"` there, which is exactly what `validateCulvert`
+ * requires; every other field's error is a range/format/length message, reported verbatim.
+ */
+const REQUIRED_LABELS: Partial<Record<keyof CulvertFormValues, string>> = {
+  culvertTypeCode: 'Type',
+  culvertPieceCount: 'No of pieces',
+}
+
+/**
+ * The legacy banner lines for one culvert ROW's errors (`validateCulvert(form, rowCounter)`): a blank
+ * required field reads `Id: <n> - <label>: Value is required.`, every other error its inline text
+ * (the two costs already carry their `Id: <n> - ` prefix there, as legacy's `validatorMessage` did).
+ */
+export const culvertBannerLines = (errors: CulvertErrors, rowCounter: number): string[] =>
+  legacyBannerLines(errors, FIELD_ORDER, CULVERT_MESSAGES.valueRequired, (field) => {
+    const label = REQUIRED_LABELS[field]
+    return label === undefined ? undefined : legacyRowLabel(rowCounter, label)
+  })

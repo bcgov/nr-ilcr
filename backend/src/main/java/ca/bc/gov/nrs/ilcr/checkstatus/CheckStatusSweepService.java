@@ -96,8 +96,9 @@ public class CheckStatusSweepService {
     this.millContextService = millContextService;
     this.checks =
         List.of(
-            // Schedules 1-3 (#359), like 5 and 6 below: the stored-data path. Their endpoints judge
-            // the posted screen instead, so this sweep is each checkStatusStored's only caller.
+            // Schedules 1-4, 7A, 7B and 9 (#359), like 5 and 6: the stored-data path. Their
+            // endpoints judge the posted screen instead, so this sweep is each checkStatusStored's
+            // only caller.
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_1,
                 schedule1Service::checkStatusStored,
@@ -112,7 +113,7 @@ public class CheckStatusSweepService {
                 Schedule3CheckStatusResponse::requirementsMet),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_4,
-                schedule4::checkStatus,
+                schedule4::checkStatusStored,
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_5,
@@ -126,13 +127,13 @@ public class CheckStatusSweepService {
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_7A,
-                schedule7aService::checkStatus,
+                schedule7aService::checkStatusStored,
                 Schedule7aCheckStatusResponse::requirementsMet),
             // 7B's OWN verdict (AC 4). Legacy's checkStatus.xhtml:96-99 gated the 7B tab's banner
             // on isSchedule7aValid(); only the display was wrong — the submit gate always read 7B.
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_7B,
-                schedule7bService::checkStatus,
+                schedule7bService::checkStatusStored,
                 Schedule7bCheckStatusResponse::requirementsMet),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_8,
@@ -140,7 +141,7 @@ public class CheckStatusSweepService {
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_9,
-                schedule9Service::checkStatus,
+                schedule9Service::checkStatusStored,
                 Schedule9CheckStatusResponse::requirementsMet),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_10,

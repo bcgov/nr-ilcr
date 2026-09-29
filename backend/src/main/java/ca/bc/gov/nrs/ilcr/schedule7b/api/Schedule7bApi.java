@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule7b.api;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import jakarta.validation.Valid;
@@ -136,8 +137,15 @@ public interface Schedule7bApi {
    * message when every culvert passes — there is no per-culvert all-met message (unlike Schedule
    * 7A).
    *
+   * <p>{@code request} carries every culvert row currently ON SCREEN (#359): legacy's check read
+   * the bean's in-memory document, into which every row input wrote on change, so unsaved edits —
+   * on any paginator page — move the verdict. Rows are numbered by payload ordinal. The body is
+   * REQUIRED (an absent one is a clean 400), but its row fields are unvalidated, because reporting
+   * missing values is the check's whole job. Nothing is persisted.
+   *
    * @param millId the raw mill id param
    * @param year the raw reporting year param
+   * @param request the on-screen culvert rows the check reads
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -145,5 +153,6 @@ public interface Schedule7bApi {
   ResponseEntity<Schedule7bCheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule7bCheckRequest request,
       Authentication authentication);
 }

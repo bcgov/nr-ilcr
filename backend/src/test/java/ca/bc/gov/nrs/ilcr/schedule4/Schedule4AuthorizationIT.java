@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -94,12 +95,17 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
 
   private static final String CHECK_STATUS = "/api/v1/schedule4/check-status";
 
+  /** Since #359 the endpoint requires the on-screen body; its content is irrelevant to authz. */
+  private static final String CHECK_BODY = "{\"location\":null}";
+
   @Test
   @DisplayName("no VIEW_SCHEDULE -> POST /check-status 403")
   void checkStatus_noPermission_returns403() throws Exception {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
                 .with(jwtWithGroups(List.of())))
@@ -113,6 +119,8 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(CHECK_STATUS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CHECK_BODY)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
                 .with(canonicalSubmitter()))

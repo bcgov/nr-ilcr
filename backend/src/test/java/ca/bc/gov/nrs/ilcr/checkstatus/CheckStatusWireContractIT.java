@@ -119,6 +119,59 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
           + "],\"popTimberVolume\":1000,\"crownTimberVolume\":1000}";
 
   /**
+   * V27 mill 514: bridges 7601 and 7602 complete, 7603 without its afterInstall (72) and other (73)
+   * costs. Costs in the order site plan, superstructure material/deliver/install, abutment
+   * material/deliver/install, approach, after-install, other.
+   */
+  private static final String SCHEDULE7A_514_SCREEN =
+      """
+      {"bridges":[
+        {"locationName":"North Fork Bridge","builtDate":"2020-06","lifeSpan":50,
+         "abutmentHeight":5.0,"length":20.0,"width":4.0,"distance":12,
+         "sitePlanCost":1000,"superstructureMaterialCost":5000,"superstructureDeliverCost":500,
+         "superstructureInstallCost":800,"abutmentMaterialCost":3000,"abutmentDeliverCost":300,
+         "abutmentInstallCost":400,"approachCost":700,"afterInstallCost":200,"otherCost":100},
+        {"locationName":"South Creek Bridge","builtDate":"2019-11","lifeSpan":40,
+         "abutmentHeight":3.5,"length":15.5,"width":3.0,"distance":8,
+         "sitePlanCost":2000,"superstructureMaterialCost":4000,"superstructureDeliverCost":400,
+         "superstructureInstallCost":600,"abutmentMaterialCost":1000,"abutmentDeliverCost":100,
+         "abutmentInstallCost":200,"approachCost":300,"afterInstallCost":150,"otherCost":50},
+        {"locationName":"Old Mill Crossing","builtDate":"2018-03","lifeSpan":30,
+         "abutmentHeight":2.5,"length":10.0,"width":2.5,"distance":5,
+         "sitePlanCost":500,"superstructureMaterialCost":3000,"superstructureDeliverCost":300,
+         "superstructureInstallCost":500,"abutmentMaterialCost":800,"abutmentDeliverCost":80,
+         "abutmentInstallCost":120,"approachCost":100,"afterInstallCost":null,"otherCost":null}]}
+      """;
+
+  /** V20260811 mill 514: culverts 7801, 7802 and 7803 (Round, no span/length/install). */
+  private static final String SCHEDULE7B_514_SCREEN =
+      """
+      {"culverts":[
+        {"culvertTypeCode":"R","spanSize":1200,"length":12.5,"culvertPieceCount":3,
+         "materialCost":4000,"installCost":1500,"comments":"Main haul road"},
+        {"culvertTypeCode":"O","spanSize":null,"length":8.0,"culvertPieceCount":2,
+         "materialCost":2500,"installCost":700,
+         "comments":"Custom box culvert, fabricated on site"},
+        {"culvertTypeCode":"R","spanSize":null,"length":null,"culvertPieceCount":1,
+         "materialCost":900,"installCost":null,"comments":null}]}
+      """;
+
+  /** V20260815 mill 703: 9142 (blank units + cost), 9143 (item 112, slope 100), 9144 (no id). */
+  private static final String SCHEDULE9_703_SCREEN =
+      """
+      {"records":[
+        {"contractorId":"CTR-BLK","contractualItemCode":108,"sideSlopePct":null,
+         "numberOfUnits":null,"unitCode":"M3","biogeoclimaticZone":"BZ1","cost":null,
+         "sourceCode":"A"},
+        {"contractorId":"CTR-SS","contractualItemCode":112,"sideSlopePct":100,
+         "numberOfUnits":12.0,"unitCode":"M3","biogeoclimaticZone":"BZ1","cost":7000,
+         "sourceCode":"A"},
+        {"contractorId":null,"contractualItemCode":108,"sideSlopePct":null,
+         "numberOfUnits":18.0,"unitCode":"M3","biogeoclimaticZone":"BZ1","cost":9000,
+         "sourceCode":"A"}]}
+      """;
+
+  /**
    * Every schedule appears at least once, and the schedules whose composed lines are richest appear
    * on both branches. Schedule 6's third anchor is the highest-value row in the table: one payload
    * reaches all four field segments (including the legacy cost mislabel), the row ordinals, the D2
@@ -154,8 +207,20 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
             "572",
             "2021",
             SCHEDULE3_572_SCREEN),
-        new Anchor("schedule4-560-2021", "/api/v1/schedule4/check-status", "560", "2021"),
-        new Anchor("schedule4-514-2021", "/api/v1/schedule4/check-status", "514", "2021"),
+        new Anchor(
+            "schedule4-560-2021",
+            "/api/v1/schedule4/check-status",
+            "560",
+            "2021",
+            // Since #359 this endpoint takes the open location panel; no panel open.
+            "{\"location\":null}"),
+        new Anchor(
+            "schedule4-514-2021",
+            "/api/v1/schedule4/check-status",
+            "514",
+            "2021",
+            // Since #359 this endpoint takes the open location panel; no panel open.
+            "{\"location\":null}"),
         new Anchor(
             "schedule5-673-2021",
             "/api/v1/schedule5/check-status",
@@ -200,8 +265,20 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
                         {"areaType":"TFL","tflNumber":null,"cost":5},
                         {"areaType":"01","supplyBlock":"01B","cost":0}]}
             """),
-        new Anchor("schedule7a-514-2021", "/api/v1/schedule7a/check-status", "514", "2021"),
-        new Anchor("schedule7b-514-2021", "/api/v1/schedule7b/check-status", "514", "2021"),
+        // Since #359 Schedules 7A, 7B and 9 take every on-screen row. Each body MIRRORS the
+        // anchor's stored fixture, so the golden bytes are the stored verdict, unchanged.
+        new Anchor(
+            "schedule7a-514-2021",
+            "/api/v1/schedule7a/check-status",
+            "514",
+            "2021",
+            SCHEDULE7A_514_SCREEN),
+        new Anchor(
+            "schedule7b-514-2021",
+            "/api/v1/schedule7b/check-status",
+            "514",
+            "2021",
+            SCHEDULE7B_514_SCREEN),
         new Anchor("schedule8-600-2021", "/api/v1/schedule8/check-status", "600", "2021"),
         new Anchor("schedule8-601-2021", "/api/v1/schedule8/check-status", "601", "2021"),
         new Anchor("schedule8-602-2021", "/api/v1/schedule8/check-status", "602", "2021"),
@@ -210,8 +287,19 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
             "/api/v1/schedule8/pages/8976/check-status",
             "603",
             "2021"),
-        new Anchor("schedule9-703-2021", "/api/v1/schedule9/check-status", "703", "2021"),
-        new Anchor("schedule9-704-2021", "/api/v1/schedule9/check-status", "704", "2021"),
+        new Anchor(
+            "schedule9-703-2021",
+            "/api/v1/schedule9/check-status",
+            "703",
+            "2021",
+            SCHEDULE9_703_SCREEN),
+        new Anchor(
+            "schedule9-704-2021",
+            "/api/v1/schedule9/check-status",
+            "704",
+            "2021",
+            // V20260815: 704 stores no records.
+            "{\"records\":[]}"),
         new Anchor("schedule10-720-2021", "/api/v1/schedule10/check-status", "720", "2021"),
         new Anchor("schedule10-715-2021", "/api/v1/schedule10/check-status", "715", "2021"),
         new Anchor("schedule11-617-2021", "/api/v1/schedule11/check-status", "617", "2021"),
