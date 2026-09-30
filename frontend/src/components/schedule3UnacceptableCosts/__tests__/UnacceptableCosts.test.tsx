@@ -23,6 +23,9 @@ const doc = {
   rows: [{ id: 5505, description: 'Penalty', total: 250 }],
 }
 
+// The row-delete confirmation (shared ConfirmDeleteModal, legacy p:confirm — #362).
+const deleteModal = async () => within(await screen.findByRole('presentation'))
+
 const rowOf = (displayValue: string) =>
   screen.getByDisplayValue(displayValue).closest('tr') as HTMLElement
 
@@ -124,7 +127,149 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
     expect(captured).toEqual({ rows: [{ id: 5505, description: 'Penalty', total: 300 }] })
   })
 
-  test('Remove deletes immediately (legacy): PUT with intent=delete + the deleted message', async () => {
+  test('Remove asks first (legacy confirmDeleteMsg): no PUT and the row stays until answered', async () => {
+    let putCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, () => {
+        putCalled = true
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<UnacceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Penalty')
+    await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+
+    const modal = await deleteModal()
+    expect(modal.getByText('Confirmation')).toBeInTheDocument()
+    expect(
+      modal.getByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Penalty')).toBeInTheDocument()
+    expect(putCalled).toBe(false)
+  })
+
+  test('answering No closes the prompt, sends nothing and keeps the row', async () => {
+    let putCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, () => {
+        putCalled = true
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<UnacceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Penalty')
+    await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'No' }))
+
+    expect(screen.queryByRole('presentation')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('Penalty')).toBeInTheDocument()
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    expect(putCalled).toBe(false)
+  })
+
+  test('pressing Escape closes the prompt, sends nothing and keeps the row', async () => {
+    let putCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, () => {
+        putCalled = true
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<UnacceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Penalty')
+    await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('presentation')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('Penalty')).toBeInTheDocument()
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    expect(putCalled).toBe(false)
+  })
+
+  test('an invalid edit in ANOTHER row does not block Remove, and is not saved (legacy Delete submits only itself)', async () => {
+    // Legacy's per-row Delete is process="@this": the other rows' inputs are not submitted, so a bad
+    // value typed into one of them neither blocks the delete nor reaches the database. The row is
+    // written as last stored, and the grid is re-read from the server afterwards.
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          ...doc,
+          count: 2,
+          rows: [
+            { id: 5505, description: 'Penalty', total: 250 },
+            { id: 5506, description: 'Interest', total: 40 },
+          ],
+        }),
+      ),
+      http.put(URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...doc,
+          count: 1,
+          rows: [{ id: 5506, description: 'Interest', total: 40 }],
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+    render(<UnacceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Interest')
+    await user.clear(within(rowOf('Interest')).getByLabelText('Edit description'))
+    await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(captured).toEqual({ rows: [{ id: 5506, description: 'Interest', total: 40 }] })
+    // Re-seeded from the server: the blanked description is back to its stored value.
+    expect(screen.getByDisplayValue('Interest')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Penalty')).not.toBeInTheDocument()
+  })
+
+  test('a Remove the client refuses to send puts the row back rather than dropping it unsaved', async () => {
+    // Only reachable when a STORED row itself fails validation, so its saved values cannot stand in
+    // for it. Nothing is sent, and the removed row must not vanish from a grid while still stored.
+    let putCalled = false
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          ...doc,
+          count: 2,
+          rows: [
+            { id: 5505, description: 'Penalty', total: 250 },
+            { id: 5507, description: '', total: 5 },
+          ],
+        }),
+      ),
+      http.put(URL, () => {
+        putCalled = true
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<UnacceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Penalty')
+    await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByDisplayValue('Penalty')).toBeInTheDocument()
+    expect(putCalled).toBe(false)
+  })
+
+  test('Remove answered Yes deletes at once (legacy): PUT with intent=delete + the deleted message', async () => {
     let captured: unknown = null
     let intent: string | null = null
     server.use(
@@ -154,6 +299,7 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
 
     await screen.findByDisplayValue('Penalty')
     await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
 
     // Remove persists immediately with the remaining rows and the delete intent (legacy delete()).
     expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
@@ -308,6 +454,7 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
 
       await screen.findByDisplayValue('Penalty')
       await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+      await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
 
       expect(await screen.findByText('Unable to delete unacceptable cost.')).toBeInTheDocument()
       expect(screen.queryByText('Unacceptable cost could not be saved.')).not.toBeInTheDocument()
@@ -348,6 +495,7 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
 
       await screen.findByDisplayValue('Penalty')
       await user.click(within(rowOf('Penalty')).getByRole('button', { name: /^remove$/i }))
+      await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
       expect(screen.queryByDisplayValue('Penalty')).not.toBeInTheDocument()
 
       // Edit the OTHER row while the delete is still open.

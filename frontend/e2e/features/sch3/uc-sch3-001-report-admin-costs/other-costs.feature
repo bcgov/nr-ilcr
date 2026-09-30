@@ -45,6 +45,7 @@ Feature: Report Forest Management Administration Costs (Schedule 3) — itemize 
     Then I should see the message "Data saved successfully"
     And the stored other-acceptable row carries the edited total
     When I remove the added row
+    And I confirm the row deletion
     Then I should see the message "Data deleted successfully"
     And the sub-page no longer lists the added row
     And no other-acceptable rows are stored

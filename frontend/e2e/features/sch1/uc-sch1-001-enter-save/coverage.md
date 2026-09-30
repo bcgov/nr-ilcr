@@ -60,11 +60,13 @@ this matrix:
   `not-applicable (E2E)` to `covered` — guarded by a reopen at the end of the clear-amounts scenario.
 
 > ### Suite state — the ONE place this is recorded
-> **30 scenarios / 42 tests after Scenario-Outline expansion: 41 green + 1 deliberate
-> `@discovered-divergence` RED** — S12 / DIV-3 (row delete confirm, #362). **S27/S28 / DIV-6** lost their
-> tags and markers on 2026-09-25 with the #359 group A fix. Re-measured **2026-09-25** from the generated
+> **30 scenarios / 42 tests after Scenario-Outline expansion: no deliberate reds.** **S12 / DIV-3** (row
+> delete confirm) lost its tag and marker on **2026-09-29** with the #362 fix (re-measured that day:
+> `--list` gives 42, `--grep @discovered-divergence` 0). **S27/S28 / DIV-6** lost their
+> tags and markers on 2026-09-25 with the #359 group A fix. Re-measured **2026-09-29** from the generated
 > specs: `npm run bddgen`, then `npx playwright test --list --project=chromium` filtered to `uc-sch1-001`
-> gives **42**, and with `--grep @discovered-divergence`, **1**. The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
+> gives **42**, and with `--grep @discovered-divergence`, **0**. The confirming e2e run for S12 passed on
+> **2026-09-29** on the local real-data seeded DB (`--workers=1 --grep "@other-costs|@row-delete-confirm|@unacceptable-costs|@subpage"` — 233 passed: 220 setup/preflight + 13 scenarios across the Schedule 1 and 3 sub-pages); for S27/S28 on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
 >
 > Counts used to be restated three times in this section, from three different runs and on two different
 > denominators (57 was this UC alone; 163 and 164 included the 126-check preflight, which has itself grown).
@@ -79,6 +81,9 @@ this matrix:
 A clean run needs `npm run test:gate`, which excludes every `@discovered-*` red.
 
 **What moved the numbers, in order (history — the state above is current):**
+- **2026-09-29 — S12 retired as a tracked red** (#362: Remove on the three cost sub-pages now asks
+  first, through the shared `ConfirmDeleteModal`). Only the `@discovered-divergence` tag and title marker
+  came off; no assertion changed. Verified GREEN on the seeded DB the same day. Reds 1 → 0.
 - **2026-09-25 — S27/S28 retired as tracked reds** (#359 group A: Schedules 1, 2 and 3 now send the screen
   with Check Status). Only the `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off,
   together; no assertion, step or fixture changed. Reds 3 → 1.
@@ -146,7 +151,7 @@ plus "no backup … snapshot was never taken" restore failures). A real run only
 | S09 Add line item on Other Costs sub-page | S09.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=save`) → SUC-002; row added + count updates | `other-costs.feature` `@S09 @p1` (add target 25050/2017) | covered | Add now persists the whole set (2026-08 EditableSubPage rewrite); original delivery-DB insert 500 — defects.md BUG-1 (historical) |
 | S10 Other cost line without description | S10.feature (Exc) | `validateOtherCost` `descriptionRequired` → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S10 @p1` | covered | Re-grounded FLD-006 message to the new bundle |
 | S11 Other cost line invalid cost | S11.feature (Exc) | `validateOtherCost` cost range / non-numeric → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S11 @p1` (Outline: out-of-range; non-numeric) | covered | — |
-| S12 Remove an additional line item | S12.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=delete`) → SUC-002; icon-only "Remove" deletes immediately (no confirm modal) + persists the set | `other-costs.feature` `@S12 @p1 @discovered-divergence` (remove target 9050/2017) | divergence | **RED on purpose since 2026-08-26** — defects.md **DIV-3**, ticket [#362](https://github.com/bcgov/nr-ilcr/issues/362). Precondition row added via the API; the scenario now asserts the legacy `confirmDeleteMsg` prompt and that the row survives until it is answered. It had been re-grounded onto the app's no-confirm behaviour and passing since 2026-08-07 — the wrong call (a suite must not ratify a divergence), corrected once the legacy source confirmed the prompt (`schedule1OtherCosts.xhtml:94-96`). Same shared hook as Schedule 3's DIV-5; one fix turns both green |
+| S12 Remove an additional line item | S12.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=delete`) → SUC-002; icon-only "Remove" opens the legacy "Confirmation" prompt; Yes persists the set | `other-costs.feature` `@S12 @p1` (remove target 9050/2017) | covered | **Untagged 2026-09-29 by the #362 fix** (was RED on purpose from 2026-08-26) — defects.md **DIV-3**, ticket [#362](https://github.com/bcgov/nr-ilcr/issues/362). Precondition row added via the API; the scenario now asserts the legacy `confirmDeleteMsg` prompt and that the row survives until it is answered. It had been re-grounded onto the app's no-confirm behaviour and passing since 2026-08-07 — the wrong call (a suite must not ratify a divergence), corrected once the legacy source confirmed the prompt (`schedule1OtherCosts.xhtml:94-96`). Same shared hook as Schedule 3's DIV-5; one fix turns both green |
 | S25 Per-row inline edit of an existing Other Cost — valid edit + BR-06 shared volume | **UC-SCH1-001-S25.feature** (derived 2026-08-07; split out of S09) | `useEditableCostRows.setRowDescription`/`setRowValue` + `handleSave` → whole-set `PUT …?intent=save` | `other-costs-inline-edit.feature` `@S25 @p1` (target 12050/2017) | covered | Covers both halves of the edit (cost and description) plus BR-06: the row exposes only description + cost as editable, and the volume cell shows the shared value |
 | S26 Per-row inline edit rejected — blank description / invalid cost | **UC-SCH1-001-S26.feature** (derived 2026-08-07; split out of S10/S11) | `useEditableCostRows.persist` validates every row and returns before sending; `OtherCostSaveRequest` re-validates server-side | `other-costs-inline-edit.feature` `@S26 @FLD-006 @p1` + Outline `@S26 @FLD-001`/`@FLD-004` (validate anchor 17052/2016) | covered | Mirrors S10/S11's shape (description = scenario, cost = Outline). Validate-only: each proves a zero-write with `otherCostsSpy`, so the shared anchor is never modified |
 | Shared Other-Costs row with a null volume (GET robustness) | Found while building the S02 precondition; legacy rendered this state fine and flagged it at Check Status (FLD-010) | `Schedule1Service.toOtherCosts` — row selected before mapping to its nullable volume | `clear-amounts.feature` `@p1` (the closing reopen of the five-field scenario) | covered | Was `not-applicable (E2E)` while BUG-2 made the state unreachable. **Fixed 2026-08-11** in the same commit as BUG-2, as this entry required (issue #261). Fixing BUG-2 made the state reachable by ordinary user action, so it is now guarded E2E: clear the shared volume, reopen, and the page must render instead of 500 |

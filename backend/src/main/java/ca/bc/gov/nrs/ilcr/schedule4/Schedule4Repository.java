@@ -594,6 +594,19 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       """)
   int deleteDetails(@Param("reportId") int reportId, @Param("codes") Collection<Integer> codes);
 
+  /**
+   * How many distance-category details (47/48/52) one report still carries — whether a cleared code
+   * was the last distance on a report that must itself survive, so its {@code DISTANCE} can go too.
+   */
+  @Query(
+      """
+      SELECT COUNT(*)
+        FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE TRANSPORTATION_REPORT_ID = :reportId
+         AND ILCR_REPORT_COST_ITEM_ID IN (47,48,52)
+      """)
+  int countDistanceDetails(@Param("reportId") int reportId);
+
   @Modifying
   @Query("DELETE FROM THE.ILCR_COST_REPORT_DETAIL WHERE TRANSPORTATION_REPORT_ID = :reportId")
   int deleteDetailsByReport(@Param("reportId") int reportId);

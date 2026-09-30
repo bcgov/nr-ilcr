@@ -839,12 +839,12 @@ public class Schedule4Service {
         category.distance() == null && category.volume() == null && category.cost() == null;
     if (empty) {
       for (int reportId : existing) {
-        clearDistanceChild(primaryId, reportId, code);
+        clearDistanceChild(primaryId, reportId, code, user);
       }
       return;
     }
     for (int i = 1; i < existing.size(); i++) {
-      clearDistanceChild(primaryId, existing.get(i), code);
+      clearDistanceChild(primaryId, existing.get(i), code, user);
     }
     int reportId;
     if (existing.isEmpty()) {
@@ -862,10 +862,18 @@ public class Schedule4Service {
    * lowest report id (§Decision 2 fallback), which is then a distance child that may also carry the
    * fixed detail rows just upserted onto it. Deleting it would delete the location. That report
    * keeps its row and loses only this code's detail; every other child is deleted whole.
+   *
+   * <p>Its {@code DISTANCE} belonged to the cleared code, so it is nulled too — legacy's save wrote
+   * the report's distance from the form, so a cleared distance left null — but only once no other
+   * distance code is left on the report: a legacy report can carry two that share one {@code
+   * DISTANCE}, and a code written earlier in this save may have just re-stamped it.
    */
-  private void clearDistanceChild(int primaryId, int reportId, int code) {
+  private void clearDistanceChild(int primaryId, int reportId, int code, String user) {
     if (reportId == primaryId) {
       repository.deleteDetails(reportId, List.of(code));
+      if (repository.countDistanceDetails(reportId) == 0) {
+        repository.updateReportDistance(reportId, null, user);
+      }
     } else {
       repository.deleteReport(reportId);
     }

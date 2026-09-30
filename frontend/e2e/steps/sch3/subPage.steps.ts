@@ -82,6 +82,10 @@ When('I remove the added row', async ({ schedule3SubPage, world }) => {
   await schedule3SubPage.removeRow(title(world), world.sch3RowDescription!);
 });
 
+When('I confirm the row deletion', async ({ schedule3SubPage }) => {
+  await schedule3SubPage.confirmDelete();
+});
+
 When('I go back to Schedule 3', async ({ schedule3SubPage }) => {
   await schedule3SubPage.back();
 });
@@ -184,10 +188,9 @@ Then('the stored other-acceptable row total is unchanged', async ({ request, wor
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * DIV-5's assertion: removing a row must ASK first. Deliberately RED today — the trash button goes
- * straight to `useEditableCostRows.removeRow` -> `persist(next, 'delete')` with no dialog, so a
- * mis-click destroys a recorded cost with no undo. Legacy prompted with `confirmDeleteMsg`
- * (`schedule3SubtotalOtherCosts.xhtml:94-96`).
+ * DIV-5's assertion: removing a row must ASK first, as legacy did with `confirmDeleteMsg`
+ * (`schedule3SubtotalOtherCosts.xhtml:94-96`). It was a tracked red until #362 put the trash button
+ * behind the shared confirmation; it now guards against that prompt being dropped again.
  */
 Then('the sub-page asks me to confirm the removal', async ({ schedule3SubPage }) => {
   await expect(
