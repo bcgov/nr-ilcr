@@ -1,21 +1,33 @@
-# NR ILCR Modernization Template
+# ILCR — Interior Logging Costs Reporting
 
-This repository is the local-development scaffold for rebuilding ILCR as a React frontend and Spring Boot backend. It replaces the generated TypeScript backend with a Java 21 Spring Boot executable JAR while keeping the React/Vite frontend and deployment package layout.
+ILCR collects annual logging cost information from forestry licensees to support interior stumpage rate setting in British Columbia. This repository is the modernized ILCR application, which replaces the legacy ILCR 2.0.4 (Java 8 / JSF / WebADE).
+
+- **Licensees** (`ILCR_SUBMITTER`) enter Schedules 1–11 for their mills and submit them.
+- **Ministry staff** (`ILCR_ADMIN`) review, correct, verify and reverse reports, and administer mills, users,
+  reporting years, Home content and code tables.
+- **Both roles** print schedules and run the Mill Information and Mill Status reports; submitters see only their
+  own mills. The data extract is for Ministry staff only.
+
+The application keeps the existing Oracle `THE` database as its unchanged system of record and signs users in through FAM (AWS Cognito).
 
 ## Stack
 
-- Frontend: React, TypeScript, Vite, TanStack Router, Carbon, BC Gov NR theme
-- Backend: Java 21, Spring Boot 4.0.6, Maven, executable JVM JAR, JDBC/Hikari Oracle integration
+- Frontend: React 19, TypeScript, Vite, TanStack Router, IBM Carbon with the BC Gov NR theme, aws-amplify (FAM/Cognito)
+- Backend: Java 21, Spring Boot 4.1.1, Maven, executable JVM JAR, Spring Security OAuth2 resource server, Spring Data JDBC + Hikari against Oracle `THE`, embedded JasperReports 7
+- Tests: JUnit + Testcontainers Oracle (backend), Vitest + Testing Library + MSW (frontend), Playwright + playwright-bdd + axe (`frontend/e2e`)
 - Local platform: direct Maven/npm runs or Docker Compose with backend, frontend, optional Caddy, and sanitized Oracle env wiring
-- Target platform: OpenShift Gold using `backend` and `frontend` deployment packages. Gold is the only intended OpenShift target, but it is not required for current local development.
+- Target platform: OpenShift Gold using the `backend`, `frontend` and `database` deployment packages
 
 ## Project Layout
 
 ```text
-backend/     Spring Boot API scaffold
-frontend/    React/Vite web app
-common/      Shared integration, E2E, and load tests
-monitoring/  Observability configuration
+backend/     Spring Boot API (one package per schedule and feature)
+frontend/    React/Vite web app; frontend/e2e is the Playwright + playwright-bdd suite
+database/    Oracle Free image for the CI e2e database (tools namespace)
+common/      OpenShift init template, API smoke test, k6 load tests
+scripts/     Local DDL helper and read-only delivery-schema probes
+docs/        Decision records and delivery-schema probe output
+monitoring/  Sysdig alert templates (used by the PROD monitor job)
 ```
 
 ## Local Development
@@ -50,11 +62,10 @@ $env:BACKEND_URL = "http://localhost:8080"
 npm run dev
 ```
 
-The frontend shell includes the default NRS Carbon layout, light/dark theme toggle, side navigation, and a top-right mock user selector. The scaffold personas are:
+The frontend shell includes the NRS Carbon layout, light/dark theme toggle, side navigation, and (on localhost) a top-right mock user selector. The mock personas are:
 
 - Alex Admin: `ILCR_ADMIN`
 - Sam Submitter: `ILCR_SUBMITTER`
-- Casey Dual Role: `ILCR_ADMIN`, `ILCR_SUBMITTER`
 
 Run the full local stack:
 
@@ -65,9 +76,9 @@ docker compose up --build backend frontend
 
 The frontend is available at `http://localhost:3000`. In compose, the backend is mapped to `http://localhost:8080` and runs inside the container on port `8080`.
 
-The default backend runtime is secure and Oracle-required; the explicit `local` profile opts out so repository work can start without forcing every local backend boot to validate a database connection.
+Locally the backend starts with security off (mock principal from the `X-Mock-Groups` header) and no datasource: both `ILCR_SECURITY_ENABLED` and `ILCR_DATASOURCE_ENABLED` default to `false` in `application.yml`. Deployed pods always run with security on (see [OpenShift Status](#openshift-status)).
 
-To validate Oracle on backend startup, put local values in ignored `.env` and set `ILCR_DATASOURCE_ENABLED=true` for Docker Compose:
+To connect Oracle on backend startup, put local values in ignored `.env` and set `ILCR_DATASOURCE_ENABLED=true` for Docker Compose:
 
 ```powershell
 SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//<host>:1521/<service-name>
@@ -172,9 +183,11 @@ re-implement (paths under `frontend/src`):
   version (left) and the BC Gov copyright/disclaimer/privacy/accessibility links (centred). The version
   comes from `__APP_VERSION__`, inlined from `package.json` by a Vite `define` (see `vite.config.ts`;
   typed in `src/vite-env.d.ts`) — reuse that global for any other build-time constant.
-- **Global styles** (`styles/_overrides.scss`, `styles/_custom.scss`) — all Carbon buttons are 40px
-  high across size variants (via the `--cds-layout-size-height-local` token, so labels stay centred);
-  text areas share the same light-grey field background (`#f4f4f4`) as the text inputs.
+- **Global styles** (`styles/_overrides.scss`, `styles/_custom.scss`) — buttons and fields share one
+  48px (3rem) height app-wide, across size variants, via the `--cds-layout-size-height-local` token
+  (Story 30.2), so controls take no `size` prop; Carbon's Dropdown ignores the token and is pinned
+  separately. Text areas share the same light-grey field background (`#f4f4f4`) as the text inputs.
+  The height contract is pinned by `styles/__tests__/controlHeightContract.test.ts`.
 
 ## Git Ignore Policy
 
@@ -184,15 +197,29 @@ If a local setting is needed by the team, add a sanitized example to `.env.examp
 
 ## Backend Notes
 
-The backend follows the proven CSP-style JVM deployment path: Spring Boot 4, executable JAR, JDBC/Hikari for Oracle access, Log4j2 logging, actuator health, Maven verification, and CycloneDX SBOM generation. Graal/native-image support is intentionally not part of this scaffold.
+The backend follows the CSP-style JVM deployment path: Spring Boot 4, executable JAR, Log4j2 logging, actuator health, Maven verification, and CycloneDX SBOM generation. Graal/native-image support is intentionally not part of this build.
 
-FAM authentication is tracked separately. The dashboard currently displays the selected local mock principal only; do not add a parallel users API or auth model in this scaffold. Align route protection, token handling, principal hydration, and role checks with the FAM integration plan before securing feature endpoints.
+- **Package shape.** Each feature package (`schedule1` … `schedule11`, `checkstatus`, `reporting`, `dataextract`, `millmaintenance`, `assignment`, …) has:
+  - a controller that implements an `api/*Api` interface holding the request mappings;
+  - `dto/` records;
+  - a service that owns the transactions;
+  - a Spring Data JDBC repository with explicit `@Query` SQL against `THE`.
+- **No schema changes.** The application runs no DDL: Flyway is test-scope only and builds the throwaway test databases.
+- **Authorization is server-side.**
+  - Every endpoint requires authentication. Every data endpoint also checks a permission action with
+    `@PreAuthorize`; the exceptions are the identity and working-context reads (`/me`, `/mills`,
+    `/reporting-years`, `/mill-context`, `/home-content/mine`).
+  - Schedule writes also pass the role × status editability matrix.
+  - Submitters are limited to mills they are actively assigned to.
+- **Errors** are RFC 7807 `ProblemDetail`, and message text comes from `messages.properties` under the legacy keys.
 
 ## OpenShift Status
 
-OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. Pull requests always deploy a sandbox environment (zone = PR number mod 50). Merges to `main` deploy to TEST on every merge. The PROD pipeline (deploy, Sysdig monitor, image promotion) is commented out in `.github/workflows/merge.yml` until the `prod` GitHub environment has its own `ORACLEDB_*` secrets; restore those jobs to open PROD.
-
-Deployed pods fail closed on authentication: JWT enforcement (`ILCR_SECURITY_ENABLED`) and the Oracle datasource (`ILCR_DATASOURCE_ENABLED`) both default to `true` and can be overridden per scope with GitHub variables (environment-first, then repository). The backend refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data from a public route; setting both variables to `false` yields a data-less mock-auth smoke deployment.
+- **Environments.** Pull requests that touch deployable paths deploy a sandbox (zone = PR number mod 50). Merges to `main` deploy to TEST.
+- **PROD is not yet enabled.** The PROD pipeline (deploy, Sysdig monitor, image promotion) is commented out in `.github/workflows/merge.yml` until the `prod` GitHub environment has its own `ORACLEDB_*` secrets. Restore those jobs to open PROD.
+- **Security is always on.** Deployed pods always enforce FAM/Cognito JWT authentication: `ILCR_SECURITY_ENABLED` is hard-coded `"true"` in `backend/openshift.deploy.yml`.
+- **Datasource.** `ILCR_DATASOURCE_ENABLED` defaults to `true`. It can be set to `false` with a **repository-level** GitHub variable for a data-less smoke deployment. The deploy matrix reads it before the environment attaches, so an environment-scoped value is ignored.
+- **Fail-closed guard.** The backend also refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data.
 
 The NR User Lookup directory search (`ILCR_USER_LOOKUP_ENABLED`, DL-27) is a separate switch and ships `false` in every environment. Only its non-secret half is wired in `backend/openshift.deploy.yml` — the service-account credential (`ILCR_USER_LOOKUP_CLIENT_ID` / `_SECRET`) is a per-environment Vault secret that does not exist yet, and a `secretKeyRef` to a missing Secret would fail the pod, so it lands with the DL-27 onboarding work. The backend refuses to start with the flag on and any of the four values blank, so the switch and the credential cannot drift apart. While the flag is off the endpoint is not routed at all and `GET /api/v1/users/lookup` answers 404.
 
@@ -202,8 +229,12 @@ Backend:
 
 ```powershell
 cd backend
-mvn verify
+mvn verify                      # unit tests, JaCoCo, Checkstyle, Spotless — integration tests are SKIPPED
+mvn verify -P integration-test  # integration tests only (Testcontainers Oracle; needs Docker)
+mvn verify -P all-tests         # both
 ```
+
+`mvn verify` on its own prints BUILD SUCCESS without running any `*IT`; check the `Tests run:` count before reading a green build as integration coverage. Run `mvn spotless:apply` first — `spotless:check` fails the build.
 
 Frontend:
 
