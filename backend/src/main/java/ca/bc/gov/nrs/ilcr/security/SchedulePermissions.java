@@ -44,9 +44,19 @@ public class SchedulePermissions {
     // alone
     // is denied 403. Under Epic 16's role union, ADMIN+SUBMITTER retains the action, while
     // ReportSubmission preserves its SUBMITTER mill-assignment scope.
+    //
+    // GENERATE_MILL_REPORTS (#468): legacy showed a Licensee the Generate Reports menu and let them
+    // open the mill reports, so the rewrite's ADMIN-only gate was a regression — the menu item, the
+    // two report routes and these APIs all hung off it. Granted to SUBMITTER here, which is the
+    // one place the three symptoms share. GENERATE_DATA_EXTRACT stays ADMIN-only: the CSV extract
+    // is a ministry surface that happens to live under the same menu.
     ROLE_ACTIONS.put(
         Role.SUBMITTER,
-        EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.SUBMIT_REPORT));
+        EnumSet.of(
+            Action.VIEW_SCHEDULE,
+            Action.EDIT_SCHEDULE,
+            Action.SUBMIT_REPORT,
+            Action.GENERATE_MILL_REPORTS));
   }
 
   /**

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.dataextract.csv.section;
 
+import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.divide;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.divideNoRounding;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.sumCosts;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.sumCostsTwoDecimals;
@@ -17,10 +18,15 @@ import java.util.List;
  * Legacy {@code Schedule1OtherExtract}: the itemized Other Costs rows of one (mill, year), then a
  * {@code Total:} row.
  *
- * <p>Two legacy quirks kept verbatim. Every itemized row carries the SHARED Other-Costs volume (the
- * owner stamps no per-row volume, and legacy's rows all showed the one summary figure), so the
- * total row's volume is that figure times the row count. And the total row formats the summed
- * VOLUME to two decimals but the summed COST to none — the inverse of the rows above it.
+ * <p>Every itemized row prints its OWN stored volume and its own cost/volume, as legacy did ({@code
+ * ocl.getVolume()} and {@code ocl.getCostVolume()}, {@code Schedule1OtherExtract.java:77, :79}),
+ * and the total row sums those per-row volumes ({@code :81, :88}). The document's shared
+ * Other-Costs volume, and the owner's per-row {@code perUnit} derived from it, are the sub-page's
+ * figures and are not read here: a (mill, year) with no shared null-description row has no shared
+ * volume, yet its rows still carry theirs. So deviation (R) does not apply to this section's CPU.
+ *
+ * <p>One legacy quirk kept verbatim: the total row formats the summed VOLUME to two decimals but
+ * the summed COST to none — the inverse of the rows above it.
  */
 public final class Schedule1OtherSection implements SectionBuilder {
 
@@ -60,7 +66,6 @@ public final class Schedule1OtherSection implements SectionBuilder {
     if (items.isEmpty()) {
       return List.<String[]>of(ctx.noDataRow());
     }
-    BigDecimal sharedVolume = document.volume();
     List<String[]> rows = new ArrayList<>();
     List<BigDecimal> volumes = new ArrayList<>();
     List<Number> costs = new ArrayList<>();
@@ -68,10 +73,11 @@ public final class Schedule1OtherSection implements SectionBuilder {
       rows.add(
           ctx.with(
               text(item.description()),
-              whole(sharedVolume),
+              whole(item.volume()),
               whole(item.cost()),
-              twoDecimals(item.perUnit())));
-      volumes.add(sharedVolume);
+              // Legacy getCostVolume() = bigDecimalDivision(cost, volume) (CostVolumeType.java:86).
+              twoDecimals(divide(item.cost(), item.volume()))));
+      volumes.add(item.volume());
       costs.add(item.cost());
     }
     rows.add(

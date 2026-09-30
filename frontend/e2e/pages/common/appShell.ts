@@ -28,9 +28,10 @@ export class AppShellPage {
   /**
    * Open the app with the backend unreachable (all `/api` aborted); assert the header mounted.
    *
-   * AS THE ADMINISTRATOR, and this scenario is the ONLY place in the suite that is: the nav
-   * assertion covers `Generate Reports`, which is `adminOnly: true` in `routes/-navigation.ts`, so
-   * a submitter would not render it at all. Stated here as a precondition rather than inherited
+   * AS THE ADMINISTRATOR, and this scenario is the ONLY place in the suite that is. The nav
+   * assertion once covered `Generate Reports` as an `adminOnly` group; since #468 both roles render
+   * it (only its Data Extract entry stays admin-only), so the administrator is kept here for the
+   * scenario's stability, not because the assertion needs it. Stated as a precondition rather than inherited
    * from whichever user `MOCK_USERS[0]` happens to be — that inheritance is exactly what silently
    * ran the whole suite as an administrator for a month (see `pages/common/mockUser.ts`). The
    * global `page` fixture seeds the submitter first; init scripts run in the order they were

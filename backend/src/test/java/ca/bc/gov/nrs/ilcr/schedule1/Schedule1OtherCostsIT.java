@@ -64,6 +64,9 @@ class Schedule1OtherCostsIT extends AbstractOracleIT {
         // Row 5051: cost 3000, perUnit = 3000 / shared 5000 = 0.6 (server-computed).
         .andExpect(jsonPath("$.rows[?(@.id == 5051)].cost", contains(3000)))
         .andExpect(jsonPath("$.rows[?(@.id == 5051)].perUnit", contains(0.6)))
+        // A row's own stored volume is read for the Data Extract only; the sub-page contract
+        // carries no per-row volume.
+        .andExpect(jsonPath("$.rows[0].volume").doesNotExist())
         // Row 5052 (null cost) is still listed (EQ-M2).
         .andExpect(jsonPath("$.rows[?(@.description == 'Existing Row B')]", hasSize(1)));
   }

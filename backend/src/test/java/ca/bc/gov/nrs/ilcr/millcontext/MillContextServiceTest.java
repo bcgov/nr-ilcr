@@ -23,6 +23,7 @@ import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -151,6 +152,74 @@ class MillContextServiceTest {
         new UsernamePasswordAuthenticationToken("some-other-principal", "N/A", List.of()));
     SecurityContextHolder.setContext(ctx);
     assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  // ---- callerMillScope (#468): the report-side twin of listMills.
+
+  @Test
+  void callerMillScope_admin_isUnscoped_withoutTouchingTheXref() {
+    // roleChecker→true (admin) from @BeforeEach: no repository read (strict Mockito proves it).
+    assertTrue(service.callerMillScope().isEmpty());
+  }
+
+  @Test
+  void callerMillScope_submitter_isTheirAssociatedMillIds() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("GUID-1");
+    when(repository.findMillsForUser("GUID-1"))
+        .thenReturn(
+            List.of(
+                new MillSummary(514L, "5140", "A", "ACT"),
+                new MillSummary(730L, "7300", "B", "CLS")));
+
+    assertEquals(Optional.of(Set.of(514L, 730L)), service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_submitterWithNoMills_isAnEmptyScope_notUnscoped() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("GUID-2");
+    when(repository.findMillsForUser("GUID-2")).thenReturn(List.of());
+
+    // Optional.of(empty set), NOT Optional.empty(): "nothing" must never read as "everything".
+    assertEquals(Optional.of(Set.of()), service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_submitterBlankGuid_isRefused_notAnEmptyScope() {
+    // #468 review: "no identity" must not read as "a user with no mills". A blank claim is a
+    // token/claim-mapping problem and surfaces as an audited 403, never as an empty table.
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("");
+    assertThrows(AccessDeniedException.class, () -> service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_principalWithoutIdentity_isRefused() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken("some-other-principal", "N/A", List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertThrows(AccessDeniedException.class, () -> service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_mockPrincipal_isScopedByItsStandInGuid_likeTheHomeList() {
+    // Deliberately NOT validateMillAccess's non-Jwt exemption: the reports follow listMills, which
+    // scopes the dev mock submitter by the GUID MockPrincipalFilter gives it.
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken(
+            new MockUserPrincipal("dev-submitter", "MOCKGUIDAAAABBBBCCCCDDDD00000001"),
+            "N/A",
+            List.of()));
+    SecurityContextHolder.setContext(ctx);
+    when(repository.findMillsForUser("MOCKGUIDAAAABBBBCCCCDDDD00000001"))
+        .thenReturn(List.of(new MillSummary(514L, "5140", "A", "ACT")));
+
+    assertEquals(Optional.of(Set.of(514L)), service.callerMillScope());
   }
 
   @Test

@@ -11,10 +11,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Mill Status Report endpoint (Story 19.2 / UC-MRPT-004). Gated on the ADMIN-only {@code
- * GENERATE_MILL_REPORTS} action (AD-7) so a SUBMITTER is denied 403 server-side — the hidden
- * Generate Reports menu is UX only, not the boundary. Delegates all work to {@link
- * MillReportStatusService}; never touches a repository directly (AD-1 layering).
+ * Mill Status Report endpoint (Story 19.2 / UC-MRPT-004). Gated on the {@code
+ * GENERATE_MILL_REPORTS} action (AD-7), which both production roles hold since #468 (legacy let a
+ * Licensee open the mill reports); a principal with neither role is denied 403 server-side — the
+ * menu is UX only, not the boundary. Delegates all work to {@link MillReportStatusService}; never
+ * touches a repository directly (AD-1 layering).
  *
  * <p><b>No mill/year working-context guard runs here, deliberately.</b> Neither {@code
  * MillContextService.validateMillYearActive} overload ({@code MillContextService.java:348}, {@code

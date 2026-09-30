@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.reporting;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.millinformation.MillInformationService;
 import ca.bc.gov.nrs.ilcr.millinformation.dto.MillInformationSection;
@@ -26,6 +27,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.sql.DataSource;
 import net.sf.jasperreports.engine.JRException;
@@ -41,6 +44,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -84,6 +88,7 @@ public class ReportService {
   private final Schedule10Service schedule10Service;
   private final Schedule11Service schedule11Service;
   private final MillInformationService millInformationService;
+  private final MillContextService millContextService;
   private final ReportVirtualizerFactory virtualizerFactory;
 
   /**
@@ -120,6 +125,8 @@ public class ReportService {
    * @param schedule10Service the Schedule 10 read (bean-datasource feed, Story 20.4)
    * @param schedule11Service the Schedule 11 read (bean-datasource feed)
    * @param millInformationService the Mill Information read (all mills for one reporting year)
+   * @param millContextService the caller's mill scope for the Mill Information reports (#468): an
+   *     administrator covers every mill, a submitter their associated mills, as legacy did
    * @param virtualizerFactory builds the per-render Jasper swap-file virtualizer (Story 29.2) so a
    *     large or combined fill spills page objects to disk instead of pinning them on the heap
    */
@@ -138,8 +145,10 @@ public class ReportService {
       Schedule10Service schedule10Service,
       Schedule11Service schedule11Service,
       MillInformationService millInformationService,
-      ReportVirtualizerFactory virtualizerFactory) {
+      ReportVirtualizerFactory virtualizerFactory,
+      MillContextService millContextService) {
     this.dataSource = dataSource;
+    this.millContextService = millContextService;
     this.schedule1Service = schedule1Service;
     this.schedule2Service = schedule2Service;
     this.schedule3Service = schedule3Service;
@@ -220,7 +229,19 @@ public class ReportService {
    * @return the filled report, ready to stream (the caller closes it after export)
    */
   public RenderedReport renderMillInformation(int year) {
-    List<MillInformationSection> sections = millInformationService.findSections(year);
+    // Scoped to the caller (#468): legacy's getMillReportPrintStream looped over the user's mill
+    // selection, so a submitter's PDF covers their associated mills and an administrator's every
+    // mill. A submitter with nothing in scope gets the same "no mills" 404 an empty year does.
+    Optional<Set<Long>> scope = millContextService.callerMillScope();
+    if (scope.isPresent() && scope.get().isEmpty()) {
+      // A submitter with no mills: nothing can match, so the year is not even read.
+      log.warn("Caller has no mills to report on for year {} — nothing to render", year);
+      throw new MillInformationNoMillsException();
+    }
+    List<MillInformationSection> sections =
+        millInformationService.findSections(year).stream()
+            .filter(section -> scope.isEmpty() || scope.get().contains(section.millId()))
+            .toList();
     if (sections.isEmpty()) {
       // WARN, not ERROR: the year is open and simply has no mills initialised against it. Nobody
       // needs to fix code for this, so it must not raise the 5xx rate or page anyone.
@@ -268,6 +289,15 @@ public class ReportService {
    * @return the filled single-section report plus the mill number its filename needs
    */
   MillDrillDown renderMillInformation(long millId, int year) {
+    // The drill-down is one row of the scoped status table (#468): a submitter may drill only into
+    // a mill that table lists for them. Checked BEFORE the read so an unassociated caller learns
+    // nothing about which mills exist — 403 whether or not the mill is real. The same message as
+    // MillContextService.validateMillAccess, so the 403 handler audits it the same way.
+    Optional<Set<Long>> scope = millContextService.callerMillScope();
+    if (scope.isPresent() && !scope.get().contains(millId)) {
+      log.info("Mill-scope 403: submitter not associated to millId={} (drill-down)", millId);
+      throw new AccessDeniedException("Mill is not associated to the caller.");
+    }
     MillInformationSection section =
         millInformationService
             .findSection(millId, year)

@@ -1,13 +1,19 @@
 package ca.bc.gov.nrs.ilcr.millreportstatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millinformation.MillInformationRepository;
 import ca.bc.gov.nrs.ilcr.millinformation.ZoneDescriptionEntity;
 import ca.bc.gov.nrs.ilcr.millreportstatus.dto.MillReportStatusRow;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +37,10 @@ class MillReportStatusServiceTest {
 
   @Mock private MillReportStatusRepository repository;
   @Mock private MillInformationRepository millInformationRepository;
+
+  // Unstubbed, Mockito answers Optional.empty(): the unscoped (administrator) read every existing
+  // case here exercises. The two #468 cases below stub a submitter's scope.
+  @Mock private MillContextService millContextService;
 
   @InjectMocks private MillReportStatusService service;
 
@@ -210,6 +220,29 @@ class MillReportStatusServiceTest {
     assertThat(service.findRows(2021))
         .extracting(MillReportStatusRow::millId)
         .containsExactly(514L, 730L, 731L);
+  }
+
+  @Test
+  @DisplayName("a submitter's table is only their associated mills, in repository order (#468)")
+  void submitterScopeKeepsOnlyAssociatedMills() {
+    when(repository.findStatusRows(2021))
+        .thenReturn(List.of(millWith(514, "9999"), millWith(730, "7300"), millWith(731, "0001")));
+    when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of(731L, 514L)));
+
+    assertThat(service.findRows(2021))
+        .extracting(MillReportStatusRow::millId)
+        .containsExactly(514L, 731L);
+  }
+
+  @Test
+  @DisplayName("a submitter with no associated mills gets an empty table, never everyone's (#468)")
+  void submitterWithNoMillsSeesNothing_andNothingIsRead() {
+    when(millContextService.callerMillScope()).thenReturn(Optional.of(Set.of()));
+
+    assertThat(service.findRows(2021)).isEmpty();
+    // Nothing can match an empty scope, so the year is not read at all (strict Mockito would also
+    // flag a stubbed-but-unused repository here).
+    verify(repository, never()).findStatusRows(anyInt());
   }
 
   /** A row whose every text column carries a value unique to that column. */

@@ -40,11 +40,18 @@ export type NavigationLink = {
   adminOnly?: boolean
 }
 
-/** An expandable top-level menu with one or more sub-items (e.g. Schedules → Schedule 1). */
+/** One entry of an expandable menu. `adminOnly` hides just this entry from non-administrators. */
+export type NavigationSubItem = { name: string; path: RoutePath; adminOnly?: boolean }
+
+/**
+ * An expandable top-level menu with one or more sub-items (e.g. Schedules → Schedule 1). A menu-level
+ * `adminOnly` hides the whole menu; a sub-item-level one hides that entry alone, so a menu both roles
+ * see can still carry an administrator-only page (Generate Reports → Data Extract).
+ */
 export type NavigationMenu = {
   icon: NavIcon
   name: string
-  items: { name: string; path: RoutePath }[]
+  items: NavigationSubItem[]
   adminOnly?: boolean
 }
 
@@ -56,8 +63,8 @@ export const isNavigationMenu = (item: NavigationItem): item is NavigationMenu =
 // Top-level information architecture, aligned to the legacy menu (menu.xhtml): Home, Schedules,
 // Check Status, Administration, Generate Reports, Print Schedules — plus Submissions (the modern
 // file-upload area, not in legacy). Administration is admin-gated (LayoutSideNav filters on the
-// ILCR_ADMIN role), as is Generate Reports. Check Status and Print Schedules are scaffolded
-// placeholders until their modernization slices land.
+// ILCR_ADMIN role); Generate Reports is not (#468), though its Data Extract entry is. Check Status
+// and Print Schedules are scaffolded placeholders until their modernization slices land.
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     // Story 1.3: '/' renders the Home (Mill and Reporting Year) page — legacy has no Dashboard
@@ -113,15 +120,18 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     ],
   },
   {
-    // Generate Reports is the ministry reporting area and is administrator-only: legacy required both
-    // the generateReports and millReport actions to render it, and a Licensee held neither.
+    // Generate Reports is visible to BOTH roles (#468): legacy showed a Licensee the menu and let
+    // them open the mill reports, and the backend grants GENERATE_MILL_REPORTS to a SUBMITTER to
+    // match. An earlier reading of legacy's gate had made the whole menu administrator-only, which
+    // hid the item, blanked both report routes and 403'd the report APIs for a submitter.
     icon: Report,
     name: 'Generate Reports',
-    adminOnly: true,
     items: [
       // First, as legacy had it (menu.xhtml:39): Data Extract led the Generate Reports submenu,
-      // ahead of both mill reports.
-      { name: 'Data Extract', path: ROUTES.dataExtract },
+      // ahead of both mill reports. It is the one entry here that stays administrator-only — the
+      // CSV extract is a ministry surface (GENERATE_DATA_EXTRACT), gated per-entry now that its
+      // parent menu is not.
+      { name: 'Data Extract', path: ROUTES.dataExtract, adminOnly: true },
       { name: 'Mill Information Report', path: ROUTES.millInformationReport },
       // Legacy's own menu label for millReportStatus.xhtml (menu.xhtml:41) — "Mill Status Report",
       // not "Mill Report Status". The page title matches it.
@@ -141,21 +151,30 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
 ]
 
 /**
- * The navigation items a user may see. Admin-only items (Administration) are dropped for non-admins.
- * This is a UX affordance only — the backend independently enforces the 403 (MAINTAIN_CODE_TABLES),
- * so hiding the menu never stands in for the real authorization boundary.
+ * The navigation items a user may see. Admin-only items (Administration) are dropped for non-admins,
+ * and so is an admin-only entry inside a menu they do see (Generate Reports → Data Extract). This is
+ * a UX affordance only — the backend independently enforces the 403 (MAINTAIN_CODE_TABLES,
+ * GENERATE_DATA_EXTRACT), so hiding the menu never stands in for the real authorization boundary.
  */
 export const visibleNavigationItems = (isAdmin: boolean): NavigationItem[] =>
-  NAVIGATION_ITEMS.filter((item) => !item.adminOnly || isAdmin)
+  NAVIGATION_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) =>
+    isNavigationMenu(item) && !isAdmin
+      ? { ...item, items: item.items.filter((sub) => !sub.adminOnly) }
+      : item,
+  )
 
 /**
- * The paths only an ILCR_ADMIN may open, derived from the same `adminOnly` flag the nav filter uses —
- * so the route guard and the hidden-menu affordance can never drift apart. The backend independently
- * 403s these; the guard is the matching UX so a bookmarked admin link doesn't render for a submitter.
+ * The paths only an ILCR_ADMIN may open, derived from the same `adminOnly` flags the nav filter uses
+ * — a menu's flag covers every entry under it, an entry's flag covers that entry — so the route guard
+ * and the hidden-menu affordance can never drift apart. The backend independently 403s these; the
+ * guard is the matching UX so a bookmarked admin link doesn't render for a submitter.
  */
-export const ADMIN_ONLY_PATHS: readonly RoutePath[] = NAVIGATION_ITEMS.flatMap((item) =>
-  item.adminOnly ? (isNavigationMenu(item) ? item.items.map((sub) => sub.path) : [item.path]) : [],
-)
+export const ADMIN_ONLY_PATHS: readonly RoutePath[] = NAVIGATION_ITEMS.flatMap((item) => {
+  if (!isNavigationMenu(item)) {
+    return item.adminOnly ? [item.path] : []
+  }
+  return item.items.filter((sub) => item.adminOnly || sub.adminOnly).map((sub) => sub.path)
+})
 
 export const isAdminOnlyPath = (path: string): boolean => {
   // Match the admin path itself and anything nested under it, ignoring a trailing slash — so a

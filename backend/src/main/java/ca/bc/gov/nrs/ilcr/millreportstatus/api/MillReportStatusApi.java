@@ -11,13 +11,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Mill Status Report API contract (Story 19.2 / UC-MRPT-004; controller + api-interface split). The
  * interface owns the request mapping; {@code MillReportStatusController} implements it and adds the
- * ADMIN-only {@code GENERATE_MILL_REPORTS} authorization.
+ * {@code GENERATE_MILL_REPORTS} authorization (both production roles since #468).
  *
  * <p>It lives in its own package rather than as a fourth method on {@code ReportApi} because that
  * contract is explicitly a PDF download — every method there returns a {@code
  * ResponseEntity<Resource>} of {@code application/pdf} — and a {@code ResponseEntity<List<…>>}
  * would break its single-shape story. {@code CodeTableApi} is the comparator this follows: an
- * ADMIN-only, read-only JSON list.
+ * Read-only JSON list; both production roles since #468.
  */
 @RequestMapping("/api/v1/reports")
 public interface MillReportStatusApi {
@@ -41,7 +41,8 @@ public interface MillReportStatusApi {
    * GENERATE_MILL_REPORTS} → 403; anonymous → 401.
    *
    * @param year the reporting year (optional raw String, so the guard owns the rejection text)
-   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — administrators only)
+   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — both production roles
+   *     since #468)
    * @return 200 with one row per mill in mill-id order; {@code []} when the year has no mills
    */
   @GetMapping("/mill-status")

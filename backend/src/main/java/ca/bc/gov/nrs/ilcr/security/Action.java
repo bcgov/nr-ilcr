@@ -36,11 +36,13 @@ public enum Action {
    */
   MAINTAIN_USERS,
   /**
-   * Generate the ministry mill reports (the Generate Reports area). ADMIN-only: legacy required
-   * BOTH {@code generateReports} and {@code millReport} to render the menu item, and neither was
-   * held by a Licensee, so a SUBMITTER hitting the report API is denied 403. Deliberately NOT
-   * {@link #VIEW_SCHEDULE} — that is the print/schedule read gate, which both production roles
-   * hold.
+   * Generate the mill reports (the Generate Reports area: Mill Information Report, Mill Status
+   * Report and its per-mill drill-down). Held by BOTH production roles since #468: legacy showed a
+   * Licensee the Generate Reports menu and let them open these reports, so the earlier ADMIN-only
+   * reading of the legacy gate was a regression. Still a separate action from {@link
+   * #VIEW_SCHEDULE} — the print/schedule read gate — because the two are different capabilities
+   * over different content (these reports span every mill), and from {@link
+   * #GENERATE_DATA_EXTRACT}, which stays ADMIN-only.
    */
   GENERATE_MILL_REPORTS,
   /**

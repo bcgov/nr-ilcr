@@ -5,16 +5,13 @@ import ca.bc.gov.nrs.ilcr.millcontext.api.MillContextApi;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.CallerIdentity;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
 import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
-import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -51,24 +48,10 @@ public class MillContextController implements MillContextApi {
    * scoped to an empty list (fail-closed) by {@link MillContextService#listMills(boolean, String)}.
    */
   private static String currentUserGuid() {
-    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth == null) {
-      return "";
-    }
-    if (auth.getPrincipal() instanceof Jwt jwt) {
-      return JwtPrincipalUtil.getIdpUserId(jwt);
-    }
-    // Dev/UAT mock principal (security off): MockPrincipalFilter presents a MockUserPrincipal
-    // carrying a stand-in directory GUID — not as the principal NAME, which feeds the
-    // VARCHAR2(30) audit columns (a FAM GUID is 32 chars). Without it the mock fail-closed to an
-    // empty mill list, so only ILCR_ADMIN saw any mill; once Story 16.1 took Draft editing from
-    // admins, no single role could run the e2e suite. Unreachable when deployed: that filter is
-    // not registered then.
-    if (auth.getPrincipal() instanceof MockUserPrincipal mock) {
-      return mock.userGuid();
-    }
-    // Any other non-Jwt principal carries no identity we can scope by: fail closed, never all.
-    return "";
+    // One shared reader (CallerIdentity) since #468, so this list and the report scope can never
+    // disagree about who the caller is. "No identity" fails closed here to an empty list; the
+    // report scope refuses instead — see CallerIdentity for why the two differ.
+    return CallerIdentity.currentUserGuid().orElse("");
   }
 
   @Override

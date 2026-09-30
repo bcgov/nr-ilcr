@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { render, screen, waitFor } from '@/test-utils'
+import { render, renderAsAdmin, renderAsSubmitter, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import MillInformationReport from '@/components/millInformationReport'
@@ -38,6 +38,28 @@ const reportRespondsWithPdf = (capture?: (year: string | null) => void) =>
 
 describe('Mill Information Report', () => {
   beforeEach(() => downloaded.mockClear())
+
+  test('the note says "every mill" to an administrator and "each mill associated with you" to a submitter (#468)', async () => {
+    // The PDF is scoped server-side: unscoped for an administrator (tied to no mill), the associated
+    // mills for a submitter — legacy's own wording for a licensee. The note must match what the
+    // caller will actually get.
+    yearsRespond(OPEN_YEARS)
+    const { unmount } = renderAsAdmin(<MillInformationReport />)
+    expect(
+      await screen.findByText(
+        'The Mill Information Report created will include a report on every mill.',
+      ),
+    ).toBeInTheDocument()
+    unmount()
+
+    renderAsSubmitter(<MillInformationReport />)
+    expect(
+      await screen.findByText(
+        'The Mill Information Report created will include a report on each mill associated with you.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/report on every mill/)).not.toBeInTheDocument()
+  })
 
   test('pre-selects the most recent opened year', async () => {
     yearsRespond(OPEN_YEARS)
