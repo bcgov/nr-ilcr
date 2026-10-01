@@ -1,8 +1,10 @@
-# <your-app> E2E (BDD — Gherkin + Playwright via playwright-bdd)
+# ILCR E2E (BDD — Gherkin + Playwright via playwright-bdd)
 
-Browser-automation end-to-end tests for a BC Gov Natural Resources app, driven against a **running
-local stack** (Vite/React frontend → Spring backend → Docker Oracle DB). Self-contained on purpose so
-it can live in its own folder or be lifted into the app repo.
+Browser-automation end-to-end and accessibility tests for ILCR, driven against a **running local stack**
+(Vite/React frontend → Spring backend → Docker Oracle DB). The package is self-contained, with its own
+`package.json` and `node_modules`. CI runs it on pull requests that touch deployable paths (`backend/`,
+`frontend/`, `common/`, `database/`, `.github/workflows/`): the Tests job in `.github/workflows/pr-open.yml` runs
+only when the sandbox deploy triggered, and calls `.github/workflows/reusable-tests.yml`.
 
 This is a **BDD suite**: `.feature` files are the executable spec, `playwright-bdd` (`bddgen test`)
 compiles them into native Playwright tests, and a reusable step layer implements the Gherkin against
@@ -55,9 +57,8 @@ per concern within it. A step belongs to `steps/<domain>/` if only that domain u
 
 ## Prerequisites — bring up the full stack
 
-The steps below describe the typical **BC Gov NR-stack** bring-up (Vite/React frontend → Spring backend →
-Docker Oracle DB, with local mock auth). Treat the specific ports, DSN, container name, cache-evict URL,
-and env flags as **defaults to adjust for your app** — override them via `.env` (see below).
+The steps below bring up ILCR's local stack (Vite/React frontend → Spring backend → Docker Oracle DB, with local
+mock auth). Ports, DSN and container name are defaults; override them via `.env` (see below).
 
 1. **Seeded Oracle DB — pre-built Docker image + seed patches.** The suite runs against a Docker image
    that already contains the **real extracted test data** — no repo checkout, `docker compose`, or manual
@@ -105,23 +106,22 @@ and env flags as **defaults to adjust for your app** — override them via `.env
    ```
    - **No configuration** — the script auto-detects the client (local `sqlplus`, else your DB container)
      and prints which. Set `DB_CONTAINER` in `.env` if your container isn't the default.
-   - **Applying to an already-running backend?** Evict the app's reference-data cache afterward if it
-     has one (SCS example: `POST /api/api/internal/cache/evict`) or restart it.
    - Skip this and the seed-dependent scenarios **fail fast in preflight**, with a message telling you to run it.
 
    **Fixtures & anchors.** The fixtures pin real anchors discovered from this data (record ids, codes,
    keys — each with provenance in its `fixtures/<domain>/*-test-data.ts`). **Re-verify them if the image
    is rebuilt from a fresh extract**, since real data is non-deterministic. The `preflight/` setup fails
    fast with one clear message if an anchor no longer resolves.
-2. **Backend** on `:8080` with local mock auth: `security.jwt.enabled=false`, the app's `LOCAL`
-   environment flag, JNDI datasource → `localhost:1525/DBDOCK_01`.
-   **After loading data into an already-running backend, evict the app's reference-data cache if it has one**
-   (SCS example: `POST /api/api/internal/cache/evict`) or restart it — otherwise a startup-warmed cache serves stale
-   code lists and create calls 500. (Also: start the DB *before* the backend — the backend's Spring
-   context fails to initialize if the Oracle listener isn't up yet, and then every `/api` route 404s.)
-3. **Frontend** on `:3000` with `VITE_MOCK_USER=true` (`npm start`). Mock auth auto-logs-in a single
-   admin role — no Cognito/login flow needed. (The one app-specific bit — the Landing page's login
-   button test-id and route — is a labeled default at the top of `pages/common/authNav.ts`.)
+2. **Backend** on `:8080` with security off and the datasource on:
+   `ILCR_SECURITY_ENABLED=false`, `ILCR_DATASOURCE_ENABLED=true`,
+   `SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//localhost:1525/DBDOCK_01` plus the username and password (see
+   [`backend/README.md`](../../backend/README.md)). The backend has no reference-data cache, so seed patches applied
+   while it runs are picked up immediately. Start the DB *before* the backend — the Spring context fails to
+   initialize if the Oracle listener isn't up yet, and then every `/api` route fails.
+3. **Frontend** on `:3000`: `npm run dev` in `frontend/`. The repo default `public/amplify-config.js` has
+   `mockUser: true`, so on localhost the app signs in a mock user with no Cognito flow. The suite picks the mock
+   administrator or submitter per scenario (`pages/common/mockUser.ts`); `preflight/mock-user.setup.ts` checks
+   that those users still match `src/context/auth/mockUsers.ts`.
 
 ## Install and run
 
@@ -328,7 +328,7 @@ The process:
    typically **one FK hop**, so some referential gaps are expected (a child row whose parent wasn't
    pulled) — a live `INSERT` still enforces FKs, so a create can fail on a *data gap*, not a bug.
    *(ILCR extracts via `ilcr-data-extract` / `extract.sql`.)*
-2. **Load** the extract into a base Oracle Free container running locally (the SCS image publishes service
+2. **Load** the extract into a base Oracle Free container running locally (the seeded image publishes service
    `DBDOCK_01`, user/password `THE`/`default`).
 3. **Snapshot** the loaded container into a tagged image and **push** it to the team packages registry
    **(run the `docker` commands one at a time)**:
