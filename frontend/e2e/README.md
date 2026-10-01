@@ -2,7 +2,9 @@
 
 Browser-automation end-to-end and accessibility tests for ILCR, driven against a **running local stack**
 (Vite/React frontend → Spring backend → Docker Oracle DB). The package is self-contained, with its own
-`package.json` and `node_modules`, and CI runs it on every pull request (`.github/workflows/reusable-tests.yml`).
+`package.json` and `node_modules`. CI runs it on pull requests that touch deployable paths (`backend/`,
+`frontend/`, `common/`, `database/`, `.github/workflows/`): the Tests job in `.github/workflows/pr-open.yml` runs
+only when the sandbox deploy triggered, and calls `.github/workflows/reusable-tests.yml`.
 
 This is a **BDD suite**: `.feature` files are the executable spec, `playwright-bdd` (`bddgen test`)
 compiles them into native Playwright tests, and a reusable step layer implements the Gherkin against
