@@ -310,9 +310,11 @@ class Schedule10DocumentAssembler {
    *       11.1 deviation (l) and the matching Ministry open question. Changing it is a product
    *       decision, not a developer one.
    * </ol>
+   *
+   * <p>Package-private so the Check Status overlay rebuilds an edited page's label from the
+   * ON-SCREEN values through this one expression rather than restating it (bcgov/nr-ilcr#359).
    */
-  private static String pageLabel(
-      int pageNumber, String period, String tsaNumber, String tsb, String tfl) {
+  static String pageLabel(int pageNumber, String period, String tsaNumber, String tsb, String tfl) {
     return "Page "
         + pageNumber
         + ", Period: "
@@ -340,6 +342,88 @@ class Schedule10DocumentAssembler {
             ? Map.of()
             : submitted.costs().getOrDefault(detailId.longValue(), Map.of());
 
+    SubGrade subGrade =
+        subGrade(
+            detail.subGradeLength(),
+            detail.subGradeSurfaceWidth(),
+            costs,
+            subGradeOriginals(submitted.trackStatus(), snapshot, submittedCosts));
+
+    Stabilizing stabilizing =
+        stabilizing(
+            detail.ilcrRoadBallastMethodCode(),
+            detail.ilcrRoadBallastMaterlCode(),
+            new StabilizingMeasures(
+                detail.stabilizingLength(),
+                detail.stabilizingSurfaceWidth(),
+                detail.stabilizingDepth(),
+                detail.stabilizingDistanceToSource()),
+            costs,
+            stabilizingOriginals(submitted.trackStatus(), snapshot, submittedCosts));
+
+    MaterialComposition material =
+        materialComposition(
+            new MaterialPercentages(
+                detail.solidRockPct(),
+                detail.rippableRockPct(),
+                detail.coarseMaterialPct(),
+                detail.fineMaterialPct(),
+                detail.organicMaterialPct()),
+            materialOriginals(submitted.trackStatus(), snapshot));
+
+    return new RoadDetail(
+        detail.roadConstructionReprtDtlId(),
+        rowNumber,
+        roadDetailLabel(rowNumber, detail.roadName()),
+        detail.roadName(),
+        detail.ilcrRoadLifetimeCode(),
+        becById.get(detail.becbiogeoCatalogueId()),
+        detail.relSoilMoistRgmClsCode(),
+        detail.sideSlopePct(),
+        subGrade,
+        stabilizing,
+        material,
+        detail.detailEngineeringCostInd(),
+        Schedule10Amounts.atScale(detail.endHaulDistance(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(detail.endHaulVolume(), VOLUME_SCALE),
+        Schedule10Amounts.atScale(detail.overlandDistance(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(detail.overlandVolume(), VOLUME_SCALE),
+        detail.comments(),
+        detail.revisionCount(),
+        roadDetailOriginals(submitted.trackStatus(), snapshot));
+  }
+
+  /**
+   * The legacy road detail label, {@code "Road #" + rowNumber + ", " + roadName}. A null name
+   * renders as the literal {@code null}, as legacy's concatenation does.
+   *
+   * <p>Package-private so the Check Status overlay rebuilds an edited road's label from the
+   * ON-SCREEN name through this one expression rather than restating it (bcgov/nr-ilcr#359).
+   */
+  static String roadDetailLabel(int rowNumber, String roadName) {
+    return "Road #" + rowNumber + ", " + roadName;
+  }
+
+  /**
+   * The sub-grade substructure with every derived value computed from its raw inputs: total costs,
+   * total deductions, total and $/km, all through {@link Schedule10Amounts}. The two dimensions are
+   * served at their column scale; the rate divides by the length as given.
+   *
+   * <p>Shared by the read path (stored rows) and the Check Status overlay (the on-screen road), so
+   * the totals a check judges are computed exactly as the GET serves them (#359).
+   *
+   * @param length the sub-grade length in km
+   * @param surfaceWidth the sub-grade surface width in m
+   * @param costs the road's cost lines keyed by legacy cost-item ordinal; an absent or null entry
+   *     renders blank and counts as zero in the totals
+   * @param originals the submitted figures, or null
+   * @return the assembled sub-grade
+   */
+  static SubGrade subGrade(
+      BigDecimal length,
+      BigDecimal surfaceWidth,
+      Map<Integer, BigDecimal> costs,
+      Map<String, OriginalValue> originals) {
     BigDecimal subGradeActual = costs.get(SUB_GRADE_ACTUAL);
     BigDecimal subGradeTt = costs.get(SUB_GRADE_TRANSFER);
     BigDecimal subGradeOther = costs.get(OTHER_TT_TRANSFER);
@@ -358,81 +442,116 @@ class Schedule10DocumentAssembler {
     BigDecimal subGradeTotal =
         Schedule10Amounts.subGradeTotal(subGradeTotalCosts, subGradeTotalDeductions);
 
-    SubGrade subGrade =
-        new SubGrade(
-            Schedule10Amounts.atScale(detail.subGradeLength(), LENGTH_SCALE),
-            Schedule10Amounts.atScale(detail.subGradeSurfaceWidth(), MEASURE_SCALE),
-            subGradeActual,
-            subGradeTt,
-            subGradeOther,
-            lessBridges,
-            lessCulverts,
-            lessLandings,
-            lessOverland,
-            lessOtherEng,
-            lessEndHaul,
-            subGradeTotalCosts,
-            subGradeTotalDeductions,
-            subGradeTotal,
-            Schedule10Amounts.costPerLength(subGradeTotal, detail.subGradeLength()),
-            subGradeOriginals(submitted.trackStatus(), snapshot, submittedCosts));
+    return new SubGrade(
+        Schedule10Amounts.atScale(length, LENGTH_SCALE),
+        Schedule10Amounts.atScale(surfaceWidth, MEASURE_SCALE),
+        subGradeActual,
+        subGradeTt,
+        subGradeOther,
+        lessBridges,
+        lessCulverts,
+        lessLandings,
+        lessOverland,
+        lessOtherEng,
+        lessEndHaul,
+        subGradeTotalCosts,
+        subGradeTotalDeductions,
+        subGradeTotal,
+        Schedule10Amounts.costPerLength(subGradeTotal, length),
+        originals);
+  }
 
+  /**
+   * The four stabilizing dimensions, bundled so {@link #stabilizing} stays within the parameter
+   * limit.
+   *
+   * @param length the stabilizing length in km
+   * @param surfaceWidth the surface width in m
+   * @param depth the depth in m
+   * @param distanceToSource the distance to source in km
+   */
+  record StabilizingMeasures(
+      BigDecimal length, BigDecimal surfaceWidth, BigDecimal depth, BigDecimal distanceToSource) {}
+
+  /**
+   * The additional-stabilizing substructure with its total and $/km computed through {@link
+   * Schedule10Amounts}. Shared by the read path and the Check Status overlay, as {@link #subGrade}
+   * is.
+   *
+   * @param ballastMethodCode the ballast method code
+   * @param ballastMaterialCode the ballast material code
+   * @param measures the four dimensions
+   * @param costs the road's cost lines keyed by legacy cost-item ordinal
+   * @param originals the submitted figures, or null
+   * @return the assembled stabilizing substructure
+   */
+  static Stabilizing stabilizing(
+      String ballastMethodCode,
+      String ballastMaterialCode,
+      StabilizingMeasures measures,
+      Map<Integer, BigDecimal> costs,
+      Map<String, OriginalValue> originals) {
     BigDecimal stabilizingActual = costs.get(STABILIZING_ACTUAL);
     BigDecimal stabilizingTt = costs.get(STABILIZING_TRANSFER);
     BigDecimal stabilizingOther = costs.get(STABILIZING_OTHER_TRANSFER);
     BigDecimal stabilizingTotal =
         Schedule10Amounts.stabilizingTotal(stabilizingActual, stabilizingTt, stabilizingOther);
 
-    Stabilizing stabilizing =
-        new Stabilizing(
-            detail.ilcrRoadBallastMethodCode(),
-            detail.ilcrRoadBallastMaterlCode(),
-            Schedule10Amounts.atScale(detail.stabilizingLength(), LENGTH_SCALE),
-            Schedule10Amounts.atScale(detail.stabilizingSurfaceWidth(), MEASURE_SCALE),
-            Schedule10Amounts.atScale(detail.stabilizingDepth(), MEASURE_SCALE),
-            Schedule10Amounts.atScale(detail.stabilizingDistanceToSource(), MEASURE_SCALE),
-            stabilizingActual,
-            stabilizingTt,
-            stabilizingOther,
-            stabilizingTotal,
-            Schedule10Amounts.costPerLength(stabilizingTotal, detail.stabilizingLength()),
-            stabilizingOriginals(submitted.trackStatus(), snapshot, submittedCosts));
+    return new Stabilizing(
+        ballastMethodCode,
+        ballastMaterialCode,
+        Schedule10Amounts.atScale(measures.length(), LENGTH_SCALE),
+        Schedule10Amounts.atScale(measures.surfaceWidth(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(measures.depth(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(measures.distanceToSource(), MEASURE_SCALE),
+        stabilizingActual,
+        stabilizingTt,
+        stabilizingOther,
+        stabilizingTotal,
+        Schedule10Amounts.costPerLength(stabilizingTotal, measures.length()),
+        originals);
+  }
 
-    MaterialComposition material =
-        new MaterialComposition(
-            detail.solidRockPct(),
-            detail.rippableRockPct(),
-            detail.coarseMaterialPct(),
-            detail.fineMaterialPct(),
-            detail.organicMaterialPct(),
-            Schedule10Amounts.materialTypeTotal(
-                detail.solidRockPct(),
-                detail.rippableRockPct(),
-                detail.coarseMaterialPct(),
-                detail.fineMaterialPct(),
-                detail.organicMaterialPct()),
-            materialOriginals(submitted.trackStatus(), snapshot));
+  /**
+   * The five material percentages, in legacy's summing order.
+   *
+   * @param solidRockPct solid (hard) rock
+   * @param rippableRockPct rippable rock
+   * @param coarsePct coarse material
+   * @param finePct fine material
+   * @param organicPct organic material
+   */
+  record MaterialPercentages(
+      Integer solidRockPct,
+      Integer rippableRockPct,
+      Integer coarsePct,
+      Integer finePct,
+      Integer organicPct) {}
 
-    return new RoadDetail(
-        detail.roadConstructionReprtDtlId(),
-        rowNumber,
-        "Road #" + rowNumber + ", " + detail.roadName(),
-        detail.roadName(),
-        detail.ilcrRoadLifetimeCode(),
-        becById.get(detail.becbiogeoCatalogueId()),
-        detail.relSoilMoistRgmClsCode(),
-        detail.sideSlopePct(),
-        subGrade,
-        stabilizing,
-        material,
-        detail.detailEngineeringCostInd(),
-        Schedule10Amounts.atScale(detail.endHaulDistance(), MEASURE_SCALE),
-        Schedule10Amounts.atScale(detail.endHaulVolume(), VOLUME_SCALE),
-        Schedule10Amounts.atScale(detail.overlandDistance(), MEASURE_SCALE),
-        Schedule10Amounts.atScale(detail.overlandVolume(), VOLUME_SCALE),
-        detail.comments(),
-        detail.revisionCount(),
-        roadDetailOriginals(submitted.trackStatus(), snapshot));
+  /**
+   * The material composition with its total computed through {@link
+   * Schedule10Amounts#materialTypeTotal}. Shared by the read path and the Check Status overlay, as
+   * {@link #subGrade} is.
+   *
+   * @param percentages the five percentages, any of which may be null
+   * @param originals the submitted figures, or null
+   * @return the assembled material composition
+   */
+  static MaterialComposition materialComposition(
+      MaterialPercentages percentages, Map<String, OriginalValue> originals) {
+    return new MaterialComposition(
+        percentages.solidRockPct(),
+        percentages.rippableRockPct(),
+        percentages.coarsePct(),
+        percentages.finePct(),
+        percentages.organicPct(),
+        Schedule10Amounts.materialTypeTotal(
+            percentages.solidRockPct(),
+            percentages.rippableRockPct(),
+            percentages.coarsePct(),
+            percentages.finePct(),
+            percentages.organicPct()),
+        originals);
   }
 
   private Schedule10CodeLists codeLists(

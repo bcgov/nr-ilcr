@@ -87,7 +87,7 @@ class CheckStatusInProcessIT extends AbstractOracleIT {
     responses.put("schedule7b", schedule7bService.checkStatusStored(514, 2021));
     responses.put("schedule8", schedule8.checkStatus(601, 2021));
     responses.put("schedule9", schedule9Service.checkStatusStored(703, 2021));
-    responses.put("schedule10", schedule10.checkStatus(720, 2021));
+    responses.put("schedule10", schedule10.checkStatusStored(720, 2021));
     responses.put("schedule11", schedule11Service.checkStatus(617, 2021));
     return responses;
   }
@@ -125,7 +125,7 @@ class CheckStatusInProcessIT extends AbstractOracleIT {
     // The declared type is the point of this test: before 15.0 the only assembled form of this
     // response existed inside Schedule10Controller, and the service's return type could not be
     // named here at all. A `var` would have hidden exactly that.
-    Schedule10CheckStatusResponse response = schedule10.checkStatus(720, 2021);
+    Schedule10CheckStatusResponse response = schedule10.checkStatusStored(720, 2021);
 
     assertEquals(Schedule10CheckStatusResponse.ISSUES, response.outcome());
     assertFalse(response.pages().isEmpty(), "the ISSUES branch must carry its pages");

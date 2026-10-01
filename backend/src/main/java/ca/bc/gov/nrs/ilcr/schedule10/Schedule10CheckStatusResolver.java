@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckStatusResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -16,13 +17,13 @@ import org.springframework.stereotype.Component;
  * verbatim line.
  *
  * <p><strong>Why this class exists (Story 15.0 AC 3).</strong> {@link
- * Schedule10Service#checkStatus} is a public method with a PACKAGE-PRIVATE return type — {@code
- * Schedule10CheckStatus.Outcome} — so no class outside {@code ca.bc.gov.nrs.ilcr.schedule10} could
- * name its result, and the only assembled {@link Schedule10CheckStatusResponse} in the tree was
- * built by a private {@code Schedule10Controller} method. For Story 15.1's sweep that was a COMPILE
- * error, not a runtime one, and {@code var} does not rescue it: resolving {@code outcome.met()}
- * needs access to the declaring type. Living inside the package, this class can name {@code
- * Outcome}; being public, it hands the finished DTO to any caller.
+ * Schedule10Service#checkStatusStored} is a public method with a PACKAGE-PRIVATE return type —
+ * {@code Schedule10CheckStatus.Outcome} — so no class outside {@code ca.bc.gov.nrs.ilcr.schedule10}
+ * could name its result, and the only assembled {@link Schedule10CheckStatusResponse} in the tree
+ * was built by a private {@code Schedule10Controller} method. For Story 15.1's sweep that was a
+ * COMPILE error, not a runtime one, and {@code var} does not rescue it: resolving {@code
+ * outcome.met()} needs access to the declaring type. Living inside the package, this class can name
+ * {@code Outcome}; being public, it hands the finished DTO to any caller.
  *
  * <p><strong>Placement was a deliberate choice between two house conventions</strong>, which
  * disagree here. Schedules 2/4/5/6/8/10 follow "the service emits keys, the controller resolves";
@@ -44,7 +45,8 @@ public class Schedule10CheckStatusResolver {
   private final MessageSource messageSource;
 
   /**
-   * Evaluate and resolve Schedule 10 for a validated mill/year — the whole check in one call.
+   * Evaluate and resolve the SAVED Schedule 10 for a validated mill/year — the whole check in one
+   * call. The stored-data path: the report-level sweep's entry point.
    *
    * <p><strong>The caller MUST validate the mill/year context first</strong> (AD-4, {@code
    * MillContextService.validateMillYearActive}). This method does not, and the failure mode is
@@ -59,8 +61,30 @@ public class Schedule10CheckStatusResolver {
    * @param year the reporting year
    * @return the verdict with every message's verbatim text populated
    */
-  public Schedule10CheckStatusResponse checkStatus(long millId, int year) {
-    return compose(schedule10Service.checkStatus(millId, year));
+  public Schedule10CheckStatusResponse checkStatusStored(long millId, int year) {
+    return compose(schedule10Service.checkStatusStored(millId, year));
+  }
+
+  /**
+   * Evaluate and resolve Schedule 10 against the SCREEN — the endpoint's entry point (#359).
+   *
+   * <p>Differs from {@link #checkStatusStored} only in its source: the body's open page panel or
+   * road editor is overlaid onto the stored document before the identical rules run, so an overlaid
+   * page or road label carries the ON-SCREEN values. Named apart so a caller cannot reach for the
+   * wrong one by autocomplete; a sweep that read a screen, or an endpoint that ignored one, would
+   * both fail silently.
+   *
+   * <p>The same mill/year precondition applies as for {@link #checkStatusStored}: the CALLER must
+   * have validated the context first (AD-4).
+   *
+   * @param millId the mill id (context already validated by the caller)
+   * @param year the reporting year
+   * @param request the page panel or road editor on screen, if any
+   * @return the verdict with every message's verbatim text populated
+   */
+  public Schedule10CheckStatusResponse checkStatus(
+      long millId, int year, Schedule10CheckRequest request) {
+    return compose(schedule10Service.checkStatus(millId, year, request));
   }
 
   /**
@@ -71,8 +95,8 @@ public class Schedule10CheckStatusResolver {
    * emits no banner and every visible page and road detail.
    *
    * <p>Package-private by necessity, not by preference: {@code Outcome} is package-private, so a
-   * public signature naming it would be unusable outside this package anyway. {@link
-   * #checkStatus(long, int)} is the public door.
+   * public signature naming it would be unusable outside this package anyway. {@link #checkStatus}
+   * and {@link #checkStatusStored} are the public doors.
    */
   Schedule10CheckStatusResponse compose(Schedule10CheckStatus.Outcome outcome) {
     if (outcome.met()) {

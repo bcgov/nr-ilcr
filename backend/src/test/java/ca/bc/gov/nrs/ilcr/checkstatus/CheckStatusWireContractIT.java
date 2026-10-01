@@ -300,8 +300,20 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
             "2021",
             // V20260815: 704 stores no records.
             "{\"records\":[]}"),
-        new Anchor("schedule10-720-2021", "/api/v1/schedule10/check-status", "720", "2021"),
-        new Anchor("schedule10-715-2021", "/api/v1/schedule10/check-status", "715", "2021"),
+        new Anchor(
+            "schedule10-720-2021",
+            "/api/v1/schedule10/check-status",
+            "720",
+            "2021",
+            // Since #359 this endpoint takes the open page panel or road editor; none open.
+            "{\"page\":null,\"road\":null}"),
+        new Anchor(
+            "schedule10-715-2021",
+            "/api/v1/schedule10/check-status",
+            "715",
+            "2021",
+            // Since #359 this endpoint takes the open page panel or road editor; none open.
+            "{\"page\":null,\"road\":null}"),
         new Anchor("schedule11-617-2021", "/api/v1/schedule11/check-status", "617", "2021"),
         new Anchor("schedule11-613-2021", "/api/v1/schedule11/check-status", "613", "2021"));
   }

@@ -46,6 +46,12 @@ class Schedule10WriteAuthorizationIT extends AbstractOracleIT {
 
   private static final String PAGES = "/api/v1/schedule10/pages";
   private static final String CHECK_STATUS = "/api/v1/schedule10/check-status";
+
+  /**
+   * The Check Status body with no editor open (#359) — so the POST reaches authorization, not 400.
+   */
+  private static final String NO_EDITOR = "{\"page\":null,\"road\":null}";
+
   private static final String MILL = "717";
   private static final String YEAR = "2024";
 
@@ -176,6 +182,8 @@ class Schedule10WriteAuthorizationIT extends AbstractOracleIT {
             post(CHECK_STATUS)
                 .param("millId", "719")
                 .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_EDITOR)
                 .with(csrf())
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
@@ -185,6 +193,8 @@ class Schedule10WriteAuthorizationIT extends AbstractOracleIT {
             post(CHECK_STATUS)
                 .param("millId", "719")
                 .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(NO_EDITOR)
                 .with(csrf())
                 .with(canonicalSubmitter()))
         .andExpect(status().isOk());

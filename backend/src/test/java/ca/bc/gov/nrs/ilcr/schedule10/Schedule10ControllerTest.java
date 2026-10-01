@@ -2,16 +2,23 @@ package ca.bc.gov.nrs.ilcr.schedule10;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -130,5 +137,28 @@ class Schedule10ControllerTest {
     // the service only ever sees the validated, typed context.
     verify(millContextService).validateMillYearActive(MILL_PARAM, YEAR_PARAM);
     verify(schedule10Service).getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
+  }
+
+  @Test
+  @DisplayName("#359: check-status guards the context, then evaluates the posted SCREEN")
+  void checkStatus_passesTheBodyToTheScreenPath() {
+    Schedule10CheckRequest request =
+        new Schedule10CheckRequest(
+            new Schedule10CheckRequest.PageEntry(9001, "North", "2021-04", "01", "01A", null),
+            null);
+    when(schedule10Service.checkStatus(MILL, YEAR, request))
+        .thenReturn(new Schedule10CheckStatus.Outcome(true, List.of()));
+    when(messageSource.getMessage(eq("scheduleRequirementsMetMsg"), any(), any(Locale.class)))
+        .thenReturn("resolved text");
+
+    var response = controller.checkStatus(MILL_PARAM, YEAR_PARAM, request, authentication);
+
+    assertThat(response.getBody()).isNotNull();
+    assertThat(response.getBody().outcome()).isEqualTo(Schedule10CheckStatusResponse.MET);
+    assertThat(response.getBody().messages().get(0).text()).isEqualTo("resolved text");
+    verify(millContextService).validateMillYearActive(MILL_PARAM, YEAR_PARAM);
+    // The SCREEN path with the very body posted — never the stored one.
+    verify(schedule10Service).checkStatus(MILL, YEAR, request);
+    verify(schedule10Service, never()).checkStatusStored(anyLong(), anyInt());
   }
 }

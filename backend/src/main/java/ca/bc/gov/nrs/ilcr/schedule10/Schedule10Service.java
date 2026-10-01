@@ -29,6 +29,7 @@ import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.MoistureCodePair;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.MaterialCompositionRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.StabilizingRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.SubGradeRequest;
@@ -184,7 +185,7 @@ public class Schedule10Service {
       new MaterialCompositionRequest(null, null, null, null, null);
 
   /** A page's location after the mutual-exclusion rule has been applied. */
-  private record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {}
+  record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {}
 
   /**
    * Creates a construction page.
@@ -452,7 +453,33 @@ public class Schedule10Service {
   }
 
   /**
-   * Runs the Schedule 10 readiness rules over the current document.
+   * Runs the Schedule 10 readiness rules against the SCREEN — the endpoint's entry point
+   * (bcgov/nr-ilcr#359). The stored document is the candidate, with the open page panel or road
+   * editor ({@code request}) overlaid onto it — see {@link Schedule10CheckOverlay}. The rules are
+   * {@link Schedule10CheckStatus#evaluate}, shared with {@link #checkStatusStored} (AD-5).
+   *
+   * <p>Legacy's Check Status walked its in-memory model with no reload, and the checked inputs
+   * wrote into that model on change ({@code Schedule10MB.java:118-141}), so an unsaved edit moved
+   * the verdict. The shipped implementation re-read the database instead; this restores legacy.
+   * Mutates nothing, needs no revision token, and is not editability-gated.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param request the open page panel or road editor, if any
+   * @return the unresolved outcome; {@link Schedule10CheckStatusResolver} composes the verbatim
+   *     text
+   */
+  @Transactional(readOnly = true)
+  public Schedule10CheckStatus.Outcome checkStatus(
+      long millId, int year, Schedule10CheckRequest request) {
+    return Schedule10CheckStatus.evaluate(
+        Schedule10CheckOverlay.apply(document(millId, year, EditableStatuses.NONE), request));
+  }
+
+  /**
+   * Runs the Schedule 10 readiness rules over the SAVED document — the stored-data counterpart of
+   * {@link #checkStatus}, for report-level callers (the Check Status sweep and the submit gate)
+   * that have no screen to describe.
    *
    * <p>Mutates nothing and is deliberately NOT editability-gated: a submitted or verified schedule
    * can still be checked, which is why the endpoint asks only for view rights. Scope is always the
@@ -461,13 +488,18 @@ public class Schedule10Service {
    * <p>Evaluating the assembled document rather than the tables means Check Status and the GET can
    * never disagree, and it puts the derived totals that several rules check within reach.
    *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–7B and 9: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
+   *
    * @param millId the validated mill
    * @param year the validated reporting year
    * @return the unresolved outcome; {@link Schedule10CheckStatusResolver} composes the verbatim
    *     text
    */
   @Transactional(readOnly = true)
-  public Schedule10CheckStatus.Outcome checkStatus(long millId, int year) {
+  public Schedule10CheckStatus.Outcome checkStatusStored(long millId, int year) {
     // Editability is irrelevant to the rules, and permitting nothing keeps this read from
     // implying any edit authority in the document it evaluates.
     return Schedule10CheckStatus.evaluate(document(millId, year, EditableStatuses.NONE));
@@ -525,20 +557,44 @@ public class Schedule10Service {
    * combination. No real page in delivery carries both, which is the intent this makes enforceable.
    */
   private Location classify(ConstructionPageRequest request) {
+    Location located = locate(request.tsaOrTfl(), request.supplyBlock(), request.tflNumberCode());
     if (TFL.equals(request.tsaOrTfl())) {
-      String canonical = RoadGroup10Lookup.canonicalTfl(blankToNull(request.tflNumberCode()));
+      String canonical = RoadGroup10Lookup.canonicalTfl(located.tflNumberCode());
       if (canonical == null) {
         throw new InvalidTflNumberException();
       }
       return new Location(null, null, canonical);
     }
-    String tsaNumber = blankToNull(request.tsaOrTfl());
+    String tsaNumber = located.tsaNumber();
     if (tsaNumber != null && tsaNumber.length() > TSA_NUMBER_MAX) {
       // The 3-character allowance on the field exists only for the "TFL" sentinel. A wider TSA code
       // would reach a VARCHAR2(2) column and surface as an opaque 500 instead of naming the field.
       throw new InvalidClassificationCodeException();
     }
-    return new Location(tsaNumber, blankToNull(request.supplyBlock()), null);
+    return located;
+  }
+
+  /**
+   * The TSA/TFL selector's mapping onto the three stored location columns, before any write-only
+   * validation: the {@code "TFL"} sentinel keeps only the TFL number, and anything else is a TSA
+   * code that keeps only the TSA and supply block. Blank values become null, as Save stores them.
+   *
+   * <p>Shared by {@link #classify} (which then canonicalises the TFL number and rejects what it
+   * cannot store) and by the Check Status overlay, which must judge an unsaved TSA-to-TFL switch
+   * exactly as Save would store it — a TFL page with its TFL number blank reports {@code TFL #},
+   * not {@code Supply Block} (bcgov/nr-ilcr#359). Nothing is rejected here: reporting incomplete
+   * input is the check's whole job.
+   *
+   * @param tsaOrTfl the selector value: a TSA code or the {@code "TFL"} sentinel
+   * @param supplyBlock the entered supply block
+   * @param tflNumberCode the entered TFL number
+   * @return the location as Save would map it, uncanonicalised
+   */
+  static Location locate(String tsaOrTfl, String supplyBlock, String tflNumberCode) {
+    if (TFL.equals(tsaOrTfl)) {
+      return new Location(null, null, blankToNull(tflNumberCode));
+    }
+    return new Location(blankToNull(tsaOrTfl), blankToNull(supplyBlock), null);
   }
 
   /**
@@ -879,7 +935,7 @@ public class Schedule10Service {
     return value == null ? null : BigDecimal.valueOf(value);
   }
 
-  private static String blankToNull(String value) {
+  static String blankToNull(String value) {
     if (value == null) {
       return null;
     }

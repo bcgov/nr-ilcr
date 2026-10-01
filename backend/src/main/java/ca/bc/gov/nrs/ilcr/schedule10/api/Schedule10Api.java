@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule10.api;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import jakarta.validation.Valid;
@@ -205,12 +206,20 @@ public interface Schedule10Api {
    * Run the Schedule 10 readiness rules.
    *
    * <p>Requires only {@code VIEW_SCHEDULE} and is deliberately NOT editability-gated, so a
-   * submitted or verified schedule can still be checked. Mutates nothing. There is no request body
-   * and no scope parameter: the check always covers the whole schedule for the mill and year, as
-   * legacy does.
+   * submitted or verified schedule can still be checked. Mutates nothing and needs no revision
+   * token. There is no scope parameter: the check always covers the whole schedule for the mill and
+   * year, as legacy does.
+   *
+   * <p>{@code request} carries the editor currently ON SCREEN, if one is open (#359): the page
+   * panel at the page level, or the road editor at the road level. Each is overlaid onto the stored
+   * page or road with the same id, so an unsaved edit moves the verdict, as it did in legacy. A new
+   * page or road (null id) and an id matching nothing stored are ignored. With both members null
+   * the stored schedule is evaluated alone. The body is REQUIRED — an absent one is a clean 400 —
+   * but its members are unvalidated, because reporting missing values is the check's whole job.
    *
    * @param millId the raw mill id param
    * @param year the raw reporting year param
+   * @param request the open page panel or road editor, if any
    * @param authentication the caller
    * @return 200 with the outcome — a single banner when everything passes, otherwise the
    *     outstanding requirements per page and road detail
@@ -219,5 +228,6 @@ public interface Schedule10Api {
   ResponseEntity<Schedule10CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule10CheckRequest request,
       Authentication authentication);
 }

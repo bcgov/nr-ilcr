@@ -203,7 +203,8 @@ class CheckStatusSweepServiceTest {
       case SCHEDULE_8 -> when(schedule8.checkStatus(MILL, YEAR)).thenReturn(schedule8(met));
       case SCHEDULE_9 ->
           when(schedule9Service.checkStatusStored(MILL, YEAR)).thenReturn(schedule9(met));
-      case SCHEDULE_10 -> when(schedule10.checkStatus(MILL, YEAR)).thenReturn(schedule10(met));
+      case SCHEDULE_10 ->
+          when(schedule10.checkStatusStored(MILL, YEAR)).thenReturn(schedule10(met));
       case SCHEDULE_11 ->
           when(schedule11Service.checkStatus(MILL, YEAR)).thenReturn(schedule11(met));
     }
@@ -392,6 +393,17 @@ class CheckStatusSweepServiceTest {
     verify(schedule7aService, never()).checkStatus(anyLong(), anyInt(), any());
     verify(schedule7bService, never()).checkStatus(anyLong(), anyInt(), any());
     verify(schedule9Service, never()).checkStatus(anyLong(), anyInt(), any());
+  }
+
+  @Test
+  @DisplayName("#359: the sweep judges the SAVED Schedule 10 — never its screen path")
+  void sweep_schedule10_usesStoredPath_neverThePayloadPath() {
+    allMet();
+
+    service.sweep(MILL, YEAR);
+
+    verify(schedule10).checkStatusStored(MILL, YEAR);
+    verify(schedule10, never()).checkStatus(anyLong(), anyInt(), any());
   }
 
   @Test
