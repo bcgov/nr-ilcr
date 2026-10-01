@@ -27,7 +27,8 @@ import apiService from '@/service/api-service'
 import { useScheduleBanners } from '@/hooks/useScheduleBanners'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
-import { clearFieldError } from '@/utils/forms'
+import type { BannerEntry } from '@/utils/legacyValidationBanner'
+import { setBannerEntry } from '@/utils/legacyValidationBanner'
 import { groupFixedInput } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
@@ -45,8 +46,10 @@ import type {
   RoadDetailFormValues,
 } from './validation'
 import {
+  BALLAST_RESET_FIELDS,
   MASK_DIGITS,
   SCH10_MESSAGES,
+  applyBallastMethodReset,
   buildPageBody,
   buildPageCheckEntry,
   buildRoadCheckEntry,
@@ -56,6 +59,10 @@ import {
   formFromPage,
   formFromRoadDetail,
   isTflLocated,
+  pageBannerEntries,
+  pageBannerEntry,
+  roadBannerEntries,
+  roadBannerEntry,
   validatePage,
   validateRoadDetail,
 } from './validation'
@@ -71,6 +78,41 @@ const NAV_UNSAVED = 'Any unsaved data will be lost. Are you sure you would like 
 
 /** Editing any of these invalidates the server-derived Road Group shown beside them. */
 const LOCATION_FIELDS = new Set<keyof PageFormValues>(['tsaOrTfl', 'supplyBlock', 'tflNumberCode'])
+
+/** The page panel's dropdowns: a selection IS the change, so it is judged at once. */
+const PAGE_CODE_FIELDS = new Set<keyof PageFormValues>([
+  'forestRegionCode',
+  'tsaOrTfl',
+  'supplyBlock',
+])
+
+/** The road editor's dropdowns: a selection IS the change, so it is judged at once. */
+const ROAD_CODE_FIELDS = new Set<keyof RoadDetailFormValues>([
+  'roadLifetimeCode',
+  'becbiogeoCatalogueId',
+  'relSoilMoistRgmClsCode',
+  'stBallastMethodCode',
+  'stBallastMaterialCode',
+  'detailedEngineeringCostInd',
+])
+
+/** Recompute `fields` in an error map from a fresh validation, leaving every other field as it was. */
+const mergeErrors = <K extends string>(
+  prev: Partial<Record<K, string>>,
+  fresh: Partial<Record<K, string>>,
+  fields: readonly K[],
+): Partial<Record<K, string>> => {
+  const next = { ...prev }
+  for (const field of fields) {
+    const message = fresh[field]
+    if (message === undefined) {
+      delete next[field]
+    } else {
+      next[field] = message
+    }
+  }
+  return next
+}
 
 const EMPTY_CODE_LISTS: Schedule10CodeLists = {
   forestRegions: [],
@@ -127,12 +169,6 @@ const Schedule10: FC = () => {
     setCheckResult(null)
   }, [setCheckResult])
 
-  // Every action clears the banners first, and in doing so supersedes any check still in flight.
-  const clearBanners = () => {
-    checkSnapshotVersionRef.current += 1
-    clearHookBanners()
-  }
-
   const [pagePanelMode, setPagePanelMode] = useState<PanelMode>('closed')
   const [openPageId, setOpenPageId] = useState<number | null>(null)
   const [pageForm, setPageForm] = useState<PageFormValues>(emptyPageForm)
@@ -142,6 +178,59 @@ const Schedule10: FC = () => {
   const [openRoadId, setOpenRoadId] = useState<number | null>(null)
   const [roadForm, setRoadForm] = useState<RoadDetailFormValues>(emptyRoadDetailForm)
   const [roadErrors, setRoadErrors] = useState<RoadDetailErrors>({})
+
+  // The forms as last WRITTEN, read synchronously by a field's judgement. A combo box can commit its
+  // selection and lose focus in the same event (clearing its text and leaving does both), and the
+  // judgement that runs on leave must see the value just written, not the render's.
+  const pageFormRef = useRef<PageFormValues>(pageForm)
+  const roadFormRef = useRef<RoadDetailFormValues>(roadForm)
+  const writePageForm = useCallback((next: PageFormValues) => {
+    pageFormRef.current = next
+    setPageForm(next)
+  }, [])
+  const writeRoadForm = useCallback((next: RoadDetailFormValues) => {
+    roadFormRef.current = next
+    setRoadForm(next)
+  }, [])
+
+  // The last NON-BLANK Code the open road held. Legacy's Code change listener fired on a value
+  // change of its model, and a blank Code never reached the model (the required check failed first),
+  // so clearing Code and re-picking the same one changed nothing there and reset nothing.
+  const lastBallastCodeRef = useRef('')
+  /** Load a road into the editor (open, new, close, save echo): its Code is the baseline again. */
+  const seedRoadForm = useCallback(
+    (next: RoadDetailFormValues) => {
+      lastBallastCodeRef.current = next.stBallastMethodCode.trim()
+      writeRoadForm(next)
+    },
+    [writeRoadForm],
+  )
+
+  // The validation banner, one keyed line per failing field in legacy order (#359 group C change
+  // log). Save and Check Status REPLACE it with the full list; a field's change adds or removes only
+  // its own line — the accumulating banner the business area chose for Schedules 4, 7A and 9.
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // Each text field's value when it took focus. Leaving judges it only if the value now DIFFERS
+  // (JSF `onchange`): a focus-and-leave, or typing and then undoing it, judges nothing.
+  const focusedPageValuesRef = useRef(new Map<keyof PageFormValues, string>())
+  const focusedRoadValuesRef = useRef(new Map<keyof RoadDetailFormValues, string>())
+
+  /**
+   * Clears the success/failure/check-status banners, the validation banner, and both editors' red
+   * fields, and supersedes any check still in flight — so the validation banner and the red fields
+   * never disagree. Called before every action and on every refresh: opening an editor (page, road,
+   * new), Save and Check Status (which then re-mark what they find), Copy, Delete, and applying a
+   * returned document after a write.
+   */
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+    setBannerEntries([])
+    setPageErrors({})
+    setRoadErrors({})
+    focusedPageValuesRef.current.clear()
+    focusedRoadValuesRef.current.clear()
+  }
 
   // Set the moment the location is edited: the Road Group on screen was derived by the server from
   // the location as STORED, so any edit makes it stale. Legacy recomputed it on every change; the
@@ -156,19 +245,25 @@ const Schedule10: FC = () => {
   const closePagePanel = useCallback(() => {
     setPagePanelMode('closed')
     setOpenPageId(null)
-    setPageForm(emptyPageForm())
+    writePageForm(emptyPageForm())
     setPageErrors({})
+    focusedPageValuesRef.current.clear()
+    setBannerEntries([])
     setRoadGroupStale(false)
     invalidateCheckResult()
-  }, [invalidateCheckResult])
+  }, [invalidateCheckResult, writePageForm])
 
   const closeRoadPanel = useCallback(() => {
+    /* eslint-disable @eslint-react/set-state-in-effect -- also the reset on a URL level change (below) */
     setRoadPanelMode('closed')
     setOpenRoadId(null)
-    setRoadForm(emptyRoadDetailForm())
+    seedRoadForm(emptyRoadDetailForm())
     setRoadErrors({})
+    focusedRoadValuesRef.current.clear()
+    setBannerEntries([])
     invalidateCheckResult()
-  }, [invalidateCheckResult])
+    /* eslint-enable @eslint-react/set-state-in-effect */
+  }, [invalidateCheckResult, seedRoadForm])
 
   const resetTransient = useCallback(() => {
     resetBanners()
@@ -203,6 +298,17 @@ const Schedule10: FC = () => {
     }
   }, [contextKey, navigate, search.pageId])
 
+  // Leaving the road level by ANY route — the browser's Back or Forward included, which bypass the
+  // in-app Back — closes the road editor, so its lines and red fields never show on the page list or
+  // over another page's roads. The in-app Back has already closed it; doing so again is harmless.
+  const roadLevelPageRef = useRef(search.pageId)
+  useEffect(() => {
+    if (roadLevelPageRef.current !== search.pageId) {
+      roadLevelPageRef.current = search.pageId
+      closeRoadPanel()
+    }
+  }, [search.pageId, closeRoadPanel])
+
   const query = `?millId=${String(millId)}&year=${String(year)}`
 
   const applyDocument = (doc: Schedule10Response) => {
@@ -211,72 +317,179 @@ const Schedule10: FC = () => {
     setMessage(doc.message?.text ?? null)
   }
 
+  /**
+   * Judge `fields` of the page panel against its current values: each failing field turns red and
+   * puts its line in the banner, each passing one loses both. Every other field is left as it was.
+   */
+  const judgePageFields = (fields: readonly (keyof PageFormValues)[]) => {
+    const errors = validatePage(pageFormRef.current)
+    setPageErrors((prev) => mergeErrors(prev, errors, fields))
+    setBannerEntries((prev) =>
+      fields.reduce(
+        (entries, field) =>
+          setBannerEntry(entries, `page:${field}`, pageBannerEntry(field, errors[field])),
+        prev,
+      ),
+    )
+  }
+
+  /** A page text field took focus: remember its value, to compare when it is left. */
+  const enterPageField = (key: keyof PageFormValues) => {
+    focusedPageValuesRef.current.set(key, pageFormRef.current[key])
+  }
+
+  /** True when `key` was left with a value different from the one it had on focus. */
+  const leftChanged = <K extends string>(
+    focused: Map<K, string>,
+    key: K,
+    current: string,
+  ): boolean => {
+    const before = focused.get(key)
+    focused.delete(key)
+    return before !== undefined && before !== current
+  }
+
+  const judgePageFieldAndDependents = (key: keyof PageFormValues) => {
+    // Switching the TSA-or-TFL branch blanks the TFL # it no longer uses, so a TFL # line already
+    // shown is re-judged with it rather than left standing over a cleared, disabled field.
+    const fields: (keyof PageFormValues)[] = [key]
+    if (key === 'tsaOrTfl' && pageErrors.tflNumberCode !== undefined) {
+      fields.push('tflNumberCode')
+    }
+    judgePageFields(fields)
+  }
+
+  /**
+   * A page field was left. Its value differs from the one it had on focus → judge THAT field; a
+   * focus-and-leave, or a change undone before leaving, judges nothing. `changed` is a combo box's
+   * own report that its value differs from the one it had on focus. A dropdown SELECTION does not
+   * come through here: it is judged at once, by {@link setPageField}.
+   */
+  const leavePageField = (key: keyof PageFormValues, changed = false) => {
+    if (!changed && !leftChanged(focusedPageValuesRef.current, key, pageFormRef.current[key])) {
+      return
+    }
+    judgePageFieldAndDependents(key)
+  }
+
   const setPageField = (key: keyof PageFormValues, value: string) => {
-    setPageForm((prev) => {
-      const next: PageFormValues = { ...prev, [key]: value }
-      // Switching branches clears the half that no longer applies, so a stale value never reaches
-      // the wire and the disabled control never shows a leftover.
-      if (key === 'tsaOrTfl') {
-        const chosen = value.trim()
-        if (isTflLocated(value)) {
+    const prev = pageFormRef.current
+    const next: PageFormValues = { ...prev, [key]: value }
+    // Switching branches clears the half that no longer applies, so a stale value never reaches
+    // the wire and the disabled control never shows a leftover.
+    if (key === 'tsaOrTfl') {
+      const chosen = value.trim()
+      if (isTflLocated(value)) {
+        next.supplyBlock = ''
+      } else {
+        next.tflNumberCode = ''
+        // Supply blocks are narrowed to the chosen TSA, so a block from the previous TSA no longer
+        // belongs to the list it came from. Only an actual CHANGE of TSA can orphan a block:
+        // re-selecting the same TSA must leave a stored cross-TSA pair (delivery holds them —
+        // TSA `02` carrying block `01D`) exactly as it was. Clearing the control entirely orphans
+        // any block, which `startsWith('')` would have let through since it is always true.
+        const tsaChanged = chosen !== prev.tsaOrTfl.trim()
+        if (chosen === '' || (tsaChanged && !prev.supplyBlock.startsWith(chosen))) {
           next.supplyBlock = ''
-        } else {
-          next.tflNumberCode = ''
-          // Supply blocks are narrowed to the chosen TSA, so a block from the previous TSA no longer
-          // belongs to the list it came from. Only an actual CHANGE of TSA can orphan a block:
-          // re-selecting the same TSA must leave a stored cross-TSA pair (delivery holds them —
-          // TSA `02` carrying block `01D`) exactly as it was. Clearing the control entirely orphans
-          // any block, which `startsWith('')` would have let through since it is always true.
-          const tsaChanged = chosen !== prev.tsaOrTfl.trim()
-          if (chosen === '' || (tsaChanged && !prev.supplyBlock.startsWith(chosen))) {
-            next.supplyBlock = ''
-          }
         }
       }
-      return next
-    })
-    setPageErrors((prev) => clearFieldError(prev, key))
+    }
+    writePageForm(next)
+    // The red box and its inline text are NOT cleared while typing: like legacy (and Schedules 4, 7A
+    // and 9) the field is re-judged only when it is left after a change — a dropdown on selection.
     // A location edit invalidates the server-derived Road Group, and any page edit invalidates a
     // check-status result the same way a road edit does (R5).
     if (LOCATION_FIELDS.has(key)) {
       setRoadGroupStale(true)
     }
     invalidateCheckResult()
+    if (PAGE_CODE_FIELDS.has(key)) {
+      judgePageFieldAndDependents(key)
+    }
+  }
+
+  /** The road editor's twin of {@link judgePageFields}. */
+  const judgeRoadFields = (fields: readonly (keyof RoadDetailFormValues)[]) => {
+    const errors = validateRoadDetail(roadFormRef.current)
+    setRoadErrors((prev) => mergeErrors(prev, errors, fields))
+    setBannerEntries((prev) =>
+      fields.reduce(
+        (entries, field) =>
+          setBannerEntry(entries, `road:${field}`, roadBannerEntry(field, errors[field])),
+        prev,
+      ),
+    )
+  }
+
+  /** The road editor's twin of {@link enterPageField}. */
+  const enterRoadField = (key: keyof RoadDetailFormValues) => {
+    focusedRoadValuesRef.current.set(key, roadFormRef.current[key])
+  }
+
+  const judgeRoadFieldAndDependents = (key: keyof RoadDetailFormValues) => {
+    // A field this change also rewrote (the Code reset, the surface-width mirror) is re-judged with
+    // it when it already shows an error, so no line outlives the value it described.
+    const rewritten: readonly (keyof RoadDetailFormValues)[] =
+      key === 'stBallastMethodCode'
+        ? BALLAST_RESET_FIELDS
+        : key === 'sgSurfaceWidth'
+          ? ['stSurfaceWidth']
+          : []
+    judgeRoadFields([key, ...rewritten.filter((field) => roadErrors[field] !== undefined)])
+  }
+
+  /** The road editor's twin of {@link leavePageField}. */
+  const leaveRoadField = (key: keyof RoadDetailFormValues, changed = false) => {
+    if (!changed && !leftChanged(focusedRoadValuesRef.current, key, roadFormRef.current[key])) {
+      return
+    }
+    judgeRoadFieldAndDependents(key)
   }
 
   const setRoadField = (key: keyof RoadDetailFormValues, value: string) => {
-    setRoadForm((prev) => {
-      const next: RoadDetailFormValues = { ...prev, [key]: value }
-      // Legacy copies the sub-grade surface width into the stabilizing width on change,
-      // unconditionally and with no dirty check.
-      if (key === 'sgSurfaceWidth') {
-        next.stSurfaceWidth = value
+    const prev = roadFormRef.current
+    let next: RoadDetailFormValues = { ...prev, [key]: value }
+    // Legacy copies the sub-grade surface width into the stabilizing width on change,
+    // unconditionally and with no dirty check.
+    if (key === 'sgSurfaceWidth') {
+      next.stSurfaceWidth = value
+    }
+    // A change of Code resets the figures it governs, as legacy's listener did — measured against
+    // the last NON-BLANK Code, since a blank one never reached legacy's model (see the ref).
+    if (key === 'stBallastMethodCode') {
+      const code = value.trim()
+      if (code !== '' && code !== lastBallastCodeRef.current) {
+        next = applyBallastMethodReset(next, value)
       }
-      return next
-    })
-    setRoadErrors((prev) => clearFieldError(prev, key))
+      if (code !== '') {
+        lastBallastCodeRef.current = code
+      }
+    }
+    writeRoadForm(next)
     invalidateCheckResult()
+    if (ROAD_CODE_FIELDS.has(key)) {
+      judgeRoadFieldAndDependents(key)
+    }
   }
 
   const maskRoadField = (key: MaskedField) => {
-    setRoadForm((prev) => {
-      const masked = groupFixedInput(prev[key], MASK_DIGITS[key])
-      if (masked === prev[key]) {
-        return prev
-      }
-      const next: RoadDetailFormValues = { ...prev, [key]: masked }
-      if (key === 'sgSurfaceWidth') {
-        next.stSurfaceWidth = masked
-      }
-      return next
-    })
+    const prev = roadFormRef.current
+    const masked = groupFixedInput(prev[key], MASK_DIGITS[key])
+    if (masked === prev[key]) {
+      return
+    }
+    const next: RoadDetailFormValues = { ...prev, [key]: masked }
+    if (key === 'sgSurfaceWidth') {
+      next.stSurfaceWidth = masked
+    }
+    writeRoadForm(next)
   }
 
   const openNewPage = () => {
     clearBanners()
     setPagePanelMode('new')
     setOpenPageId(null)
-    setPageForm(emptyPageForm())
+    writePageForm(emptyPageForm())
     setPageErrors({})
     setRoadGroupStale(false)
   }
@@ -285,7 +498,7 @@ const Schedule10: FC = () => {
     clearBanners()
     setPagePanelMode(editable ? 'edit' : 'view')
     setOpenPageId(page.pageId)
-    setPageForm(formFromPage(page))
+    writePageForm(formFromPage(page))
     setPageErrors({})
     setRoadGroupStale(false)
   }
@@ -296,7 +509,9 @@ const Schedule10: FC = () => {
     }
     clearBanners()
     const errors = validatePage(pageForm)
+    // Save judges the whole panel and REPLACES the banner with the full list, in legacy order.
     setPageErrors(errors)
+    setBannerEntries(pageBannerEntries(errors))
     if (Object.keys(errors).length > 0) {
       return
     }
@@ -334,7 +549,7 @@ const Schedule10: FC = () => {
           applyDocument(doc)
           const refreshed = doc.pages.find((page) => page.pageId === stored.pageId)
           if (refreshed) {
-            setPageForm(formFromPage(refreshed))
+            writePageForm(formFromPage(refreshed))
             // The echo carries the server's re-derived Road Group, so it is authoritative again.
             setRoadGroupStale(false)
           }
@@ -362,7 +577,9 @@ const Schedule10: FC = () => {
     }
     clearBanners()
     const errors = validateRoadDetail(roadForm)
+    // Save judges the whole editor and REPLACES the banner with the full list, in legacy order.
     setRoadErrors(errors)
+    setBannerEntries(roadBannerEntries(errors))
     if (Object.keys(errors).length > 0) {
       return
     }
@@ -398,7 +615,7 @@ const Schedule10: FC = () => {
             (detail) => detail.roadDetailId === stored.roadDetailId,
           )
           if (refreshed) {
-            setRoadForm(formFromRoadDetail(refreshed))
+            seedRoadForm(formFromRoadDetail(refreshed))
           }
         },
       },
@@ -459,30 +676,34 @@ const Schedule10: FC = () => {
         ? undefined
         : data?.pages.find((entry) => entry.pageId === search.pageId)
     if (roadPage) {
-      const roadOpen = roadPanelMode === 'edit' || roadPanelMode === 'view'
-      if (!roadOpen || openRoadId === null) {
-        return { page: null, road: null }
-      }
-      // Gated only while the editor is editable: a View editor highlights nothing, so it must not block.
-      if (editable && roadPanelMode === 'edit') {
+      // Legacy's Check Status was a full submit, so the open editor's validation blocked it — a NEW
+      // road's too, even though a new road is never sent. Gated only while the editor is editable: a
+      // View editor highlights nothing, so it must not block. Blocked → the full banner, as Save.
+      if (editable && (roadPanelMode === 'edit' || roadPanelMode === 'new')) {
         const errors = validateRoadDetail(roadForm)
         setRoadErrors(errors)
+        setBannerEntries(roadBannerEntries(errors))
         if (Object.keys(errors).length > 0) {
           return null
         }
       }
+      const roadOpen = roadPanelMode === 'edit' || roadPanelMode === 'view'
+      if (!roadOpen || openRoadId === null) {
+        return { page: null, road: null }
+      }
       return { page: null, road: buildRoadCheckEntry(roadForm, roadPage.pageId, openRoadId) }
+    }
+    if (editable && (pagePanelMode === 'edit' || pagePanelMode === 'new')) {
+      const errors = validatePage(pageForm)
+      setPageErrors(errors)
+      setBannerEntries(pageBannerEntries(errors))
+      if (Object.keys(errors).length > 0) {
+        return null
+      }
     }
     const pageOpen = pagePanelMode === 'edit' || pagePanelMode === 'view'
     if (!pageOpen || openPageId === null) {
       return { page: null, road: null }
-    }
-    if (editable && pagePanelMode === 'edit') {
-      const errors = validatePage(pageForm)
-      setPageErrors(errors)
-      if (Object.keys(errors).length > 0) {
-        return null
-      }
     }
     return { page: buildPageCheckEntry(pageForm, openPageId), road: null }
   }
@@ -539,6 +760,7 @@ const Schedule10: FC = () => {
       keyPrefix="road"
       message={message}
       actionError={actionError}
+      validationErrors={bannerEntries.map((entry) => entry.line)}
       checkResult={checkResult}
     />
   )
@@ -585,14 +807,14 @@ const Schedule10: FC = () => {
                 clearBanners()
                 setRoadPanelMode('new')
                 setOpenRoadId(null)
-                setRoadForm(emptyRoadDetailForm())
+                seedRoadForm(emptyRoadDetailForm())
                 setRoadErrors({})
               }}
               onOpenDetail={(detail) => {
                 clearBanners()
                 setRoadPanelMode(editable ? 'edit' : 'view')
                 setOpenRoadId(detail.roadDetailId)
-                setRoadForm(formFromRoadDetail(detail))
+                seedRoadForm(formFromRoadDetail(detail))
                 setRoadErrors({})
               }}
               onCloseForm={closeRoadPanel}
@@ -611,6 +833,8 @@ const Schedule10: FC = () => {
               }
               onChange={setRoadField}
               onMask={maskRoadField}
+              onEnter={enterRoadField}
+              onLeave={leaveRoadField}
             />
           </Column>
         </Grid>
@@ -728,6 +952,8 @@ const Schedule10: FC = () => {
                 readOnly={pagePanelMode === 'view'}
                 roadGroup={roadGroupStale ? null : (openStoredPage?.roadGroup ?? null)}
                 onChange={setPageField}
+                onEnter={enterPageField}
+                onLeave={leavePageField}
               />
 
               {/* A page must be saved before it can hold roads, so the link appears only once the

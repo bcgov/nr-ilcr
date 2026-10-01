@@ -1442,14 +1442,17 @@ describe('regressions from the 2026-08-19 code review', () => {
     expect(screen.queryByText(oldHint)).not.toBeInTheDocument()
 
     // Pressing Save is what reports it, and it is reported against the field the reporter must fix
-    // — inside the Type combo's own wrapper, where the issue asks for it, not above the buttons.
+    // — inside the Type combo's own wrapper, where the issue asks for it, not above the buttons. The
+    // field carries the inline `Value Required`; the legacy line is the banner's (#359 group C).
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    const message = await screen.findByText('Material Code Type: Value is required.')
-    const field = message.closest('.schedule-10__field')
-    expect(field).not.toBeNull()
+    const type = await screen.findByRole('combobox', { name: 'Type:' })
+    const field = type.closest('.schedule-10__field') as HTMLElement
+    expect(within(field).getByText('Value Required')).toBeInTheDocument()
+    expect(type).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Material Code Type: Value is required.')).toBeInTheDocument()
     expect(
-      within(field as HTMLElement).getByRole('combobox', { name: 'Type:' }),
-    ).toBeInTheDocument()
+      screen.getByText('Material Code Type: Value is required.').closest('.schedule-10__field'),
+    ).toBeNull()
   })
 
   test('L5 — the road form reproduces the legacy row grid (#440 items 1-3)', async () => {
@@ -1613,7 +1616,9 @@ describe('regressions from the 2026-08-19 code review', () => {
     expect(screen.queryByLabelText('Total ($):')).not.toBeInTheDocument()
   })
 
-  test('L9 — an advisory error is bound to its field and clears as it is fixed', async () => {
+  // Re-grounded for #359 group C: a field stays red while it is typed into and is re-judged when it
+  // is LEFT after a change, as legacy (and Schedules 4, 7A and 9) did — not on every keystroke.
+  test('L9 — an advisory error is bound to its field and clears once the fixed field is left', async () => {
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -1621,11 +1626,18 @@ describe('regressions from the 2026-08-19 code review', () => {
     const roadName = await screen.findByLabelText('Road Name:')
     expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
     expect(roadName).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      within(roadName.closest('.schedule-10__field') as HTMLElement).getByText('Value Required'),
+    ).toBeInTheDocument()
 
     await userEvent.type(roadName, 'Mainline C')
+    // Still red while focus is in the field.
+    expect(roadName).toHaveAttribute('aria-invalid', 'true')
+    await userEvent.tab()
     await waitFor(() => {
       expect(screen.queryByText('Road Name is required.')).not.toBeInTheDocument()
     })
+    expect(roadName).not.toHaveAttribute('aria-invalid', 'true')
   })
 })
 
@@ -2391,6 +2403,11 @@ describe('check status evaluates the screen (#359)', () => {
     renderSchedule10()
     await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
     await userEvent.type(await screen.findByLabelText('Division:'), 'Unsaved')
+    // A new page is gated by Save's validator too (#359 group C), so it is made valid first.
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region:' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Arrow TSA' }))
     await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
 
     expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
@@ -2406,9 +2423,11 @@ describe('check status evaluates the screen (#359)', () => {
     await userEvent.type(period, '2021-6x')
     await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
 
+    // Inline under the field AND as the banner's line (#359 group C).
     expect(
-      await screen.findByText('The date is not valid. Enter date in format: YYYY-MM.'),
-    ).toBeInTheDocument()
+      await screen.findAllByText('The date is not valid. Enter date in format: YYYY-MM.'),
+    ).toHaveLength(2)
+    expect(period).toHaveAttribute('aria-invalid', 'true')
     expect(bodies).toHaveLength(0)
   })
 
@@ -2557,7 +2576,8 @@ describe('check status evaluates the screen (#359)', () => {
     const bodies = captureCheck()
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
-    await userEvent.type(await screen.findByLabelText('Road Name:'), 'Unsaved Road')
+    // A new road is gated by Save's validator too (#359 group C), so it is made valid first.
+    await fillMinimalRoad()
     await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
 
     expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
@@ -2601,5 +2621,451 @@ describe('check status evaluates the screen (#359)', () => {
 
     await userEvent.type(screen.getByDisplayValue('Mainline A'), 'x')
     expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+})
+
+// #359 group C change log (2026-10-01): the road editor and page panel validate as legacy did — a
+// top banner of verbatim legacy lines in legacy order on Save and Check Status, `Value Required`
+// under each missing required field, every invalid field (combo boxes included) marked, judged on
+// change as on Schedules 4, 7A and 9, and Code's legacy reset.
+describe('legacy validation banner and on-change judging (#359 group C)', () => {
+  const ROAD_REQUIRED_LINES = [
+    'Road Name is required.',
+    'Ballast Method Code: Value is required.',
+    'Road Type: Value is required.',
+    'BEC Zone: Value is required.',
+    'RSMR Class is required.',
+    'Material Code Type: Value is required.',
+  ]
+  const ROAD_COMBOS = ['Road Type:', 'BEC Zone:', 'RSMR Class:', 'Ballast Method Code', 'Type:']
+
+  /** The banner lines among `candidates` that are on screen, in document order. */
+  const bannerOrder = (candidates: readonly string[]): string[] =>
+    candidates
+      .flatMap((text) => screen.queryAllByText(text).map((node) => ({ text, node })))
+      .filter(({ node }) => node.closest('.schedule-10__field') === null)
+      .sort((a, b) =>
+        a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+      )
+      .map(({ text }) => text)
+
+  const captureChecks = () => {
+    const spy = vi.fn()
+    server.use(
+      http.post(CHECK_URL, () => {
+        spy()
+        return HttpResponse.json({ outcome: 'MET', messages: [], pages: [] })
+      }),
+    )
+    return spy
+  }
+
+  const openNewRoad = async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
+    await screen.findByLabelText('Road Name:')
+  }
+
+  const openExistingRoad = async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+  }
+
+  test('Save on a blank road lists the six required lines verbatim, in legacy order', async () => {
+    await openNewRoad()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
+    expect(bannerOrder(ROAD_REQUIRED_LINES)).toEqual(ROAD_REQUIRED_LINES)
+    // Inline, each missing field carries `Value Required`, and every one is marked invalid —
+    // the combo boxes included.
+    expect(screen.getAllByText('Value Required')).toHaveLength(6)
+    expect(screen.getByLabelText('Road Name:')).toHaveAttribute('aria-invalid', 'true')
+    for (const name of ROAD_COMBOS) {
+      expect(screen.getByRole('combobox', { name })).toHaveAttribute('aria-invalid', 'true')
+    }
+  })
+
+  test('Check Status over a blank NEW road is blocked with the same banner, and sends nothing', async () => {
+    const spy = captureChecks()
+    await openNewRoad()
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
+    expect(bannerOrder(ROAD_REQUIRED_LINES)).toEqual(ROAD_REQUIRED_LINES)
+    expect(screen.getAllByText('Value Required')).toHaveLength(6)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test('range lines interleave with required ones in the legacy grid order', async () => {
+    await openExistingRoad()
+    await userEvent.clear(screen.getByDisplayValue('Mainline A'))
+    const sgLength = screen.getByLabelText('Sub-Grade Length (km)')
+    await userEvent.clear(sgLength)
+    await userEvent.type(sgLength, '101')
+    const slope = screen.getByLabelText('Side Slope (%):')
+    await userEvent.clear(slope)
+    await userEvent.type(slope, '101')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const lines = [
+      'Road Name is required.',
+      'Entered value must be between 0 and 100.',
+      'Side slope (%): percentage must be between 0 and 100.',
+    ]
+    await screen.findByText('Road Name is required.')
+    // Row 1 holds Road Name then Sub-Grade Length; Side Slope sits rows below.
+    expect(bannerOrder(lines)).toEqual(lines)
+  })
+
+  test('a changed field is judged when LEFT: its line accumulates, and passing removes it', async () => {
+    await openExistingRoad()
+    const slope = screen.getByLabelText('Side Slope (%):')
+    await userEvent.clear(slope)
+    await userEvent.type(slope, '101')
+    // Not judged while typing.
+    expect(slope).not.toHaveAttribute('aria-invalid', 'true')
+    await userEvent.tab()
+    expect(
+      await screen.findAllByText('Side slope (%): percentage must be between 0 and 100.'),
+    ).toHaveLength(2)
+    expect(slope).toHaveAttribute('aria-invalid', 'true')
+
+    // A second field's line ACCUMULATES, in legacy order (Road Name is row 1).
+    await userEvent.clear(screen.getByDisplayValue('Mainline A'))
+    await userEvent.tab()
+    expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
+    expect(
+      bannerOrder([
+        'Road Name is required.',
+        'Side slope (%): percentage must be between 0 and 100.',
+      ]),
+    ).toEqual(['Road Name is required.', 'Side slope (%): percentage must be between 0 and 100.'])
+
+    // Fixing the slope and leaving removes only its line.
+    await userEvent.clear(slope)
+    await userEvent.type(slope, '50')
+    await userEvent.tab()
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Side slope (%): percentage must be between 0 and 100.'),
+      ).not.toBeInTheDocument()
+    })
+    expect(slope).not.toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Road Name is required.')).toBeInTheDocument()
+  })
+
+  test('focusing and leaving a field without a change judges nothing', async () => {
+    await openNewRoad()
+    await userEvent.click(screen.getByLabelText('Road Name:'))
+    await userEvent.tab()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Road Type:' }))
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(screen.getByLabelText('Road Name:'))
+
+    expect(screen.queryByText('Road Name is required.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Road Type: Value is required.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('a dropdown is judged on selection, without leaving it', async () => {
+    await openNewRoad()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Road Type: Value is required.')
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+    expect(roadType).toHaveAttribute('aria-invalid', 'true')
+
+    await userEvent.click(roadType)
+    await userEvent.click(await screen.findByRole('option', { name: 'Permanent' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Road Type: Value is required.')).not.toBeInTheDocument()
+    })
+    expect(roadType).not.toHaveAttribute('aria-invalid', 'true')
+    // Only that field: the others keep their lines.
+    expect(screen.getByText('Road Name is required.')).toBeInTheDocument()
+  })
+
+  test('a combo typed into and left is judged on leave: unmatched text leaves it blank and flagged', async () => {
+    await openNewRoad()
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+    await userEvent.type(roadType, 'zzz')
+    await userEvent.click(screen.getByLabelText('Road Name:'))
+
+    expect(await screen.findByText('Road Type: Value is required.')).toBeInTheDocument()
+    expect(roadType).toHaveAttribute('aria-invalid', 'true')
+    expect(roadType).toHaveValue('')
+  })
+
+  // Carbon settles a typed-into combo on leave: text matching no option reverts to the current
+  // selection. On an existing road that selection is valid, so leaving judges it and finds nothing.
+  test('a combo whose text was cleared and left reverts to its selection, which passes', async () => {
+    await openExistingRoad()
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+    await userEvent.clear(roadType)
+    await userEvent.click(screen.getByLabelText('Side Slope (%):'))
+
+    expect(roadType).toHaveValue('Permanent')
+    expect(roadType).not.toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByText('Road Type: Value is required.')).not.toBeInTheDocument()
+  })
+
+  test('a flagged combo typed into with a match and left is cleared on leave', async () => {
+    await openNewRoad()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Road Type: Value is required.')
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+
+    await userEvent.type(roadType, 'Permanent{Enter}')
+    await userEvent.click(screen.getByLabelText('Road Name:'))
+    await waitFor(() => {
+      expect(screen.queryByText('Road Type: Value is required.')).not.toBeInTheDocument()
+    })
+    expect(roadType).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  test('Save replaces an accumulated banner with the full list', async () => {
+    await openNewRoad()
+    await userEvent.type(screen.getByLabelText('Side Slope (%):'), '101')
+    await userEvent.tab()
+    await screen.findAllByText('Side slope (%): percentage must be between 0 and 100.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Road Name is required.')
+    const all = [...ROAD_REQUIRED_LINES, 'Side slope (%): percentage must be between 0 and 100.']
+    expect(bannerOrder(all)).toEqual([
+      'Road Name is required.',
+      'Ballast Method Code: Value is required.',
+      'Road Type: Value is required.',
+      'BEC Zone: Value is required.',
+      'RSMR Class is required.',
+      'Material Code Type: Value is required.',
+      'Side slope (%): percentage must be between 0 and 100.',
+    ])
+  })
+
+  test('the page panel lists its legacy lines on Save, in order, with Value Required inline', async () => {
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
+    const period = await screen.findByLabelText('Period Surveyed:')
+    await userEvent.type(period, '2021-6x')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    const lines = [
+      'The date is not valid. Enter date in format: YYYY-MM.',
+      'Region is required.',
+      'TSA or TFL is required.',
+    ]
+    expect(await screen.findByText('Region is required.')).toBeInTheDocument()
+    expect(bannerOrder(lines)).toEqual(lines)
+    expect(screen.getAllByText('Value Required')).toHaveLength(2)
+    expect(screen.getByRole('combobox', { name: 'Region:' })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    expect(screen.getByRole('combobox', { name: 'TSA or TFL:' })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+  })
+
+  test('Check Status over a blank NEW page is blocked with the banner, and sends nothing', async () => {
+    const spy = captureChecks()
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    expect(await screen.findByText('Region is required.')).toBeInTheDocument()
+    expect(bannerOrder(['Region is required.', 'TSA or TFL is required.'])).toEqual([
+      'Region is required.',
+      'TSA or TFL is required.',
+    ])
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test('a page field is judged on change: a dropdown on selection, text on leave', async () => {
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+    await screen.findByText('Region is required.')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region:' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Region is required.')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('TSA or TFL is required.')).toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Period Surveyed:'), 'bad')
+    expect(
+      screen.queryByText('The date is not valid. Enter date in format: YYYY-MM.'),
+    ).not.toBeInTheDocument()
+    await userEvent.tab()
+    expect(
+      await screen.findAllByText('The date is not valid. Enter date in format: YYYY-MM.'),
+    ).toHaveLength(2)
+  })
+
+  test('Code N resets the figures as legacy did: dimensions and costs blank, Type NA', async () => {
+    // `NA` offered as an option here only so the disabled Type combo can display the value it holds.
+    const base = doc()
+    server.use(
+      getHandler({
+        ...base,
+        codeLists: {
+          ...base.codeLists!,
+          ballastMaterials: [
+            { code: 'GR', description: 'Gravel' },
+            { code: 'NA', description: 'Not Applicable' },
+          ],
+        },
+      }),
+    )
+    await openExistingRoad()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'None' }))
+
+    for (const label of [
+      'Additional Stabilizing Length (km)',
+      'Additional Stabilizing Surface Width (m)',
+      'Depth (m):',
+      'Distance to Source (km):',
+      'Additional Stabilizing Actual Costs ($)',
+      'Additional Stabilizing Other Transfer ($)',
+    ]) {
+      expect(screen.getByLabelText(label)).toHaveValue('')
+    }
+    const type = screen.getByRole('combobox', { name: 'Type:' })
+    expect(type).toBeDisabled()
+    expect(type).toHaveValue('Not Applicable')
+  })
+
+  test('Code C pre-fills both costs with 0 and blanks Type; a blank Code resets nothing', async () => {
+    server.use(
+      getHandler(
+        doc({
+          pages: [
+            page({
+              roadDetails: [
+                roadDetail({
+                  stabilizing: { ...roadDetail().stabilizing, ballastMethodCode: 'N' },
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    )
+    await openExistingRoad()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Crushed' }))
+
+    expect(screen.getByLabelText('Additional Stabilizing Actual Costs ($)')).toHaveValue('0')
+    expect(screen.getByLabelText('Additional Stabilizing Other Transfer ($)')).toHaveValue('0')
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toHaveValue('')
+    const type = screen.getByRole('combobox', { name: 'Type:' })
+    expect(type).toBeEnabled()
+    expect(type).toHaveValue('')
+
+    // Entered figures survive a change TO a blank code.
+    await userEvent.type(screen.getByLabelText('Additional Stabilizing Length (km)'), '2')
+    await userEvent.clear(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(screen.getByLabelText('Road Name:'))
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toHaveValue('2.000')
+    expect(screen.getByLabelText('Additional Stabilizing Actual Costs ($)')).toHaveValue('0')
+    expect(await screen.findByText('Ballast Method Code: Value is required.')).toBeInTheDocument()
+  })
+
+  test('clearing Code and re-picking the SAME code resets nothing; a different code does', async () => {
+    await openExistingRoad()
+    const code = screen.getByRole('combobox', { name: 'Ballast Method Code' })
+    // Blank the Code with the combo's own clear control: a selection, judged at once.
+    const codeField = code.closest('.schedule-10__field') as HTMLElement
+    await userEvent.click(within(codeField).getByRole('button', { name: 'Clear selected item' }))
+    expect(await screen.findByText('Ballast Method Code: Value is required.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toHaveValue('3.000')
+
+    await userEvent.click(code)
+    await userEvent.click(await screen.findByRole('option', { name: 'Crushed' }))
+    // Legacy's model never held the blank, so re-picking C was no change: nothing reset.
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toHaveValue('3.000')
+    expect(screen.getByLabelText('Depth (m):')).toHaveValue('0.3')
+    expect(screen.getByRole('combobox', { name: 'Type:' })).toHaveValue('Gravel')
+    expect(screen.queryByText('Ballast Method Code: Value is required.')).not.toBeInTheDocument()
+
+    await userEvent.click(code)
+    await userEvent.click(await screen.findByRole('option', { name: 'None' }))
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toHaveValue('')
+    expect(screen.getByLabelText('Depth (m):')).toHaveValue('')
+  })
+
+  test('typing into a text field and undoing it before leaving judges nothing', async () => {
+    await openNewRoad()
+    const roadName = screen.getByLabelText('Road Name:')
+    await userEvent.type(roadName, 'x{Backspace}')
+    await userEvent.tab()
+
+    expect(screen.queryByText('Road Name is required.')).not.toBeInTheDocument()
+    expect(roadName).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  test('typing into a combo and undoing it before leaving judges nothing', async () => {
+    await openNewRoad()
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+    await userEvent.type(roadType, 'x{Backspace}')
+    await userEvent.click(screen.getByLabelText('Road Name:'))
+
+    expect(screen.queryByText('Road Type: Value is required.')).not.toBeInTheDocument()
+    expect(roadType).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  test('a Code change re-judges the flagged fields it reset; it never newly flags Type', async () => {
+    await openNewRoad()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Material Code Type: Value is required.')
+    const length = screen.getByLabelText('Additional Stabilizing Length (km)')
+    await userEvent.type(length, '1000')
+    await userEvent.tab()
+    expect(await screen.findAllByText('Entered value must be between 0 and 999.999.')).toHaveLength(
+      2,
+    )
+
+    // N resets Length (blank) and Type (NA): both were flagged, both are re-judged and pass.
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'None' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Material Code Type: Value is required.')).not.toBeInTheDocument()
+    })
+    expect(
+      screen.queryByText('Entered value must be between 0 and 999.999.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Ballast Method Code: Value is required.')).not.toBeInTheDocument()
+    // Fields the reset did not touch keep their lines.
+    expect(screen.getByText('Road Name is required.')).toBeInTheDocument()
+
+    // C blanks Type, but Type was not flagged and has no change listener: it is not newly flagged.
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Crushed' }))
+    expect(screen.queryByText('Material Code Type: Value is required.')).not.toBeInTheDocument()
+  })
+
+  test('the browser Back from the road level closes the road editor and drops its lines', async () => {
+    const { router } = renderSchedule10()
+    await screen.findByText('Page Summary')
+    await router.navigate({ to: '/schedule-10', search: { pageId: 8900 } })
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.clear(await screen.findByDisplayValue('Mainline A'))
+    await userEvent.tab()
+    expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
+
+    router.history.back()
+
+    expect(await screen.findByText('Page Summary')).toBeInTheDocument()
+    expect(screen.queryByText('Road Name is required.')).not.toBeInTheDocument()
+    // And coming forward again finds the editor closed, not the abandoned edit.
+    router.history.forward()
+    expect(await screen.findByText('Road #1, Mainline A')).toBeInTheDocument()
+    expect(screen.queryByText('Edit Road — Road #1, Mainline A')).not.toBeInTheDocument()
   })
 })

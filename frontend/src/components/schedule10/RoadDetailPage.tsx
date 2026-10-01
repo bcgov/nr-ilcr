@@ -49,6 +49,8 @@ type RoadDetailPageProps = {
   readonly onBack: () => void
   readonly onChange: (key: keyof RoadDetailFormValues, value: string) => void
   readonly onMask: (key: MaskedField) => void
+  readonly onEnter: (key: keyof RoadDetailFormValues) => void
+  readonly onLeave: (key: keyof RoadDetailFormValues, changed?: boolean) => void
 }
 
 const EMPTY_LIST = 'No records found.'
@@ -75,6 +77,8 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
   onBack,
   onChange,
   onMask,
+  onEnter,
+  onLeave,
 }) => {
   const controlsDisabled = !editable || saving
   const readOnly = panelMode === 'view'
@@ -176,6 +180,8 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               readOnly={readOnly}
               onChange={onChange}
               onMask={onMask}
+              onEnter={onEnter}
+              onLeave={onLeave}
               // The Add panel has no stored row, so nothing was submitted for it to differ from.
               originals={
                 panelMode === 'new' || openDetail === undefined

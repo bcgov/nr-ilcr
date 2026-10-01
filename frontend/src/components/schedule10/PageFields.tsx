@@ -24,6 +24,13 @@ type PageFieldsProps = {
   readonly roadGroup: string | null
   readonly readOnly: boolean
   readonly onChange: (key: keyof PageFormValues, value: string) => void
+  /** A text field took focus; the caller remembers its value to compare on leave (#359 group C). */
+  readonly onEnter: (key: keyof PageFormValues) => void
+  /**
+   * A field was left; `changed` is a combo box's report that its value differs from the one it had
+   * on focus. Judging is the caller's (#359 group C).
+   */
+  readonly onLeave: (key: keyof PageFormValues, changed?: boolean) => void
   /**
    * The Licensee's submitted values for this page (Story 16.2, BR-04) — undefined on the Add panel,
    * null at Draft.
@@ -68,6 +75,8 @@ const PageFields: FC<PageFieldsProps> = ({
   roadGroup,
   readOnly,
   onChange,
+  onEnter,
+  onLeave,
   originals,
 }) => {
   // Legacy rendered six indicators on a construction page (RoadConstructionReportType.java:342-420).
@@ -130,6 +139,8 @@ const PageFields: FC<PageFieldsProps> = ({
           invalid={Boolean(errors.divisionName)}
           invalidText={errors.divisionName ?? ''}
           onChange={(event) => onChange('divisionName', event.target.value)}
+          onFocus={() => onEnter('divisionName')}
+          onBlur={() => onLeave('divisionName')}
         />
         {indicator('divisionName', 'Division', form.divisionName)}
       </Field>
@@ -145,6 +156,8 @@ const PageFields: FC<PageFieldsProps> = ({
           invalid={Boolean(errors.constructionPeriod)}
           invalidText={errors.constructionPeriod ?? ''}
           onChange={(event) => onChange('constructionPeriod', event.target.value)}
+          onFocus={() => onEnter('constructionPeriod')}
+          onBlur={() => onLeave('constructionPeriod')}
         />
         {indicator('constructionPeriod', 'Period Surveyed', form.constructionPeriod)}
       </Field>
@@ -159,6 +172,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalid={Boolean(errors.forestRegionCode)}
           invalidText={errors.forestRegionCode}
           onSelect={(code) => onChange('forestRegionCode', code)}
+          onLeaveChanged={() => onLeave('forestRegionCode', true)}
         />
         {indicator('forestRegionCode', 'Region', form.forestRegionCode)}
       </Field>
@@ -173,6 +187,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalid={Boolean(errors.tsaOrTfl)}
           invalidText={errors.tsaOrTfl}
           onSelect={(code) => onChange('tsaOrTfl', code)}
+          onLeaveChanged={() => onLeave('tsaOrTfl', true)}
         />
         {indicator('tsaNumber', 'TSA or TFL', form.tsaOrTfl)}
       </Field>
@@ -187,6 +202,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalid={Boolean(errors.supplyBlock)}
           invalidText={errors.supplyBlock}
           onSelect={(code) => onChange('supplyBlock', code)}
+          onLeaveChanged={() => onLeave('supplyBlock', true)}
         />
         {indicator('tsbNumberCode', 'Supply Block', form.supplyBlock)}
       </Field>
@@ -202,6 +218,8 @@ const PageFields: FC<PageFieldsProps> = ({
           invalid={Boolean(errors.tflNumberCode)}
           invalidText={errors.tflNumberCode ?? ''}
           onChange={(event) => onChange('tflNumberCode', event.target.value)}
+          onFocus={() => onEnter('tflNumberCode')}
+          onBlur={() => onLeave('tflNumberCode')}
         />
         {indicator('tflNumberCode', 'TFL', form.tflNumberCode)}
       </Field>
