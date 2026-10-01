@@ -10,17 +10,17 @@ package ca.bc.gov.nrs.ilcr.schedule6;
  */
 final class RoadGroupLookup {
 
-  private RoadGroupLookup() {
-  }
+  private RoadGroupLookup() {}
 
   /**
-   * The RMG for a road record: by TFL code when present, else by the TSA+TSB pair (legacy
-   * {@code RoadMaintenanceReportType.getRmg}). Null when no rule matches.
+   * The RMG for a road record: by TFL code when present, else by the TSA+TSB pair (legacy {@code
+   * RoadMaintenanceReportType.getRmg}). Null when no rule matches.
    */
   static String rmgFor(String tsaNumberCode, String tsbNumberCode, String tflNumberCode) {
-    String rmg = tflNumberCode != null
-        ? rmgByTflNumberCode(tflNumberCode)
-        : rmgByTsaTsbNumberCode(tsaNumberCode, tsbNumberCode);
+    String rmg =
+        tflNumberCode != null
+            ? rmgByTflNumberCode(tflNumberCode)
+            : rmgByTsaTsbNumberCode(tsaNumberCode, tsbNumberCode);
     return (rmg == null || rmg.isEmpty()) ? null : rmg;
   }
 
@@ -38,7 +38,8 @@ final class RoadGroupLookup {
           break;
         case "02":
           // TSB Boundary
-          if ("02C".equalsIgnoreCase(tsbNumberCode) || "02D".equalsIgnoreCase(tsbNumberCode)
+          if ("02C".equalsIgnoreCase(tsbNumberCode)
+              || "02D".equalsIgnoreCase(tsbNumberCode)
               || "02G".equalsIgnoreCase(tsbNumberCode)) {
             rmg = "15";
           } else if ("02E".equalsIgnoreCase(tsbNumberCode)
@@ -92,7 +93,8 @@ final class RoadGroupLookup {
           // TSB Kamloops
           if ("11A".equalsIgnoreCase(tsbNumberCode)) {
             rmg = "4";
-          } else if ("11B".equalsIgnoreCase(tsbNumberCode) || "11C".equalsIgnoreCase(tsbNumberCode)
+          } else if ("11B".equalsIgnoreCase(tsbNumberCode)
+              || "11C".equalsIgnoreCase(tsbNumberCode)
               || "11D".equalsIgnoreCase(tsbNumberCode)) {
             rmg = "5";
           }
@@ -149,7 +151,8 @@ final class RoadGroupLookup {
           break;
         case "22":
           // TSB Okanagan
-          if ("22A".equalsIgnoreCase(tsbNumberCode) || "22B".equalsIgnoreCase(tsbNumberCode)
+          if ("22A".equalsIgnoreCase(tsbNumberCode)
+              || "22B".equalsIgnoreCase(tsbNumberCode)
               || "22C".equalsIgnoreCase(tsbNumberCode)) {
             rmg = "7";
           } else if ("22D".equalsIgnoreCase(tsbNumberCode)
@@ -263,7 +266,8 @@ final class RoadGroupLookup {
       // "52B" legacy left live but unreachable: a 3-char TFL is unstorable on both sides —
       // ROAD_MAINTENANCE_REPORT.TFL_NUMBER_CODE and the THE.TFL_NUMBER_CODE reference key are each
       // VARCHAR2(2) (delivery-DB verified 2026-08-05) — and legacy's own add/edit inputs are
-      // maxlength="2" (schedule6.xhtml:106,295), so no 3-char value ever reached this switch on read
+      // maxlength="2" (schedule6.xhtml:106,295), so no 3-char value ever reached this switch on
+      // read
       // or on save. Demoted from a live case at code review (2026-08-05): as a case it read as an
       // accepted value contradicting the RoadRecordRequest @Size(max = 2) and requireValidTfl width
       // check, when in fact all three agree that a 3-char TFL is invalid.

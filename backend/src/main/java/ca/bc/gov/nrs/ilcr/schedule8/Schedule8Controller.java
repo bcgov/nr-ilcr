@@ -1,20 +1,17 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.api.Schedule8Api;
-import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
-import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
-import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
-import java.util.List;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -29,10 +26,10 @@ import org.springframework.web.bind.annotation.RestController;
  * layering). The read-only {@code editable} flag is derived from the caller's {@code EDIT_SCHEDULE}
  * permission, computed server-side (AD-5).
  *
- * <p>The read (GET) never 404s on "no pages" — an opened active mill/year with no category-{@code '8'}
- * {@code TREE_TO_TRUCK_REPORT} rows returns a 200 empty list. It uses
- * {@link MillContextService#validateMillYearActive} (mill status only — no summary required), correct
- * for Schedule 8 (it has no {@code ILCR_REPORT_SUMMARY} row of its own).
+ * <p>The read (GET) never 404s on "no pages" — an opened active mill/year with no category-{@code
+ * '8'} {@code TREE_TO_TRUCK_REPORT} rows returns a 200 empty list. It uses {@link
+ * MillContextService#validateMillYearActive} (mill status only — no summary required), correct for
+ * Schedule 8 (it has no {@code ILCR_REPORT_SUMMARY} row of its own).
  */
 @RestController
 @RequiredArgsConstructor
@@ -43,13 +40,14 @@ public class Schedule8Controller implements Schedule8Api {
 
   private final MillContextService millContextService;
   private final Schedule8Service schedule8Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
+  private final Schedule8CheckStatusResolver checkStatusResolver;
 
   /** Resolve a legacy bundle key to verbatim text (AD-8). */
   private MessageInfo message(String key) {
-    return new MessageInfo(key,
-        messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
+    return new MessageInfo(
+        key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
   }
 
   @Override
@@ -58,8 +56,8 @@ public class Schedule8Controller implements Schedule8Api {
       long millId, int year, Authentication authentication) {
     // No no-pages 404 for Schedule 8 — only mill/year existence + active checks (404/409).
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    return ResponseEntity.ok(schedule8Service.getSchedule8(millId, year, callerMayEdit));
+    EditableStatuses caller = editability.forCaller(authentication);
+    return ResponseEntity.ok(schedule8Service.getSchedule8(millId, year, caller));
   }
 
   @Override
@@ -74,9 +72,9 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8Response> savePage(
       long millId, int year, Schedule8PageRequest request, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
-    Schedule8Response saved = schedule8Service.savePage(millId, year, request, callerMayEdit, user);
+    Schedule8Response saved = schedule8Service.savePage(millId, year, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -85,20 +83,23 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<MessageResponse> deletePage(
       long millId, int year, int id, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    schedule8Service.deletePage(millId, year, id);
+    schedule8Service.deletePage(millId, year, id, editability.forCaller(authentication));
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule8Response> saveSample(
-      long millId, int year, int pageId, Schedule8SampleRequest request,
+      long millId,
+      int year,
+      int pageId,
+      Schedule8SampleRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule8Response saved =
-        schedule8Service.saveSample(millId, year, pageId, request, callerMayEdit, user);
+        schedule8Service.saveSample(millId, year, pageId, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -107,35 +108,41 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8Response> deleteSample(
       long millId, int year, int pageId, int id, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    Schedule8Response updated =
-        schedule8Service.deleteSample(millId, year, pageId, id, callerMayEdit);
+    EditableStatuses caller = editability.forCaller(authentication);
+    Schedule8Response updated = schedule8Service.deleteSample(millId, year, pageId, id, caller);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule8Response> addRate(
-      long millId, int year, int sampleId, Schedule8RateRequest request,
+      long millId,
+      int year,
+      int sampleId,
+      Schedule8RateRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule8Response saved =
-        schedule8Service.saveRate(millId, year, sampleId, null, request, callerMayEdit, user);
+        schedule8Service.saveRate(millId, year, sampleId, null, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule8Response> updateRate(
-      long millId, int year, int sampleId, int rowId, Schedule8RateRequest request,
+      long millId,
+      int year,
+      int sampleId,
+      int rowId,
+      Schedule8RateRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule8Response saved =
-        schedule8Service.saveRate(millId, year, sampleId, rowId, request, callerMayEdit, user);
+        schedule8Service.saveRate(millId, year, sampleId, rowId, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -144,9 +151,8 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8Response> deleteRate(
       long millId, int year, int sampleId, int rowId, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    Schedule8Response updated =
-        schedule8Service.deleteRate(millId, year, sampleId, rowId, callerMayEdit);
+    EditableStatuses caller = editability.forCaller(authentication);
+    Schedule8Response updated = schedule8Service.deleteRate(millId, year, sampleId, rowId, caller);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 
@@ -156,7 +162,7 @@ public class Schedule8Controller implements Schedule8Api {
       long millId, int year, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary required), then evaluate — mutates nothing.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(resolve(schedule8Service.checkStatus(millId, year)));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year));
   }
 
   @Override
@@ -164,28 +170,6 @@ public class Schedule8Controller implements Schedule8Api {
   public ResponseEntity<Schedule8CheckStatusResponse> checkStatusPage(
       long millId, int year, int pageId, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(resolve(schedule8Service.checkStatusPage(millId, year, pageId)));
-  }
-
-  /** Resolve every emitted bundle key in the Check Status result to its verbatim text (AD-8). */
-  private Schedule8CheckStatusResponse resolve(Schedule8CheckStatusResponse raw) {
-    List<MessageInfo> messages = raw.messages().stream().map(m -> message(m.key())).toList();
-    List<Schedule8PageCheckResult> pages = raw.pages().stream()
-        .map(page -> new Schedule8PageCheckResult(
-            page.id(),
-            page.met(),
-            resolveIssues(page.issues()),
-            page.samples().stream()
-                .map(sample -> new Schedule8SampleCheckResult(
-                    sample.id(), sample.met(), resolveIssues(sample.issues())))
-                .toList()))
-        .toList();
-    return new Schedule8CheckStatusResponse(raw.outcome(), messages, pages);
-  }
-
-  private List<Schedule8CheckFieldIssue> resolveIssues(List<Schedule8CheckFieldIssue> issues) {
-    return issues.stream()
-        .map(i -> new Schedule8CheckFieldIssue(i.field(), message(i.message().key())))
-        .toList();
+    return ResponseEntity.ok(checkStatusResolver.checkStatusPage(millId, year, pageId));
   }
 }

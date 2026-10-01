@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule5Response from '@/interfaces/Schedule5Response'
 import type {
@@ -7,10 +9,14 @@ import type {
   Schedule5CheckStatusResponse,
 } from '@/interfaces/Schedule5Response'
 import type CampRequest from '@/interfaces/Schedule5Request'
-import type { CategoryEntry } from '@/interfaces/Schedule5Request'
+import type {
+  CampCheckEntry,
+  CategoryEntry,
+  Schedule5CheckRequest,
+} from '@/interfaces/Schedule5Request'
 import type { SubPageKind } from '@/interfaces/Schedule5SubPage'
 import type { CampErrors, CampFormValues, CategoryKey, DerivedKey, GridRow } from './validation'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { getRouteApi } from '@tanstack/react-router'
 import Schedule5SubPage from '@/components/schedule5SubPage'
 import {
@@ -27,38 +33,47 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
+import { Add, CheckmarkOutline, Close, Copy, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { numStr, numStrGroup, parseDecimalInput, roundCost } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   CAMP_NAME_MAX_LENGTH,
   COMMENTS_MAX_LENGTH,
   GRID_ROWS,
+  CATEGORY_KEYS,
   VOLUME_CATEGORY_KEYS,
   emptyCategories,
   isCampFormValid,
   validateCamp,
 } from './validation'
 import { fmtCost, fmtCostPerVolume, fmtVolume } from './masks'
+import {
+  categoryRate,
+  campVolumeMovedFrom,
+  deriveSchedule5,
+  type Schedule5Derived,
+} from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome — every one of these is either confirm-dialog text or is rendered when NO
 // request is issued. Every success/error/warning string comes from the API and renders verbatim
 // (AD-8); the copy warning in particular is now resolved from the bundle over HTTP rather than
 // hardcoded, which is why there is no copy literal here.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's p:dataTable (schedule5.xhtml:51) sets no emptyMessage, so PrimeFaces rendered its
-// default — reproduced verbatim rather than inventing a placeholder.
-const EMPTY_LIST = 'No records found.'
+// generic default, "No records found." — a DELIBERATE departure from that verbatim text, ruled by
+// the Ministry on PR #370 (2026-08-27): "Display a blank page. If possible, have a message such as
+// no camps or something similar." Named for what the table holds, matching the house pattern in
+// schedule7a/7b/9. Do not "restore" the legacy string — the departure is business-sanctioned.
+const EMPTY_LIST = 'No camps have been added.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 // CFM-004. Hardcoded with the other three confirms rather than resolved through GET /v1/messages —
@@ -186,9 +201,35 @@ const AmountCell: FC<{
   readonly invalidText?: string
   readonly onChange?: (value: string) => void
   readonly onBlur?: () => void
-}> = ({ inputId, label, value, readOnly, invalidText, onChange, onBlur }) =>
-  readOnly ? (
-    <TableCell className="schedule-5__num">{value}</TableCell>
+  // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its two
+  // keys this cell is. Null at Draft.
+  readonly originals?: OriginalValues | null
+  readonly originalField?: 'volume' | 'cost'
+}> = ({
+  inputId,
+  label,
+  value,
+  readOnly,
+  invalidText,
+  onChange,
+  onBlur,
+  originals,
+  originalField,
+}) => {
+  const indicator =
+    originalField === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={originalField}
+        current={value}
+        label={label}
+      />
+    )
+  return readOnly ? (
+    <TableCell className="schedule-5__num">
+      {value}
+      {indicator}
+    </TableCell>
   ) : (
     <TableCell className="schedule-5__num">
       <TextInput
@@ -202,8 +243,10 @@ const AmountCell: FC<{
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
+      {indicator}
     </TableCell>
   )
+}
 
 /** An empty cell for a column this row genuinely does not have (Recoveries' volume and $/m³). */
 const AbsentCell: FC = () => <TableCell className="schedule-5__num" />
@@ -212,6 +255,8 @@ const CategoryGridRow: FC<{
   readonly row: Extract<GridRow, { kind: 'category' }>
   readonly values: { volume: string; cost: string }
   readonly served?: CategoryAmount
+  /** The `$/m³` to display: the mirror while editing, the served figure otherwise (#291). */
+  readonly rate: number | null | undefined
   readonly subPageCount: number
   readonly readOnly: boolean
   readonly errors: CampErrors
@@ -219,7 +264,18 @@ const CategoryGridRow: FC<{
   readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   /** Present only on the two Other … rows, and only once the camp can be navigated to. */
   readonly onOpenSubPage?: () => void
-}> = ({ row, values, served, subPageCount, readOnly, errors, onChange, onBlur, onOpenSubPage }) => {
+}> = ({
+  row,
+  values,
+  served,
+  rate,
+  subPageCount,
+  readOnly,
+  errors,
+  onChange,
+  onBlur,
+  onOpenSubPage,
+}) => {
   // The two Other … rows carry their live sub-page row count in the label itself.
   const label = row.subPageCount === undefined ? row.label : `${row.label} (${subPageCount}): `
   // The displayed label keeps legacy's trailing ": "; the accessible name drops it so a screen
@@ -249,6 +305,8 @@ const CategoryGridRow: FC<{
           invalidText={errors[`${row.key}.volume`]}
           onChange={(value) => onChange(row.key, 'volume', value)}
           onBlur={() => onBlur(row.key, 'volume')}
+          originals={served?.originalValues}
+          originalField="volume"
         />
       ) : (
         <AbsentCell />
@@ -265,10 +323,12 @@ const CategoryGridRow: FC<{
           invalidText={errors[`${row.key}.cost`]}
           onChange={(value) => onChange(row.key, 'cost', value)}
           onBlur={() => onBlur(row.key, 'cost')}
+          originals={served?.originalValues}
+          originalField="cost"
         />
       )}
       {row.hasVolume ? (
-        <TableCell className="schedule-5__num">{fmtCostPerVolume(served?.costPerVolume)}</TableCell>
+        <TableCell className="schedule-5__num">{fmtCostPerVolume(rate)}</TableCell>
       ) : (
         <AbsentCell />
       )}
@@ -280,8 +340,17 @@ const CategoryGridRow: FC<{
 const DerivedGridRow: FC<{
   readonly label: string
   readonly amount?: CategoryAmount
-}> = ({ label, amount }) => (
-  <TableRow>
+  /** True for Camp and Access — the schedule's final figure, which takes the darker total band. */
+  readonly isTotal?: boolean
+}> = ({ label, amount, isTotal = false }) => (
+  // The calculated-total band (#312 Overall 5) belongs HERE, on the derived rows — Camp Sub-Total,
+  // Camp Total, Access Expense Total, Camp and Access. It shipped on `schedule-5__section-row` for
+  // one commit, which is the SECTION HEADER row ("Camp Expenses" plus the repeated column captions),
+  // i.e. the exact opposite of a calculated row (PR #381 review).
+  //
+  // The first three are intermediate, so they keep the lighter band; Camp and Access is what the
+  // schedule adds up to, so it takes the full total band (#411 Overall 5).
+  <TableRow className={isTotal ? 'schedule-5__total-row' : 'schedule-5__derived-row'}>
     <TableCell>{label}</TableCell>
     <TableCell className="schedule-5__num">{fmtVolume(amount?.volume)}</TableCell>
     <TableCell className="schedule-5__num">{fmtCost(amount?.cost)}</TableCell>
@@ -298,10 +367,24 @@ const CategoryGrid: FC<{
   readonly served?: Camp
   readonly readOnly: boolean
   readonly errors: CampErrors
+  /** Null in read-only mode, where the served figures render untouched (#291 AC7). */
+  readonly derived: Schedule5Derived | null
+  /** True once the camp volume has moved from the served one — blanks the per-term Other rates. */
+  readonly campVolumeMoved: boolean
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
   readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   readonly onOpenSubPage: (kind: SubPageKind) => void
-}> = ({ values, served, readOnly, errors, onChange, onBlur, onOpenSubPage }) => (
+}> = ({
+  values,
+  served,
+  readOnly,
+  errors,
+  derived,
+  campVolumeMoved,
+  onChange,
+  onBlur,
+  onOpenSubPage,
+}) => (
   <TableContainer className="schedule-5__grid">
     <Table aria-label="Camp and access expenses">
       <TableBody>
@@ -332,7 +415,10 @@ const CategoryGrid: FC<{
               <DerivedGridRow
                 key={row.key}
                 label={row.label}
-                amount={served?.[row.key as DerivedKey]}
+                // The four derived rows track the committed entry while editable (#291); outside that
+                // there is no entry, so the served figures render as-is.
+                amount={derived ? derived[row.key] : served?.[row.key as DerivedKey]}
+                isTotal={row.key === 'campAndAccessTotal'}
               />
             )
           }
@@ -342,6 +428,7 @@ const CategoryGrid: FC<{
               row={row}
               values={values.categories[row.key]}
               served={served?.[row.key]}
+              rate={categoryRate(row.key, derived, served?.[row.key], campVolumeMoved)}
               subPageCount={row.subPageCount === undefined ? 0 : (served?.[row.subPageCount] ?? 0)}
               readOnly={readOnly}
               errors={errors}
@@ -365,6 +452,30 @@ const CategoryGrid: FC<{
 )
 
 /** The five descriptors, in legacy order and with legacy labels and unit suffixes. */
+/**
+ * The stored form of a Yes/No flag. The form holds `'true'`/`'false'`; the served original is the
+ * stored `'Y'`/`'N'`, and an unset flag has no stored form at all.
+ */
+const storedFlag = (value: string): string => {
+  if (value === 'true') {
+    return 'Y'
+  }
+  return value === 'false' ? 'N' : ''
+}
+
+/**
+ * Whether any entered figure is mid-keystroke and unusable (a lone `-`, say). Checked across the
+ * WHOLE form, not one half: BR-03 propagates the Associated Camp Volume into all eleven
+ * volume-bearing categories, so a single field's blur can legitimately move every rate (#291).
+ */
+const hasUnusableEntry = (form: CampFormValues): boolean =>
+  isUnusableStrictEntry(form.associatedCampVolume) ||
+  CATEGORY_KEYS.some(
+    (key) =>
+      isUnusableStrictEntry(form.categories[key].volume) ||
+      isUnusableStrictEntry(form.categories[key].cost),
+  )
+
 const DescriptorFields: FC<{
   readonly values: CampFormValues
   readonly readOnly: boolean
@@ -373,6 +484,8 @@ const DescriptorFields: FC<{
   readonly onFieldBlur: (field: keyof CampFormValues) => void
   readonly onIsolatedCampChange: (value: string) => void
   readonly onCampVolumeChange: (value: string) => void
+  /** The Licensee's submitted camp attributes (Story 16.2, BR-04). Null at Draft. */
+  readonly originals?: OriginalValues | null
 }> = ({
   values,
   readOnly,
@@ -381,69 +494,119 @@ const DescriptorFields: FC<{
   onFieldBlur,
   onIsolatedCampChange,
   onCampVolumeChange,
+  originals,
 }) => (
   <div className="schedule-5__descriptors">
-    <TextInput
-      id="camp-name"
-      labelText="Camp Name"
-      maxLength={CAMP_NAME_MAX_LENGTH}
-      value={values.campName}
-      readOnly={readOnly}
-      onChange={(event) => onFieldChange('campName', event.target.value)}
-      onBlur={() => onFieldBlur('campName')}
-      invalid={Boolean(errors.campName)}
-      invalidText={errors.campName}
-    />
-    <TextInput
-      id="road-distance"
-      labelText="Road Distance to Operating Area (km)"
-      value={values.roadDistanceToOperatingArea}
-      readOnly={readOnly}
-      onChange={(event) => onFieldChange('roadDistanceToOperatingArea', event.target.value)}
-      onBlur={() => onFieldBlur('roadDistanceToOperatingArea')}
-      invalid={Boolean(errors.roadDistanceToOperatingArea)}
-      invalidText={errors.roadDistanceToOperatingArea}
-    />
-    <TextInput
-      id="size-of-camp"
-      labelText="Size of Camp (number of persons)"
-      value={values.sizeOfCamp}
-      readOnly={readOnly}
-      onChange={(event) => onFieldChange('sizeOfCamp', event.target.value)}
-      onBlur={() => onFieldBlur('sizeOfCamp')}
-      invalid={Boolean(errors.sizeOfCamp)}
-      invalidText={errors.sizeOfCamp}
-    />
-    <TextInput
-      id="associated-camp-volume"
-      labelText="Associated Camp Volume (m³)"
-      value={values.associatedCampVolume}
-      readOnly={readOnly}
-      onChange={(event) => onCampVolumeChange(event.target.value)}
-      onBlur={() => onFieldBlur('associatedCampVolume')}
-      invalid={Boolean(errors.associatedCampVolume)}
-      invalidText={errors.associatedCampVolume}
-    />
-    <Select
-      id="isolated-camp"
-      labelText="Isolated Camp"
-      value={values.isolatedCamp}
-      disabled={readOnly}
-      onChange={(event) => onIsolatedCampChange(event.target.value)}
-      // A change IS this control's commit, so it reports immediately — but blur is still needed:
-      // tabbing THROUGH the empty option fires no change at all, and without this the required
-      // field would stay silent until Save while every text field beside it reports on blur.
-      onBlur={() => onFieldBlur('isolatedCamp')}
-      invalid={Boolean(errors.isolatedCamp)}
-      invalidText={errors.isolatedCamp}
-    >
-      {/* The empty option exists so a stored null has something to render as. */}
-      <SelectItem value="" text="" />
-      <SelectItem value="false" text="No" />
-      <SelectItem value="true" text="Yes" />
-    </Select>
+    <div className="schedule-5__field">
+      <TextInput
+        id="camp-name"
+        labelText="Camp Name"
+        maxLength={CAMP_NAME_MAX_LENGTH}
+        value={values.campName}
+        readOnly={readOnly}
+        onChange={(event) => onFieldChange('campName', event.target.value)}
+        onBlur={() => onFieldBlur('campName')}
+        invalid={Boolean(errors.campName)}
+        invalidText={errors.campName}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="campName"
+        current={values.campName}
+        numeric={false}
+        label="Camp Name"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <TextInput
+        id="road-distance"
+        labelText="Road Distance to Operating Area (km)"
+        value={values.roadDistanceToOperatingArea}
+        readOnly={readOnly}
+        onChange={(event) => onFieldChange('roadDistanceToOperatingArea', event.target.value)}
+        onBlur={() => onFieldBlur('roadDistanceToOperatingArea')}
+        invalid={Boolean(errors.roadDistanceToOperatingArea)}
+        invalidText={errors.roadDistanceToOperatingArea}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="roadDistanceToOperatingArea"
+        current={values.roadDistanceToOperatingArea}
+        numeric={true}
+        label="Road Distance to Operating Area (km)"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <TextInput
+        id="size-of-camp"
+        labelText="Size of Camp (number of persons)"
+        value={values.sizeOfCamp}
+        readOnly={readOnly}
+        onChange={(event) => onFieldChange('sizeOfCamp', event.target.value)}
+        onBlur={() => onFieldBlur('sizeOfCamp')}
+        invalid={Boolean(errors.sizeOfCamp)}
+        invalidText={errors.sizeOfCamp}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="sizeOfCamp"
+        current={values.sizeOfCamp}
+        numeric={true}
+        label="Size of Camp (number of persons)"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <TextInput
+        id="associated-camp-volume"
+        labelText="Associated Camp Volume (m³)"
+        value={values.associatedCampVolume}
+        readOnly={readOnly}
+        onChange={(event) => onCampVolumeChange(event.target.value)}
+        onBlur={() => onFieldBlur('associatedCampVolume')}
+        invalid={Boolean(errors.associatedCampVolume)}
+        invalidText={errors.associatedCampVolume}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="associatedCampVolume"
+        current={values.associatedCampVolume}
+        numeric={true}
+        label="Associated Camp Volume (m³)"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <Select
+        id="isolated-camp"
+        labelText="Isolated Camp"
+        value={values.isolatedCamp}
+        disabled={readOnly}
+        onChange={(event) => onIsolatedCampChange(event.target.value)}
+        // A change IS this control's commit, so it reports immediately — but blur is still needed:
+        // tabbing THROUGH the empty option fires no change at all, and without this the required
+        // field would stay silent until Save while every text field beside it reports on blur.
+        onBlur={() => onFieldBlur('isolatedCamp')}
+        invalid={Boolean(errors.isolatedCamp)}
+        invalidText={errors.isolatedCamp}
+      >
+        {/* The empty option exists so a stored null has something to render as. */}
+        <SelectItem value="" text="" />
+        <SelectItem value="false" text="No" />
+        <SelectItem value="true" text="Yes" />
+      </Select>
+      {/* The form holds 'true'/'false'; the served original is the stored 'Y'/'N', so this cell
+          compares the two through the same shared rule rather than by text. */}
+      <OriginalValueIndicator
+        originals={originals}
+        field="isolatedCamp"
+        current={storedFlag(values.isolatedCamp)}
+        numeric={false}
+        label="Isolated Camp"
+      />
+    </div>
   </div>
 )
+
+const PAGE_HEADER = <ScheduleTombstone title="Schedule 5" subtitle="Camp and Access Expense" />
 
 const Schedule5: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
@@ -480,6 +643,10 @@ const Schedule5: FC = () => {
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [form, setForm] = useState<CampFormValues>(emptyForm)
+  // The blur-committed copy the derived mirror reads. Legacy refreshed the camp's rates and its four
+  // totals on each field's own `change` handler (schedule5ExistingCamp.xhtml:110-111 define the two
+  // render lists), so the figures settle when focus leaves rather than per keystroke (defect #291).
+  const [committed, setCommitted] = useState<CampFormValues>(emptyForm)
   /**
    * Which fields are worth reporting on. Errors themselves are DERIVED at render from
    * `validateCamp` (the single rule source, the `schedule3/index.tsx:352` pattern); this set decides
@@ -494,6 +661,15 @@ const Schedule5: FC = () => {
   const [panelCampId, setPanelCampId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
 
+  // Check Status describes one exact screen snapshot. Incremented synchronously whenever that
+  // snapshot changes so an older response cannot repaint newer panel values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
   const [confirmDelete, setConfirmDelete] = useState<Camp | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null)
@@ -502,6 +678,7 @@ const Schedule5: FC = () => {
 
   // The hook's clearBanners covers message/actionError/checkResult; the page adds its own copyWarning.
   const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
     clearHookBanners()
     setCopyWarning(null)
   }
@@ -514,6 +691,7 @@ const Schedule5: FC = () => {
     setCopyWarning(null)
     setPanelMode('closed')
     setForm(emptyForm())
+    setCommitted(emptyForm())
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -526,8 +704,10 @@ const Schedule5: FC = () => {
     // so without this every control gated on `saving` stays dead in the new context until a remount.
   }, [resetHookBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule5Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule5Response>({
     path: SCHEDULE5_PATH,
+    scheduleName: 'Schedule 5',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -618,6 +798,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode(mode)
     setForm(seedForm(camp, true))
+    setCommitted(seedForm(camp, true))
     setBlurred(new Set())
     setPanelCampId(camp.campId)
     // THIS camp's own token, read from its row. A falsy 0 is a valid token — never coerce it.
@@ -628,6 +809,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode('new')
     setForm(emptyForm())
+    setCommitted(emptyForm())
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -637,6 +819,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode('copy')
     setForm(seedForm(camp, false))
+    setCommitted(seedForm(camp, false))
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -659,8 +842,10 @@ const Schedule5: FC = () => {
   }
 
   const closePanel = () => {
+    invalidateCheckResult()
     setPanelMode('closed')
     setForm(emptyForm())
+    setCommitted(emptyForm())
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -673,6 +858,20 @@ const Schedule5: FC = () => {
   /** Blur is the commit point: a field's error appears only once the licensee has left it. */
   const markBlurred = (key: string) => {
     setBlurred((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }
+
+  const commitEntry = () => {
+    const invalid = Object.keys(validateCamp(form, otherCampNames)).length > 0
+    if (!invalid && !hasUnusableEntry(form)) {
+      setCommitted(form)
+    }
+  }
+
+  // Commit the entry baseline when a descriptor field loses focus — the Associated Camp Volume is one
+  // of them, and it drives all four derived rows plus every category rate (#291).
+  const commitOnBlur = (key: string) => {
+    markBlurred(key)
+    commitEntry()
   }
 
   /**
@@ -695,6 +894,9 @@ const Schedule5: FC = () => {
   }
 
   const setField = (field: keyof CampFormValues, value: string) => {
+    if (field === 'campName' || field === 'roadDistanceToOperatingArea' || field === 'sizeOfCamp') {
+      invalidateCheckResult()
+    }
     setForm((prev) => ({ ...prev, [field]: value }))
     clearBlurred(field)
   }
@@ -724,6 +926,7 @@ const Schedule5: FC = () => {
    * blank DOES propagate: legacy converts an empty submit to null and clears all eleven.
    */
   const handleCampVolumeChange = (value: string) => {
+    invalidateCheckResult()
     // Computed OUT here, not inside the updater: the updater must stay pure, and the same condition
     // decides both whether the eleven volumes change and whether they should be un-reported.
     const propagates = value.trim() === '' || parseDecimalInput(value) !== null
@@ -764,7 +967,14 @@ const Schedule5: FC = () => {
 
   const handleCategoryBlur = (key: CategoryKey, half: 'volume' | 'cost') => {
     markBlurred(`${key}.${half}`)
+    commitEntry()
   }
+
+  /**
+   * Advance the mirror's baseline only from entries the Save could carry (ruled 2026-08-21). An
+   * out-of-range camp volume otherwise drove thirteen cells to a state the server rejects, and a
+   * negative Recoveries inflated the displayed Camp Total while its own field was red.
+   */
 
   /**
    * Apply a write echo: replace the document, render its message verbatim, and re-seat the panel on
@@ -786,6 +996,7 @@ const Schedule5: FC = () => {
     if (saved) {
       setPanelMode('edit')
       setForm(seedForm(saved, true))
+      setCommitted(seedForm(saved, true))
       setPanelCampId(saved.campId)
       setPanelRevision(saved.revisionCount)
       setBlurred(new Set())
@@ -867,17 +1078,48 @@ const Schedule5: FC = () => {
     })
   }
 
+  /**
+   * The camp panel as the server must see it (#476), or null when no panel is open.
+   *
+   * Keyed on the panel being OPEN, never on it being dirty: an untouched NEW camp matches its empty
+   * baseline and is therefore clean, and skipping it would answer "requirements met" over a camp
+   * with four missing fields — legacy evaluated it, because it is on screen.
+   *
+   * `parseDecimalInput` returns null for a blank or unparseable field, and that null is carried
+   * through deliberately. The server's check is a pure null test (a stored `0` PASSES), so a `?? 0`
+   * anywhere on this path would turn every missing descriptor into a pass. "No usable value on
+   * screen" and "value required" are the same statement.
+   */
+  const screenCamp = (): CampCheckEntry | null =>
+    panelMode === 'closed'
+      ? null
+      : {
+          campId: panelCampId,
+          campName: form.campName,
+          roadDistanceToOperatingArea: parseDecimalInput(form.roadDistanceToOperatingArea),
+          sizeOfCamp: parseDecimalInput(form.sizeOfCamp),
+          associatedCampVolume: parseDecimalInput(form.associatedCampVolume),
+        }
+
   const handleCheckStatus = () => {
     if (saving) {
       return
     }
     clearBanners()
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The hook's default `/check-status` suffix over the '/v1/schedule5' base reproduces the
-    // check-status URL verbatim.
-    checkStatus<Schedule5CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: (result) => setCheckResult(result),
-    })
+    // check-status URL verbatim. The body carries the screen; nothing is persisted (AD-5).
+    checkStatus<Schedule5CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
+      },
+      { camp: screenCamp() } satisfies Schedule5CheckRequest,
+    )
   }
 
   /**
@@ -1001,8 +1243,6 @@ const Schedule5: FC = () => {
     }
   }
 
-  const header = <ScheduleTombstone title="Schedule 5" subtitle="Camp and Access Expense" />
-
   // The expense sub-pages render INSTEAD of the camp list, as an early return driven by the search
   // params. Not a second route file: this keeps browser Back stepping from a sub-page to the list,
   // needs no nav entry (sub-pages are not in ROUTES), and reuses the already-loaded context.
@@ -1035,39 +1275,9 @@ const Schedule5: FC = () => {
     )
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-  if (isLoading) {
-    return (
-      <PageState header={header}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 5" />
-        </Column>
-      </PageState>
-    )
-  }
-  if (errorDetail) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Unable to load Schedule 5',
-          subtitle: errorDetail,
-        }}
-      />
-    )
-  }
+  // One branch rather than three, to keep this component's body under the cognitive-complexity
+  // budget; the `!data` guard stays put, because it is what narrows `data` for everything below.
+  if (loadState) return loadState
   if (!data) {
     return null
   }
@@ -1092,14 +1302,32 @@ const Schedule5: FC = () => {
   // figures as this one's and go stale the moment any amount is edited — and AD-5 forbids
   // recomputing them here. Left blank until the save echo brings the real ones back (deviation (O)).
   const derivedSource = panelMode === 'edit' || panelMode === 'view' ? servedCamp : undefined
+  // Null in view mode, where there is no entry and the served figures render untouched (#291 AC7).
+  // Gated on BOTH the panel mode and the DOCUMENT's editability (#291 AC7, code review 2026-08-21):
+  // gating on `panelMode` alone left a live mirror over a schedule the server would refuse to write,
+  // because `applySaved` re-seats the panel in edit mode from the echo without checking its flag.
+  const derived = readOnlyPanel || !editable ? null : deriveSchedule5(committed, derivedSource)
+
+  // The camp open in the panel cannot act on itself: its row actions grey out while it is open. Legacy
+  // Schedule 5 instead swapped the Action column and confirmed a switch (schedule5.xhtml:79-102); the
+  // business adopted legacy Schedule 8's freeze for every schedule, so this row is locked instead.
+  const isOpenCamp = (camp: Camp) =>
+    panelOpen && panelCampId !== null && camp.campId === panelCampId
 
   const rowActions = (camp: Camp) => {
+    const isOpen = isOpenCamp(camp)
     if (!editable) {
       // Legacy also renders a permanently-disabled Delete here (schedule5.xhtml:103-119); the epics
       // AC collapses the column to a single View and Schedule 6 set the same precedent, so the inert
       // control is dropped. Net user-reachable behaviour is identical (deviation (B)).
       return (
-        <Button kind="ghost" size="sm" onClick={() => openEditOrView(camp, 'view')}>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={View}
+          disabled={isOpen}
+          onClick={() => openEditOrView(camp, 'view')}
+        >
           View
         </Button>
       )
@@ -1109,7 +1337,8 @@ const Schedule5: FC = () => {
         <Button
           kind="ghost"
           size="sm"
-          disabled={saving}
+          renderIcon={Edit}
+          disabled={saving || isOpen}
           onClick={() =>
             panelOpen && panelDirty
               ? setPendingSwitch({ kind: 'edit', camp })
@@ -1119,16 +1348,23 @@ const Schedule5: FC = () => {
           Edit
         </Button>
         <Button
-          kind="danger--ghost"
+          kind="danger--tertiary"
           size="sm"
-          disabled={saving}
+          renderIcon={TrashCan}
+          disabled={saving || isOpen}
           onClick={() => setConfirmDelete(camp)}
         >
           Delete
         </Button>
         {/* Legacy attaches no confirm to Copy in either editable column, so an open panel is
             replaced without one — copyCamp() calls addNewCamp() directly. */}
-        <Button kind="ghost" size="sm" disabled={saving} onClick={() => openCopy(camp)}>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={Copy}
+          disabled={saving || isOpen}
+          onClick={() => openCopy(camp)}
+        >
           Copy
         </Button>
       </>
@@ -1137,7 +1373,7 @@ const Schedule5: FC = () => {
 
   const campsTable = (
     <TableContainer title={SECTION_HEADING}>
-      <Table aria-label={SECTION_HEADING}>
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Camp Name</TableHeader>
@@ -1151,7 +1387,10 @@ const Schedule5: FC = () => {
             </TableRow>
           ) : (
             data.camps.map((camp) => (
-              <TableRow key={camp.campId}>
+              <TableRow
+                key={camp.campId}
+                className={isOpenCamp(camp) ? 'schedule-5__row--editing' : undefined}
+              >
                 <TableCell>{camp.campName}</TableCell>
                 <TableCell>
                   <div className="schedule-5__row-actions">{rowActions(camp)}</div>
@@ -1179,15 +1418,19 @@ const Schedule5: FC = () => {
         readOnly={readOnlyPanel}
         errors={errors}
         onFieldChange={setField}
-        onFieldBlur={markBlurred}
+        onFieldBlur={commitOnBlur}
         onIsolatedCampChange={handleIsolatedCampChange}
         onCampVolumeChange={handleCampVolumeChange}
+        // The new-camp panel has no stored camp, so nothing was submitted for it to differ from.
+        originals={panelMode === 'new' ? null : servedCamp?.originalValues}
       />
 
       <CategoryGrid
         onOpenSubPage={requestSubPage}
         values={form}
         served={derivedSource}
+        derived={derived}
+        campVolumeMoved={campVolumeMovedFrom(committed, derivedSource)}
         readOnly={readOnlyPanel}
         errors={errors}
         onChange={handleCategoryChange}
@@ -1196,10 +1439,9 @@ const Schedule5: FC = () => {
 
       <div className="schedule-5__comments">
         <h4 className="schedule-5__comments-heading">{COMMENTS_HEADING}</h4>
-        <TextArea
+        <CommentsTextArea
           id="camp-comments"
           labelText="Comments"
-          enableCounter
           maxCount={COMMENTS_MAX_LENGTH}
           value={form.comments}
           readOnly={readOnlyPanel}
@@ -1216,12 +1458,18 @@ const Schedule5: FC = () => {
         {/* Legacy renders Save DISABLED in the read-only state rather than removing it (AC11,
             review decision 2026-08-11); Close stays enabled — it is the only way out of a View
             panel, the one place the AC's "everything disabled" cannot be taken literally. */}
-        <Button kind="primary" disabled={!editable || readOnlyPanel || saving} onClick={handleSave}>
+        <Button
+          kind="primary"
+          disabled={!editable || readOnlyPanel || saving}
+          renderIcon={Save}
+          onClick={handleSave}
+        >
           Save
         </Button>
         <Button
           kind="secondary"
           disabled={saving}
+          renderIcon={Close}
           // The `readOnlyPanel` test this replaces is subsumed: a view panel is never dirty.
           onClick={() => (panelDirty ? setConfirmClose(true) : closePanel())}
         >
@@ -1233,7 +1481,7 @@ const Schedule5: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {actionMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={actionMessage} />
@@ -1266,7 +1514,7 @@ const Schedule5: FC = () => {
             {checkResult.camps.map((camp) =>
               camp.messages.map((message) => (
                 <NotificationColumn
-                  key={`camp-${String(camp.campId)}-${message.key}-${message.field ?? ''}`}
+                  key={`camp-${camp.campId ?? 'unsaved'}-${message.key}-${message.field ?? ''}`}
                   kind={camp.requirementsMet ? 'success' : 'warning'}
                   title={
                     camp.requirementsMet
@@ -1283,6 +1531,7 @@ const Schedule5: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-5__actions">
           <Button
             kind="primary"
+            renderIcon={Add}
             disabled={!editable || saving}
             onClick={() =>
               panelOpen && panelDirty ? setPendingSwitch({ kind: 'new' }) : openNew()
@@ -1290,14 +1539,20 @@ const Schedule5: FC = () => {
           >
             Add New Camp
           </Button>
-          {/* Disabled when the schedule is not editable (legacy gates both Check Status buttons on
-              disableReportEdits(), :44 and :257) and while a panel is open: legacy's button was a
-              full postback, so JSF applied the entered values to the model BEFORE the check ran and
-              the verdict always reflected the screen. The modern check reads only the database, so
-              a verdict must never be shown that contradicts visible unsaved input. */}
+          {/* Disabled only when the schedule is not editable, which is legacy exactly: it gates
+              both its Check Status buttons on disableReportEdits() and nothing else
+              (schedule5.xhtml:44, :257), and the second of those is rendered ONLY while a camp
+              panel is open — so the check was always meant to be reachable mid-edit.
+
+              There WAS a panel gate here until #476. It existed because the endpoint read the
+              database and could therefore contradict unsaved input; now that the request carries
+              the screen (handleCheckStatus above), there is nothing left for it to protect
+              against, and it retired with the defect. Do not reinstate it without first taking the
+              body away again. */}
           <Button
             kind="tertiary"
-            disabled={!editable || saving || panelOpen}
+            renderIcon={CheckmarkOutline}
+            disabled={!editable || saving}
             onClick={handleCheckStatus}
           >
             Check Status

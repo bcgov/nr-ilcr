@@ -11,10 +11,16 @@ Test data (real, 2026-07-30): pinned in `fixtures/sec/working-context-test-data.
 comments). Home "Save" is a read/resolve (`GET /v1/mill-context`) that writes nothing → no teardown;
 every scenario is parallel-safe by construction.
 
+> ### Suite state — the ONE place this is recorded
+> **13 scenarios / 13 tests: 11 green + 2 deliberate `@discovered-bug` REDs** (both are BUG-1, the
+> admin-authored welcome-message contrast — see AC4 below). Measured from the generated specs and a full
+> run on **2026-08-27**. No whole-suite total is written down anywhere by design — the e2e
+> [`README.md`](../../../README.md) gives the command to measure one.
+
 | Source item (slice) | Source citation | App enforcement point | Scenario (tags) | Status | Gap/defect |
 |---|---|---|---|---|---|
 | S01 Establish working context (happy path) | S01.feature; SUC-001 | `Home.handleSave` → `GET /v1/mill-context` 200 `message.text`; `ContextBanner` renders | `working-context.feature` `@S01 @SUC-001` | covered | Role + role-notice re-grounded — see defects.md |
-| S01 Landing: lists populate + pre-select + a11y | S01 land; `millYearDefaults.ts`; NFR1 | `Home` mount fetch/pre-select; `ContextBanner` mount fetch; axe | `working-context.feature` `@S01 @landing @a11y` | covered | Banner populated on landing — defects.md DIV-3 |
+| S01 Landing: lists populate + pre-select | S01 land; `millYearDefaults.ts` | `Home` mount fetch/pre-select; `ContextBanner` mount fetch | `working-context.feature` `@S01 @landing` | covered | Banner populated on landing — defects.md DIV-3 |
 | S01 Saved context drives Schedule 1 (HOME-1.5 AC2) | epics-home-page Story-1.5 AC2 | client-side nav preserves `MillYearContext`; `GET /v1/schedule1?millId&year` carries the selection | `context-drives-schedule.feature` `@S01 @drives-schedule` | covered | — |
 | S02 Single assigned mill pre-selected | S02.feature (Alt) | `Home` single-mill fallback (`mills.length === 1`) | — | not-applicable | 21-mill delivery data; unit-covered (Story 1.3 Vitest). See defects.md GAP-2 |
 | S03 Change working context later | S03.feature (Alt) | `Home.setContext` on a second resolve; `ContextBanner` re-fetch | `working-context.feature` `@S03` | covered | — |
@@ -48,17 +54,18 @@ structure. Behavioral parity against the ACs:
 | AC2 context drives a schedule page | ✅ | `@drives-schedule` — schedule GET carries the saved mill/year |
 | AC2 context DISPLAYS on the schedule tombstone | ✅ | `@tombstone` — Schedule 2 header shows the saved mill + both track statuses (banner → tombstone, #227) |
 | AC3 AD-10 (verification, not red) | ✅ | Post-implementation assertions of observed behavior |
-| AC4 axe WCAG 2.1 AA, zero/triaged | ✅ | `@a11y` on landing + populated-banner + the Schedule 2 tombstone (`wcag2a/2aa/21a/21aa`) → zero violations |
-| AC5 CI wired or manual gate documented | ✅ (manual gate) | See **Manual verification gate** below; no CI (app+DB not containerized for CI here) |
+| AC4 axe WCAG 2.1 AA, zero/triaged | ⚠️ **triaged, not zero** | `@a11y` on landing + populated-banner + the Schedule 2 tombstone (`wcag2a/2aa/21a/21aa`). The tombstone sweep is green. The two HOME sweeps are RED on `color-contrast` and are the **triaged** half of this AC: `defects.md` BUG-1, admin-authored welcome-message colours (2.15:1 and 4.27:1 against white), not app CSS. Split into their own `@discovered-bug` scenarios 2026-08-24 so the `@p0` save journey and the `@p1` landing journey stay green and inside `test:gate`, with the contrast tracked rather than skipped. NOTE a green here would not by itself prove a fix — editing the welcome message also clears it; see BUG-1. |
+| AC5 CI wired or manual gate documented | ✅ (CI wired) | `reusable-tests.yml` runs the full suite on every PR since upstream #327 (2026-08-28), against the shared tools-namespace Oracle. The local commands below remain the authoring/manual route |
 | AC6 data-reality confirmed, not invented | ✅ | All anchors grounded via live API 2026-07-30; finding queries pinned in `fixtures/sec/` |
 
 Residual vs the app team's suite: **S04/S05/S08 remain contract-only** here (the mount default pre-selects
 both dropdowns, so the empty state is UI-unreachable — DIV-2). This also makes the app team's
 browser `S04` **stale** (it assumed the old `514` default was absent). Flagged for BA/PO.
 
-## Manual verification gate (HOME-1.5 AC5)
+## Verification gate (HOME-1.5 AC5)
 
-No CI wiring (the app + delivery Oracle are not containerized in this pipeline). Manual gate:
+CI runs the full suite on every PR (see the AC5 row above). The same run locally, which is also the
+authoring loop:
 1. Bring up the stack per `../../../README.md` (backend `:8080` `local` profile + datasource on; Vite `:3000`;
    seeded Docker Oracle `THE/…@localhost:1525/DBDOCK_01`, security off).
 2. `cd frontend/e2e && npm test` (the `pretest` hook runs `bddgen`).

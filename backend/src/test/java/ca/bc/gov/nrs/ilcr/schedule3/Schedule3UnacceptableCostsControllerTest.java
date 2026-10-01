@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule3;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,9 +11,11 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,12 +27,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for the batch-save endpoint on {@link Schedule3UnacceptableCostsController}: validates the
- * mill/year context, delegates to the service, and picks the save vs delete message from {@code
+ * Unit test for the batch-save endpoint on {@link Schedule3UnacceptableCostsController}: validates
+ * the mill/year context, delegates to the service, and picks the save vs delete message from {@code
  * intent} (legacy parity). Collaborators mocked (no Spring, no {@code @PreAuthorize}).
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule3UnacceptableCostsControllerTest {
+
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
 
   private static final long MILL_ID = 574L;
   private static final int YEAR = 2021;
@@ -37,7 +45,7 @@ class Schedule3UnacceptableCostsControllerTest {
 
   @Mock private MillContextService millContextService;
   @Mock private Schedule3Service schedule3Service;
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
   @Mock private MessageSource messageSource;
   @Mock private Authentication authentication;
 
@@ -56,8 +64,11 @@ class Schedule3UnacceptableCostsControllerTest {
     when(request.rows()).thenReturn(rows);
     UnacceptableDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule3Service.saveUnacceptable(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(schedule3Service.saveUnacceptable(
+            MILL_ID, YEAR, rows, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(doc);
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<UnacceptableDocument> response =
@@ -76,7 +87,9 @@ class Schedule3UnacceptableCostsControllerTest {
     when(request.rows()).thenReturn(rows);
     UnacceptableDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule3Service.saveUnacceptable(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
+    when(schedule3Service.saveUnacceptable(
+            MILL_ID, YEAR, rows, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(doc);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");

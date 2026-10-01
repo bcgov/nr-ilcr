@@ -32,7 +32,10 @@ export const SUB_PAGE_MESSAGES = {
   descriptionRequired: 'Value Required',
   volume: 'Entered volume must be between 0 and 999,999.',
   cost: 'Entered cost must be between -9,999,999 and 9,999,999.',
-  distance: 'Entered distance must be between 0 and 999,999.',
+  // `distanceValidatorErrorMsg` — the 0.0–999,999.9 band. Unlike `volume`/`cycle` above, whose
+  // 999,999 is a genuine integer cap, this text understated its bound by 0.9 in legacy; the
+  // Ministry ruled the text the defect on PR #370 (2026-08-27).
+  distance: 'Entered distance must be between 0 and 999,999.9.',
   cycle: 'Entered cycle time must be between 0 and 999,999.',
 } as const
 

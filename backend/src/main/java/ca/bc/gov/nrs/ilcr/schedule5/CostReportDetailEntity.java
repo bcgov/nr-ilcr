@@ -32,5 +32,4 @@ public record CostReportDetailEntity(
     @Column("ILCR_REPORT_COST_ITEM_ID") Integer costItemId,
     @Column("VOLUME") BigDecimal volume,
     @Column("COST") Integer cost,
-    @Column("ITEM_DESCRIPTION") String itemDescription) {
-}
+    @Column("ITEM_DESCRIPTION") String itemDescription) {}

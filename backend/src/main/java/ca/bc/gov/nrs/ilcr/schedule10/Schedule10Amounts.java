@@ -4,8 +4,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * The Schedule 10 derived arithmetic, transcribed verbatim from legacy
- * {@code RoadConstructionReportDetailType} and {@code CoreUtil}.
+ * The Schedule 10 derived arithmetic, transcribed verbatim from legacy {@code
+ * RoadConstructionReportDetailType} and {@code CoreUtil}.
  *
  * <p>This lives in ONE pure, testable place on purpose. Legacy spread the same arithmetic across
  * the type class, the JSF view and the Jasper report, and the read path and the print path could
@@ -13,14 +13,13 @@ import java.math.RoundingMode;
  * row mapper, never re-implemented in SQL.
  *
  * <p><strong>An absent cost counts as ZERO in the totals, and is rendered blank on its own.
- * </strong>
- * Legacy applies {@link #costValue} to every term before summing ({@code getSubGradeTotalCosts}
- * :1170-1178, {@code getSubGradeTotalDeductions} :1180-1190, {@code getStabilizingTotal}
- * :1289-1295), so a road detail with no cost lines at all serves {@code total: 0.00} — while the
- * individual {@code actualCost} / {@code ttTransfer} / {@code less*} fields stay null and are
- * omitted. Schedule 10 holds ZERO cost lines in the real delivery database (52 pages, 66 detail
- * rows, 0 cost rows — Story 11.1 Task 1 data probe), so this is the shape of EVERY production row,
- * not an edge case.
+ * </strong> Legacy applies {@link #costValue} to every term before summing ({@code
+ * getSubGradeTotalCosts} :1170-1178, {@code getSubGradeTotalDeductions} :1180-1190, {@code
+ * getStabilizingTotal} :1289-1295), so a road detail with no cost lines at all serves {@code total:
+ * 0.00} — while the individual {@code actualCost} / {@code ttTransfer} / {@code less*} fields stay
+ * null and are omitted. Schedule 10 holds ZERO cost lines in the real delivery database (52 pages,
+ * 66 detail rows, 0 cost rows — Story 11.1 Task 1 data probe), so this is the shape of EVERY
+ * production row, not an edge case.
  *
  * <p>An earlier revision of this class omitted the totals entirely in that case, on the reasoning
  * that "null is not zero". That was wrong: it read {@code CoreUtil.sumBigDecimalValues} without its
@@ -30,16 +29,17 @@ import java.math.RoundingMode;
  * contract.
  *
  * <p>The legacy semantics, reproduced exactly:
+ *
  * <ul>
  *   <li>{@code CoreUtil.sumBigDecimalValues} (:347-361) — sums only non-null terms and returns
- *       {@code null} when EVERY term is null. One non-null term makes the sum non-null.</li>
+ *       {@code null} when EVERY term is null. One non-null term makes the sum non-null.
  *   <li>{@code CoreUtil.bigDecimalSubtraction} (:379-389) — a null subtrahend returns the minuend
- *       unchanged; a null minuend returns {@code null}. It is NOT symmetric.</li>
+ *       unchanged; a null minuend returns {@code null}. It is NOT symmetric.
  *   <li>{@code CoreUtil.bigDecimalDivision} (:413-424) — returns {@code null} if either operand is
- *       null AND, critically, if the denominator is zero. Division never throws.</li>
- *   <li>{@code getMaterialTypeTotal} (:634-647) — deliberately UNLIKE the rules above: it is
- *       {@code int} arithmetic that coerces nulls to {@code 0} and is therefore ALWAYS non-null.
- *       That asymmetry is legacy behaviour, not an oversight here.</li>
+ *       null AND, critically, if the denominator is zero. Division never throws.
+ *   <li>{@code getMaterialTypeTotal} (:634-647) — deliberately UNLIKE the rules above: it is {@code
+ *       int} arithmetic that coerces nulls to {@code 0} and is therefore ALWAYS non-null. That
+ *       asymmetry is legacy behaviour, not an oversight here.
  * </ul>
  */
 final class Schedule10Amounts {
@@ -50,15 +50,13 @@ final class Schedule10Amounts {
   /** Legacy divides at scale 10 HALF_UP before rounding ({@code bigDecimalDivision} :418). */
   private static final int DIVISION_SCALE = 10;
 
-  private Schedule10Amounts() {
-  }
+  private Schedule10Amounts() {}
 
   /**
    * Sums the non-null terms, or returns {@code null} when every term is null.
    *
-   * <p>Verbatim {@code CoreUtil.sumBigDecimalValues} (:347-361): the legacy method tracks an
-   * {@code itemAdded} flag and returns {@code null} rather than {@code ZERO} when nothing was
-   * added.
+   * <p>Verbatim {@code CoreUtil.sumBigDecimalValues} (:347-361): the legacy method tracks an {@code
+   * itemAdded} flag and returns {@code null} rather than {@code ZERO} when nothing was added.
    *
    * @param values the terms, any of which may be {@code null}
    * @return the rounded sum, or {@code null} if all terms were null
@@ -80,8 +78,7 @@ final class Schedule10Amounts {
    *
    * <p>Verbatim {@code CoreUtil.bigDecimalSubtraction} (:379-389): a null {@code subtract} yields
    * {@code total} unchanged (NOT null), while a null {@code total} yields {@code null} regardless
-   * of
-   * {@code subtract}.
+   * of {@code subtract}.
    *
    * @param total the minuend
    * @param subtract the subtrahend
@@ -100,9 +97,8 @@ final class Schedule10Amounts {
    * Divides, returning {@code null} on a null operand or a zero denominator.
    *
    * <p>Verbatim {@code CoreUtil.bigDecimalDivision} (:413-424). The zero-denominator branch is why
-   * a
-   * road detail with a cost but no length serves a {@code null} rate instead of throwing
-   * {@code ArithmeticException} — a road with zero length is real data, not a bug.
+   * a road detail with a cost but no length serves a {@code null} rate instead of throwing {@code
+   * ArithmeticException} — a road with zero length is real data, not a bug.
    *
    * @param numerator the dividend
    * @param denominator the divisor
@@ -138,9 +134,9 @@ final class Schedule10Amounts {
    * Sub-grade total deductions: the six "Less" lines.
    *
    * <p>Verbatim {@code getSubGradeTotalDeductions} (:1180-1190). NOTE the six lines do not all live
-   * under one cost subcategory — {@code lessOtherEngineering} is stored under subcategory
-   * {@code '3'} ({@code Schedule10_OtherSubGrade}, cost item 4) while the other five sit under
-   * subcategory {@code '1'}. A read that scanned only subcategory 1 would silently under-count.
+   * under one cost subcategory — {@code lessOtherEngineering} is stored under subcategory {@code
+   * '3'} ({@code Schedule10_OtherSubGrade}, cost item 4) while the other five sit under subcategory
+   * {@code '1'}. A read that scanned only subcategory 1 would silently under-count.
    *
    * @param lessBridges deduction for bridges
    * @param lessCulverts deduction for culverts
@@ -158,8 +154,13 @@ final class Schedule10Amounts {
       BigDecimal lessOverland,
       BigDecimal lessOtherEngineering) {
     // Legacy order: bridges, culverts, landings, endHaul, overLand, otherEngineering (:1183-1188).
-    return sum(costValue(lessBridges), costValue(lessCulverts), costValue(lessLandings),
-        costValue(lessEndHaul), costValue(lessOverland), costValue(lessOtherEngineering));
+    return sum(
+        costValue(lessBridges),
+        costValue(lessCulverts),
+        costValue(lessLandings),
+        costValue(lessEndHaul),
+        costValue(lessOverland),
+        costValue(lessOtherEngineering));
   }
 
   /**
@@ -204,10 +205,10 @@ final class Schedule10Amounts {
    * Material composition total percentage.
    *
    * <p>Verbatim {@code getMaterialTypeTotal} (:634-647). <strong>Deliberately unlike every other
-   * method here:</strong> legacy uses {@code int} arithmetic with each null term coerced to
-   * {@code 0}, so the result is ALWAYS non-null — a road detail with no material percentages
-   * recorded serves {@code 0}, not {@code null}. Legacy performs no "sums to 100" validation, so a
-   * total of 87 or 140 is served as-is.
+   * method here:</strong> legacy uses {@code int} arithmetic with each null term coerced to {@code
+   * 0}, so the result is ALWAYS non-null — a road detail with no material percentages recorded
+   * serves {@code 0}, not {@code null}. Legacy performs no "sums to 100" validation, so a total of
+   * 87 or 140 is served as-is.
    *
    * @param percentages the five composition percentages, any of which may be {@code null}
    * @return the total, never {@code null}
@@ -221,8 +222,8 @@ final class Schedule10Amounts {
   }
 
   /**
-   * Coerces an absent cost line to zero, exactly as legacy
-   * {@code RoadConstructionReportDetailType.getCostValue} (:1160-1168) does:
+   * Coerces an absent cost line to zero, exactly as legacy {@code
+   * RoadConstructionReportDetailType.getCostValue} (:1160-1168) does:
    *
    * <pre>
    * BigDecimal res = new BigDecimal(0);
@@ -234,8 +235,8 @@ final class Schedule10Amounts {
    *
    * <p><strong>This is applied only inside the total calculations, never to the served cost
    * fields.</strong> Legacy renders an absent individual cost blank but counts it as zero in the
-   * totals — so {@code subGrade.actualCost} is omitted from the response while
-   * {@code subGrade.totalCosts} is {@code 0.00}. Both halves matter.
+   * totals — so {@code subGrade.actualCost} is omitted from the response while {@code
+   * subGrade.totalCosts} is {@code 0.00}. Both halves matter.
    *
    * @param cost a stored cost line, or {@code null} when no row exists for that ordinal
    * @return the cost, or {@code ZERO} when absent — never {@code null}

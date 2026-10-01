@@ -8,10 +8,10 @@ import java.math.BigDecimal;
  * NEVER zero — when it has no contributors.
  *
  * <p>The cost totals are {@code Long}, not {@code Integer}: each per-location {@code COST} is
- * {@code NUMBER(8,0)} (up to 99,999,999) and a footer sum across enough locations exceeds
- * {@code Integer.MAX_VALUE} (~2.147e9) — legacy summed with {@code BigDecimal} and never wrapped,
- * so an {@code int} accumulator here would silently corrupt large footers. Per-row costs stay
- * {@code Integer} (each ≤ 199,999,998, always in range). Both serialize as bare JSON integers.
+ * {@code NUMBER(8,0)} (up to 99,999,999) and a footer sum across enough locations exceeds {@code
+ * Integer.MAX_VALUE} (~2.147e9) — legacy summed with {@code BigDecimal} and never wrapped, so an
+ * {@code int} accumulator here would silently corrupt large footers. Per-row costs stay {@code
+ * Integer} (each ≤ 199,999,998, always in range). Both serialize as bare JSON integers.
  *
  * @param netArea sum of non-null net areas, scale 1 HALF_UP ({@code sumBigDecimalAreas})
  * @param actualCost sum of non-null actual costs ({@code sumBigDecimalCosts}; whole dollars)
@@ -25,5 +25,4 @@ public record SilvicultureTotals(
     Long actualCost,
     Long plannedCost,
     Long totalCost,
-    BigDecimal costPerNetArea) {
-}
+    BigDecimal costPerNetArea) {}

@@ -6,8 +6,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 /**
- * The current signed-in user. Controller + api-interface split, the established idiom: the interface
- * owns the request mapping, {@link ca.bc.gov.nrs.ilcr.user.UserController} implements it.
+ * The current signed-in user. Controller + api-interface split, the established idiom: the
+ * interface owns the request mapping, {@link ca.bc.gov.nrs.ilcr.user.UserController} implements it.
  *
  * <p>The SPA calls this after sign-in to learn who it is and what it may do, then branches its
  * navigation on {@link CurrentUser#roles()}. Identity and role come from the validated FAM/Cognito

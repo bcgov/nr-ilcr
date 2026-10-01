@@ -4,8 +4,8 @@ import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 
 /**
- * The Print Schedules selection is invalid (UC-PRT-001, ERR-002/003/004) — a 400 carrying one of the
- * three verbatim legacy selection messages, resolved from the backend bundle by {@code
+ * The Print Schedules selection is invalid (UC-PRT-001, ERR-002/003/004) — a 400 carrying one of
+ * the three verbatim legacy selection messages, resolved from the backend bundle by {@code
  * GlobalExceptionHandler} (AD-8). The three cases are validated in the fixed legacy order
  * (first-match-wins) before any report is filled; the static factories name each so the controller
  * reads as the legacy {@code PrintSchedulesMB.print()} validation ladder.

@@ -51,6 +51,34 @@ export default defineConfig([
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
 
       'react/prop-types': 'off',
+
+      // #321: a Carbon <TableContainer title> wires its heading to the <Table> through
+      // aria-labelledby, which wins the accessible-name computation — so an aria-label on that
+      // table is never heard, and its text quietly drifts from the name users get. Ten tables
+      // carried one. This is an AST selector, so it reads real TSX: a `>` inside an earlier prop
+      // (`isSortable={n > 0}`, `onX={() => ...}`), spaces around `=`, template-literal values or
+      // a Table nested deeper in the container make no difference to it.
+      //
+      // Shape: a JSXElement whose opening tag is `TableContainer` carrying a `title` attribute,
+      // with a `Table` opening tag anywhere below it that carries `aria-label`. The child
+      // combinators are nested `:has(> …)` on purpose — esquery does not honour a chained
+      // `:has(> A > B)`, and a plain descendant `:has(A > B)` would also match the component's
+      // outer <div> and flag the untitled sibling tables that legitimately keep their label.
+      // `components/__tests__/table-accessible-name.test.ts` pins both of those.
+      //
+      // Known limit: a Table inside an UNTITLED TableContainer that itself sits inside a titled
+      // one is flagged although its label is live (esquery cannot say "nearest"). Nothing in the
+      // app nests containers; if you must, or if a title is genuinely conditional and the label is
+      // its fallback, disable this line with the reason. Otherwise delete the aria-label.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'JSXElement:has(> JSXOpeningElement[name.name="TableContainer"]:has(> JSXAttribute[name.name="title"])) JSXOpeningElement[name.name="Table"] > JSXAttribute[name.name="aria-label"]',
+          message:
+            '#321: this aria-label is dead — the enclosing TableContainer title names the table via aria-labelledby. Delete it (or disable with a reason if the title is conditional).',
+        },
+      ],
     },
   },
   prettierConfig,

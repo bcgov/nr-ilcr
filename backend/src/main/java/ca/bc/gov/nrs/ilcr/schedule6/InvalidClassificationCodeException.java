@@ -4,11 +4,11 @@ import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Raised when a TSA-classified write carries an area-type code too wide for
- * {@code TSA_NUMBER VARCHAR2(2)}. The DTO's {@code @Size(max = 3)} on {@code areaType} exists for
- * the 3-character literal {@code "TFL"}, so a 3-character NON-TFL code clears Bean Validation and
- * would reach Oracle as ORA-12899 — which the service's {@code catch (DataAccessException)} can
- * only surface as a 500. This closes that gap with the house 400 (code review 2026-08-04).
+ * Raised when a TSA-classified write carries an area-type code too wide for {@code TSA_NUMBER
+ * VARCHAR2(2)}. The DTO's {@code @Size(max = 3)} on {@code areaType} exists for the 3-character
+ * literal {@code "TFL"}, so a 3-character NON-TFL code clears Bean Validation and would reach
+ * Oracle as ORA-12899 — which the service's {@code catch (DataAccessException)} can only surface as
+ * a 500. This closes that gap with the house 400 (code review 2026-08-04).
  *
  * <p>Maps to 400 {@code invalidCodeValueErrorMsg} ({@code A valid value must be selected from the
  * list.}) — the key § Validation rules row 2 designated for an unusable classification code, and

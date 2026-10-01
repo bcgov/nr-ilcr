@@ -194,6 +194,8 @@ OpenShift Gold is the destination environment, but the Gold project is not requi
 
 Deployed pods fail closed on authentication: JWT enforcement (`ILCR_SECURITY_ENABLED`) and the Oracle datasource (`ILCR_DATASOURCE_ENABLED`) both default to `true` and can be overridden per scope with GitHub variables (environment-first, then repository). The backend refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data from a public route; setting both variables to `false` yields a data-less mock-auth smoke deployment.
 
+The NR User Lookup directory search (`ILCR_USER_LOOKUP_ENABLED`, DL-27) is a separate switch and ships `false` in every environment. Only its non-secret half is wired in `backend/openshift.deploy.yml` — the service-account credential (`ILCR_USER_LOOKUP_CLIENT_ID` / `_SECRET`) is a per-environment Vault secret that does not exist yet, and a `secretKeyRef` to a missing Secret would fail the pod, so it lands with the DL-27 onboarding work. The backend refuses to start with the flag on and any of the four values blank, so the switch and the credential cannot drift apart. While the flag is off the endpoint is not routed at all and `GET /api/v1/users/lookup` answers 404.
+
 ## Verification
 
 Backend:

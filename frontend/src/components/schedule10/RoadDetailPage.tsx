@@ -1,3 +1,4 @@
+import { roadDetailOriginals } from './originals'
 import type { FC } from 'react'
 import {
   Button,
@@ -9,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
+import { Add, ArrowLeft, Close, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import type {
   ConstructionPage,
   RoadDetail,
@@ -67,24 +69,25 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
 
   const openLabel =
     page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)?.roadDetailLabel ?? ''
+  const openDetail = page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)
   const modeWord = readOnly ? 'View' : 'Edit'
   const panelHeading = panelMode === 'new' ? 'New Road' : `${modeWord} Road — ${openLabel}`
 
   return (
     <>
       <div className="schedule-10__actions">
-        <Button kind="primary" disabled={controlsDisabled} onClick={onOpenNew}>
+        <Button kind="primary" disabled={controlsDisabled} renderIcon={Add} onClick={onOpenNew}>
           Add Road
         </Button>
-        {/* Back is never disabled, including outside Draft — a read-only reporter must be able to
-            leave the level. */}
-        <Button kind="secondary" onClick={onBack}>
+        {/* Back is never disabled, including for a caller who may not edit — a read-only reporter
+            must be able to leave the level. */}
+        <Button kind="secondary" renderIcon={ArrowLeft} onClick={onBack}>
           Back
         </Button>
       </div>
 
       <TableContainer title={`${page.pageLabel} -> Roads`} className="schedule-10__section">
-        <Table aria-label="Road details">
+        <Table>
           <TableHead>
             <TableRow>
               <TableHeader>Roads</TableHeader>
@@ -97,40 +100,41 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
                 <TableCell colSpan={2}>{EMPTY_LIST}</TableCell>
               </TableRow>
             ) : (
-              page.roadDetails.map((detail) => (
-                <TableRow
-                  key={detail.roadDetailId}
-                  className={
-                    openDetailId === detail.roadDetailId && panelMode !== 'closed'
-                      ? 'schedule-10__row--editing'
-                      : undefined
-                  }
-                >
-                  <TableCell>{detail.roadDetailLabel}</TableCell>
-                  <TableCell>
-                    <div className="schedule-10__row-actions">
-                      {/* Unlike the page list, legacy leaves a road row actionable while that road
-                          is open in the panel below — re-opening it simply reloads the form. */}
-                      <Button
-                        kind="ghost"
-                        size="sm"
-                        disabled={saving}
-                        onClick={() => onOpenDetail(detail)}
-                      >
-                        {editable ? 'Edit' : 'View'}
-                      </Button>
-                      <Button
-                        kind="danger--ghost"
-                        size="sm"
-                        disabled={controlsDisabled}
-                        onClick={() => onRequestDelete(detail)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              page.roadDetails.map((detail) => {
+                // The road open in the panel cannot act on itself. Legacy left this row live, but
+                // the business adopted the page list's freeze (legacy Schedule 8's) for every row.
+                const isOpen = openDetailId === detail.roadDetailId && panelMode !== 'closed'
+                return (
+                  <TableRow
+                    key={detail.roadDetailId}
+                    className={isOpen ? 'schedule-10__row--editing' : undefined}
+                  >
+                    <TableCell>{detail.roadDetailLabel}</TableCell>
+                    <TableCell>
+                      <div className="schedule-10__row-actions">
+                        <Button
+                          kind="ghost"
+                          size="sm"
+                          disabled={saving || isOpen}
+                          renderIcon={editable ? Edit : View}
+                          onClick={() => onOpenDetail(detail)}
+                        >
+                          {editable ? 'Edit' : 'View'}
+                        </Button>
+                        <Button
+                          kind="danger--tertiary"
+                          size="sm"
+                          disabled={controlsDisabled || isOpen}
+                          renderIcon={TrashCan}
+                          onClick={() => onRequestDelete(detail)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -149,13 +153,25 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               readOnly={readOnly}
               onChange={onChange}
               onMask={onMask}
+              // The Add panel has no stored row, so nothing was submitted for it to differ from.
+              originals={
+                panelMode === 'new' || openDetail === undefined
+                  ? null
+                  : roadDetailOriginals(openDetail)
+              }
             />
             <div className="schedule-10__panel-actions">
-              {/* AC11 and deviation 7: rendered and disabled outside Draft, never removed. */}
-              <Button kind="primary" disabled={controlsDisabled || readOnly} onClick={onSave}>
+              {/* AC11 and deviation 7: rendered and disabled whenever the caller may not edit (the
+                  role×status matrix since Story 16.1, not Draft alone), never removed. */}
+              <Button
+                kind="primary"
+                disabled={controlsDisabled || readOnly}
+                renderIcon={Save}
+                onClick={onSave}
+              >
                 Save
               </Button>
-              <Button kind="secondary" onClick={onCloseForm}>
+              <Button kind="secondary" renderIcon={Close} onClick={onCloseForm}>
                 Close
               </Button>
             </div>

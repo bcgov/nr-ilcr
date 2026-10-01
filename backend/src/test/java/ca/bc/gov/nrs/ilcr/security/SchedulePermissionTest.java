@@ -38,6 +38,43 @@ class SchedulePermissionTest {
     assertFalse(permissions.grants(null, Action.VIEW_SCHEDULE));
   }
 
+  // EDIT_SCHEDULE (Story 16.1). Until the editability matrix landed, this action had NO assertion
+  // here at all — the whole write side of the map was unpinned. It matters more than it looks:
+  // ScheduleEditability.forCaller consults grants(role, EDIT_SCHEDULE) before it consults the
+  // matrix, so dropping either entry below turns every caller's permitted-status set empty and
+  // every write in the application into a 409 — a failure no *AuthorizationIT would name, because
+  // 409 is exactly what those tests expect from the role/status pair they probe with.
+
+  @Test
+  void submitter_grantsEditSchedule() {
+    assertTrue(permissions.grants(Role.SUBMITTER, Action.EDIT_SCHEDULE));
+  }
+
+  @Test
+  void admin_grantsEditSchedule() {
+    // Both shipped roles hold EDIT_SCHEDULE; which STATUS each may edit at is the matrix's job
+    // (ScheduleEditabilityTest), never this map's — the map carries no status dimension (AD-9,
+    // ratified by Story 5.4). An admin holding the action and still being refused at Draft is the
+    // two working together, not a contradiction.
+    assertTrue(permissions.grants(Role.ADMIN, Action.EDIT_SCHEDULE));
+  }
+
+  @Test
+  void nullRole_deniedEditSchedule() {
+    assertFalse(permissions.grants(null, Action.EDIT_SCHEDULE));
+  }
+
+  @Test
+  void hasPermission_ilcrPrefixedAuthority_edit() {
+    assertTrue(permissions.hasPermission(auth("ILCR_ADMIN"), "EDIT_SCHEDULE"));
+    assertTrue(permissions.hasPermission(auth("ILCR_SUBMITTER"), "EDIT_SCHEDULE"));
+  }
+
+  @Test
+  void hasPermission_foreignScopeAuthority_deniedEdit() {
+    assertFalse(permissions.hasPermission(auth("SCOPE_write"), "EDIT_SCHEDULE"));
+  }
+
   @Test
   void admin_grantsMaintainCodeTables() {
     // Story 24.3 / S13 — the code-table maintenance action is ADMIN-only.
@@ -54,6 +91,30 @@ class SchedulePermissionTest {
   @Test
   void hasPermission_adminAuthority_maintainCodeTables() {
     assertTrue(permissions.hasPermission(auth("ILCR_ADMIN"), "MAINTAIN_CODE_TABLES"));
+  }
+
+  // SUBMIT_REPORT (Story 15.3): the first SUBMITTER-only action — legacy enabled the Check Status
+  // Submit button for ILCR_LICENSEE alone (UserSessionMB.canUserSubmitReport:502-509), so an ADMIN
+  // is denied 403 at the endpoint rather than refused later by the status guard.
+  @Test
+  void submitter_grantsSubmitReport() {
+    assertTrue(permissions.grants(Role.SUBMITTER, Action.SUBMIT_REPORT));
+    assertTrue(permissions.hasPermission(auth("ILCR_SUBMITTER"), "SUBMIT_REPORT"));
+  }
+
+  @Test
+  void submitterGeneratesMillReports_butNotTheDataExtract() {
+    // #468: legacy showed a Licensee the Generate Reports menu and let them open the mill reports.
+    // The CSV extract under the same menu stays ADMIN-only.
+    assertTrue(permissions.grants(Role.SUBMITTER, Action.GENERATE_MILL_REPORTS));
+    assertTrue(permissions.grants(Role.ADMIN, Action.GENERATE_MILL_REPORTS));
+    assertFalse(permissions.grants(Role.SUBMITTER, Action.GENERATE_DATA_EXTRACT));
+  }
+
+  @Test
+  void admin_deniedSubmitReport() {
+    assertFalse(permissions.grants(Role.ADMIN, Action.SUBMIT_REPORT));
+    assertFalse(permissions.hasPermission(auth("ILCR_ADMIN"), "SUBMIT_REPORT"));
   }
 
   @Test

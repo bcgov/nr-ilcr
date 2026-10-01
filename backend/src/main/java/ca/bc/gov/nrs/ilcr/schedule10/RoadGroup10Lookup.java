@@ -1,39 +1,36 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
 /**
- * The Schedule 10 Road Group ({@code RMG}) tables, ported verbatim from legacy
- * {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468) and
- * {@code setRG10ByTflNumberCode} (:475-520).
+ * The Schedule 10 Road Group ({@code RMG}) tables, ported verbatim from legacy {@code
+ * RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468) and {@code setRG10ByTflNumberCode}
+ * (:475-520).
  *
  * <p><strong>These are NOT Schedule 6's tables.</strong> Legacy {@code RoadGroupUtil} carries two
  * independent pairs — {@code setRmgBy*} (:10, :222) for Schedule 6 and {@code setRG10By*} (:285,
  * :475) for Schedule 10 — and the values genuinely differ: TSA {@code "01"} maps to {@code "15"} in
  * Schedule 6 but {@code "11"} here; TFL {@code "08"} maps to {@code "7"} there but {@code "10"}
- * here; TSA {@code "08"} maps to {@code "10"} there but {@code "7"} here. The shipped
- * {@code schedule6.RoadGroupLookup} ports only the {@code setRmg*} pair, so reusing it would
- * serve a wrong Road Group on every Schedule 10 page. It is package-private in {@code schedule6},
- * so there is no accidental-import hazard — but there is a "helpful refactor" hazard. Do not merge
- * these.
+ * here; TSA {@code "08"} maps to {@code "10"} there but {@code "7"} here. The shipped {@code
+ * schedule6.RoadGroupLookup} ports only the {@code setRmg*} pair, so reusing it would serve a wrong
+ * Road Group on every Schedule 10 page. It is package-private in {@code schedule6}, so there is no
+ * accidental-import hazard — but there is a "helpful refactor" hazard. Do not merge these.
  *
- * <p>Road Group is <strong>derived on every read and never stored</strong>: there is no
- * {@code RMG}/{@code ROAD_GROUP} column on {@code THE.ROAD_CONSTRUCTION_REPRT} (delivery-verified,
- * Story 11.1 Task 1 gate (i)).
+ * <p>Road Group is <strong>derived on every read and never stored</strong>: there is no {@code
+ * RMG}/{@code ROAD_GROUP} column on {@code THE.ROAD_CONSTRUCTION_REPRT} (delivery-verified, Story
+ * 11.1 Task 1 gate (i)).
  *
  * <p><strong>Three legacy literal quirks are preserved on purpose.</strong> Case {@code "45"} uses
  * {@code .*[I-Ki-j]} — uppercase {@code I}–{@code K} but lowercase only {@code i}–{@code j}, so a
  * lowercase {@code k} suffix falls through to blank. Case {@code "23"} has no branch covering
  * {@code I} at all. Case {@code "26"} uses {@code .*[E-ie-i]}, which despite reading like "E to I"
- * is an ASCII range spanning {@code E}–{@code Z}, six punctuation characters
- * ({@code [ \ ] ^ _ `}) and {@code a}–{@code i} — by far the widest blast radius of the three, and
- * the easiest to mistake for a typo. All three are reproduced exactly; they are the shipped
- * business rule, not typos to quietly fix (AD-12 legacy parity, third quirk documented at code
- * review 2026-08-17).
+ * is an ASCII range spanning {@code E}–{@code Z}, six punctuation characters ({@code [ \ ] ^ _ `})
+ * and {@code a}–{@code i} — by far the widest blast radius of the three, and the easiest to mistake
+ * for a typo. All three are reproduced exactly; they are the shipped business rule, not typos to
+ * quietly fix (AD-12 legacy parity, third quirk documented at code review 2026-08-17).
  *
  * <p><strong>Unmapped combinations are silent.</strong> Legacy has three distinct no-match paths
- * and
- * none throws, logs, or raises a message: a null TSA or TSB never enters the outer guard and leaves
- * the initialiser {@code new String()} → {@code ""}; a TSA that matches a case whose inner branches
- * all miss also falls through to {@code ""}; a TSA or TFL absent from the switch hits
+ * and none throws, logs, or raises a message: a null TSA or TSB never enters the outer guard and
+ * leaves the initialiser {@code new String()} → {@code ""}; a TSA that matches a case whose inner
+ * branches all miss also falls through to {@code ""}; a TSA or TFL absent from the switch hits
  * {@code default} → {@code null}. All three normalize to {@code null} here so the served document
  * carries a blank Road Group without error (S12, BR-04; Story 11.1 deviation (h)).
  */
@@ -42,18 +39,17 @@ final class RoadGroup10Lookup {
   /**
    * Case 26's second branch, written as the exact set of characters legacy matches.
    *
-   * <p>Legacy writes {@code .*[E-ie-i]} ({@code RoadGroupUtil:419}). That <em>looks</em> like
-   * "E through I", but a character class reads {@code E-i} as an ASCII range, so it actually spans
-   * {@code E}(69) to {@code i}(105): {@code E-Z}, the six characters
-   * <code>[ \ ] ^ _ &#96;</code>, and {@code a-i}. The trailing {@code e-i} is entirely redundant —
-   * {@code e..i} already sits inside {@code E..i} — and it is that redundant overlap which makes
-   * the class read as a typo.
+   * <p>Legacy writes {@code .*[E-ie-i]} ({@code RoadGroupUtil:419}). That <em>looks</em> like "E
+   * through I", but a character class reads {@code E-i} as an ASCII range, so it actually spans
+   * {@code E}(69) to {@code i}(105): {@code E-Z}, the six characters <code>[ \ ] ^ _ &#96;</code>,
+   * and {@code a-i}. The trailing {@code e-i} is entirely redundant — {@code e..i} already sits
+   * inside {@code E..i} — and it is that redundant overlap which makes the class read as a typo.
    *
    * <p>Expanded here to the identical character set with no overlapping ranges. <strong>The
    * matching behaviour is unchanged</strong> — {@code RoadGroup10LookupTest} asserts this form and
    * the original legacy form agree across the entire printable ASCII range, so the expansion is
-   * provably a rewrite and not a behaviour change. Written out rather than left as {@code [E-i]}
-   * so the surprising breadth is visible to the next reader instead of hidden behind two
+   * provably a rewrite and not a behaviour change. Written out rather than left as {@code [E-i]} so
+   * the surprising breadth is visible to the next reader instead of hidden behind two
    * innocuous-looking letters (CodeQL {@code java/overly-large-range}, 2026-08-17).
    *
    * <p>Do NOT "tidy" this to {@code [E-Ie-i]}. That is almost certainly what the legacy author
@@ -62,13 +58,12 @@ final class RoadGroup10Lookup {
    */
   static final String QUESNEL_SECOND_BRANCH = ".*[E-Z\\[\\\\\\]^_`a-i]";
 
-  private RoadGroup10Lookup() {
-  }
+  private RoadGroup10Lookup() {}
 
   /**
    * Derives the Road Group for a page. TFL wins whenever it is present, regardless of TSA — the
-   * routing is {@code tflNumberCode != null ? tfl-table : tsa-table}, taken verbatim from
-   * {@code RoadConstructionReportType.getRmg} (:455-464). Do not reorder.
+   * routing is {@code tflNumberCode != null ? tfl-table : tsa-table}, taken verbatim from {@code
+   * RoadConstructionReportType.getRmg} (:455-464). Do not reorder.
    *
    * @param tsaNumber the TSA number, or {@code null} on a TFL-located page
    * @param tsbNumberCode the supply block, or {@code null}
@@ -76,9 +71,10 @@ final class RoadGroup10Lookup {
    * @return the derived Road Group, or {@code null} when the combination maps to nothing
    */
   static String rmgFor(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
-    String rmg = tflNumberCode != null
-        ? rg10ByTflNumberCode(tflNumberCode)
-        : rg10ByTsaTsbNumberCode(tsaNumber, tsbNumberCode);
+    String rmg =
+        tflNumberCode != null
+            ? rg10ByTflNumberCode(tflNumberCode)
+            : rg10ByTsaTsbNumberCode(tsaNumber, tsbNumberCode);
     // Legacy returns "" for the two fall-through paths and null for the default branch; the served
     // contract makes no distinction between them (S12: "blank, no error").
     return (rmg == null || rmg.isEmpty()) ? null : rmg;
@@ -148,16 +144,15 @@ final class RoadGroup10Lookup {
    * that the Ministry owns, transcribed one-for-one from legacy; there is no algorithm here to
    * simplify, and every branch is an independent business fact.
    *
-   * <p>It is deliberately NOT decomposed into helper methods or a rule map. The property that
-   * makes this class trustworthy is that a reviewer can diff it line-by-line against
-   * {@code RoadGroupUtil.java:285-468} and confirm the transcription. That auditability is the
-   * defence against the specific bug this class exists to prevent — Schedule 6 ships a
-   * near-identical table that maps the same inputs to DIFFERENT road groups, and a wrong
-   * transcription would serve wrong values silently. Restructuring would trade a real safeguard
-   * for a metric.
+   * <p>It is deliberately NOT decomposed into helper methods or a rule map. The property that makes
+   * this class trustworthy is that a reviewer can diff it line-by-line against {@code
+   * RoadGroupUtil.java:285-468} and confirm the transcription. That auditability is the defence
+   * against the specific bug this class exists to prevent — Schedule 6 ships a near-identical table
+   * that maps the same inputs to DIFFERENT road groups, and a wrong transcription would serve wrong
+   * values silently. Restructuring would trade a real safeguard for a metric.
    *
-   * <p>If the team later wants this expressed as a declarative table, that is a defensible change
-   * — but it should be its own commit with its own review, not folded into a story.
+   * <p>If the team later wants this expressed as a declarative table, that is a defensible change —
+   * but it should be its own commit with its own review, not folded into a story.
    */
   @SuppressWarnings("java:S3776") // Cognitive Complexity: irreducible lookup table, see above.
   private static String rg10ByTsaTsbNumberCode(String tsaNumberCode, String tsbNumberCode) {

@@ -1,7 +1,16 @@
 import type { ReactNode } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  fireEvent,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -33,6 +42,7 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
 import type CampRequest from '@/interfaces/Schedule5Request'
 import type { Camp } from '@/interfaces/Schedule5Response'
+import { ILCR_ROLES, type IlcrRole } from '@/context/auth/mockUsers'
 
 const URL = 'http://localhost:3000/api/v1/schedule5'
 const CAMPS_URL = `${URL}/camps`
@@ -131,6 +141,203 @@ const StaleRaceHarness = () => {
 }
 
 describe('Schedule 5 camps table (AC1, AC2)', () => {
+  // ---- Defect #291: the camp grid's rates and its four totals track entry, on blur. -------------
+  //
+  // The `cedarFlats` fixture is self-consistent — every stored rate and total satisfies
+  // Schedule5Service's formulas — so the load-time assertion below is a genuine mirror-vs-server
+  // comparison, not the mirror measured against hand arithmetic.
+
+  /** A grid row's cells as text: [label, volume, cost, $/m³]. */
+  const gridCells = (label: string) => {
+    // Trimmed for the lookup: testing-library normalizes whitespace, so the grid's legacy trailing
+    // ": " never matches literally. The expected cell text below keeps it, since that is the DOM text.
+    const tr = screen.getByText(label.trim()).closest('tr')
+    if (!tr) throw new Error(`no grid row for "${label}"`)
+    return within(tr)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent)
+  }
+  /** The read-only $/m³ cell of a grid row (index 3). */
+  const rate = (label: string) => gridCells(label)[3]
+
+  test('on load the mirror reproduces the served figures exactly (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    // The four derived rows and a fully-entered category rate, all mirror-driven already.
+    expect(gridCells('Camp Sub-Total: ')).toEqual([
+      'Camp Sub-Total: ',
+      '120,000',
+      '1,644,000',
+      '13.70',
+    ])
+    expect(gridCells('Camp Total: ')).toEqual(['Camp Total: ', '120,000', '1,600,000', '13.33'])
+    expect(gridCells('Access Expense Total: ')).toEqual([
+      'Access Expense Total: ',
+      '120,000',
+      '306,000',
+      '2.55',
+    ])
+    expect(gridCells('Camp and Access: ')).toEqual([
+      'Camp and Access: ',
+      '120,000',
+      '1,906,000',
+      '15.88',
+    ])
+    expect(rate('Catering and Food: ')).toBe('5.00') // 480000 / its own stored volume 96000
+  })
+
+  test('typing alone moves nothing; blurring a cost recalculates the cascade (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const cost = screen.getByLabelText('Catering and Food cost')
+    await user.clear(cost)
+    await user.type(cost, '600000')
+    expect(rate('Catering and Food: ')).toBe('5.00') // not per keystroke
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000')
+
+    await user.tab()
+    expect(rate('Catering and Food: ')).toBe('6.25') // 600000/96000
+    // Sub-Total 600000+960000+120000+60000+24000 = 1,764,000 -> 14.70
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,764,000')
+    expect(rate('Camp Sub-Total: ')).toBe('14.70')
+    // Camp Total less Recoveries 44000 = 1,720,000 -> 14.33; and Camp-and-Access + 306,000.
+    expect(gridCells('Camp Total: ')[2]).toBe('1,720,000')
+    expect(rate('Camp Total: ')).toBe('14.33')
+    expect(gridCells('Camp and Access: ')[2]).toBe('2,026,000')
+    // The access side is untouched.
+    expect(gridCells('Access Expense Total: ')[2]).toBe('306,000')
+  })
+
+  test('the Associated Camp Volume moves every rate, via the BR-03 propagation (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const campVolume = screen.getByLabelText(/Associated Camp Volume/i)
+    await user.clear(campVolume)
+    await user.type(campVolume, '60000')
+    await user.tab()
+
+    // BR-03 propagated 60000 into all eleven volume-bearing categories, so the costs are unchanged
+    // and every rate doubles.
+    expect(rate('Catering and Food: ')).toBe('8.00') // 480000/60000
+    expect(gridCells('Camp Sub-Total: ')).toEqual([
+      'Camp Sub-Total: ',
+      '60,000',
+      '1,644,000',
+      '27.40',
+    ])
+    expect(rate('Camp Total: ')).toBe('26.67') // 1,600,000/60,000 = 26.6666… -> 26.67
+    expect(rate('Access Expense Total: ')).toBe('5.10')
+    expect(rate('Camp and Access: ')).toBe('31.77') // 1,906,000/60,000 = 31.7666… -> 31.77
+  })
+
+  test('Recoveries feeds Camp Total but never the Sub-Total (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const recoveries = screen.getByLabelText('Recoveries cost')
+    await user.clear(recoveries)
+    await user.type(recoveries, '144000')
+    await user.tab()
+
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000') // unchanged
+    expect(gridCells('Camp Total: ')[2]).toBe('1,500,000') // 1,644,000 - 144,000
+    expect(gridCells('Camp and Access: ')[2]).toBe('1,806,000')
+  })
+
+  test('a moved camp volume BLANKS the two per-term Other rates (#291)', async () => {
+    // Ruled 2026-08-21 after code review: BR-03 rewrites those rows' VOLUME cells while their rate is
+    // server-owned (the per-term formula cannot be reproduced client-side), so keeping the served rate
+    // left a row reading 60,000 / 24,000 / 0.31 — which no arithmetic reconciles. A blank is honest.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    expect(rate('Other Camp Expenses (3):')).toBe('0.31') // still the served denominator
+
+    const campVolume = screen.getByLabelText(/Associated Camp Volume/i)
+    await user.clear(campVolume)
+    await user.type(campVolume, '60000')
+    await user.tab()
+
+    expect(rate('Other Camp Expenses (3):')).toBe('') // the mask renders a blank, not an em dash
+    expect(rate('Other Access Expenses (1):')).toBe('')
+    // The mirrorable rates DID move, so this is a targeted blank rather than a dead grid.
+    expect(rate('Catering and Food: ')).toBe('8.00')
+  })
+
+  test('an invalid entry holds the last valid figures (#291)', async () => {
+    // Ruled 2026-08-21: legacy's failed round-trip left the totals alone. Committing an out-of-range
+    // value instead drove thirteen cells to a state no Save can produce.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const cost = screen.getByLabelText('Catering and Food cost')
+    await user.clear(cost)
+    await user.type(cost, '999999999') // past the cost band
+    await user.tab()
+
+    // Frozen at the served figures, not recomputed from the rejected value.
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000')
+  })
+
+  test('the two per-term Other rows keep their served rate — recorded deviation (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    // Their $/m³ sums per-row quotients over sub-page rows the camp document does not carry, so the
+    // mirror cannot reproduce it and deliberately leaves the served figure in place.
+    expect(rate('Other Camp Expenses (3):')).toBe('0.31')
+    expect(rate('Other Access Expenses (1):')).toBe('0.05')
+  })
+
+  test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {
+    // A stored Sub-Total that disagrees with its own components: a recomputing view would show
+    // 1,644,000 instead of the server's figure.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            trackStatus: 'S',
+            editable: false,
+            camps: [
+              {
+                ...cedarFlats,
+                campSubTotal: { volume: 120000, cost: 999999, costPerVolume: 8.33 },
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await user.click(await screen.findByRole('button', { name: /^view$/i }))
+    await screen.findByText('Camp Sub-Total:')
+
+    expect(gridCells('Camp Sub-Total: ')).toEqual([
+      'Camp Sub-Total: ',
+      '120,000',
+      '999,999',
+      '8.33',
+    ])
+  })
+
   test('lists camps in served order under Existing Camps, with exactly two columns', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
@@ -145,11 +352,11 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
     expect(within(table).queryByText('42.5')).not.toBeInTheDocument()
   })
 
-  test('zero camps render the legacy empty message, Add New Camp still enabled', async () => {
+  test('zero camps render the empty message, Add New Camp still enabled', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [] }))))
     render(<Schedule5 />)
 
-    expect(await screen.findByText('No records found.')).toBeInTheDocument()
+    expect(await screen.findByText('No camps have been added.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
   })
 
@@ -162,23 +369,50 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
     expect(screen.getByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp')
   })
 
-  test('editable WITH a panel open: Edit fires CFM-003 before switching', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  test('editable WITH a panel open: another camp\u2019s Edit fires CFM-003 before switching', async () => {
+    const other: Camp = { ...cedarFlats, campId: 8402, campName: 'Birch Ridge Camp' }
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, other] }))))
     render(<Schedule5 />)
     const user = userEvent.setup()
 
-    await openEditor(user)
-    await user.clear(screen.getByLabelText('Camp Name'))
-    await user.type(screen.getByLabelText('Camp Name'), 'Edited Name')
+    const table = await screen.findByRole('table', { name: 'Existing Camps' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    await user.click(within(rowOf('Cedar Flats Camp')).getByRole('button', { name: /^edit$/i }))
+    fireEvent.change(await screen.findByLabelText('Camp Name'), {
+      target: { value: 'Edited Name' },
+    })
 
-    await user.click(screen.getByRole('button', { name: /^edit$/i }))
+    // The open camp's own row is frozen, so the switch can only come from another row.
+    await user.click(within(rowOf('Birch Ridge Camp')).getByRole('button', { name: /^edit$/i }))
     const dialog = confirmDialog(
       'Any unsaved changes to the current camp report will be lost. Are you sure you would like to continue?',
     )
     await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
 
-    // The draft is discarded and the panel re-seats on the stored camp.
-    await waitFor(() => expect(screen.getByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp'))
+    // The draft is discarded and the panel re-seats on the other stored camp.
+    await waitFor(() => expect(screen.getByLabelText('Camp Name')).toHaveValue('Birch Ridge Camp'))
+  })
+
+  test('the camp open in the panel has its row actions frozen; other rows stay live', async () => {
+    const other: Camp = { ...cedarFlats, campId: 8402, campName: 'Birch Ridge Camp' }
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, other] }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    const table = await screen.findByRole('table', { name: 'Existing Camps' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    const actions = [/^edit$/i, /^delete$/i, /^copy$/i]
+    for (const name of actions) {
+      expect(within(rowOf('Cedar Flats Camp')).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await user.click(within(rowOf('Cedar Flats Camp')).getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Camp Name')
+
+    for (const name of actions) {
+      expect(within(rowOf('Cedar Flats Camp')).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowOf('Birch Ridge Camp')).getByRole('button', { name })).toBeEnabled()
+    }
   })
 
   test('Add New Camp fires CFM-003 when a panel is already open', async () => {
@@ -195,6 +429,26 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
 
     expect(await screen.findByText('New Camp Details')).toBeInTheDocument()
     expect(screen.getByLabelText('Camp Name')).toHaveValue('')
+  })
+
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText('Cedar Flats Camp')).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/add new camp/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
   })
 
   test('read-only collapses the row actions to a single View (deviation (B))', async () => {
@@ -272,7 +526,7 @@ describe('Schedule 5 camp panel (AC4, AC5, AC7)', () => {
     expect(within(grid).queryByRole('columnheader')).not.toBeInTheDocument()
   })
 
-  test('derived rows and $/m³ render server values with the legacy masks, never recomputed', async () => {
+  test('derived rows and $/m³ render with the legacy masks (the mirror reproduces the served figures)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
     const user = userEvent.setup()
@@ -790,16 +1044,23 @@ describe('Schedule 5 guards (AC10, AC11)', () => {
   })
 
   test('a 409 mill-not-active renders the ProblemDetail verbatim with no page content', async () => {
-    server.use(
-      http.get(URL, () =>
-        problemBody(409, 'The Mill is not active for the current reporting year.'),
-      ),
-    )
+    // `millNotActiveForCurrentYearMsg` (messages.properties:10), VERBATIM. This assertion used to
+    // carry an invented paraphrase ("The Mill is not active for the current reporting year.") —
+    // the test still proved pass-through, but against a sentence the API never sends, so it could
+    // not catch the page rewriting the real one (AD-8).
+    const MILL_CLOSED =
+      'This Mill is not active for the current Reporting Year. ' +
+      'Please select another mill from the Home Page.'
+    server.use(http.get(URL, () => problemBody(409, MILL_CLOSED)))
     render(<Schedule5 />)
 
-    expect(
-      await screen.findByText('The Mill is not active for the current reporting year.'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(MILL_CLOSED)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 5" satisfied the assertion above
+    // while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 5')).not.toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Existing Camps' })).not.toBeInTheDocument()
   })
 
@@ -915,14 +1176,212 @@ describe('Schedule 5 Check Status (AC12)', () => {
     expect(screen.getByText('Check Status — value required')).toBeInTheDocument()
   })
 
-  test('Check Status is disabled while a panel holds unsaved entries (deviation (I))', async () => {
+  /**
+   * The screen-aware check (#476, closing DIV-1 / the Schedule 5 slice of #359).
+   *
+   * Evaluating the screen is a sanctioned divergence from the legacy Schedule 5 screen, which
+   * judges the last SAVED record unlike legacy's other schedules — a legacy inconsistency the
+   * business area ruled out in September 2026. The app read the database and compensated by
+   * disabling the button whenever a camp panel was open, which is the symptom #476 reported. The
+   * request now carries the open panel and the gate is gone.
+   *
+   * These cases assert the two halves that can each fail silently: the button is OFFERED, and the
+   * body actually CARRIES the screen. A test for the first alone would pass over an endpoint still
+   * answering about saved data.
+   */
+  const checkStatusButton = () => screen.getByRole('button', { name: /check status/i })
+
+  const metCheckResponse = () => ({
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    camps: [],
+  })
+
+  /** Capture the check-status request body, whatever it is, including its nulls. */
+  const captureCheckBody = () => {
+    const seen: { body: unknown } = { body: undefined }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        seen.body = await request.json()
+        return HttpResponse.json(metCheckResponse())
+      }),
+    )
+    return seen
+  }
+
+  test('an OPEN camp panel no longer takes Check Status away — the #476 report', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
     const user = userEvent.setup()
 
     expect(await screen.findByRole('button', { name: /check status/i })).toBeEnabled()
     await openEditor(user)
-    expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
+    expect(checkStatusButton()).toBeEnabled()
+  })
+
+  test('Check Status stays available with an UNSAVED edit on screen', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    await user.type(screen.getByLabelText('Size of Camp (number of persons)'), '75')
+    expect(checkStatusButton()).toBeEnabled()
+  })
+
+  test('the request carries the open panel as typed, not as stored', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    await user.type(screen.getByLabelText('Size of Camp (number of persons)'), '75')
+    await user.click(checkStatusButton())
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    // 75 is what is on screen; 60 is what is stored. The body must say 75.
+    expect(seen.body).toEqual({
+      camp: {
+        campId: 8401,
+        campName: 'Cedar Flats Camp',
+        roadDistanceToOperatingArea: 42.5,
+        sizeOfCamp: 75,
+        associatedCampVolume: 120000,
+      },
+    })
+  })
+
+  /**
+   * The false-GREEN guard, and the single most important assertion in this block. The server's
+   * check is a pure NULL test — a stored `0` passes — so a `?? 0` anywhere on the send path would
+   * turn every cleared descriptor into a pass. A cleared field must arrive as null.
+   */
+  test('a CLEARED descriptor is sent as null, never coerced to 0', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    await user.click(checkStatusButton())
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    const body = seen.body as { camp: { sizeOfCamp: number | null } }
+    expect(body.camp.sizeOfCamp).toBeNull()
+    expect(body.camp.sizeOfCamp).not.toBe(0)
+  })
+
+  /**
+   * Keyed on the panel being OPEN, never on it being dirty: an untouched new camp matches its
+   * `emptyForm()` baseline and is therefore CLEAN, so anything dirty-keyed would omit it and the
+   * verdict would read "requirements met" over a camp with four missing fields.
+   */
+  test('an untouched NEW camp is still sent, with a null id', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await screen.findByLabelText('Camp Name')
+    await user.click(checkStatusButton())
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    expect(seen.body).toEqual({
+      camp: {
+        campId: null,
+        campName: '',
+        roadDistanceToOperatingArea: null,
+        sizeOfCamp: null,
+        associatedCampVolume: null,
+      },
+    })
+  })
+
+  test('with no panel open the body carries camp: null', async () => {
+    const seen = captureCheckBody()
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /check status/i }))
+
+    await waitFor(() => expect(seen.body).toBeDefined())
+    expect(seen.body).toEqual({ camp: null })
+  })
+
+  test('editing a checked descriptor clears the verdict for the older screen snapshot', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(metCheckResponse())),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeVisible()
+
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a response for an older in-flight screen snapshot is ignored', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(metCheckResponse())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    await waitFor(() => expect(checkStatusButton()).toBeDisabled())
+    await user.clear(screen.getByLabelText('Size of Camp (number of persons)'))
+
+    releaseCheck()
+    await flushAsync()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('closing the evaluated panel clears its verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(metCheckResponse())),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeVisible()
+
+    await user.click(panelButton(/^close$/i))
+    expect(screen.queryByLabelText('Camp Name')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -1319,7 +1778,7 @@ describe('Schedule 5 inline validation timing', () => {
     const distance = screen.getByLabelText('Road Distance to Operating Area (km)')
     await user.clear(distance)
     await user.type(distance, '1000000')
-    expect(screen.queryByText('Entered distance must be between 0 and 999,999.')).toBeNull()
+    expect(screen.queryByText('Entered distance must be between 0 and 999,999.9.')).toBeNull()
   })
 
   test('editing a reported field clears its message, and the next blur restores it', async () => {
@@ -1398,7 +1857,9 @@ describe('Schedule 5 inline validation timing', () => {
     expect(
       await screen.findByText('Entered number of persons must be between 1 and 999.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Entered distance must be between 0 and 999,999.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Entered distance must be between 0 and 999,999.9.'),
+    ).toBeInTheDocument()
     expect(screen.getByText('Entered cost must be between 0 and 9,999,999.')).toBeInTheDocument()
     await flushAsync()
     expect(put).toBe(false)
@@ -1920,7 +2381,7 @@ describe('Schedule 5 unsaved-data confirms fire only when the panel is dirty', (
     await user.click(within(del).getByRole('button', { name: /^yes$/i }))
 
     // Panel still seated on a camp the document no longer carries → baseline unprovable → confirm.
-    await waitFor(() => expect(screen.getByText('No records found.')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('No camps have been added.')).toBeInTheDocument())
     expect(screen.getByLabelText('Camp Name')).toBeInTheDocument()
     await user.click(panelButton(/^close$/i))
     await expectCloseIntercepted(user)
@@ -2094,5 +2555,514 @@ describe('Schedule 5 review fixes (PR #317)', () => {
     select.focus()
     await user.tab()
     expect(await screen.findByText('Isolated Camp is required.')).toBeInTheDocument()
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// Story 16.3 — the ministry correction journey on Schedule 5.
+//
+// Every pre-existing `trackStatus: 'S'` test in this file pairs it with `editable: false` — the
+// SUBMITTER's answer at Submitted. The ADMIN's answer (`editable: true`, because Story 16.1's
+// role×status matrix opens Submitted and Verified to ILCR_ADMIN) had no test at all, so nothing
+// here could tell a correct gate from a widened one.
+//
+// Two things make this block different from the rest of the suite.
+//
+// 1. Every test DECLARES who is acting. `findMockUser(null)` falls through to `MOCK_USERS[0]` — the
+//    admin (mockUsers.ts:38) — so a plain `render()` silently acts as a Ministry Administrator.
+//    That exact fallback ran the e2e suite as the wrong role for a month (Story 16.1 notes).
+// 2. The GET handler COMPUTES `editable` from the matrix over the caller's own `X-Mock-Groups`
+//    header rather than hardcoding a boolean per fixture. That is what makes the declaration
+//    load-bearing: a broken identity helper shows up as the admin arms and the submitter arms
+//    agreeing with each other.
+//
+// Editability stays server-authoritative throughout (AD-9) — `schedule5/index.tsx:1294` reads
+// `data.editable` and never the role or the status. Every user-facing string is asserted VERBATIM
+// against `backend/src/main/resources/messages.properties` (AD-8).
+// -------------------------------------------------------------------------------------------------
+
+describe('Schedule 5 ministry correction at Submitted (Story 16.3)', () => {
+  // SUC-001 / DEL-001 / CFM-001, verbatim from the bundle:
+  //   dataSavedSuccesfullyInfoMsg    :173
+  //   dataDeletedSuccesfullyInfoMsg  :174
+  //   confirmDeleteMsg               :202
+  //   scheduleRequirementsMetMsg     :184
+  const SAVED = 'Data saved successfully'
+  const DELETED = 'Data deleted successfully'
+  const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+  const REQUIREMENTS_MET = 'All requirements for this schedule have been met'
+
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. The submitter edits at Draft
+  // only; the admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft, while
+  // the mill still owns its own data. Reproduced here rather than imported because the real rule
+  // lives in Java — this is the wire contract the page is entitled to assume, and stating it makes
+  // the falsification check trivial (flip the admin entry to ['D'] and every admin arm must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually CARRIED it, recorded for the test body to assert.
+   *
+   * It is recorded rather than asserted in the resolver on purpose. `api-service` mirrors the
+   * selected mock user's roles onto `X-Mock-Groups` (api-service.ts:11-16) through
+   * `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` — the ADMIN — so the header
+   * is ALWAYS present and the throw below can never fire. It is kept only as a tripwire for a
+   * future api-service that stops sending it; the real guard is `expectActingAs(…)` in each arm,
+   * which pairs this with `declaredRole()` — the wire header ALONE cannot fail for an arm that
+   * lost its `renderAsAdmin`, because the `MOCK_USERS[0]` fallback sends the very same header. An
+   * expect() thrown inside an MSW resolver would surface as a request failure attributed to the
+   * page, not as this assertion.
+   */
+  let sentRole: string | null = null
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * The full identity claim each arm's name makes, asserted from BOTH ends.
+   *
+   * `declaredRole()` is what THIS test seeded — null when nothing declared a role, which is the one
+   * thing a declared admin and the `MOCK_USERS[0]` fallback admin do not share. `sentRole` is what
+   * the request actually carried. Neither alone is enough: the wire check passes for an arm that
+   * lost its `renderAsAdmin` (the fallback sends the same header), and the declaration check says
+   * nothing about what reached the server.
+   *
+   * Both are per-TEST rather than per-request — `sentRole` holds the LAST request's header and
+   * `declaredRole()` the whole test's declaration — so the pair cannot prove that two requests in
+   * one test went out under different identities. No arm here issues requests under two
+   * identities, so that is a stated limit rather than a gap.
+   */
+  const expectActingAs = (role: IlcrRole, header: string) => {
+    expect(declaredRole()).toBe(role)
+    expect(sentRole).toBe(header)
+  }
+
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    sentRole = header
+    return header
+  }
+
+  /**
+   * The document this caller is entitled to, with `editable` computed the way
+   * `ScheduleEditability.forCaller` computes it: the UNION of the permitted statuses over every
+   * role the caller holds. api-service sends `roles.join(',')`, so the header is a LIST — one entry
+   * today (a mock user holds exactly one ILCR role), but keying the lookup on the raw header would
+   * encode "the caller has one role" as a rule, which the backend does not.
+   */
+  const matrixDoc = (request: Request, over: Record<string, unknown> = {}) => {
+    const body = doc({ trackStatus: 'S', ...over })
+    const permitted = new Set(
+      actingRole(request)
+        .split(',')
+        .flatMap((role) => EDITABLE_STATUSES[role] ?? []),
+    )
+    return { ...body, editable: permitted.has(String(body.trackStatus)) }
+  }
+
+  /** GET that answers `editable` per the matrix for whoever is asking. Submitted by default. */
+  const matrixGet = (over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => HttpResponse.json(matrixDoc(request, over)))
+
+  /**
+   * The read-only shape: the row collapses to a single View (deviation (B)), the two page actions
+   * are disabled, and the View panel offers a disabled Save over inputless cells.
+   *
+   * Deliberately does NOT assert the confirm text is absent: Carbon keeps all five of this page's
+   * modals mounted with `open={false}`, so the literal is in the DOM either way. The absence of a
+   * Delete BUTTON is what proves there is no route to a DELETE.
+   */
+  const expectReadOnly = async (user: ReturnType<typeof userEvent.setup>) => {
+    expect(await screen.findByRole('button', { name: /^view$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^delete$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^copy$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /^view$/i }))
+    const grid = await screen.findByRole('table', { name: 'Camp and access expenses' })
+    // The stored figures stay VISIBLE — read-only is not blanked.
+    expect(within(grid).getByText('480,000')).toBeInTheDocument()
+    expect(within(grid).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
+  }
+
+  /** The write shape: the three row actions plus both page actions, live. */
+  const expectWriteSurface = async () => {
+    const row = (await screen.findByText('Cedar Flats Camp')).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(row).getByRole('button', { name })).toBeEnabled()
+    }
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /^view$/i })).not.toBeInTheDocument()
+  }
+
+  // ---- Arm 1: the capability itself ---------------------------------------------------------------
+
+  test('ADMIN at Submitted corrects a camp and saves: SUC-001 verbatim, and the save does NOT move status', async () => {
+    let putBody: CampRequest | null = null
+    let putUrl = ''
+    let putCount = 0
+    server.use(
+      matrixGet(),
+      http.put(CAMP_URL, async ({ request }) => {
+        putCount += 1
+        putBody = (await request.json()) as CampRequest
+        putUrl = request.url
+        // The echo is STILL Submitted. There is exactly one status writer in the whole backend (the
+        // year-open INSERT, ReportingYearRepository:139) and no transition endpoint at all, so the
+        // save path CANNOT move a track. This echo is that contract, and `applySaved` feeds it
+        // straight back into `data` (index.tsx:1021) — so the page must render the corrected camp as
+        // still-Submitted and still-correctable.
+        //
+        // Routed through `matrixDoc`, NOT hardcoded `editable: true`: a write echo must not be able
+        // to smuggle back an editability the matrix would not grant, and the post-save assertions
+        // below are only evidence if the echo's flag was computed the same way the GET's was.
+        return HttpResponse.json(
+          matrixDoc(request, {
+            camps: [
+              {
+                ...cedarFlats,
+                revisionCount: 1,
+                cateringAndFood: { volume: 96000, cost: 500000, costPerVolume: 5.21 },
+              },
+            ],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: SAVED },
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule5 />)
+    const user = userEvent.setup()
+
+    // The whole point of 16.1's admin row: at Submitted this actor gets the WRITE surface, not View.
+    await expectWriteSurface()
+
+    await openEditor(user)
+    const cost = screen.getByLabelText('Catering and Food cost')
+    expect(cost).toBeEnabled()
+    expect(screen.getByLabelText('Camp Name')).toBeEnabled()
+
+    // fireEvent.change, not user.type: this page mounts an editor per grid row, so per-character
+    // typing is O(rows x chars) and is what has timed these suites out on CI. Same idiom as
+    // schedule11/__tests__/Schedule11.test.tsx:1236-1238.
+    fireEvent.change(cost, { target: { value: '500000' } })
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    // SUC-001, verbatim from the API's own `message.text` (AD-8).
+    expect(await screen.findByText(SAVED)).toBeInTheDocument()
+    // The correction was issued AS the admin, on the wire — not as whoever MOCK_USERS[0] is.
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(putCount).toBe(1)
+    const body = putBody as unknown as CampRequest
+    expect(body.cateringAndFood).toEqual({ volume: 96000, cost: 500000 })
+    // The FALSY-but-valid optimistic-lock token the admin last read.
+    expect(body.revisionCount).toBe(0)
+    expect(putUrl).toContain('/camps/8401')
+    expect(putUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
+    expect(putUrl).toContain(`year=${String(DEFAULT_YEAR)}`)
+    // The client cannot even ASK for a transition: the write contract carries no status field.
+    // Without this, a future CampRequest could grow one and nothing would notice.
+    expect(Object.keys(body)).not.toContain('trackStatus')
+    expect(Object.keys(body)).not.toContain('status')
+
+    // The echo was applied — and the page is STILL the editable Submitted document afterwards. The
+    // save neither stranded the admin on a read-only screen nor re-opened the track as a Draft.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Catering and Food cost')).toHaveValue('500,000'),
+    )
+    // Table-scoped: the re-seated panel is HEADED by the camp name too, so an unscoped lookup
+    // matches two nodes.
+    const campsTable = screen.getByRole('table', { name: 'Existing Camps' })
+    const afterRow = within(campsTable).getByText('Cedar Flats Camp').closest('tr') as HTMLElement
+    // Still the WRITE surface (Edit/Delete, not View) — frozen only because this camp is the one
+    // still open in the panel after the save.
+    expect(within(afterRow).getByRole('button', { name: /^edit$/i })).toBeDisabled()
+    expect(within(afterRow).getByRole('button', { name: /^delete$/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /^view$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+  })
+
+  // ---- Arm 2: the negative arm that stops a widened gate passing unnoticed -----------------------
+
+  test('SUBMITTER at Submitted is read-only — the row offers View, and every action is disabled', async () => {
+    // If `editable` ever became "anyone at Submitted", every admin arm here would still be green
+    // and only this test would fail.
+    server.use(matrixGet())
+    renderAsSubmitter(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await expectReadOnly(user)
+    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+  })
+
+  // ---- Arm 3: the capability 16.1 deliberately REMOVED -------------------------------------------
+
+  test('ADMIN at Draft is read-only — completing the matrix was bidirectional', async () => {
+    // 16.1 ADDED admin@Submitted and REMOVED the admin@Draft edit the pre-epic blanket gate allowed:
+    // while the report is a Draft the mill still owns its own data.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsAdmin(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await expectReadOnly(user)
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+  })
+
+  test('SUBMITTER at Draft still edits — the matrix discriminates, it is not uniformly closed', async () => {
+    // Guards the two tests above against a degenerate handler (or a broken identity helper) that
+    // simply answered `editable: false` to everything.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsSubmitter(<Schedule5 />)
+
+    await expectWriteSurface()
+    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+  })
+
+  // ---- Arm 3c: the statuses nobody else serves ---------------------------------------------------
+  //
+  // `ILCR_ADMIN: ['S', 'V']` is pinned in all twelve suites, but `trackStatus: 'V'` is served ZERO
+  // times anywhere in the repo — so narrowing the real matrix to `['S']` alone would leave every
+  // suite green and HALF the admin row (the Verified correction) with no evidence at all. These
+  // three cases serve the statuses nothing else does.
+
+  test.each([
+    ['V', true, 'Verified is the admin row’s SECOND permitted status'],
+    ['O', false, 'an Open track grants nobody an edit'],
+    [null, false, 'a missing track row is read-only, not a default-open one'],
+  ])('ADMIN at trackStatus %s: editable=%s — %s', async (trackStatus, editable) => {
+    server.use(matrixGet({ trackStatus }))
+    renderAsAdmin(<Schedule5 />)
+    const user = userEvent.setup()
+
+    if (editable) {
+      await expectWriteSurface()
+    } else {
+      await expectReadOnly(user)
+    }
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+  })
+
+  // ---- Arm 4: delete per the matrix, both paths --------------------------------------------------
+
+  test('ADMIN at Submitted: Delete confirms with confirmDeleteMsg verbatim, then DELETEs the camp', async () => {
+    let deleteUrl = ''
+    let deleteCount = 0
+    server.use(
+      matrixGet(),
+      http.delete(CAMP_URL, ({ request }) => {
+        deleteCount += 1
+        deleteUrl = request.url
+        // Through the matrix, like the GET — the delete echo re-seeds the whole document
+        // (index.tsx:1101), so a hardcoded flag here would let it hand back an editability the
+        // matrix never granted.
+        return HttpResponse.json(
+          matrixDoc(request, {
+            camps: [],
+            message: { key: 'dataDeletedSuccesfullyInfoMsg', text: DELETED },
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }))
+
+    // confirmDeleteMsg, verbatim. The modal's HEADING and its Yes/No labels are asserted as they
+    // stand and deliberately not changed — the delete confirms are out of scope by user ruling
+    // (2026-09-11); only the message is the parity-pinned part.
+    const dialog = confirmDialog(CONFIRM_DELETE)
+    expect(within(dialog).getByText(CONFIRM_DELETE)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    expect(await screen.findByText(DELETED)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(deleteCount).toBe(1)
+    expect(deleteUrl).toContain('/camps/8401')
+    expect(deleteUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
+    expect(deleteUrl).toContain(`year=${String(DEFAULT_YEAR)}`)
+    // The echo's empty document is what the list now shows.
+    expect(await screen.findByText('No camps have been added.')).toBeInTheDocument()
+  })
+
+  test('ADMIN at Submitted: CANCELLING the confirm issues NO DELETE and leaves the camp alone', async () => {
+    let deleteCalled = false
+    server.use(
+      matrixGet(),
+      http.delete(CAMP_URL, ({ request }) => {
+        deleteCalled = true
+        return HttpResponse.json(matrixDoc(request, { camps: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }))
+    const dialog = confirmDialog(CONFIRM_DELETE)
+    await user.click(within(dialog).getByRole('button', { name: /^no$/i }))
+
+    // Turn-based drain, not a wall-clock delay: "no request was issued" has to hold under CI load.
+    await flushAsync()
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(deleteCalled).toBe(false)
+    expect(screen.queryByText(DELETED)).not.toBeInTheDocument()
+    // The camp is still listed, still correctable, and its stored figures are untouched.
+    expect(screen.getByText('Cedar Flats Camp')).toBeInTheDocument()
+    expect(screen.queryByText('No camps have been added.')).not.toBeInTheDocument()
+    await openEditor(user)
+    expect(screen.getByLabelText('Catering and Food cost')).toHaveValue('480,000')
+  })
+
+  // ---- Arm 5: Check Status is available at Submitted, and read-only ------------------------------
+
+  test('ADMIN at Submitted: Check Status runs, renders verbatim, and mutates nothing', async () => {
+    let writes = 0
+    let checkUrl = ''
+    server.use(
+      matrixGet(),
+      // A check is `readOnly = true` server-side. Any write reaching MSW here is the defect.
+      http.put(CAMP_URL, () => {
+        writes += 1
+        return problemBody(400, 'a check must not write')
+      }),
+      http.post(CAMPS_URL, () => {
+        writes += 1
+        return problemBody(400, 'a check must not write')
+      }),
+      http.delete(CAMP_URL, () => {
+        writes += 1
+        return problemBody(400, 'a check must not write')
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        actingRole(request)
+        checkUrl = request.url
+        return HttpResponse.json({
+          outcome: 'MET',
+          messages: [{ key: 'scheduleRequirementsMetMsg', text: REQUIREMENTS_MET }],
+          camps: [],
+        })
+      }),
+    )
+    renderAsAdmin(<Schedule5 />)
+    const user = userEvent.setup()
+
+    // Enabled for this actor at Submitted — legacy gates both Check Status buttons on the same
+    // not-editable test, so the submitter arm above finds it disabled and this one does not.
+    const check = await screen.findByRole('button', { name: /check status/i })
+    expect(check).toBeEnabled()
+    await user.click(check)
+
+    expect(await screen.findByText(REQUIREMENTS_MET)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(checkUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
+    expect(checkUrl).toContain(`year=${String(DEFAULT_YEAR)}`)
+
+    // The document is UNCHANGED by the check: no write of any kind, the camp still listed, the
+    // stored figures still the served ones, and the correction surface still open.
+    await flushAsync()
+    expect(writes).toBe(0)
+    expect(screen.getByText('Cedar Flats Camp')).toBeInTheDocument()
+    await openEditor(user)
+    expect(screen.getByLabelText('Catering and Food cost')).toHaveValue('480,000')
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+  })
+})
+
+describe('Schedule 5 detail-less error fallbacks (#332)', () => {
+  // Every request path falls back to a hardcoded string when the failure carries no
+  // ProblemDetail.detail. A bare 500 with an EMPTY body is that shape — `extractDetail` finds nothing
+  // — and each case asserts the exact literal, typed here rather than imported from the page.
+  const detailLess = () => new HttpResponse(null, { status: 500 })
+
+  test('a load failure with no detail falls back to the generic load message and suppresses content', async () => {
+    server.use(http.get(URL, () => detailLess()))
+    render(<Schedule5 />)
+
+    expect(await screen.findByText('Unable to load Schedule 5.')).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: 'Existing Camps' })).not.toBeInTheDocument()
+  })
+
+  test('a detail-less PUT on an edited camp falls back to the generic save message and keeps the entry', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(CAMP_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const name = screen.getByLabelText('Camp Name')
+    await user.clear(name)
+    await user.type(name, 'Renamed Camp')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Camp could not be saved.')).toBeInTheDocument()
+    // The panel stays open with the entered value so a corrected save can retry.
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Renamed Camp')
+  })
+
+  test('a detail-less POST from the CFM-004 save-and-go falls back to the same message and does NOT navigate', async () => {
+    // The second `Camp could not be saved.` site: the sub-page ladder's own save (deviation (J)).
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CAMPS_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await user.type(await screen.findByLabelText('Camp Name'), 'Ridge Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+
+    const before = navigateSpy.mock.calls.length
+    await user.click(screen.getByRole('button', { name: /^Other Camp Expenses \(0\):$/ }))
+    const confirm = confirmDialog(
+      'The information for the New Camp must be saved before you can add other expenses. Would you like to save the information now?',
+    )
+    await user.click(within(confirm).getByRole('button', { name: /^yes$/i }))
+
+    expect(await screen.findByText('Camp could not be saved.')).toBeInTheDocument()
+    await flushAsync()
+    expect(navigateSpy.mock.calls).toHaveLength(before)
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Ridge Camp')
+  })
+
+  test('a detail-less DELETE falls back to the generic delete message and keeps the camp listed', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(CAMP_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }))
+    const dialog = confirmDialog('This will delete the current record. Do you want to continue?')
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    expect(await screen.findByText('Unable to delete camp.')).toBeInTheDocument()
+    expect(screen.getByText('Cedar Flats Camp')).toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status falls back to the generic check message', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => detailLess()),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
   })
 })

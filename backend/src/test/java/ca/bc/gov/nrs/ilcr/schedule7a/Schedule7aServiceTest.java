@@ -1,9 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -15,32 +18,44 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest.BridgeEntry;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Unit tests for {@link Schedule7aService} derivation, cost routing, editability, the legacy-ordered
- * Check Status labels, and write-time validation (Stories 12.1/12.2). Pure logic — the repository
- * and message source are mocked; the Testcontainers path is proven in the {@code *IT} classes.
+ * Unit tests for {@link Schedule7aService} derivation, cost routing, editability, the
+ * legacy-ordered Check Status labels, and write-time validation (Stories 12.1/12.2). Pure logic —
+ * the repository and message source are mocked; the Testcontainers path is proven in the {@code
+ * *IT} classes.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule7aService — derivation, routing, check-status, validation")
@@ -48,6 +63,14 @@ class Schedule7aServiceTest {
 
   @Mock private Schedule7aRepository repository;
   @Mock private MessageSource messageSource;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
   @InjectMocks private Schedule7aService service;
 
   private static final List<CodeDescriptionDto> CNSTRCTN =
@@ -63,9 +86,11 @@ class Schedule7aServiceTest {
 
   @BeforeEach
   void stubMessages() {
-    lenient().when(messageSource.getMessage(any(), any(), any(), any()))
+    lenient()
+        .when(messageSource.getMessage(any(), any(), any(), any()))
         .thenAnswer(inv -> inv.getArgument(2)); // default (the key) is fine for these assertions
-    lenient().when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), any(), any()))
+    lenient()
+        .when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), any(), any()))
         .thenReturn("Value Required");
   }
 
@@ -79,8 +104,21 @@ class Schedule7aServiceTest {
 
   private static BridgeReportEntity bridge(long id, String location, LocalDate date) {
     return new BridgeReportEntity(
-        id, location, date, 50, new BigDecimal("5.0"), new BigDecimal("20.0"),
-        new BigDecimal("4.0"), 12, "N", "STL", "WD", "CONC", "L100", null, 0);
+        id,
+        location,
+        date,
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        12,
+        "N",
+        "STL",
+        "WD",
+        "CONC",
+        "L100",
+        null,
+        0);
   }
 
   private static BridgeCostEntity cost(long id, long bridgeId, int item, Integer value) {
@@ -91,44 +129,50 @@ class Schedule7aServiceTest {
   @DisplayName("totals: grand total includes site plan; material/deliver/install sum SS+abutment")
   void totals_computedFromLegacyArithmetic() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
-    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
-        cost(1, 7601, 70, 1000), // site plan
-        cost(2, 7601, 71, 700),  // approach
-        cost(3, 7601, 72, 200),  // after install
-        cost(4, 7601, 73, 100),  // other
-        cost(5, 7601, 74, 3000), // abut material
-        cost(6, 7601, 75, 300),  // abut deliver
-        cost(7, 7601, 76, 400),  // abut install
-        cost(8, 7601, 79, 5000), // ss material
-        cost(9, 7601, 80, 500),  // ss deliver
-        cost(10, 7601, 81, 800)  // ss install
-    ));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021))
+        .thenReturn(
+            List.of(
+                cost(1, 7601, 70, 1000), // site plan
+                cost(2, 7601, 71, 700), // approach
+                cost(3, 7601, 72, 200), // after install
+                cost(4, 7601, 73, 100), // other
+                cost(5, 7601, 74, 3000), // abut material
+                cost(6, 7601, 75, 300), // abut deliver
+                cost(7, 7601, 76, 400), // abut install
+                cost(8, 7601, 79, 5000), // ss material
+                cost(9, 7601, 80, 500), // ss deliver
+                cost(10, 7601, 81, 800) // ss install
+                ));
 
-    Schedule7aResponse doc = service.getSchedule7a(514, 2021, true);
+    Schedule7aResponse doc = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER);
 
     assertThat(doc.editable()).isTrue();
     assertThat(doc.bridges()).hasSize(1);
     Bridge b = doc.bridges().get(0);
     assertThat(b.rowCounter()).isEqualTo(1);
     assertThat(b.builtDate()).isEqualTo("2020-06");
-    assertThat(b.totalMaterial()).isEqualTo(8000);   // 5000 + 3000
-    assertThat(b.totalDeliver()).isEqualTo(800);      // 500 + 300
-    assertThat(b.totalInstall()).isEqualTo(1200);     // 800 + 400
-    assertThat(b.grandTotal()).isEqualTo(12000);      // 1000+8000+800+1200+700+200+100
+    assertThat(b.totalMaterial()).isEqualTo(8000); // 5000 + 3000
+    assertThat(b.totalDeliver()).isEqualTo(800); // 500 + 300
+    assertThat(b.totalInstall()).isEqualTo(1200); // 800 + 400
+    assertThat(b.grandTotal()).isEqualTo(12000); // 1000+8000+800+1200+700+200+100
   }
 
   @Test
   @DisplayName("totals: null-tolerant — a total with no contributing cost is null, not 0")
   void totals_nullWhenNoContributingCost() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     // Only site plan present — material/deliver/install have no operands.
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
 
-    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+    Bridge b = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0);
 
     assertThat(b.totalMaterial()).isNull();
     assertThat(b.totalDeliver()).isNull();
@@ -140,15 +184,18 @@ class Schedule7aServiceTest {
   @DisplayName("totals: null-tolerant addition returns the lone present operand")
   void totals_partialNullAddition() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     // material: SS present, abutment absent → returns SS; deliver: SS absent, abutment present.
-    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
-        cost(1, 7601, 79, 5000), // ss material only  → add(5000, null) → 5000
-        cost(2, 7601, 75, 300))); // abut deliver only → add(null, 300)  → 300
+    when(repository.findCostDetails(514, 2021))
+        .thenReturn(
+            List.of(
+                cost(1, 7601, 79, 5000), // ss material only  → add(5000, null) → 5000
+                cost(2, 7601, 75, 300))); // abut deliver only → add(null, 300)  → 300
 
-    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+    Bridge b = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0);
 
     assertThat(b.totalMaterial()).isEqualTo(5000);
     assertThat(b.totalDeliver()).isEqualTo(300);
@@ -159,13 +206,30 @@ class Schedule7aServiceTest {
   @DisplayName("read tolerates a null built date and null measurements")
   void read_nullDateAndMeasurements() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(new BridgeReportEntity(
-        7601, "North Fork", null, null, null, null, null, null,
-        "N", "STL", "WD", "CONC", "L100", null, 0)));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(
+            List.of(
+                new BridgeReportEntity(
+                    7601,
+                    "North Fork",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "N",
+                    "STL",
+                    "WD",
+                    "CONC",
+                    "L100",
+                    null,
+                    0)));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+    Bridge b = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0);
 
     assertThat(b.builtDate()).isNull();
     assertThat(b.abutmentHeight()).isNull();
@@ -181,47 +245,66 @@ class Schedule7aServiceTest {
     when(repository.findBridges(anyLong(), anyInt())).thenReturn(List.of());
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
 
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    assertThat(service.getSchedule7a(514, 2021, false).editable()).isFalse(); // no EDIT_SCHEDULE
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    assertThat(service.getSchedule7a(514, 2021, CallerRights.NONE).editable())
+        .isFalse(); // no EDIT_SCHEDULE
 
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
-    assertThat(service.getSchedule7a(517, 2021, true).editable()).isFalse();  // not Draft
-    assertThat(service.getSchedule7a(517, 2021, true).trackStatus()).isEqualTo("S");
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    assertThat(service.getSchedule7a(517, 2021, CallerRights.SUBMITTER).editable())
+        .isFalse(); // not Draft
+    assertThat(service.getSchedule7a(517, 2021, CallerRights.SUBMITTER).trackStatus())
+        .isEqualTo("S");
   }
 
   @Test
   @DisplayName("rowCounter is the 1-based list index across bridges")
   void rowCounter_isOneBasedIndex() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(
-        bridge(7601, "A", LocalDate.of(2020, 1, 1)),
-        bridge(7602, "B", LocalDate.of(2020, 2, 1))));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(
+            List.of(
+                bridge(7601, "A", LocalDate.of(2020, 1, 1)),
+                bridge(7602, "B", LocalDate.of(2020, 2, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    List<Bridge> bridges = service.getSchedule7a(514, 2021, true).bridges();
+    List<Bridge> bridges = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges();
     assertThat(bridges).extracting(Bridge::rowCounter).containsExactly(1, 2);
   }
 
   @Test
-  @DisplayName("check-status: flags each missing required value per bridge in legacy label order (S29)")
+  @DisplayName(
+      "check-status: flags each missing required value per bridge in legacy label order (S29)")
   void checkStatus_flagsMissingCostsPerBridge() {
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(bridge(7603, "Old Mill", LocalDate.of(2018, 3, 1))));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7603, "Old Mill", LocalDate.of(2018, 3, 1))));
     // All required attributes/measurements present; missing afterInstall(72) and other(73) costs.
-    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
-        cost(1, 7603, 70, 500), cost(2, 7603, 71, 100),
-        cost(3, 7603, 74, 800), cost(4, 7603, 75, 80), cost(5, 7603, 76, 120),
-        cost(6, 7603, 79, 3000), cost(7, 7603, 80, 300), cost(8, 7603, 81, 500)));
+    when(repository.findCostDetails(514, 2021))
+        .thenReturn(
+            List.of(
+                cost(1, 7603, 70, 500),
+                cost(2, 7603, 71, 100),
+                cost(3, 7603, 74, 800),
+                cost(4, 7603, 75, 80),
+                cost(5, 7603, 76, 120),
+                cost(6, 7603, 79, 3000),
+                cost(7, 7603, 80, 300),
+                cost(8, 7603, 81, 500)));
 
-    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+    Schedule7aCheckStatusResponse result = service.checkStatusStored(514, 2021);
 
     assertThat(result.requirementsMet()).isFalse();
     assertThat(result.errors()).hasSize(2);
-    assertThat(result.errors()).allSatisfy(m -> {
-      assertThat(m.key()).isEqualTo("missingRequiredFieldMsg");
-      assertThat(m.text()).startsWith("Bridge Report Id : 1");
-      assertThat(m.text()).endsWith("Value Required");
-    });
+    assertThat(result.errors())
+        .allSatisfy(
+            m -> {
+              assertThat(m.key()).isEqualTo("missingRequiredFieldMsg");
+              assertThat(m.text()).startsWith("Bridge Report Id : 1");
+              assertThat(m.text()).endsWith("Value Required");
+            });
     // The full verbatim line, separator included: FacesUtil.addCheckStatusErrorMessage appended
     // ": " between the label and the bundle text for every schedule (util/FacesUtil.java:134), and
     // the label itself ends in a space — so the legacy line reads "... Cost : Value Required".
@@ -234,19 +317,31 @@ class Schedule7aServiceTest {
   }
 
   @Test
-  @DisplayName("check-status: every bridge complete → the schedule-wide line ALONE, no per-bridge lines")
+  @DisplayName(
+      "check-status: every bridge complete → the schedule-wide line ALONE, no per-bridge lines")
   void checkStatus_allMet() {
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
-    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
-        cost(1, 7601, 70, 1), cost(2, 7601, 71, 1), cost(3, 7601, 72, 1), cost(4, 7601, 73, 1),
-        cost(5, 7601, 74, 1), cost(6, 7601, 75, 1), cost(7, 7601, 76, 1),
-        cost(8, 7601, 79, 1), cost(9, 7601, 80, 1), cost(10, 7601, 81, 1)));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021))
+        .thenReturn(
+            List.of(
+                cost(1, 7601, 70, 1),
+                cost(2, 7601, 71, 1),
+                cost(3, 7601, 72, 1),
+                cost(4, 7601, 73, 1),
+                cost(5, 7601, 74, 1),
+                cost(6, 7601, 75, 1),
+                cost(7, 7601, 76, 1),
+                cost(8, 7601, 79, 1),
+                cost(9, 7601, 80, 1),
+                cost(10, 7601, 81, 1)));
 
-    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+    Schedule7aCheckStatusResponse result = service.checkStatusStored(514, 2021);
 
     assertThat(result.requirementsMet()).isTrue();
     assertThat(result.errors()).isEmpty();
-    // Legacy ran its per-bridge loop only when the SCHEDULE failed (Schedule7aMB.java:197-296), so a
+    // Legacy ran its per-bridge loop only when the SCHEDULE failed (Schedule7aMB.java:197-296), so
+    // a
     // fully complete schedule showed one success line, not one per bridge plus a schedule-wide one.
     assertThat(result.bridgeMessages()).isEmpty();
     assertThat(result.requirementsMetMessage()).isNotNull();
@@ -254,47 +349,339 @@ class Schedule7aServiceTest {
   }
 
   @Test
-  @DisplayName("check-status: a MIXED schedule flags the failing bridge and all-mets the passing one")
+  @DisplayName(
+      "check-status: a MIXED schedule flags the failing bridge and all-mets the passing one")
   void checkStatus_mixed() {
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(
-        bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
-        bridge(7602, "South Fork", LocalDate.of(2020, 7, 1))));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(
+            List.of(
+                bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
+                bridge(7602, "South Fork", LocalDate.of(2020, 7, 1))));
     // Bridge 1 complete; bridge 2 missing every cost.
-    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
-        cost(1, 7601, 70, 1), cost(2, 7601, 71, 1), cost(3, 7601, 72, 1), cost(4, 7601, 73, 1),
-        cost(5, 7601, 74, 1), cost(6, 7601, 75, 1), cost(7, 7601, 76, 1),
-        cost(8, 7601, 79, 1), cost(9, 7601, 80, 1), cost(10, 7601, 81, 1)));
+    when(repository.findCostDetails(514, 2021))
+        .thenReturn(
+            List.of(
+                cost(1, 7601, 70, 1),
+                cost(2, 7601, 71, 1),
+                cost(3, 7601, 72, 1),
+                cost(4, 7601, 73, 1),
+                cost(5, 7601, 74, 1),
+                cost(6, 7601, 75, 1),
+                cost(7, 7601, 76, 1),
+                cost(8, 7601, 79, 1),
+                cost(9, 7601, 80, 1),
+                cost(10, 7601, 81, 1)));
 
-    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+    Schedule7aCheckStatusResponse result = service.checkStatusStored(514, 2021);
 
     assertThat(result.requirementsMet()).isFalse();
     assertThat(result.errors()).isNotEmpty();
-    assertThat(result.errors()).allSatisfy(
-        m -> assertThat(m.text()).startsWith("Bridge Report Id : 2"));
+    assertThat(result.errors())
+        .allSatisfy(m -> assertThat(m.text()).startsWith("Bridge Report Id : 2"));
     assertThat(result.bridgeMessages()).hasSize(1);
     assertThat(result.bridgeMessages().get(0).key()).isEqualTo("bridgeRequirementsMetMsg");
     // No schedule-wide line on a mixed result.
     assertThat(result.requirementsMetMessage()).isNull();
   }
 
+  // ===============================================================================================
+  // Check Status against the SCREEN (#359) — the endpoint's path
+  // ===============================================================================================
+
+  /** A complete on-screen bridge: every attribute and all ten costs present. */
+  private static BridgeEntry completeEntry() {
+    return new BridgeEntry(
+        "North Fork",
+        "2020-06",
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        12,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1);
+  }
+
+  /** {@link #completeEntry()} with its distance and Other Costs as given. */
+  private static BridgeEntry entryWith(Integer distance, Integer otherCost) {
+    return new BridgeEntry(
+        "North Fork",
+        "2020-06",
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        distance,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        otherCost);
+  }
+
+  private static List<BridgeCostEntity> allTenCosts(long bridgeId) {
+    List<BridgeCostEntity> costs = new java.util.ArrayList<>();
+    int id = 1;
+    for (int item : List.of(70, 71, 72, 73, 74, 75, 76, 79, 80, 81)) {
+      costs.add(cost(bridgeId * 100 + id++, bridgeId, item, 1));
+    }
+    return costs;
+  }
+
+  private Schedule7aCheckStatusResponse screen(BridgeEntry... entries) {
+    return service.checkStatus(514, 2021, new Schedule7aCheckRequest(List.of(entries)));
+  }
+
+  private static List<String> texts(Schedule7aCheckStatusResponse response) {
+    return response.errors().stream().map(MessageInfo::text).toList();
+  }
+
+  @Test
+  @DisplayName("#359 unsaved clear: distance emptied on screen, stored distance present -> flagged")
+  void checkStatusScreen_unsavedClear_isFlagged() {
+    lenient()
+        .when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    lenient().when(repository.findCostDetails(514, 2021)).thenReturn(allTenCosts(7601));
+
+    Schedule7aCheckStatusResponse result = screen(entryWith(null, 1));
+
+    assertThat(texts(result))
+        .containsExactly("Bridge Report Id : 1 - Distance (km) : Value Required");
+    assertThat(result.requirementsMetMessage()).isNull();
+    verify(repository, never()).findBridges(anyLong(), anyInt());
+    verify(repository, never()).findCostDetails(anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("#359 unsaved fix: a stored-missing cost typed on screen -> met")
+  void checkStatusScreen_unsavedFix_passes() {
+    // Stored: every cost missing — the stored path would flag ten lines.
+    lenient()
+        .when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7602, "South Fork", LocalDate.of(2020, 7, 1))));
+    lenient().when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    Schedule7aCheckStatusResponse result = screen(completeEntry());
+
+    assertThat(result.requirementsMet()).isTrue();
+    assertThat(result.errors()).isEmpty();
+    assertThat(result.bridgeMessages()).isEmpty();
+    assertThat(result.requirementsMetMessage().key()).isEqualTo("scheduleRequirementsMetMsg");
+  }
+
+  @Test
+  @DisplayName("#359 other page: row 7 of 7 is evaluated, numbered by ordinal; the rest all-met")
+  void checkStatusScreen_otherPageRow_numberedByOrdinal() {
+    Schedule7aCheckStatusResponse result =
+        screen(
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            completeEntry(),
+            entryWith(12, null));
+
+    assertThat(texts(result))
+        .containsExactly("Bridge Report Id : 7 - Other Costs : Value Required");
+    // The six passing rows each get the per-bridge line, numbered by ordinal (the bundle default
+    // echoes the key here, so the ordinal is asserted through the argument count only).
+    assertThat(result.bridgeMessages()).hasSize(6);
+  }
+
+  @Test
+  @DisplayName("#359 a typed 0 passes and a blank month is absent; null is never coerced")
+  void checkStatusScreen_zeroPasses_blankIsMissing() {
+    BridgeEntry zeros =
+        new BridgeEntry(
+            "X",
+            "2020-01",
+            0,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0);
+    assertThat(screen(zeros).requirementsMet()).isTrue();
+
+    BridgeEntry blanks =
+        new BridgeEntry(
+            " ", " ", null, null, null, null, null, null, null, null, null, null, null, null, null,
+            null, null);
+    assertThat(texts(screen(blanks)))
+        .containsExactly(
+            "Bridge Report Id : 1 - Name / Location of Bridge : Value Required",
+            "Bridge Report Id : 1 - Built Date : Value Required",
+            "Bridge Report Id : 1 - Expected Life Span : Value Required",
+            "Bridge Report Id : 1 - Abutments heigth value : Value Required",
+            "Bridge Report Id : 1 - Length (m) : Value Required",
+            "Bridge Report Id : 1 - Width (m) : Value Required",
+            "Bridge Report Id : 1 - Distance (km) : Value Required",
+            "Bridge Report Id : 1 - Superstructure - Materil Cost : Value Required",
+            "Bridge Report Id : 1 - Superstructure - Deliver Cost : Value Required",
+            "Bridge Report Id : 1 - Superstructure - Install Cost : Value Required",
+            "Bridge Report Id : 1 - Abutments Material Cost : Value Required",
+            "Bridge Report Id : 1 - Abutments Deliver Cost : Value Required",
+            "Bridge Report Id : 1 - Abutments Install Cost : Value Required",
+            "Bridge Report Id : 1 - Site Plan / Gen. Arr.  Cost : Value Required",
+            "Bridge Report Id : 1 - Approach works Cost : Value Required",
+            "Bridge Report Id : 1 - Certification After install Cost : Value Required",
+            "Bridge Report Id : 1 - Other Costs : Value Required");
+  }
+
+  @Test
+  @DisplayName("#359 an empty screen is vacuously met, as an empty stored schedule is")
+  void checkStatusScreen_empty_isMet() {
+    assertThat(screen().requirementsMet()).isTrue();
+  }
+
+  @Test
+  @DisplayName("#359 each screen cost routes to its own item: one blank cost, one line, per slot")
+  void checkStatusScreen_eachCostRoutesToItsItem() {
+    // Built from the full blank list above by position: blanking exactly one cost field of a
+    // complete entry must produce exactly that field's label, proving the payload→item mapping.
+    String[] labels = {
+      " - Site Plan / Gen. Arr.  Cost ",
+      " - Superstructure - Materil Cost ",
+      " - Superstructure - Deliver Cost ",
+      " - Superstructure - Install Cost ",
+      " - Abutments Material Cost ",
+      " - Abutments Deliver Cost ",
+      " - Abutments Install Cost ",
+      " - Approach works Cost ",
+      " - Certification After install Cost ",
+      " - Other Costs "
+    };
+    for (int slot = 0; slot < labels.length; slot++) {
+      Integer[] c = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+      c[slot] = null;
+      BridgeEntry entry =
+          new BridgeEntry(
+              "N",
+              "2020-06",
+              50,
+              BigDecimal.ONE,
+              BigDecimal.ONE,
+              BigDecimal.ONE,
+              1,
+              c[0],
+              c[1],
+              c[2],
+              c[3],
+              c[4],
+              c[5],
+              c[6],
+              c[7],
+              c[8],
+              c[9]);
+      assertThat(texts(screen(entry)))
+          .as("slot %d", slot)
+          .containsExactly("Bridge Report Id : 1" + labels[slot] + ": Value Required");
+    }
+  }
+
+  @Test
+  @DisplayName("#359 parity: a body mirroring the stored rows yields the stored verdict exactly")
+  void checkStatusScreen_mirroringBody_equalsStored() {
+    when(repository.findBridges(514, 2021))
+        .thenReturn(
+            List.of(
+                bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)), bridge(7602, "  ", null)));
+    when(repository.findCostDetails(514, 2021)).thenReturn(allTenCosts(7601));
+
+    Schedule7aCheckStatusResponse stored = service.checkStatusStored(514, 2021);
+    Schedule7aCheckStatusResponse payload =
+        screen(
+            completeEntry(),
+            new BridgeEntry(
+                "  ",
+                null,
+                50,
+                new BigDecimal("5.0"),
+                new BigDecimal("20.0"),
+                new BigDecimal("4.0"),
+                12,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+    assertThat(stored.requirementsMet()).isFalse();
+    assertThat(stored.bridgeMessages()).hasSize(1);
+    assertThat(payload).isEqualTo(stored);
+  }
+
   @Test
   @DisplayName("add rejects a write outside Draft (409)")
   void add_rejectedOutsideDraft() {
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     BridgeRequest request = validRequest(null);
-    assertThatThrownBy(() -> service.addBridge(517, 2021, request, true, "user"))
+    assertThatThrownBy(() -> service.addBridge(517, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
   }
 
   @Test
   @DisplayName("add rejects a malformed yyyy-MM date (400)")
   void add_rejectsBadDate() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    BridgeRequest bad = new BridgeRequest(
-        "Loc", "2020-13", "N", "STL", "WD", "CONC", "L100", 50,
-        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
-        null, null, null, null, null, null, null, null, null, null, null, null);
-    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, true, "user"))
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    BridgeRequest bad =
+        new BridgeRequest(
+            "Loc",
+            "2020-13",
+            "N",
+            "STL",
+            "WD",
+            "CONC",
+            "L100",
+            50,
+            new BigDecimal("5.0"),
+            new BigDecimal("20.0"),
+            new BigDecimal("4.0"),
+            12,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(BridgeDateFormatException.class);
   }
 
@@ -302,12 +689,35 @@ class Schedule7aServiceTest {
   @DisplayName("add rejects an unknown code value (400)")
   void add_rejectsUnknownCode() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    BridgeRequest bad = new BridgeRequest(
-        "North Fork", "2020-06", "ZZZ", "STL", "WD", "CONC", "L100", 50,
-        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
-        1000, 5000, 500, 800, 3000, 300, 400, 700, 200, 100, null, null);
-    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, true, "user"))
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    BridgeRequest bad =
+        new BridgeRequest(
+            "North Fork",
+            "2020-06",
+            "ZZZ",
+            "STL",
+            "WD",
+            "CONC",
+            "L100",
+            50,
+            new BigDecimal("5.0"),
+            new BigDecimal("20.0"),
+            new BigDecimal("4.0"),
+            12,
+            1000,
+            5000,
+            500,
+            800,
+            3000,
+            300,
+            400,
+            700,
+            200,
+            100,
+            null,
+            null);
+    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(InvalidBridgeCodeException.class);
   }
 
@@ -315,16 +725,19 @@ class Schedule7aServiceTest {
   @DisplayName("update disambiguates a stale revision (409) from an unknown id (404)")
   void update_staleVsNotFound() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
     BridgeRequest request = validRequest(0);
 
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1); // exists → stale
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.updateBridge(514, 2021, 7601, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(StaleRevisionException.class);
 
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0); // absent → 404
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 9999, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.updateBridge(514, 2021, 9999, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
@@ -332,18 +745,41 @@ class Schedule7aServiceTest {
   @DisplayName("add writes ALL TEN cost rows, a null cost as a NULL row (legacy storage shape)")
   void add_writesAllTenCostRowsIncludingNulls() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.nextBridgeReportId()).thenReturn(7601L);
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
     // Only site plan is entered; the other nine are null.
-    BridgeRequest request = new BridgeRequest(
-        "North Fork", "2020-06", "N", "STL", "WD", "CONC", "L100", 50,
-        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
-        1000, null, null, null, null, null, null, null, null, null, null, null);
+    BridgeRequest request =
+        new BridgeRequest(
+            "North Fork",
+            "2020-06",
+            "N",
+            "STL",
+            "WD",
+            "CONC",
+            "L100",
+            50,
+            new BigDecimal("5.0"),
+            new BigDecimal("20.0"),
+            new BigDecimal("4.0"),
+            12,
+            1000,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
 
-    Schedule7aResponse doc = service.addBridge(514, 2021, request, true, "user");
+    Schedule7aResponse doc = service.addBridge(514, 2021, request, CallerRights.SUBMITTER, "user");
 
     assertThat(doc.bridges()).hasSize(1);
     verify(repository).insertBridge(any(BridgeReportEntity.class), eq(514L), eq(2021), eq("user"));
@@ -358,13 +794,15 @@ class Schedule7aServiceTest {
   @DisplayName("add rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void add_persistenceFailure() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.nextBridgeReportId()).thenReturn(7601L);
     doThrow(new DataIntegrityViolationException("insert failed"))
-        .when(repository).insertBridge(any(), anyLong(), anyInt(), any());
+        .when(repository)
+        .insertBridge(any(), anyLong(), anyInt(), any());
     BridgeRequest request = validRequest(null);
 
-    assertThatThrownBy(() -> service.addBridge(514, 2021, request, true, "user"))
+    assertThatThrownBy(() -> service.addBridge(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
@@ -372,14 +810,16 @@ class Schedule7aServiceTest {
   @DisplayName("update writes the correction, upserts its costs, and recomputes")
   void update_persistsAndRecomputes() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
     BridgeRequest request = validRequest(0);
 
-    Schedule7aResponse doc = service.updateBridge(514, 2021, 7601, request, true, "user");
+    Schedule7aResponse doc =
+        service.updateBridge(514, 2021, 7601, request, CallerRights.SUBMITTER, "user");
 
     assertThat(doc.bridges()).hasSize(1);
     verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
@@ -389,12 +829,15 @@ class Schedule7aServiceTest {
   @DisplayName("update rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void update_persistenceFailure() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     doThrow(new DataIntegrityViolationException("update failed"))
-        .when(repository).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+        .when(repository)
+        .updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
     BridgeRequest request = validRequest(0);
 
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.updateBridge(514, 2021, 7601, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
@@ -402,17 +845,19 @@ class Schedule7aServiceTest {
   @DisplayName("delete removes the cost children BEFORE the bridge, then recomputes (S04)")
   void delete_removesBridgeAndCosts() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.deleteBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, true);
+    Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER);
 
     assertThat(doc.bridges()).isEmpty();
     // Order is the whole point: delivery's FK on ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID has no ON
-    // DELETE CASCADE, so a parent-first delete raises ORA-02292 and the request 500s. Legacy deleted
+    // DELETE CASCADE, so a parent-first delete raises ORA-02292 and the request 500s. Legacy
+    // deleted
     // the children first for the same reason (Schedule7aDAO:566-570).
     var order = inOrder(repository);
     order.verify(repository).deleteCostsForBridge(7601);
@@ -422,24 +867,28 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete: a parent delete that affects 0 rows is a 404, not a false success (S04)")
   void delete_parentVanishedMidFlight() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     // The probe passes, then the row is gone by the time the delete runs (a concurrent delete won).
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.deleteBridge(7601, 514, 2021)).thenReturn(0);
 
-    // Acting on the row count is what makes this a 404 rather than a 200 "Data deleted successfully"
-    // over a bridge that is still on screen with its costs stripped (the cost delete having committed).
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+    // Acting on the row count is what makes this a 404 rather than a 200 "Data deleted
+    // successfully"
+    // over a bridge that is still on screen with its costs stripped (the cost delete having
+    // committed).
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
   @Test
   @DisplayName("delete of an unknown id → 404 and never touches either delete")
   void delete_unknownId() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
 
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, CallerRights.SUBMITTER))
         .isInstanceOf(BridgeNotFoundException.class);
     verify(repository, never()).deleteCostsForBridge(anyLong());
     verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
@@ -448,12 +897,14 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete of another mill's bridge id → 404, never removing that mill's rows")
   void delete_otherMillsBridge() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    // The id exists, but not under this mill/year — countBridge is mill/year/category-scoped, so the
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    // The id exists, but not under this mill/year — countBridge is mill/year/category-scoped, so
+    // the
     // check still refuses. (It has to be scoped: the cost delete keys on the bridge id alone.)
     when(repository.countBridge(7601, 514, 2021)).thenReturn(0);
 
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(BridgeNotFoundException.class);
     verify(repository, never()).deleteCostsForBridge(anyLong());
   }
@@ -461,21 +912,24 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("delete rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void delete_persistenceFailure() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     doThrow(new DataIntegrityViolationException("delete failed"))
-        .when(repository).deleteCostsForBridge(7601);
+        .when(repository)
+        .deleteCostsForBridge(7601);
 
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
   @Test
   @DisplayName("delete outside Draft is rejected before any repository write (409)")
   void delete_rejectedOutsideDraft() {
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
 
-    assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(ScheduleNotEditableException.class);
     verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
   }
@@ -484,11 +938,12 @@ class Schedule7aServiceTest {
   @DisplayName("code lists are scoped to the REPORTING YEAR, not served unfiltered")
   void codeLists_scopedToReportingYear() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
     when(repository.findBridges(514, 2019)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
 
-    service.getSchedule7a(514, 2019, true);
+    service.getSchedule7a(514, 2019, CallerRights.SUBMITTER);
 
     // Legacy filtered every list through LookupCache.getCacheList(year), so a code retired before
     // the reporting year was never offered. Passing the year is what carries that filter.
@@ -503,12 +958,13 @@ class Schedule7aServiceTest {
   @DisplayName("a write validates its codes against the reporting year's effective list")
   void writeValidatesCodesForTheReportingYear() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2019)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2019)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
 
-    service.updateBridge(514, 2019, 7601, validRequest(0), true, "user");
+    service.updateBridge(514, 2019, 7601, validRequest(0), CallerRights.SUBMITTER, "user");
 
     verify(repository, times(2)).constructionTypeOptions(2019); // validation + served document
   }
@@ -517,14 +973,18 @@ class Schedule7aServiceTest {
   @DisplayName("save-all writes every bridge in one call and recomputes once (legacy page Save)")
   void saveAll_persistsEveryBridge() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
-    when(repository.findBridges(514, 2021)).thenReturn(List.of(
-        bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
-        bridge(7602, "South Creek", LocalDate.of(2021, 3, 1))));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(
+            List.of(
+                bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
+                bridge(7602, "South Creek", LocalDate.of(2021, 3, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    Schedule7aResponse doc = service.saveAllBridges(514, 2021, saveAll(7601L, 7602L), true, "user");
+    Schedule7aResponse doc =
+        service.saveAllBridges(514, 2021, saveAll(7601L, 7602L), CallerRights.SUBMITTER, "user");
 
     assertThat(doc.bridges()).hasSize(2);
     // Two bridge writes, and each bridge carries its OWN ten cost upserts — not one row written
@@ -533,18 +993,20 @@ class Schedule7aServiceTest {
     verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
     verify(repository, times(10)).upsertCost(eq(7602L), anyInt(), anyInt(), eq("user"));
     // The Draft gate is read once for the batch, not once per bridge.
-    verify(repository).findTrackStatus(514, 2021);
+    verify(repository).findTrackStatusForUpdate(514, 2021);
   }
 
   @Test
   @DisplayName("save-all rejects a duplicate bridge id with 400, not a misleading 409")
   void saveAll_duplicateIdIsBadRequest() {
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     BridgeSaveAllRequest request = saveAll(7601L, 7601L);
 
     // Left to run, the second pass would meet the revision its own first pass bumped and 409 —
     // telling the caller another user changed the row when the request was simply malformed.
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(DuplicateBridgeException.class);
     verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
   }
@@ -553,12 +1015,13 @@ class Schedule7aServiceTest {
   @DisplayName("save-all reads each code table ONCE for the batch, not once per bridge")
   void saveAll_readsCodeTablesOncePerBatch() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    service.saveAllBridges(514, 2021, saveAll(7601L, 7602L, 7603L), true, "user");
+    service.saveAllBridges(514, 2021, saveAll(7601L, 7602L, 7603L), CallerRights.SUBMITTER, "user");
 
     // Three bridges: once for the batch's validation + once for the echoed document. Per-bridge
     // lookups would make this 4 for three rows, and 5N inside one transaction at scale.
@@ -568,10 +1031,12 @@ class Schedule7aServiceTest {
   @Test
   @DisplayName("save-all is rejected outside Draft before any bridge is written")
   void saveAll_rejectedOutsideDraft() {
-    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(517, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     BridgeSaveAllRequest request = saveAll(7601L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(517, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(517, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
     verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
   }
@@ -580,15 +1045,18 @@ class Schedule7aServiceTest {
   @DisplayName("save-all propagates a stale revision on ANY entry, so the batch rolls back whole")
   void saveAll_staleEntryAbortsTheBatch() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     // First bridge writes, second is stale — the exception must escape so @Transactional rolls the
     // first one back too. A partial save would leave the reporter unable to tell what persisted.
     when(repository.updateBridge(any(), eq(514L), eq(2021), anyInt(), any()))
-        .thenReturn(1).thenReturn(0);
+        .thenReturn(1)
+        .thenReturn(0);
     when(repository.countBridge(7602, 514, 2021)).thenReturn(1);
     BridgeSaveAllRequest request = saveAll(7601L, 7602L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(StaleRevisionException.class);
     verify(repository, never()).findBridges(anyLong(), anyInt());
   }
@@ -597,12 +1065,14 @@ class Schedule7aServiceTest {
   @DisplayName("save-all rejects an unknown bridge id with 404")
   void saveAll_unknownIdIsNotFound() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
     BridgeSaveAllRequest request = saveAll(9999L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
@@ -610,12 +1080,15 @@ class Schedule7aServiceTest {
   @DisplayName("save-all surfaces ERR-004 when the persistence layer fails")
   void saveAll_persistenceFailure() {
     stubCodeOptions();
-    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     doThrow(new DataIntegrityViolationException("update failed"))
-        .when(repository).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+        .when(repository)
+        .updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
     BridgeSaveAllRequest request = saveAll(7601L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
@@ -629,8 +1102,127 @@ class Schedule7aServiceTest {
 
   private static BridgeRequest validRequest(Integer revisionCount) {
     return new BridgeRequest(
-        "North Fork", "2020-06", "N", "STL", "WD", "CONC", "L100", 50,
-        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
-        1000, 5000, 500, 800, 3000, 300, 400, 700, 200, 100, null, revisionCount);
+        "North Fork",
+        "2020-06",
+        "N",
+        "STL",
+        "WD",
+        "CONC",
+        "L100",
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        12,
+        1000,
+        5000,
+        500,
+        800,
+        3000,
+        300,
+        400,
+        700,
+        200,
+        100,
+        null,
+        revisionCount);
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). A bridge's submitted attributes come from the bridge
+  // report view and its ten submitted costs from the shared cost view, joined on the bridge
+  // report id — the one id in this schedule that is a long end to end.
+  // -----------------------------------------------------------------------------------------
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    assertThat(originals).containsKey(field);
+    assertThat(originals.get(field).value()).isEqualTo(value);
+    assertThat(originals.get(field).tooltip()).isEqualTo(OriginalValuesFixture.tooltip(formatted));
+  }
+
+  @Test
+  @DisplayName("original values: at Draft nothing is exposed and neither snapshot view is read")
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stubCodeOptions();
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
+
+    Schedule7aResponse doc = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER);
+
+    assertThat(doc.bridges().get(0).originalValues()).isNull();
+    verify(repository, never()).findBridgeSnapshots(anyLong(), anyInt());
+    verify(costSnapshots, never()).findByBridgeReports(anyList());
+  }
+
+  @Test
+  @DisplayName("original values: attributes and costs join on the bridge report id")
+  void originalValues_submitted_joinBridgeAndCostSnapshotsOnTheReportId() {
+    stubCodeOptions();
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
+    when(repository.findBridgeSnapshots(514, 2021))
+        .thenReturn(
+            List.of(
+                new Schedule7aRepository.BridgeSnapshotRow(
+                    7601L,
+                    "South Fork",
+                    LocalDate.of(2019, 3, 1),
+                    "U",
+                    "STL",
+                    "WD",
+                    "CONC",
+                    "L100",
+                    40,
+                    new BigDecimal("4.5"),
+                    new BigDecimal("18.0"),
+                    new BigDecimal("3.5"),
+                    11,
+                    "submitted comment")));
+    when(costSnapshots.findByBridgeReports(List.of(7601L)))
+        .thenReturn(
+            List.of(
+                new CostDetailSnapshotRepository.Row(1, 7601L, 70, null, 900, null, null),
+                new CostDetailSnapshotRepository.Row(2, 7601L, 79, null, 4800, null, null)));
+
+    Map<String, OriginalValue> originals =
+        service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0).originalValues();
+
+    // Off the bridge snapshot. The built date is rendered yyyy-MM, as the current side is.
+    assertOriginal(originals, "locationName", "South Fork", "South Fork");
+    assertOriginal(originals, "builtDate", "2019-03", "2019-03");
+    assertOriginal(originals, "constructionTypeCode", "U", "U");
+    assertOriginal(originals, "lifeSpan", "40", "40");
+    assertOriginal(originals, "abutmentHeight", "4.5", "4.5");
+    assertOriginal(originals, "comments", "submitted comment", "submitted comment");
+    // Off the shared cost snapshot, routed per cost item — the half the report-id join reaches.
+    assertOriginal(originals, "sitePlanCost", "900", "900");
+    assertOriginal(originals, "superstructureMaterialCost", "4800", "4,800");
+    // An item with no submitted row keeps no key at all.
+    // No submitted row for this cost item: the key is written (every offered field is) but its
+    // value is empty, which is what proves the report-id join reached nothing for it.
+    assertThat(originals).containsEntry("otherCost", nothingOnFile());
+  }
+
+  @Test
+  @DisplayName("original values: beyond Draft with nothing on file every field carries the label")
+  void originalValues_submittedButNoSnapshotOnFile_carriesEmptyOriginals() {
+    stubCodeOptions();
+    lenient().when(repository.findTrackStatusForUpdate(514, 2021)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
+    when(repository.findBridgeSnapshots(514, 2021)).thenReturn(List.of());
+    when(costSnapshots.findByBridgeReports(List.of(7601L))).thenReturn(List.of());
+
+    assertAllNothingOnFile(
+        service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0).originalValues());
   }
 }

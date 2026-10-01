@@ -1,6 +1,10 @@
 package ca.bc.gov.nrs.ilcr;
 
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
+import ca.bc.gov.nrs.ilcr.checkstatus.ReportTrackTransitionRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
@@ -19,56 +23,55 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * No-DB context smoke test. Forces the Oracle datasource OFF (AD-2 intent): the merged
- * {@code application.yml} defaults {@code ilcr.datasource.enabled} to {@code false}; this smoke
- * test keeps that explicit. With the datasource off the
- * Spring Data JDBC repositories are absent; mocks stand in so the wiring loads. The real datasource +
- * Spring Data JDBC path is proven by the Testcontainers acceptance tests (*IT).
+ * No-DB context smoke test. Forces the Oracle datasource OFF (AD-2 intent): the merged {@code
+ * application.yml} defaults {@code ilcr.datasource.enabled} to {@code false}; this smoke test keeps
+ * that explicit. With the datasource off the Spring Data JDBC repositories are absent; mocks stand
+ * in so the wiring loads. The real datasource + Spring Data JDBC path is proven by the
+ * Testcontainers acceptance tests (*IT).
  */
 @SpringBootTest
 @TestPropertySource(properties = "ilcr.datasource.enabled=false")
 class IlcrBackendApplicationTests {
 
-  @MockitoBean
-  private Schedule1Repository schedule1Repository;
+  @MockitoBean private Schedule1Repository schedule1Repository;
 
-  @MockitoBean
-  private Schedule3Repository schedule3Repository;
+  @MockitoBean private Schedule3Repository schedule3Repository;
 
-  @MockitoBean
-  private MillContextRepository millContextRepository;
+  @MockitoBean private MillContextRepository millContextRepository;
 
-  @MockitoBean
-  private Schedule2Repository schedule2Repository;
+  @MockitoBean private Schedule2Repository schedule2Repository;
 
-  @MockitoBean
-  private Schedule4Repository schedule4Repository;
+  @MockitoBean private Schedule4Repository schedule4Repository;
 
-  @MockitoBean
-  private Schedule5Repository schedule5Repository;
+  @MockitoBean private Schedule5Repository schedule5Repository;
 
-  @MockitoBean
-  private Schedule6Repository schedule6Repository;
+  @MockitoBean private Schedule6Repository schedule6Repository;
 
-  @MockitoBean
-  private Schedule7aRepository schedule7aRepository;
+  @MockitoBean private Schedule7aRepository schedule7aRepository;
 
-  @MockitoBean
-  private Schedule7bRepository schedule7bRepository;
+  @MockitoBean private Schedule7bRepository schedule7bRepository;
 
-  @MockitoBean
-  private Schedule8Repository schedule8Repository;
+  @MockitoBean private Schedule8Repository schedule8Repository;
 
-  @MockitoBean
-  private Schedule9Repository schedule9Repository;
+  @MockitoBean private Schedule9Repository schedule9Repository;
 
-  @MockitoBean
-  private Schedule10Repository schedule10Repository;
+  @MockitoBean private Schedule10Repository schedule10Repository;
 
-  @MockitoBean
-  private Schedule11Repository schedule11Repository;
+  @MockitoBean private Schedule11Repository schedule11Repository;
+
+  // The two original-value snapshot views (Story 16.2) — Spring Data JDBC repositories like every
+  // other one here, so they are absent with the datasource off and need the same stand-in.
+  @MockitoBean private CostDetailSnapshotRepository costDetailSnapshotRepository;
+
+  @MockitoBean private ReportSummarySnapshotRepository reportSummarySnapshotRepository;
+  // Story 15.3: the submit transition's writer and the licensee lookup it records (BR-05).
+  @MockitoBean private ReportTrackTransitionRepository reportTrackTransitionRepository;
+  @MockitoBean private MillUserXrefRepository millUserXrefRepository;
+
+  // The report-status transition repository (Story 17.1) — same story: a Spring Data JDBC
+  // repository, so absent with the datasource off, and the check-status controller now depends on
+  // it through the transition service.
 
   @Test
-  void contextLoads() {
-  }
+  void contextLoads() {}
 }

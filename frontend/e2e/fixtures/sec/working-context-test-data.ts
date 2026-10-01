@@ -81,11 +81,12 @@ export const NO_STATUS: MillYearFixture = {
   // deliberately no sch1To10/sch11 — that absence IS the scenario
 };
 
-// The mount DEFAULT context (context/millYear/millYearDefaults.ts: DEFAULT_MILL_ID=13050 / DEFAULT_YEAR
-// =2017). Because BOTH keys are present in /v1/mills and /v1/reporting-years, Home pre-selects both
-// dropdowns on landing and the banner is populated BEFORE any Save — which is why the empty-dropdown
-// slices S04/S05/S08 are not UI-reproducible (see coverage.md / defects.md). Pinned so a re-ground of
-// the dev default is a one-line change here.
+// The 13050/2017 pair (context/millYear/millYearDefaults.ts: DEFAULT_MILL_ID / DEFAULT_YEAR). NO LONGER
+// the app's mount default: MillYearProvider used to seed it whenever local storage was empty, so Home
+// always had a context to reflect and landed pre-selected — commit e37649b dropped that, and the app now
+// starts with no context (see the landing scenario). The pair survives as a DB-PINNED ANCHOR: both keys
+// are present in /v1/mills and /v1/reporting-years, and preflight/sec-anchors.setup.ts asserts as much,
+// so unit suites and preflight can seed a known-good context. Pinned here so a re-ground is one line.
 export const DEFAULT_CONTEXT: MillYearFixture = {
   millId: 13050,
   millNumber: '999',
@@ -121,7 +122,7 @@ export const MSG = {
 } as const;
 
 // Carbon Dropdown placeholders (label props in components/home/index.tsx) — used to assert the
-// pre-selected (non-placeholder) landing state.
+// no-context landing state, where Home asks the user to choose.
 export const PLACEHOLDER = {
   mill: 'Select Mill',
   year: 'Select Reporting Year',

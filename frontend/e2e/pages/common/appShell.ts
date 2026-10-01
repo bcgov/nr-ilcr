@@ -1,5 +1,7 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 
+import { seedMockUser } from './mockUser';
+
 /**
  * App-shell smoke page object — the persistent Layout chrome (Carbon Header, mock-user selector, primary
  * side-nav) that renders CLIENT-SIDE with NO backend / delivery-DB dependency. Mirrors the app team's
@@ -15,7 +17,7 @@ export class AppShellPage {
 
   /** Carbon Header, aria-labelled with the app name — proves the shell mounted. */
   get header(): Locator {
-    return this.page.getByRole('banner', { name: 'Interior Logging Cost Reports (ILCR)' });
+    return this.page.getByRole('banner', { name: 'Interior Logging Cost Report (ILCR)' });
   }
 
   /** Mock-user selector — dev/security-off header chrome (client-side, not fetched). */
@@ -23,14 +25,30 @@ export class AppShellPage {
     return this.page.getByRole('combobox', { name: 'Mock user' });
   }
 
-  /** Open the app with the backend unreachable (all `/api` aborted); assert the header mounted. */
+  /**
+   * Open the app with the backend unreachable (all `/api` aborted); assert the header mounted.
+   *
+   * AS THE ADMINISTRATOR, and this scenario is the ONLY place in the suite that is. The nav
+   * assertion once covered `Generate Reports` as an `adminOnly` group; since #468 both roles render
+   * it (only its Data Extract entry stays admin-only), so the administrator is kept here for the
+   * scenario's stability, not because the assertion needs it. Stated as a precondition rather than inherited
+   * from whichever user `MOCK_USERS[0]` happens to be — that inheritance is exactly what silently
+   * ran the whole suite as an administrator for a month (see `pages/common/mockUser.ts`). The
+   * global `page` fixture seeds the submitter first; init scripts run in the order they were
+   * added, so this later call wins.
+   */
   async openWithoutBackend(): Promise<void> {
+    await seedMockUser(this.page, 'admin');
     await this.page.route('**/api/**', (route) => route.abort());
     await this.page.goto('/');
     await expect(this.header).toBeVisible();
   }
 
-  /** Expand the collapsed side-nav rail — only if collapsed (the toggle flips Open/Close menu). */
+  /**
+   * Ensure the side-nav is open — only clicks if it is collapsed (the toggle flips Open/Close menu).
+   * Since #316 the nav is expanded by default at Carbon's `lg` breakpoint, so at this suite's 1280px
+   * viewport this is usually a no-op; the guard still matters below `lg`.
+   */
   async ensureNavOpen(): Promise<void> {
     const openMenu = this.page.getByRole('button', { name: 'Open menu', exact: true });
     if (await openMenu.isVisible()) {

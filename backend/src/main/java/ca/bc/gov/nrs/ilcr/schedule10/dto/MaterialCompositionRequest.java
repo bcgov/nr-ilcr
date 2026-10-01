@@ -23,23 +23,8 @@ import jakarta.validation.constraints.Min;
  * @param organicPct the organic material percentage (optional, 0–100)
  */
 public record MaterialCompositionRequest(
-    @Min(value = 0, message = "{percentageValidatorErrorMsg}")
-    @Max(value = 100, message = "{percentageValidatorErrorMsg}")
-    Integer solidRockPct,
-
-    @Min(value = 0, message = "{percentageValidatorErrorMsg}")
-    @Max(value = 100, message = "{percentageValidatorErrorMsg}")
-    Integer rippableRockPct,
-
-    @Min(value = 0, message = "{percentageValidatorErrorMsg}")
-    @Max(value = 100, message = "{percentageValidatorErrorMsg}")
-    Integer coarsePct,
-
-    @Min(value = 0, message = "{percentageValidatorErrorMsg}")
-    @Max(value = 100, message = "{percentageValidatorErrorMsg}")
-    Integer finePct,
-
-    @Min(value = 0, message = "{percentageValidatorErrorMsg}")
-    @Max(value = 100, message = "{percentageValidatorErrorMsg}")
-    Integer organicPct) {
-}
+    @Min(value = 0, message = "{percentageValidatorErrorMsg}") @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer solidRockPct,
+    @Min(value = 0, message = "{percentageValidatorErrorMsg}") @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer rippableRockPct,
+    @Min(value = 0, message = "{percentageValidatorErrorMsg}") @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer coarsePct,
+    @Min(value = 0, message = "{percentageValidatorErrorMsg}") @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer finePct,
+    @Min(value = 0, message = "{percentageValidatorErrorMsg}") @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer organicPct) {}

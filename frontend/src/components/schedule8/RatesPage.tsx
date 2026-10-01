@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { RateRow } from '@/interfaces/Schedule8Response'
@@ -16,6 +17,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { Add, ArrowLeft, Close, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { emptyRateForm, fmt, toNum, validateRateForm, type RateForm } from './validation'
@@ -259,7 +261,7 @@ const RatesPage: FC<RatesPageProps> = ({
               invalid={Boolean(errors.itemDescription)}
               invalidText={errors.itemDescription}
             />
-            <Button kind="primary" size="sm" disabled={busy} onClick={onAdd}>
+            <Button kind="primary" size="sm" disabled={busy} renderIcon={Add} onClick={onAdd}>
               Add {label}
             </Button>
           </div>
@@ -284,16 +286,55 @@ const RatesPage: FC<RatesPageProps> = ({
               ) : (
                 rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell>{costItemName(row.costItemCode)}</TableCell>
-                    <TableCell>{row.itemDescription ?? '—'}</TableCell>
-                    <TableCell className="schedule-8__num">{fmt(row.costingRate)}</TableCell>
-                    <TableCell>{row.costTypeDescription ?? row.costTypeCode ?? '—'}</TableCell>
+                    {/* Legacy rendered four indicators on a rate row
+                        (TreeToTruckRateDetailDO.java:273-282); the row grid is read-only here, so
+                        each cell compares its SERVED value. */}
+                    <TableCell>
+                      {costItemName(row.costItemCode)}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="costItemCode"
+                        current={row.costItemCode}
+                        numeric={false}
+                        label="Cost Item"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {row.itemDescription ?? '—'}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="itemDescription"
+                        current={row.itemDescription}
+                        numeric={false}
+                        label="Description"
+                      />
+                    </TableCell>
+                    <TableCell className="schedule-8__num">
+                      {fmt(row.costingRate)}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="costingRate"
+                        current={row.costingRate}
+                        label="$/m³"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {row.costTypeDescription ?? row.costTypeCode ?? '—'}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="costTypeCode"
+                        current={row.costTypeCode}
+                        numeric={false}
+                        label="Cost Type"
+                      />
+                    </TableCell>
                     {editable && (
                       <TableCell>
                         <Button
-                          kind="danger--ghost"
+                          kind="danger--tertiary"
                           size="sm"
                           disabled={busy}
+                          renderIcon={TrashCan}
                           onClick={() => setConfirmDeleteRow(row)}
                         >
                           Delete
@@ -359,11 +400,17 @@ const RatesPage: FC<RatesPageProps> = ({
           when there is a draft). Read-only shows a single Close (nothing to save). */}
       <div className="schedule-8__panel-actions">
         {editable && (
-          <Button kind="primary" disabled={busy} onClick={handleSave}>
+          <Button kind="primary" disabled={busy} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={busy} onClick={requestBack}>
+        <Button
+          kind="secondary"
+          disabled={busy}
+          // Back on an editable panel, Close on a read-only one — the glyph follows the label.
+          renderIcon={editable ? ArrowLeft : Close}
+          onClick={requestBack}
+        >
           {editable ? 'Back' : 'Close'}
         </Button>
       </div>

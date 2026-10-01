@@ -56,12 +56,16 @@ public class HomeContentController implements HomeContentApi {
     return ResponseEntity.ok(new HomeContentSaveResponse(MSG_SAVED, message, service.readAll()));
   }
 
-  /** ILCR_ADMIN → the Administrator message; everyone else (Licensee/submitter) → the Licensee one. */
+  /**
+   * ILCR_ADMIN → the Administrator message; everyone else (Licensee/submitter) → the Licensee one.
+   */
   private static String contentRoleOf(Authentication authentication) {
-    boolean admin = authentication != null && authentication.getAuthorities().stream()
-        .map(GrantedAuthority::getAuthority)
-        .map(Role::fromValue)
-        .anyMatch(role -> role == Role.ADMIN);
+    boolean admin =
+        authentication != null
+            && authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .map(Role::fromValue)
+                .anyMatch(role -> role == Role.ADMIN);
     return admin ? HomeContentService.ROLE_ADMIN : HomeContentService.ROLE_LICENSEE;
   }
 }

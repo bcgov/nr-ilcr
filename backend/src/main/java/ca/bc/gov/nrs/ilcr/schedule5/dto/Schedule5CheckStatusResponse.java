@@ -1,11 +1,11 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.util.List;
 
 /**
  * The Schedule 5 Check Status result (AD-5/AD-12, BR-08) — a read-only readiness evaluation that
- * mutates nothing. {@code VIEW_SCHEDULE}-gated and NOT Draft-gated (the 2.6 precedent, {@code
+ * mutates nothing. {@code VIEW_SCHEDULE}-gated and NOT editability-gated (the 2.6 precedent, {@code
  * deferred-work.md:23}), so a Submitted mill can still be checked.
  *
  * <p><strong>Exactly eight conditions per camp, transcribed and not extended</strong> ({@code
@@ -29,9 +29,9 @@ import java.util.List;
  * passing camps with their met message, failing ones with their {@code Value Required} lines.
  *
  * <p>There is no {@code severity} field. The shipped house message envelope is {@code
- * schedule1.dto.MessageInfo(key, text)} and nothing in the backend or frontend carries a severity
- * today; a client derives it from {@code outcome} and each camp's {@code requirementsMet}, which is
- * what keeps it from drifting out of sync with them (8.3's "severity follows the outcome, never
+ * dto.base.MessageInfo(key, text)} and nothing in the backend or frontend carries a severity today;
+ * a client derives it from {@code outcome} and each camp's {@code requirementsMet}, which is what
+ * keeps it from drifting out of sync with them (8.3's "severity follows the outcome, never
  * hardcoded" patch).
  *
  * @param outcome {@code "MET"} (every camp passes; zero camps is vacuously met) or {@code "ISSUES"}
@@ -40,7 +40,4 @@ import java.util.List;
  * @param camps the per-camp results in {@code CAMP_REPORT_ID} order — EMPTY when the outcome is MET
  */
 public record Schedule5CheckStatusResponse(
-    String outcome,
-    List<MessageInfo> messages,
-    List<CampCheckResult> camps) {
-}
+    String outcome, List<MessageInfo> messages, List<CampCheckResult> camps) {}

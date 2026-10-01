@@ -18,28 +18,131 @@ two such branches merge:
   `support/FlywayMigrationVersionUniquenessTest` (a fast `surefire` unit test — no container — so the
   clash is caught at PR time, not at IT boot).
 - **Seed-data collisions** — two branches `INSERT` the same `MILL_ID` or `ILCR_REPORT_COST_ITEM_ID`
-  primary key → `ORA-00001` at migrate time. Not machine-guarded yet; avoided by the ID ranges below.
+  primary key → `ORA-00001` at migrate time. **Still not machine-guarded**; avoided by the ID ranges
+  below and by nothing else. Same blast radius as a version collision, from a different cause —
+  do not read the guards below as covering it.
+
+### What is machine-checked, and what is still discipline
+
+Two fast `surefire` classes in `support/`, no container, both failing at PR time:
+
+| check | class | test |
+| --- | --- | --- |
+| no two migrations claim one version | `FlywayMigrationVersionUniquenessTest` | `everyFlywayVersionIsClaimedByExactlyOneMigration` |
+| a NEW `V__` carries no seed rows | `FlywayMigrationConventionTest` | `newVersionedMigrationsCarryNoSeedData` |
+| every `R__` has a two-digit prefix | `FlywayMigrationConventionTest` | `everyRepeatableMigrationCarriesATwoDigitOrderingPrefix` |
+| the grandfathering list has not rotted | `FlywayMigrationConventionTest` | `theGrandfatheringManifestDoesNotRot` |
+| every `.sql` here is a real migration | `FlywayMigrationConventionTest` | `everySqlFileIsEitherVersionedOrRepeatable` |
+| `apply-local-ddl.sh` names real files\* | `FlywayMigrationConventionTest` | `applyLocalDdlScriptNamesOnlyMigrationsThatExist` |
+| the detectors themselves still work | `FlywayMigrationConventionTest` | `DetectorContracts` (8 cases) |
+
+\* **This one does not run everywhere.** It self-skips when `../scripts` is absent, which is the
+case inside the backend Docker image build — `backend/Dockerfile` copies only `pom.xml`, `.mvn` and
+`src`, then runs `mvn package` with unit tests on. Everywhere with a full checkout (your machine,
+`analysis.yml`, the CI test job) it runs.
+
+`DetectorContracts` is the answer to "what checks the checker?" Every filesystem check above passes
+**vacuously** on a compliant tree, so a regex edit that quietly narrows one leaves the suite green
+and protecting nothing. The 2026-08-27 review of #367 found four live bypasses exactly that way. The
+nested class asserts the predicates directly — no files, no I/O — so each fix stays fixed.
+
+**Still discipline, checked by nobody:** the fixture ID ranges in convention 2; whether an `R__`
+prefix is in the *right* band — the check enforces two digits from **10 to 99**, so `81`–`89`, which
+belongs to neither documented band, passes just as a wrong band does; whether a *grandfathered*
+`V__` file grows new `INSERT`s (the check reads the tree, not the diff); **whether the manifest
+grows** — "shrink-only" is a review rule, and appending a line is a legitimate, deliberately visible
+way to turn a red build green; seed rows written as `CREATE TABLE … AS SELECT`; and whether an `R__`
+migration is genuinely idempotent. All of these are spelled out in `FlywayMigrationConventionTest`'s
+class docstring — read it before assuming coverage.
+
+**The guards read `src/`; Flyway reads `target/`. Run `mvn clean` after ANY migration rename.**
+`AbstractOracleIT` loads `classpath:db`, which resolves to `target/test-classes/db` — a build output,
+not this directory. Maven's resource copy adds files but never removes them, so a rename leaves BOTH
+names behind and a delete leaves the deleted one. Two real instances:
+
+- After PR #356 deleted `V30__ilcr_mill_user_profile_xref.sql`, a stale `target/…/V30__…` survived on
+  developer machines. Harmless in effect — that file's DDL is additive and guarded.
+- **Worse:** #367's rename of `R__cost_detail_bridge_culvert_fks.sql` → `R__90_…` left *both* copies
+  in `target/`. Flyway treats them as two different repeatables and applies **both**, and the file
+  issues four named `ADD CONSTRAINT` statements — so the second application fails and takes the whole
+  IT suite down at boot. Nothing in `src/` is wrong; only the stale build output is.
+
+Reading `src/` is the right call for a check that runs at PR time. But if a local IT failure makes no
+sense against this directory, `mvn clean` before believing it.
 
 ## Conventions
 
-1. **Version numbers.** Take the next free integer after the highest `V` currently on `main` **plus
-   any in-flight PRs you know about**. When you rebase/merge `main` and hit a duplicate, bump *your*
-   (newer) migration to the next free slot — never renumber someone else's merged migration. If we
-   keep colliding, switch to timestamp versions (`V20260728__…`), which removes the race entirely.
+1. **Seed data goes in a repeatable migration (`R__`), not a versioned one.** Decided 2026-08-20 —
+   see `docs/decisions/flyway-test-fixture-strategy.md`. Name the file for **what it seeds**, with a
+   numeric ordering prefix: `R__<10-80>_<what_it_seeds>.sql` for data,
+   `R__<90+>_<name>.sql` for constraints, indexes and FKs that must land after the data.
 
-   **Timestamp versions do NOT remove the race** — proven 2026-08-13, when three branches all reached
-   for the same two days (`V20260814` → schedule 5 subpage fixtures, `V20260815` → schedule 9 write
-   fixtures). Everyone picks today's or tomorrow's date, so a date is just as scarce as an integer.
+   Why: a version number is a **shared, sequential** resource, and two branches claiming the same one
+   produce two *differently named files* — so **git merges them cleanly and the failure only appears
+   when Flyway loads**, taking the whole `*IT` suite down at boot. Five collisions on record. With a
+   content-derived `R__` name, a shared prefix is harmless (both files run, ordered by the rest of the
+   name) and an identical name is the same path, which git reports as an ordinary conflict.
 
-1a. **Schema changes that must apply LAST: use a repeatable migration (`R__…`).** If your script adds a
-   constraint or index over data that *other* migrations seed — rather than seeding its own fixtures —
-   it does not want a version number at all. It wants to run after everything, which is precisely
-   Flyway's guarantee for repeatable migrations. `R__cost_detail_bridge_culvert_fks.sql` is the worked
-   example: it declares the delivery FKs on `ILCR_COST_REPORT_DETAIL` after every schedule's fixtures
-   have populated their per-report column, and it cannot collide with anyone. `FlywayMigrationVersionUniquenessTest`
-   ignores `R__` files by design. This is NOT a general escape hatch — a migration that inserts its own
-   fixtures still takes a version, because re-running it on a reused container would duplicate rows.
+   Verified on Flyway 12.4.0: repeatables apply **after every versioned migration**, in
+   **lexicographic order of description** — so the numeric prefix is what fixes FK ordering, and
+   digits sort before letters. The prefix is **enforced**: `FlywayMigrationConventionTest` fails any
+   `R__` file that does not match `R__<two digits>_<lower_snake>.sql` with the prefix at 10 or above.
+
+   Two digits, not one, and here is the actual reason: a one-digit prefix sorts **after** every
+   two-digit prefix from `10` to `49`, because `"5 seed"` > `"10 seed"` on the first character. So
+   `R__5_…` would jump past the `10`–`49` seeds it was probably meant to precede. *(An earlier
+   revision of this paragraph said `R__5_` sorts after `R__90_`. That is false — `'5'` < `'9'`, so it
+   sorts before. The rule was right and its worked example was inverted; corrected 2026-08-27 after
+   code review, and now asserted in `DetectorContracts` so prose cannot drift from arithmetic again.)*
+
+1a. **Only DDL keeps a version.** `V<next>__<name>.sql` for adding or altering tables. Take the next
+   free integer after the highest `V` on `main` plus any in-flight PR you know about; on a duplicate,
+   bump *your* (newer) migration and never renumber someone else's merged one.
+   `FlywayMigrationVersionUniquenessTest` catches a clash at PR time rather than at IT boot. **Keep
+   `INSERT`s out of these files** — putting seed rows in a new `V__` reopens the collision this
+   convention exists to close, and `FlywayMigrationConventionTest` now **fails the build** if you do.
+
+   The 45 files that already carried seed rows when the guard was written are grandfathered by name
+   in `grandfathered-seeded-versions.txt`, beside this README. That list is **shrink-only**: removing
+   a line is the record that a fixture moved to `R__`, and a line naming a file that no longer exists
+   — or no longer contains `INSERT`s — fails the build rather than sitting there as cover. Adding a
+   line also turns a red build green; that is deliberately possible and deliberately conspicuous, an
+   exemption to argue for in review rather than an enforced prohibition.
+
+   **Three of the 45 are not pre-decision, and that is worth knowing.** `V20260821` landed 38 minutes
+   before the decision merged; `V20260822` (53 `INSERT`s) and `V20260823` (11) landed four and five
+   days *after* it, in breach of convention 1a as already written. They are grandfathered anyway —
+   the guard was built to stop the *next* one, not to force a retroactive conversion of fixtures the
+   IT suite depends on — but they are precisely the files that proved the convention needed a machine
+   check, so the baseline includes the violations that motivated it. Converting them is the obvious
+   first withdrawal from this list.
+
+   *(Historical note, kept because it is the reason for the rule above: timestamp versions were tried
+   and did NOT remove the race. Proven 2026-08-13, when three branches reached for the same two days
+   (`V20260814`, `V20260815`), and again on 2026-08-19 with `V20260819`. Everyone hand-picks today's
+   date, so a date is exactly as scarce as an integer.)*
+
+1b. **`R__` files are safe to re-run here, and this is not the escape hatch it once looked like.** An
+   earlier revision of this README said a fixture-inserting migration "still takes a version, because
+   re-running it on a reused container would duplicate rows." That was wrong on both halves. Flyway
+   re-runs a repeatable migration **only when its checksum changes**, and `AbstractOracleIT` creates
+   the container **fresh per JVM** (no `withReuse`), so every repeatable applies exactly once per run.
+   The only residual case is editing an `R__` file against a container you are deliberately reusing —
+   which needs a clean container, the same caveat every DDL fixture here already carries.
+   `R__90_cost_detail_bridge_culvert_fks.sql` is the worked example of the `90+` band: it declares the
+   delivery FKs on `ILCR_COST_REPORT_DETAIL` after every schedule's fixtures have populated their
+   per-report column. It predates the prefix convention and **carried no number until #367 renamed
+   it** — it had been sorting last among repeatables by ASCII accident (`c` sorts after any digit),
+   which happened to be the order it needs. The prefix makes that explicit, and it is what lets the
+   `R__` check above apply with no exceptions.
 2. **Fixture ID ranges.** Namespace seed entities by track so PKs can't overlap:
+
+   **The e2e anchor seed claims ids too.** `../db-e2e/R__80_e2e_anchor_seed.sql` (applied only by
+   the CI e2e job's Flyway run, never by the `*IT` suite — see its header) owns mills **13** and
+   **9050–25054** (sparse — the exact list is in its header), summaries **3001–3199**, cost-report
+   details **4001–4499**, transportation reports **4801–4899**, silviculture reports **9351–9399**,
+   biogeo catalogue ids **40, 171, 8850–8869**, and reporting years **2015–2019**. Treat those
+   ranges as taken when claiming blocks here, and vice versa.
 
    | Track                     | `MILL_ID` block | Notes                                        |
    | ------------------------- | --------------- | -------------------------------------------- |
@@ -53,15 +156,228 @@ two such branches merge:
    | Schedule 5 sub-pages      | **690–693**     | `V20260814`                                   |
    | Schedule 9                | **700–706**     | `V20260815`                                  |
    | Schedule 10               | **710–716**     | `V20260817`                                  |
+   | Schedule 10 write         | **717–723**     | `V20260818`                                  |
+   | Schedule 6 correction     | **724–726**     | `V20260822`                                  |
+   | Mill Information report   | **730–733**     | `R__40`; 733 is ACT-in-year / CLS-now         |
+   | Schedule 4 clear-category (#335) | **547**  | `R__45`; reports `8070–8071`, cost-report details `8170–8172`; destructive edit, owned by one `Schedule4WriteIT` case |
+   | Schedule 4 legacy family (#335 review) | **548** | `R__46`; reports `8072–8074`, cost-report details `8173–8176`; no distance-null primary + a duplicate code-47 child; destructive, owned by one `Schedule4WriteIT` case |
+   | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
+   | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
+   | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
+   | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`, per-report tables `6600–6699`. **Report year 2020 only** — see below |
+   | Verify transition (17.1)  | **764–770**     | `R__55`; 768 is CLS, 769 has no auditor xref, 770 is the rollback arm |
+   | Check Status submit (15.3) | **780–783**    | `R__55_check_status_submit_fixtures.sql`      |
+   | Schedule 11 submit (26.1) | **784–789**     | `R__57`; locations `9411–9416`, summary `1680`, cost-report details `5800–5812`. **Report year 2021 only** — see below |
+   | Schedule 11 correction (26.2) | **801–806** | `R__58`; locations `9421–9430`, cost-report details `5830–5845`, the FIRST seeded `*_AUD` 'S' snapshot rows (BSR audit `1001–1010`, cost audit `2001–2012`). **Report year 2021 only** — see below |
+   | Schedule 11 verify (26.3) | **807–815**     | `R__59`; locations `9431–9440`, summaries `1681–1684`, cost-report details `5846–5869` and `5750–5785` (815's all-met Schedules 1–3, so a 1–10 verify can commit on an S/S mill). **Report year 2021 only** — see below |
+   | Schedule 11 late correction (26.4) | **816–822** | `R__61`; locations `9441–9455`, cost-report details `5870–5898` (5898 only as an audit row's detail id), BSR audit `1011–1030`, cost audit `2013–2040`. **Report year 2021 only** — see below |
+   | Schedule 11 reversals (26.5) | **823–834** | `R__62`; locations `9456–9468` (block `9456–9479` reserved), summaries `1700–1701` (block `1700–1709`), cost-report details `5900–5925` and `5950–5951` (block `5900–5959`). **Report year 2021 only** — see below |
+   | Reversal transitions (18.1) | **790–799**   | `R__56`; summaries `1650–1671`, cost-report details `3201–3452`. **Report year 2021 only** — see below |
 
-   **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per convention 1 and
-   the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
+   **⚠️ A static id is only free if it is also out of reach of every SEQUENCE.** `R__56`'s
+   cost-detail block was first claimed at `10500–10751`, which no fixture used and which the usual
+   grep therefore reported clear. But `V4` creates `THE.ILCR_COST_REPORT_DETAIL_SEQ` and
+   `V20260811` re-creates it `START WITH 10000`, and a full IT run draws enough `NEXTVAL`s to climb
+   into that band. The result was **38 integration-test failures** — bare `500`s on the Schedule
+   3/4/6/7A/10 cost-line write paths, none of them naming `R__56`, and **none reproducible in a
+   single-class run**, because the sequence only gets that high once the whole suite has run. Keep
+   static cost-detail ids below `9000`; the same applies to `ILCR_REPORT_COMMON_SEQ` (9500 — the
+   sequence that mints `ILCR_REPORT_SUMMARY_ID` and Schedule 11's `BASIC_SILVICULTURE_REPORT_ID`, so
+   `R__56`'s `1650–1699` band is safe by a wide margin), `ROAD_CONSTRUCTION_REPORT_SEQ` (9600) and
+   the three Schedule 8 sequences (9000). There is no sequence behind `ILCR_MILL_USER_XREF`; its key
+   is composite.
+
+   **Reversal transitions (`R__56`, UC-CHK-016/018)** — Set to Draft (`S`→`D`) and Set to Submit
+   (`V`→`S`) need ten mill/year shapes, all 2021. Four of them are mutated and six never are, and
+   the split is what removes the ordering dependence rather than hiding it:
+
+   - **Mutated, one test each.** `790` (`S`, all-met) is Set to Draft's happy path; `791` (`V`,
+     all-met) is Set to Submit's; `798` (`S`) and `795` (`V`) are the two rollback arms, all-met so
+     the forced persistence failure is reached only after every guard has passed.
+   - **Never written, so safely shared across three IT classes.** `792` is `S` with a Schedule 1
+     summary carrying no cost rows, so the validation gate fails while everything else about the
+     request is valid — and because the gate runs before legality it serves BOTH endpoints. `793`
+     (`D`, all-met) is Set to Draft's no-op and Set to Submit's "`D`→`S` is a legal pair but it is
+     SUBMIT" arm. `794` (`V`, all-met) is the illegal `V`→`D` jump. `797` (`S`, all-met) is Set to
+     Submit's no-op. `796` is `CLS` and carries no schedule data, because the mill-active guard
+     refuses it before any schedule is read. `799` is `S` with no schedule data at all, for
+     `ReportTrackTransitionRepositoryIT`'s two statement-level arms.
+
+   Three things about this block are load-bearing. **The prefix is `56`, below `70`**, so `R__70`'s
+   set-based submitter association covers these mills and `SetReportStatusAuthorizationIT`'s
+   denied arm fails for lacking the action rather than for mill scope. **Every status row seeds
+   both identity pairs non-null**, pointing at two xref rows this file creates itself (`R__70`'s
+   canonical submitter sorts *after* `R__56`, so its rows do not exist yet and V20260915's
+   composite FKs would reject the insert) — that is what lets AC 3 assert the four columns
+   unchanged *by value*, which is the only assertion distinguishing "writes no identity pair" from
+   the auditor statement. **Schedule 11 is seeded to a code that differs from the 1–10 code on
+   every row**, so a write that reached `MILL_SILVICULTUR_STATUS_CODE` fails a test instead of
+   coinciding with the right answer.
+
+   The all-met Schedule 1/2/3 data is cloned statement-for-statement from `R__55`'s mill 764 rather
+   than re-derived: that cost-item set is already proven to pass the eleven-schedule gate by 17.1's
+   own green ITs, and hand-rolling a second one is how a fixture ends up almost right.
+
+   **Schedule 11 submit (`R__57`, UC-CHK-003)** — the silviculture track's Draft→Submitted needs
+   six mill/year shapes, all 2021. `784` is the happy path and is mutated once: **silviculture `D`
+   while 1–10 is `S`**, with two met locations, so a write that reached the 1–10 status column or
+   read the 1–10 code fails a test instead of coinciding with the right answer. `786` inverts that
+   pair (silviculture `S`, 1–10 `D`) for the not-Draft 409. `785` has one location with an Actual
+   and a Planned Cost row whose `COST` is NULL, so the one Schedule 11 check fails. `787` is met but has **no category
+   `'11'` row** — seeded without it rather than deleted by the test, so the 500-rollback arm needs
+   no clean-up. `788` is the concurrency arm. `789` has **zero locations** (vacuously MET, legacy
+   `Schedule11CheckStatus.java:19`) with both tracks at `D`, which is also where the "a Schedule 11
+   submit leaves 1–10's Submit offered" arm lives. Location rows take `BASIC_SILVICULTURE_REPORT_ID`
+   **`9411–9416`** — below `ILCR_REPORT_COMMON_SEQ`'s `9500` start, which mints that key, and clear
+   of `R__50`'s `9401–9402` and the db-e2e seed's `9351–9399` — and cost details **`5800–5812`** (block `5800–5829` reserved).
+   The one 1–10 row family is on `784` (a Schedule 2 summary **`1680`**, cost `5811`), seeded so a
+   Schedule 11 submit that also ran the ten 1–10 touches has a row to stamp — without it that
+   mutation is invisible at the database. Prefix `57`, below `70`,
+   for the same reason as `R__55`/`R__56`.
+
+   **Schedule 11 correction (`R__58`, UC-CHK-006/011)** — ministry correction at silviculture `S` with the 1–10
+   track at `D` (codes differ on every mill but `806`, which is silviculture `D`). It is the first fixture to seed
+   **`*_AUD` rows**: the delivery triggers own those tables and the test schema reproduces none, so the `'S'` snapshot
+   the original-value indicators read (`BASIC_SILVICULTURE_REPORT_S_VW`, `ILCR_COST_REPORT_DETAIL_S_VW`) is written
+   here exactly as the trigger would have left it at submission — the Licensee's values, differing from the current
+   rows. `801` is the read-only indicator anchor (`9421` differs on all five tracked fields, `9422` has no snapshot, `9430`'s submitted BEC `8899` has no catalogue row);
+   `802` is the one written by the happy-path arms, and its `9423` Actual cost carries a second `'S'` audit row under an
+   OLDER detail id (`5899`, absent from the base table, higher audit id) so a snapshot keyed by (location, item) rather
+   than by the current detail id serves the wrong baseline. `803` (Check Status), `804` (refusal table) and `805` (stale
+   revision at `REVISION_COUNT 3`, unknown id, ERR-004) are never written; `806` is written only by the Licensee-at-Draft
+   arm. No sequence backs either audit id. Prefix `58`, below `70`.
+
+   **Schedule 11 late correction (`R__61`, UC-CHK-015)** — the administrator's correction at silviculture `V`
+   (category `'11'` at `'V'` on every mill). `816` (1–10 `V`) is the read-only indicator anchor: `9441` differs from
+   its `'S'` snapshot on all five tracked fields, and `9442` was corrected by the ministry at `S` — its later `'A'`
+   and `'V'` audit rows carry the ministry's values with higher audit ids, so a view that ranked before filtering on
+   `'S'` would serve them (this pins the test schema's copy of the view, `V20260910`; a delivery view that differed is
+   out of the suite's reach). `817` (1–10 `S`, the real S/V pair) is the only mill written, by one test: its `9443`
+   Actual cost has a second `'S'` row under an older detail id (`5898`) with a higher audit id, as `R__58`'s `802`
+   does, and its status row carries a LICENSEE and an AUDITOR pair (R__59's users) proven untouched. `818` (Check
+   Status: `9446`'s two cost rows exist with `COST NULL`), `819` (all met), `820` (refusal tables; `9449` is named
+   `'Refusal Block'` so the shared refusal bodies fit), `821` (stale revision at `REVISION_COUNT 3`) and `822` (the
+   SUBMITTER refused at `V`) are never written. **"Free" is per table**: nothing above audit id `1010` / `2012` is
+   seeded, the bare `10xx` hits elsewhere are `ILCR_REPORT_SUMMARY_ID`s, and cost audit id `2021` is skipped on
+   purpose: it is the report year on nearly every fixture line, so no bare-id grep could prove it free. Prefix `61`, below `70`; it rides the
+   `db/` chain, so these mills also appear in the e2e database's Home dropdown.
+
+   **Schedule 11 reversals (`R__62`, UC-CHK-017/019)** — Set to Draft (`S`→`D`) and Set to Submit (`V`→`S`) on the
+   silviculture track, the two track codes differing on every mill. `823` (silviculture `S`, 1–10 `V`) and `824`
+   (`V`, 1–10 `D`) are the two happy paths, each written by exactly one test; both carry a LICENSEE and an AUDITOR pair
+   proved unchanged by value, and `824` also xrefs the acting admin, so legacy's Set to Submit write of that admin into
+   the LICENSEE pair would show (deviation (S)). Each carries one Schedule 2 summary (`1700`/`1701`) so a reversal that
+   also ran the 1–10 touches has a row to stamp. `825`/`826` fail the gate (a Planned Cost row with `COST NULL`);
+   `827` (silviculture `D`), `833` (`NULL`) are refused by both endpoints; `828` (`S`) and `829` (`V`) have **no
+   category `'11'` row**, so each is one endpoint's 500 rollback and the other's legality refusal; `830`–`832` are the
+   concurrency arms (`832` races Set to Draft against the Schedule 11 Verify); `834` has zero locations. Only `823`,
+   `824`, `830`–`832` and `834` are ever written. Prefix `62`, below `70`.
+
+   **`V20260910`'s header names a fixture that was never written.** Its lines 4–5 point to
+   `R__60_original_value_snapshots.sql`; no such file exists. The `'S'` snapshot rows live in `R__58` and `R__61`, and
+   `R__60` is the Data Extract fixture. The comment stays wrong on purpose: `V20260910` is a versioned migration, and
+   editing it changes its checksum and fails Flyway `validate` on every existing database.
+
+   **Verify transition (`R__55`, UC-CHK-007/012)** — the Submitted→Verified endpoint needs seven
+   mill/year shapes, all 2021, and it genuinely mutates the ones it succeeds on, so none can be
+   shared. `764` is the happy path: track `S`, all-met data, and the only mill with an **admin**
+   `ILCR_MILL_USER_XREF` row, which is what lets the auditor-recording assertion be made by value
+   rather than merely non-null. `765` is `S` with a Schedule 1 summary carrying no cost rows, so the
+   validation gate fails while everything else about the request is valid. `766` (`D`) and `767`
+   (`V`) are all-met so that a refused transition is refused for the *transition* reason and not by
+   the gate — the gate runs first, exactly as legacy's did. `768` is `CLS` and deliberately carries
+   no *schedule* data (it does carry the eleven `ILCR_REPORT_CATEGORY` rows every mill/year has),
+   because the mill-active guard refuses it before any schedule is read. `769`
+   repeats the happy path with **no** admin association, covering the legacy behaviour of writing
+   NULL into both auditor columns. `770` is the rollback arm: `S` and all-met, so the forced
+   persistence failure is reached after every guard has passed. Summaries take `1060–1077` and
+   cost details `2711–2912`.
+
+   Two facts about the band and the prefix are worth not undoing. The band moved from `757–763` to
+   `764–770` on 2026-09-18: Epic 21's `R__60` had already claimed `760–762`, and two repeatable
+   migrations inserting the same `THE.MILL` row fail the whole Flyway run. And the prefix is `55`
+   rather than anything above `70` so `R__70`'s set-based submitter association covers these mills,
+   which is what makes the submitter-refused arm fail for the right reason.
+
+   **Data Extract CSV (`R__60`, UC-EXT-001)** — three mills whose two status tracks disagree in the
+   three ways the "Data Verified" rule has to tell apart: `760` is `V`/`V`, `761` is `V`/`D` and
+   `762` is `S`/`V`, so a selection naming Schedules 1–10 and one also naming Schedule 11 reach
+   different verdicts on the same mills. `760` carries a Schedule 1 **and** a Schedule 3 summary;
+   `761` carries a Schedule 1 and a Schedule 2 summary and deliberately **no** Schedule 3, which is
+   the `*** NO SCHEDULE 3 ***` sentinel case; `762` carries no schedule data at all, so a
+   whole-schedule no-data marker is reachable while other mills in the same selection still have
+   rows. Mill NUMBERs are out of mill-id order on purpose (7620/7600/7610), because the title block
+   renders numbers while section rows are ordered by id.
+
+   The Story 21.2 code review (2026-09-14) found the Schedule 3 sub-page, 4, 5, 8 and 10 walks had
+   never executed against a fixture row, so `760` now also carries one row for each of them, `761`
+   one silviculture location (its `V`/`D` split is what proves the Schedule 11 STATUS cell reads the
+   silviculture track), and `762` an EMPTY Schedule 1 summary (`1320`, legacy's all-records-empty
+   whole-schedule marker). Those rows live in tables with their own primary keys, so `R__60` claims
+   **one** further band, **`6600–6699`**, verified free of any `66xx` literal in `db/` and `db-e2e/`
+   and below every sequence start those tables draw from (`9000`+): `TRANSPORTATION_REPORT`
+   `6600–6609`, `CAMP_REPORT` `6610–6619`, `TREE_TO_TRUCK_REPORT` `6620–6629`,
+   `TREE_TO_TRUCK_DETAIL_REPORT` `6630–6639`, `ROAD_CONSTRUCTION_REPRT` `6640–6649`,
+   `ROAD_CONSTRUCTION_REPRT_DTL` `6650–6659`, `BASIC_SILVICULTURE_REPORT` `6660–6669`. Its
+   cost-report details stay inside `9000–9099` (`9003`–`9004`, `9011`–`9014`, `9040`–`9041`,
+   `9050`–`9052`, `9060`–`9061` now used), which is safe because `V20260818` restarted
+   `ILCR_COST_REPORT_DETAIL_SEQ` at `10000`. It adds NO table, NO code row and NO cost item.
+
+   **Every row in `R__60` is report year 2020, and that is load-bearing.** `MillReportStatusIT`
+   asserts the 2021 `ILCR_MILL_REPORT_STATUS` rows are exactly five *and* names them in order
+   (`contains(514, 730, 731, 732, 733)`), so a 2021 row here would fail two assertions in another
+   area. The second year of a multi-year extract selection is therefore a year with no status row and
+   no data — which is itself three of the cases under test: the verbatim `** NO STATUS **` cell, a
+   missing status row forcing `Data Verified: No`, and the combined Schedule 1+2 layout emitting no
+   mini-table header for a year with no rows.
+   | Check Status submit (15.3) | **780–783**    | `R__55`; 780–782 Draft + all-ten-MET (one per mutating test), 783 status row + empty cat-1/3 summaries (1409–1410); summaries 1400–1410 for `DraftGateLockIT`; `MILL_NUMBER` 1780–1783 |
+
+   **Mill administration (`R__75`, UC-MILL-001)** — the maintain-mills surface needs four shapes this
+   snapshot could not otherwise supply. `750` and `756` are ministry mills with **no**
+   `ILCR_MILL_STATUS_XREF` row, the only rows the import anti-join can return (every other mill here
+   is 1:1 with a cross-reference, so the importable list would always be empty). `751` is ACTIVE with
+   no assignment, which is the only way the deactivation guard's success path is reachable — and it
+   carries this snapshot's **only mixed-case `MILL_NAME`**, which is what distinguishes a
+   case-insensitive name search from legacy's parameter-only upper-casing. `752` is ACTIVE with one
+   explicitly-inserted active assignment, the guard's blocked path. `753`/`754` are CLOSED, both
+   starting without a current-year status row so each exercises one branch of BR-07 without depending
+   on the other's cleanup. `755` is ACTIVE with a client location holding two contacts, plus contact
+   `7561` on an unrelated location as the BR-09 negative case; client numbers `00075501`/`00075601`
+   and contacts `7551`/`7552`/`7561` are claimed with it.
+
+   Two ordering facts make this file work and are worth not undoing: the `75` band puts it **after**
+   `R__70`, whose set-based insert would otherwise hand every one of these mills an active assignment
+   and make the guard refuse them all; and it seeds **no report year 2021 row**, because the five 2021
+   `ILCR_MILL_REPORT_STATUS` rows are asserted by count in `MillReportStatusIT` and a sixth would
+   redden it. Tests needing a current-year row create and remove their own, as `V20260819` does.
+
+   **Editability matrix, per-schedule (`R__51`, Story 16.1 review follow-up)** — one mill per
+   authorization suite, `737`–`746`, each 1–10 `'V'` and silviculture `'D'` so a gate reading the wrong
+   track's column sees Draft and the test fails rather than passing vacuously. It exists because
+   `R__50` reached only Schedules 5 and 11: everywhere else ADMIN was proven only in the *refused*
+   direction, which cannot distinguish a schedule wired to the wrong status column, or a DELETE still
+   on the pre-16.1 Draft-only literal, from a correct one. Delete targets, each verified unused across
+   `db/` **and** `db-e2e/` and each below its table's sequence start: `ILCR_REPORT_SUMMARY`
+   **`1280–1282`** (the whole-document deletes for Schedules 1/2/3 — seeded rather than written by the
+   test, so the delete arm cannot collide on `REVISION_COUNT` with the sibling PUT and read a stale-revision
+   409 as a gate refusal), `TRANSPORTATION_REPORT` **`8090`**, `ROAD_MAINTENANCE_REPORT` **`8410`**,
+   `BRIDGE_REPORT` **`7660`**, `CULVERT_REPORT` **`7880`**, `TREE_TO_TRUCK_REPORT` **`8990`**,
+   `CONTRACTUAL_WORK_REPORT` **`9195`**, `ROAD_CONSTRUCTION_REPRT` **`8990`**. It adds NO table, NO code
+   row and NO cost item — every code value it uses is already in the shared catalogues. Every `INSERT`
+   in it is **guarded on its own primary key** (`SELECT … FROM DUAL WHERE NOT EXISTS (…)`, i.e. `MERGE
+   … WHEN NOT MATCHED`), so editing the file — which changes its checksum and makes Flyway re-apply it —
+   cannot fail with `ORA-00001` against a database that already holds `737`–`746`. Convention 1b's
+   reused-container caveat still stands: the guard stops a *re-run* from erroring, it does not restore
+   rows a previous run's admin writes mutated.
+
+   **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per the historical
+   note in convention 1a and the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
    own mills so no destructive test can touch Story 7.2's `670–676`: `690` the write playground
    (Draft 2016–2023, one destructive concern per year), `691` Submitted → the write-gate 409, `692`
    check-status against real sub-page rows, `693` owned solely by the authorization IT. The block was
    `680–683` until Schedule 7B's `V20260811` landed on `main` claiming `680–681`; both migrations
    `INSERT INTO THE.MILL` those ids, so the merge would have failed Flyway outright on ORA-00001.
-   Per convention 1 the newer (unmerged) claim moved. PK ranges are
+   Per convention 1a the newer (unmerged) claim moved. PK ranges are
    a **new block**, verified above every value in use (the previous high-water mark was `8438`):
    `CAMP_REPORT_ID` **`8700–8719`** and `ILCR_COST_REPORT_DETAIL_ID` **`8720–8799`** — both below the
    sequence starts. It adds NO cost item (62/68/141/142 already exist via `V34`/`V31`).
@@ -147,6 +463,52 @@ two such branches merge:
    **`8910–8919` plus `8940`**, `ILCR_COST_REPORT_DETAIL_ID` **`8920–8932`** (all below the sequence
    starts). Read fixtures reuse `516` (closed → 409) and unseeded `999999` (→ 404) from `V2`.
 
+### `R__50_editability_matrix_admin_write_fixtures.sql` — the admin-write arm (Story 16.1)
+
+**Read this before reusing any non-Draft fixture in a write test.** Every write-gate fixture that
+predates Story 16.1 rests on an assumption that story invalidated: *"a non-Draft write mutates
+nothing."* It is stated outright in `Schedule11WriteAuthorizationIT` — the authorized proof POSTs to
+615/`'S'` so "the service's Draft gate rejects it 409 WITHOUT mutating anything — no fixture churn."
+That was sound while only the SUBMITTER row of the editability matrix was enforced. It is not sound
+for an **administrator**, who now legitimately writes at `'S'` and `'V'`. Point an admin write at a
+shared refusal fixture and it will succeed and corrupt a sibling suite's read assertions.
+
+So the admin arm gets its **own** mills, **734–736**, and every pre-existing non-Draft fixture is
+deliberately left refusing — 623 (`V11:37-38`), 583 (`V23:38`), 593 (`V24:33`), 725
+(`V20260822:166`), 517 (`V13:92`, `V31:92`), 615, 671, 705. They now prove SUBMITTER-at-non-Draft,
+which is still a 409, and each is read or asserted by another suite.
+
+| mill | 1–10 track | silviculture | owned by |
+| --- | --- | --- | --- |
+| 734 | **`V`** | `D` | `Schedule5WriteAuthorizationIT` — admin POST/PUT/DELETE at Verified |
+| 735 | `D` | **`S`** | `Schedule11WriteAuthorizationIT` — admin write on the silviculture track |
+| 736 | `D` | **`V`** | `Schedule11WriteAuthorizationIT` — admin write on the silviculture track |
+
+**The status pairs are the point, not decoration.** Each mill carries the status under test on ONE
+track and `'D'` on the other, so a gate that reads the wrong column sees Draft, refuses the
+administrator, and the test fails. Legacy duplicated `disableUserInput()` verbatim per track and
+changed only the getter it read, so that is exactly the mistake worth catching. Mill 735 is
+deliberately the inverse of `V21`'s mill 615.
+
+The 1–10 track's admin@**Submitted** case is not here: mills **676** (Schedule 5, `V20260807`) and
+**706** (Schedule 9, `V20260815`) already carry `'S'` and are already class-owned, so 16.1 reused
+them rather than seeding a fourth mill.
+
+**Claimed:** mills **734–736**, `CAMP_REPORT_ID` **8250–8251**, `BASIC_SILVICULTURE_REPORT_ID`
+**9401–9402** — the latter clear of the db-e2e anchor seed's silviculture reports (9351–9399) and,
+like the former, below the `ILCR_REPORT_COMMON_SEQ` start (9500) that both write paths draw new ids
+from. No cost-detail children: the subject is the gate, not child-first delete ordering.
+
+**Why `R__50` and not `V<n>`.** Story 16.1's own task text says to claim "the next free `V<n>`" —
+that instruction predates the 2026-08-20 decision and convention 1a above. A new versioned file
+carrying `INSERT`s now fails `FlywayMigrationConventionTest.newVersionedMigrationsCarryNoSeedData`,
+and adding this file to `grandfathered-seeded-versions.txt` to get around that is precisely the
+escape hatch the convention exists to close. Prefix `50` is in the 10–80 data band and sorts
+**before** `R__70`, which associates the canonical submitter to every `ILCR_MILL_STATUS_XREF` row
+with a set-based insert — so these mills must already exist when it runs. (An `ILCR_ADMIN` bypasses
+mill scope outright, so the association is not what the admin tests need; it is what keeps each
+test's *submitter* arm reaching the editability gate rather than a mill-scope 403.)
+
 ### `V20260818__seed_schedule10_write_fixtures.sql` — Schedule 10 write path (Story 11.2)
 
 Adds the schema the write path needs and the fixtures that make its defects fail.
@@ -212,5 +574,6 @@ snapshot they seed into, with the `V3x` references in the `schedule6` `*IT`s and
 lockstep. Version numbers only; no seed-ID clash (schedule 6 owns mills `660–666`).
 
 This is the third version collision on this convention (schedule 2, schedule 11, schedule 6), and
-each one was caught only after CI went red on a branch that was otherwise green. The
-timestamp-version escape hatch in convention 1 above is worth taking.
+each one was caught only after CI went red on a branch that was otherwise green. Under the 2026-08-20 decision this class of
+clash no longer arises for seed data at all: it goes in an `R__` file, which has no version to claim
+(convention 1 above).

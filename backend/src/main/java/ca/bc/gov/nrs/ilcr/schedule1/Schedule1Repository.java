@@ -14,51 +14,52 @@ import org.springframework.jdbc.core.RowMapper;
 /**
  * Reads/writes the stored Schedule 1 in the legacy {@code THE} tables (AD-3: Spring Data JDBC —
  * repository interface + {@code @Table} record entity {@link ReportSummary} + explicit
- * {@code @Query} named-parameter SQL). SQL only — derivation and transactions live in
- * {@link Schedule1Service} (AD-6). Query results project into the row records below; the service
- * maps those to DTOs (entities never cross the service boundary).
+ * {@code @Query} named-parameter SQL). SQL only — derivation and transactions live in {@link
+ * Schedule1Service} (AD-6). Query results project into the row records below; the service maps
+ * those to DTOs (entities never cross the service boundary).
  */
 public interface Schedule1Repository extends Repository<ReportSummary, Long> {
 
   /** Summary-level fields for a schedule. */
-  record SummaryRow(Integer summaryId, Integer crownVolume, String comments,
-      Integer revisionCount) {
-  }
+  record SummaryRow(
+      Integer summaryId, Integer crownVolume, String comments, Integer revisionCount) {}
 
   /** One cost-report-detail row. */
-  record DetailRow(Integer costItemCode, BigDecimal volume, Integer cost,
-      String itemDescription) {
-  }
+  record DetailRow(Integer costItemCode, BigDecimal volume, Integer cost, String itemDescription) {}
 
   /** One itemized Other-Costs (item-19, non-null description) row, keyed by its detail id. */
-  record OtherCostDetailRow(Integer id, String description, Integer cost, BigDecimal volume) {
-  }
+  record OtherCostDetailRow(Integer id, String description, Integer cost, BigDecimal volume) {}
 
-  /**
-   * The report summary for a mill/year/category, or empty if none exists.
-   */
-  @Query(value = """
+  /** The report summary for a mill/year/category, or empty if none exists. */
+  @Query(
+      value =
+          """
       SELECT ILCR_REPORT_SUMMARY_ID, CROWN_VOLUME, COMMENTS, REVISION_COUNT
         FROM THE.ILCR_REPORT_SUMMARY
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = :categoryId
-      """, rowMapperClass = SummaryRowMapper.class)
+      """,
+      rowMapperClass = SummaryRowMapper.class)
   Optional<SummaryRow> findSummary(
-      @Param("millId") long millId, @Param("year") int year, @Param("categoryId") String categoryId);
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("categoryId") String categoryId);
 
-  /**
-   * All cost-report-detail rows for a summary.
-   */
-  @Query(value = """
+  /** All cost-report-detail rows for a summary. */
+  @Query(
+      value =
+          """
       SELECT ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION
         FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
        ORDER BY ILCR_COST_REPORT_DETAIL_ID
-      """, rowMapperClass = DetailRowMapper.class)
+      """,
+      rowMapperClass = DetailRowMapper.class)
   List<DetailRow> findDetails(@Param("summaryId") int summaryId);
 
-  // Schedule 3 (category "3") source data for Schedule 1's BR-03 pre-fill and BR-04 admin-cost pulls
+  // Schedule 3 (category "3") source data for Schedule 1's BR-03 pre-fill and BR-04 admin-cost
+  // pulls
   // is read + derived by ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation (the Subtotal Actual
   // Costs are computed from the fixed lines, never persisted — so there is no query for them here).
 
@@ -68,14 +69,17 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
   // ---------------------------------------------------------------------------------------------
 
   /** The itemized Other-Costs rows for a summary (non-null description), ordered by detail id. */
-  @Query(value = """
+  @Query(
+      value =
+          """
       SELECT ILCR_COST_REPORT_DETAIL_ID, ITEM_DESCRIPTION, COST, VOLUME
         FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = 19
          AND ITEM_DESCRIPTION IS NOT NULL
        ORDER BY ILCR_COST_REPORT_DETAIL_ID
-      """, rowMapperClass = OtherCostDetailRowMapper.class)
+      """,
+      rowMapperClass = OtherCostDetailRowMapper.class)
   List<OtherCostDetailRow> findOtherCostRows(@Param("summaryId") int summaryId);
 
   /**
@@ -84,7 +88,8 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * detail id rather than throwing (matching the Story 2.3 Sch 3 read's first-wins defensiveness —
    * the single-shared-row invariant is a write-side guarantee, not a runtime assumption).
    */
-  @Query("""
+  @Query(
+      """
       SELECT VOLUME
         FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
@@ -96,25 +101,29 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
   Optional<BigDecimal> findSharedOtherCostsVolume(@Param("summaryId") int summaryId);
 
   /**
-   * Insert one itemized Other-Costs row (item-19, non-null description) inheriting the shared volume
-   * (BR-06). Uses {@code ILCR_COST_REPORT_DETAIL_SEQ}; sets {@code REVISION_COUNT = 0} (the column is
-   * NOT NULL with no DB default — legacy {@code Schedule1DAO.getNewOtherCostDetail} sets it explicitly,
-   * so relying on a default raised ORA-01400) and the {@code ENTRY_*} audit columns. Never writes the
-   * shared null-description row.
+   * Insert one itemized Other-Costs row (item-19, non-null description) inheriting the shared
+   * volume (BR-06). Uses {@code ILCR_COST_REPORT_DETAIL_SEQ}; sets {@code REVISION_COUNT = 0} (the
+   * column is NOT NULL with no DB default — legacy {@code Schedule1DAO.getNewOtherCostDetail} sets
+   * it explicitly, so relying on a default raised ORA-01400) and the {@code ENTRY_*} audit columns.
+   * Never writes the shared null-description row.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, 19,
-           :volume, :cost, :description, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, :description, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertOtherCost(
-      @Param("summaryId") int summaryId, @Param("description") String description,
-      @Param("cost") Integer cost, @Param("volume") BigDecimal volume, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("description") String description,
+      @Param("cost") Integer cost,
+      @Param("volume") BigDecimal volume,
+      @Param("user") String user);
 
   /**
    * Update an itemized Other-Costs row's description + cost, guarded so only an item-19 row WITH a
@@ -123,20 +132,23 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * @return rows affected — {@code 0} when the id is not a matching itemized row (→ 404)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET ITEM_DESCRIPTION = :description,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_COST_REPORT_DETAIL_ID = :detailId
          AND ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = 19
          AND ITEM_DESCRIPTION IS NOT NULL
       """)
   int updateOtherCost(
-      @Param("detailId") int detailId, @Param("summaryId") int summaryId,
-      @Param("description") String description, @Param("cost") Integer cost,
+      @Param("detailId") int detailId,
+      @Param("summaryId") int summaryId,
+      @Param("description") String description,
+      @Param("cost") Integer cost,
       @Param("user") String user);
 
   /**
@@ -146,7 +158,8 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * @return rows affected — {@code 0} when the id is not a matching itemized row (→ 404)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_COST_REPORT_DETAIL_ID = :detailId
          AND ILCR_REPORT_SUMMARY_ID = :summaryId
@@ -161,8 +174,8 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
 
   /**
    * Optimistic-lock bump of the summary (AR11): increments {@code REVISION_COUNT} and updates
-   * {@code COMMENTS} + audit columns ONLY when the stored revision still matches
-   * {@code expectedRevision}.
+   * {@code COMMENTS} + audit columns ONLY when the stored revision still matches {@code
+   * expectedRevision}.
    *
    * @param summaryId the summary PK
    * @param expectedRevision the revision the caller last read
@@ -171,39 +184,43 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * @return rows affected — {@code 1} on success, {@code 0} when the revision is stale (→ 409)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND REVISION_COUNT = :expectedRevision
       """)
   int bumpRevision(
-      @Param("summaryId") int summaryId, @Param("expectedRevision") int expectedRevision,
-      @Param("comments") String comments, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
   /**
-   * Unconditionally bump the summary revision (BR-09 Crown Timber push, AR11). The Crown push writes
-   * Schedule 1 detail VOLUMEs outside the main-page optimistic-lock; bumping {@code REVISION_COUNT}
-   * takes a row lock on the summary (serializing a concurrent Schedule 1 save) AND invalidates any
-   * already-loaded main-page token, so an editor holding a now-stale revision is forced to reload
-   * rather than silently overwriting the propagated values.
+   * Unconditionally bump the summary revision (BR-09 Crown Timber push, AR11). The Crown push
+   * writes Schedule 1 detail VOLUMEs outside the main-page optimistic-lock; bumping {@code
+   * REVISION_COUNT} takes a row lock on the summary (serializing a concurrent Schedule 1 save) AND
+   * invalidates any already-loaded main-page token, so an editor holding a now-stale revision is
+   * forced to reload rather than silently overwriting the propagated values.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
       """)
   void touchSummary(@Param("summaryId") int summaryId, @Param("user") String user);
 
   /**
-   * Upsert a fixed / shared-volume detail row by {@code (summaryId, costItemCode)} where the row has
-   * a NULL {@code ITEM_DESCRIPTION}. The {@code ITEM_DESCRIPTION IS NULL} guard means itemized
+   * Upsert a fixed / shared-volume detail row by {@code (summaryId, costItemCode)} where the row
+   * has a NULL {@code ITEM_DESCRIPTION}. The {@code ITEM_DESCRIPTION IS NULL} guard means itemized
    * Other-Costs rows (code 19 WITH a description) are never touched (AC2). Update-in-place first;
    * insert only when absent (preserves audit continuity — no delete/re-insert churn).
    *
@@ -223,38 +240,46 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
 
   /** Update-in-place half of {@link #upsertFixedDetail}; {@code 0} rows when the row is absent. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND ITEM_DESCRIPTION IS NULL
       """)
   int updateFixedDetail(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /** Insert half of {@link #upsertFixedDetail} (NULL description); uses the detail sequence. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertFixedDetail(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /**
-   * Delete every cost-report-detail row for a summary (fixed, shared-volume, and itemized), then the
-   * summary row itself (BR-08 whole-schedule delete, S13).
+   * Delete every cost-report-detail row for a summary (fixed, shared-volume, and itemized), then
+   * the summary row itself (BR-08 whole-schedule delete, S13).
    *
    * @param summaryId the summary PK
    */
@@ -277,7 +302,8 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * The Schedules 1–10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year —
    * NOT the silviculture track (AD-9).
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -285,11 +311,89 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
+  /**
+   * Same as {@link #findTrackStatus} but takes a row lock (Oracle {@code FOR UPDATE}) on the
+   * per-mill/year report-status row. The create-on-absent save path uses this so concurrent
+   * first-saves for the same mill/year serialize on this row: the first create inserts the
+   * category-{@code "1"} summary and commits (releasing the lock); the next writer then reads the
+   * now-committed summary so its {@link #mergeSummaryRow} is a no-op. Must run inside the write
+   * {@code @Transactional} to hold the lock until commit. Copied from Schedule 2, which has had
+   * this shape since Story 3.1 (defect #296 brought Schedule 1 onto it).
+   */
+  @Query(
+      """
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Idempotent create of the empty category-{@code "1"} summary for a mill/year, keyed on
+   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). The real THE schema has no unique constraint on
+   * that triple, so on its own {@code MERGE ... WHEN NOT MATCHED THEN INSERT} does NOT serialize:
+   * under READ COMMITTED two concurrent first-saves can both see "not matched" and both INSERT
+   * (permanent duplicate). Serialization comes from the caller's {@code FOR UPDATE} lock on the
+   * parent report-status row ({@link #findTrackStatusForUpdate}) taken before this MERGE.
+   *
+   * <p>The id is drawn from {@code THE.ILCR_REPORT_COMMON_SEQ} — the sequence legacy {@code
+   * ILCRReportSummary} uses. {@code ILCR_REPORT_SUMMARY_SEQ} does NOT exist in {@code THE} and
+   * would {@code ORA-02289} on the first production create.
+   */
+  @Modifying
+  @Query(
+      """
+      MERGE INTO THE.ILCR_REPORT_SUMMARY t
+      USING (SELECT :millId AS ILCR_MILL_ID, :year AS REPORT_YEAR, '1' AS ILCR_CATEGORY_ID FROM DUAL) src
+         ON (t.ILCR_MILL_ID = src.ILCR_MILL_ID
+             AND t.REPORT_YEAR = src.REPORT_YEAR
+             AND t.ILCR_CATEGORY_ID = src.ILCR_CATEGORY_ID)
+       WHEN NOT MATCHED THEN
+         INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
+                 UPDATE_USERID, UPDATE_TIMESTAMP)
+         VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '1',
+                 :comments, 0, :user, SYSDATE, :user, SYSDATE)
+      """)
+  int mergeSummaryRow(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("comments") String comments,
+      @Param("user") String user);
+
+  /**
+   * Idempotently create a new, empty category-{@code "1"} report summary for a mill/year at {@code
+   * REVISION_COUNT} 0 and return its id (the defect-#296 create-on-absent path — Schedule 1 no
+   * longer 404s on a mill/year with no saved data). The MERGE serializes concurrent first-saves so
+   * only one row is ever inserted; the summary is then re-read for its id. The freshly-created
+   * revision 0 is bumped to 1 by the normal {@link #bumpRevision}.
+   *
+   * <p>The re-read miss raises {@link org.springframework.dao.EmptyResultDataAccessException}
+   * rather than {@code IllegalStateException} on purpose: the service wraps this call in a {@code
+   * DataAccessException} catch that maps create-path failures to {@code ScheduleNotSavedException}
+   * (500 / ERR-004). An {@code IllegalStateException} would slip past that catch and surface as a
+   * generic 500 with a different {@code ProblemDetail} than this javadoc promises (#296 code
+   * review).
+   */
+  default int insertSummary(long millId, int year, String comments, String user) {
+    mergeSummaryRow(millId, year, comments, user);
+    return findSummary(millId, year, "1")
+        .map(SummaryRow::summaryId)
+        .orElseThrow(
+            () ->
+                new org.springframework.dao.EmptyResultDataAccessException(
+                    "Schedule 1 summary not found immediately after MERGE create", 1));
+  }
+
   // ---------------------------------------------------------------------------------------------
   // BR-09 Crown Timber push (Story 4.2) — Schedule 3's save overwrites the VOLUME of a fixed set of
-  // Schedule 1 detail rows with the new Crown Timber volume (COST untouched). This is the ONLY entry
+  // Schedule 1 detail rows with the new Crown Timber volume (COST untouched). This is the ONLY
+  // entry
   // point Schedule 3 uses to touch Schedule 1 data (AD-14 — never direct SQL from schedule3). The
-  // orchestration (which items, the "Sch1 opened?" gate) lives in Schedule1Service.applyCrownTimberVolume.
+  // orchestration (which items, the "Sch1 opened?" gate) lives in
+  // Schedule1Service.applyCrownTimberVolume.
   // ---------------------------------------------------------------------------------------------
 
   /**
@@ -297,33 +401,41 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * BR-09 Crown push. {@code 0} rows when the row is absent (caller inserts it volume-only).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND ITEM_DESCRIPTION IS NULL
       """)
   int updateFixedDetailVolume(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("volume") java.math.BigDecimal volume, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("volume") java.math.BigDecimal volume,
+      @Param("user") String user);
 
-  /** Insert a fixed-line row carrying only VOLUME (COST NULL) — the insert half of the crown push. */
+  /**
+   * Insert a fixed-line row carrying only VOLUME (COST NULL) — the insert half of the crown push.
+   */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, NULL, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, NULL, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertFixedDetailVolume(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("volume") java.math.BigDecimal volume, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("volume") java.math.BigDecimal volume,
+      @Param("user") String user);
 
   /** Upsert VOLUME (COST preserved) for a fixed-line row — the crown-push per-item operation. */
   default void upsertFixedDetailVolume(
@@ -338,16 +450,18 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * BR-09 crown push (legacy {@code updateOtherCostCrownTimberVolumeValues}).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = 19
       """)
   void updateAllOtherCostVolumes(
-      @Param("summaryId") int summaryId, @Param("volume") java.math.BigDecimal volume,
+      @Param("summaryId") int summaryId,
+      @Param("volume") java.math.BigDecimal volume,
       @Param("user") String user);
 
   // ---------------------------------------------------------------------------------------------

@@ -16,14 +16,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Schedule 3 Included Unacceptable Costs sub-resource contract (Story 4.4, AD-12). The sole writer of
- * the item-38 rows. {@code millId} and {@code year} are required query params on every operation (AD-4).
+ * Schedule 3 Included Unacceptable Costs sub-resource contract (Story 4.4, AD-12). The sole writer
+ * of the item-38 rows. {@code millId} and {@code year} are required query params on every operation
+ * (AD-4).
  */
 @RequestMapping("/api/v1/schedule3/included-unacceptable-costs")
 public interface Schedule3UnacceptableCostsApi {
 
   /**
-   * List the itemized Included Unacceptable rows + subtotal + the read-only Annual Rents (S111) figure.
+   * List the itemized Included Unacceptable rows + subtotal + the read-only Annual Rents (S111)
+   * figure.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -53,13 +55,13 @@ public interface Schedule3UnacceptableCostsApi {
 
   /**
    * Batch "Save" the whole row set (legacy {@code save()} reconcile): update rows with a known id,
-   * insert rows with none, delete existing rows absent from the request. Validation → 400; non-Draft or
-   * no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * insert rows with none, delete existing rows absent from the request. Validation → 400;
+   * non-Draft or no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
-   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity —
-   *     the persistence is identical either way; only the success message differs)
+   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity
+   *     — the persistence is identical either way; only the success message differs)
    * @param request the full row set to persist (each row validated)
    * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
    * @return 200 with the recomputed document (success {@code message})

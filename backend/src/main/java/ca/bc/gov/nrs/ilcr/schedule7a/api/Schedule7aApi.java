@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule7a.api;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import jakarta.validation.Valid;
@@ -20,21 +21,22 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Schedule 7A (Bridge Costs) API contract (controller + api-interface split, the established idiom).
- * The interface owns the request mapping and parameter contract; {@code Schedule7aController}
- * implements it and adds authorization.
+ * Schedule 7A (Bridge Costs) API contract (controller + api-interface split, the established
+ * idiom). The interface owns the request mapping and parameter contract; {@code
+ * Schedule7aController} implements it and adds authorization.
  *
- * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings so a missing/blank/non-numeric value
- * resolves to the ONE verbatim legacy ERR-001 message ({@code MillContextService.validateMillYearActive},
- * AD-4) — a typed required {@code @RequestParam} cannot produce it.
+ * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings so a missing/blank/non-numeric
+ * value resolves to the ONE verbatim legacy ERR-001 message ({@code
+ * MillContextService.validateMillYearActive}, AD-4) — a typed required {@code @RequestParam} cannot
+ * produce it.
  */
 @RequestMapping("/api/v1/schedule7a")
 public interface Schedule7aApi {
 
   /**
    * Get the Schedule 7A bridge document for a mill and reporting year. Guards: missing/malformed
-   * params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (an empty bridge list
-   * is a valid 200); mill not active → 409 ERR-002; no {@code VIEW_SCHEDULE} → 403.
+   * params → 400 ERR-001; no {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (an empty bridge
+   * list is a valid 200); mill not active → 409 ERR-002; no {@code VIEW_SCHEDULE} → 403.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
@@ -86,10 +88,10 @@ public interface Schedule7aApi {
       Authentication authentication);
 
   /**
-   * Save EVERY bridge of the schedule in ONE transaction — the page-level Save (legacy
-   * {@code Schedule7aMB.save()}, which persisted the whole schedule from a single button). Same
-   * validation and gates as the per-row PUT, applied to each entry; any entry failing rolls the
-   * whole batch back, so the reporter never has to work out which rows landed. An empty list → 400.
+   * Save EVERY bridge of the schedule in ONE transaction — the page-level Save (legacy {@code
+   * Schedule7aMB.save()}, which persisted the whole schedule from a single button). Same validation
+   * and gates as the per-row PUT, applied to each entry; any entry failing rolls the whole batch
+   * back, so the reporter never has to work out which rows landed. An empty list → 400.
    *
    * @param millId the raw mill id param
    * @param year the raw reporting year param
@@ -105,8 +107,9 @@ public interface Schedule7aApi {
       Authentication authentication);
 
   /**
-   * Delete one bridge and its cost children (S04/S05). Draft-gated. Unknown id → 404. The success
-   * {@code message} is SUC-002 when bridges remain, or SUC-003 (empty schedule) when it was the last.
+   * Delete one bridge and its cost children (S04/S05). editability-gated. Unknown id → 404. The
+   * success {@code message} is SUC-002 when bridges remain, or SUC-003 (empty schedule) when it was
+   * the last.
    *
    * @param id the bridge id to delete
    * @param millId the raw mill id param
@@ -123,11 +126,18 @@ public interface Schedule7aApi {
 
   /**
    * Check Status for Schedule 7A (BR-08, S29) — read-only validation, mutates nothing, NOT
-   * Draft-gated ({@code VIEW_SCHEDULE}). Flags each missing required value per bridge; returns the
-   * per-bridge and schedule-wide all-met messages when complete.
+   * editability-gated ({@code VIEW_SCHEDULE}). Flags each missing required value per bridge;
+   * returns the per-bridge and schedule-wide all-met messages when complete.
+   *
+   * <p>{@code request} carries every bridge row currently ON SCREEN (#359): legacy's check read the
+   * bean's in-memory document, into which every row input wrote on change, so unsaved edits — on
+   * any paginator page — move the verdict. Rows are numbered by payload ordinal. The body is
+   * REQUIRED (an absent one is a clean 400), but its row fields are unvalidated, because reporting
+   * missing values is the check's whole job. Nothing is persisted.
    *
    * @param millId the raw mill id param
    * @param year the raw reporting year param
+   * @param request the on-screen bridge rows the check reads
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -135,5 +145,6 @@ public interface Schedule7aApi {
   ResponseEntity<Schedule7aCheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule7aCheckRequest request,
       Authentication authentication);
 }

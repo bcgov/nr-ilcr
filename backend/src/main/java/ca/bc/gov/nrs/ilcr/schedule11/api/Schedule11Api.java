@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule11.api;
 
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.LocationSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
@@ -11,9 +12,7 @@ import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,17 +28,17 @@ import org.springframework.web.bind.annotation.RequestParam;
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — unlike Schedule 1's typed params
  * — because AC3 pins the verbatim legacy ERR-001 message for missing, blank, AND non-numeric
  * values, which a typed required {@code @RequestParam} cannot produce (it yields the generic
- * missing-parameter/type-mismatch 400s). Parsing + the guard chain live in
- * {@code MillContextService} (AD-4).
+ * missing-parameter/type-mismatch 400s). Parsing + the guard chain live in {@code
+ * MillContextService} (AD-4).
  */
 @RequestMapping("/api/v1/schedule11")
 public interface Schedule11Api {
 
   /**
    * Get the Schedule 11 (Basic Silviculture) locations document for a mill and reporting year.
-   * Guards: missing/malformed params → 400 ERR-001; mill not active → 409 ERR-002; no
-   * {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (zero locations is a valid 200); no
-   * {@code VIEW_SCHEDULE} → 403.
+   * Guards: missing/malformed params → 400 ERR-001; mill not active → 409 ERR-002; no {@code
+   * ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (zero locations is a valid 200); no {@code
+   * VIEW_SCHEDULE} → 403.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
@@ -53,11 +52,12 @@ public interface Schedule11Api {
       Authentication authentication);
 
   /**
-   * Add one Schedule 11 location (S01/S02/S09). The location persists immediately and the recomputed
-   * document (footer totals refreshed, CNT-001) is echoed with a success {@code message}. Required
-   * fields Location/Enhanced/Biogeo/NAR; costs optional. Validation → 400; unresolvable biogeo → 400;
-   * duplicate biogeo/location key → 409; non-Draft silviculture track → 409; missing
-   * {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002).
+   * Add one Schedule 11 location (S01/S02/S09). The location persists immediately and the
+   * recomputed document (footer totals refreshed, CNT-001) is echoed with a success {@code
+   * message}. Required fields Location/Enhanced/Biogeo/NAR; costs optional. Validation → 400;
+   * unresolvable biogeo → 400; duplicate biogeo/location key → 409; a silviculture status the
+   * caller may not write at (the 16.1 matrix — submitter at D, admin at S/V) → 409; missing {@code
+   * EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002).
    *
    * @param millId the raw mill id param (validated by millcontext; verbatim ERR-001 on absence)
    * @param year the raw reporting year param (validated by millcontext)
@@ -73,46 +73,33 @@ public interface Schedule11Api {
       Authentication authentication);
 
   /**
-   * Edit one Schedule 11 location (S03). Same validation/gates as add; the body must carry the row's
-   * {@code revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409; an
-   * unknown id → 404.
+   * The page-level Save (legacy {@code Schedule11MB.save()}): delete every location in {@code
+   * deletedIds} and update every location in {@code locations}, in ONE transaction; any failure
+   * rolls the whole request back. Each update carries its row's {@code revisionCount} ({@link
+   * OnUpdate} group — omit = clean 400); deletes carry none (systemic AR11 DELETE deviation). Same
+   * gates as Add. Refusals: both lists empty, or an id named twice (either list, or both) → 400;
+   * validation → 400; unresolvable biogeo → 400; stale token → 409; duplicate biogeo/location key →
+   * 409; unknown id in either list → 404; caller may not write at the silviculture status → 409;
+   * missing {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002);
+   * unclassified persistence failure → 500 ERR-004.
    *
-   * @param id the location id ({@code BASIC_SILVICULTURE_REPORT_ID}) to edit
-   * @param millId the raw mill id param
-   * @param year the raw reporting year param
-   * @param request the entered fields + required {@code revisionCount} (default + OnUpdate groups)
+   * @param millId the raw mill id param (validated by millcontext; verbatim ERR-001 on absence)
+   * @param year the raw reporting year param (validated by millcontext)
+   * @param request the rows to update and the ids to delete (default + OnUpdate groups)
    * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
    * @return 200 with the recomputed document (success {@code message})
    */
-  @PutMapping("/locations/{id}")
-  ResponseEntity<Schedule11Response> updateLocation(
-      @PathVariable long id,
+  @PutMapping("/locations")
+  ResponseEntity<Schedule11Response> saveAllLocations(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
-      @Validated({Default.class, OnUpdate.class}) @RequestBody SilvicultureLocationRequest request,
-      Authentication authentication);
-
-  /**
-   * Delete one Schedule 11 location and its item-23/24 cost children (S07). Draft-gated; carries no
-   * revision token (systemic AR11 DELETE deviation). Unknown id → 404.
-   *
-   * @param id the location id to delete
-   * @param millId the raw mill id param
-   * @param year the raw reporting year param
-   * @param authentication the caller (EDIT_SCHEDULE + echoed editability)
-   * @return 200 with the recomputed document (success {@code message})
-   */
-  @DeleteMapping("/locations/{id}")
-  ResponseEntity<Schedule11Response> deleteLocation(
-      @PathVariable long id,
-      @RequestParam(name = "millId", required = false) String millId,
-      @RequestParam(name = "year", required = false) String year,
+      @Validated({Default.class, OnUpdate.class}) @RequestBody LocationSaveAllRequest request,
       Authentication authentication);
 
   /**
    * Check Status for Schedule 11 (BR-07, S04/S05/S06) — read-only validation, mutates nothing, NOT
-   * Draft-gated ({@code VIEW_SCHEDULE}). A location passes iff both costs are non-null. Returns
-   * SUC-004 always and SUC-003 when all met, else per-missing-cost FLD-004 flags.
+   * editability-gated ({@code VIEW_SCHEDULE}). A location passes iff both costs are non-null.
+   * Returns SUC-004 always and SUC-003 when all met, else per-missing-cost FLD-004 flags.
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
@@ -128,7 +115,7 @@ public interface Schedule11Api {
   /**
    * Type-ahead search of the global BEC catalogue for the forced-selection field (BR-09, S16). A
    * read-only lookup that mutates nothing and takes NO mill/year context (the catalogue is global,
-   * not Draft-gated). {@code q} is matched case-insensitively as a prefix of the concatenated
+   * not editability-gated). {@code q} is matched case-insensitively as a prefix of the concatenated
    * zone+subzone+variant+phase label; a blank/whitespace {@code q} yields an empty list. Requires
    * {@code VIEW_SCHEDULE} → 403 otherwise.
    *
@@ -138,6 +125,5 @@ public interface Schedule11Api {
    */
   @GetMapping("/biogeoclimatic-catalogue")
   ResponseEntity<List<BiogeoclimaticOption>> searchBiogeoCatalogue(
-      @RequestParam(name = "q", required = false) String q,
-      Authentication authentication);
+      @RequestParam(name = "q", required = false) String q, Authentication authentication);
 }

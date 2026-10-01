@@ -31,7 +31,9 @@ async function getContext(
   return res.json();
 }
 
-test('preflight: SEC default context resolves (mount pre-select)', async ({ request }) => {
+// Not the app's mount default any more (MillYearProvider starts empty as of e37649b) — kept as the
+// shared 13050/2017 known-good pair the unit suites seed, so a re-extract that drops it fails here.
+test('preflight: SEC 13050/2017 known-good context resolves', async ({ request }) => {
   await getContext(request, DEFAULT_CONTEXT);
 });
 

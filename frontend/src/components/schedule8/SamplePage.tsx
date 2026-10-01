@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
@@ -20,7 +21,18 @@ import {
   TextInput,
   Tooltip,
 } from '@carbon/react'
-import { Information } from '@carbon/icons-react'
+import {
+  Add,
+  ArrowLeft,
+  CheckmarkOutline,
+  Close,
+  Copy,
+  Edit,
+  Information,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
@@ -253,20 +265,42 @@ const SamplePage: FC<SamplePageProps> = ({
   const errors = showErrors && !readOnly ? validateSampleForm(form) : {}
 
   // ---- Editor field helpers ----------------------------------------------------------------------
-  // A field label with an optional info tooltip carrying the legacy "Note:" entry hint (hover/focus).
+  // The info tooltip carrying a legacy "Note:" entry hint (hover/focus) beside a field's label.
+  const noteTrigger = (note: string) => (
+    <Tooltip label={note} align="top">
+      <button type="button" className="schedule-8__note-trigger" aria-label={note}>
+        <Information />
+      </button>
+    </Tooltip>
+  )
+
+  // A field heading with its optional note. Read-only and computed fields render it as their visible
+  // heading; the editable fields render it ABOVE the input instead of as `labelText`, because Carbon's
+  // TextInput rejects interactive content inside its label (`useNoInteractiveChildren`, enforced from
+  // @carbon/react 1.116 — it throws in development). The input keeps a plain, visually hidden label
+  // of its own, so its accessible name is the bare field name rather than "label + note".
   const fieldLabel = (label: string, note?: string) =>
     note ? (
       <span className="schedule-8__label-note">
         {label}
-        <Tooltip label={note} align="top">
-          <button type="button" className="schedule-8__note-trigger" aria-label={note}>
-            <Information />
-          </button>
-        </Tooltip>
+        {noteTrigger(note)}
       </span>
     ) : (
       label
     )
+
+  // Legacy rendered nineteen indicators on a sample (TreeToTruckDetailReportDO.java:551-632). Every
+  // form key here already matches the served document's. The derived figures — % Total, Actual
+  // Harvested, the addition/deduction totals and the final rate — get none.
+  const sampleIndicator = (field: keyof SampleForm, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={editId === null ? null : openSample?.originalValues}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
 
   const numberField = (field: keyof SampleForm, label: string, note?: string) => {
     if (readOnly) {
@@ -274,20 +308,31 @@ const SamplePage: FC<SamplePageProps> = ({
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{fieldLabel(label, note)}</span>
           <span>{form[field] === '' ? '—' : form[field]}</span>
+          {sampleIndicator(field, label)}
         </div>
       )
     }
     return (
-      <TextInput
-        id={`sample-${field}`}
-        labelText={fieldLabel(label, note)}
-        size="sm"
-        inputMode="numeric"
-        value={form[field]}
-        onChange={setField(field)}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-      />
+      <div className="schedule-8__field">
+        {note !== undefined && (
+          <span className="cds--label schedule-8__label-note">
+            {label}
+            {noteTrigger(note)}
+          </span>
+        )}
+        <TextInput
+          id={`sample-${field}`}
+          labelText={label}
+          hideLabel={note !== undefined}
+          size="sm"
+          inputMode="numeric"
+          value={form[field]}
+          onChange={setField(field)}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+        />
+        {sampleIndicator(field, label)}
+      </div>
     )
   }
 
@@ -303,6 +348,7 @@ const SamplePage: FC<SamplePageProps> = ({
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
           <span>{text}</span>
+          {sampleIndicator(field, label, false)}
         </div>
       )
     }
@@ -333,7 +379,7 @@ const SamplePage: FC<SamplePageProps> = ({
   // ---- Samples table -----------------------------------------------------------------------------
   const samplesTable = (
     <TableContainer title={`Samples (${samples.length})`}>
-      <Table aria-label="Samples">
+      <Table>
         <TableHead>
           <TableRow>
             {/* Legacy samples list (schedule8Detail.xhtml) uses this exact "Tree To Truck Pages"
@@ -348,45 +394,50 @@ const SamplePage: FC<SamplePageProps> = ({
               <TableCell colSpan={2}>No samples have been added.</TableCell>
             </TableRow>
           ) : (
-            samples.map((sample, index) => (
-              <TableRow
-                key={sample.id}
-                className={
-                  panelOpen && sample.id != null && sample.id === editId
-                    ? 'schedule-8__row--editing'
-                    : undefined
-                }
-              >
-                <TableCell>{sampleLabel(sample, index)}</TableCell>
-                <TableCell>
-                  <div className="schedule-8__row-actions">
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      onClick={() => openEditOrView(sample, editable ? 'edit' : 'view')}
-                    >
-                      {editable ? 'Edit' : 'View'}
-                    </Button>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      disabled={!editable || busy}
-                      onClick={() => openCopy(sample)}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      kind="danger--ghost"
-                      size="sm"
-                      disabled={!editable || busy}
-                      onClick={() => setConfirmDelete(sample)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+            samples.map((sample, index) => {
+              // The sample open in the panel cannot act on itself: its row actions grey out while it
+              // is open, as legacy's disableReport(report) did (Schedule8MB.java:135-137).
+              const isOpen = panelOpen && sample.id != null && sample.id === editId
+              return (
+                <TableRow
+                  key={sample.id}
+                  className={isOpen ? 'schedule-8__row--editing' : undefined}
+                >
+                  <TableCell>{sampleLabel(sample, index)}</TableCell>
+                  <TableCell>
+                    <div className="schedule-8__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={editable ? Edit : View}
+                        disabled={isOpen}
+                        onClick={() => openEditOrView(sample, editable ? 'edit' : 'view')}
+                      >
+                        {editable ? 'Edit' : 'View'}
+                      </Button>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        disabled={!editable || busy || isOpen}
+                        renderIcon={Copy}
+                        onClick={() => openCopy(sample)}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        kind="danger--tertiary"
+                        size="sm"
+                        disabled={!editable || busy || isOpen}
+                        renderIcon={TrashCan}
+                        onClick={() => setConfirmDelete(sample)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>
@@ -414,6 +465,7 @@ const SamplePage: FC<SamplePageProps> = ({
           <div className="schedule-8__field">
             <span className="schedule-8__field-label">Contract ID</span>
             <span>{form.contractId || '—'}</span>
+            {sampleIndicator('contractId', 'Contract ID', false)}
           </div>
         ) : (
           <TextInput
@@ -426,10 +478,12 @@ const SamplePage: FC<SamplePageProps> = ({
             invalidText={errors.contractId}
           />
         )}
+        {!readOnly && sampleIndicator('contractId', 'Contract ID', false)}
         {readOnly ? (
           <div className="schedule-8__field">
             <span className="schedule-8__field-label">Cut Block</span>
             <span>{form.cutBlock || '—'}</span>
+            {sampleIndicator('cutBlock', 'Cut Block', false)}
           </div>
         ) : (
           <TextInput
@@ -440,6 +494,7 @@ const SamplePage: FC<SamplePageProps> = ({
             onChange={setField('cutBlock')}
           />
         )}
+        {!readOnly && sampleIndicator('cutBlock', 'Cut Block', false)}
       </div>
 
       {/* Legacy sectioning (schedule8EditDetail.xhtml): each skidding system is its own section with
@@ -563,11 +618,16 @@ const SamplePage: FC<SamplePageProps> = ({
 
       <div className="schedule-8__panel-actions">
         {!readOnly && (
-          <Button kind="primary" disabled={busy} onClick={handleSave}>
+          <Button kind="primary" disabled={busy} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={busy} onClick={closePanel}>
+        <Button
+          kind="secondary"
+          disabled={busy}
+          renderIcon={readOnly ? Close : ArrowLeft}
+          onClick={closePanel}
+        >
           {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>
@@ -595,13 +655,23 @@ const SamplePage: FC<SamplePageProps> = ({
       )}
 
       <div className="schedule-8__actions">
-        <Button kind="secondary" onClick={requestBack}>
+        <Button kind="secondary" renderIcon={ArrowLeft} onClick={requestBack}>
           Back to pages
         </Button>
-        <Button kind="primary" disabled={!editable || busy} onClick={openNew}>
+        <Button kind="primary" renderIcon={Add} disabled={!editable || busy} onClick={openNew}>
           Add New Sample
         </Button>
-        <Button kind="tertiary" disabled={busy} onClick={handleCheckStatus}>
+        {/* Check Status mutates nothing and the endpoint is VIEW_SCHEDULE-gated, but the BUTTON
+            follows legacy, which disabled it alongside the write controls whenever the report was
+            not editable by the caller (26 of 26 buttons across 15 pages). This previously read
+            `disabled={busy}` — the twin of the same omission on the main page
+            (`index.tsx:842`), and out of step with every sibling button here. */}
+        <Button
+          kind="tertiary"
+          renderIcon={CheckmarkOutline}
+          disabled={!editable || busy}
+          onClick={handleCheckStatus}
+        >
           Check Status
         </Button>
       </div>

@@ -1,6 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule7b;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -11,12 +14,13 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC reads and writes for Schedule 7B (Culvert Costs) — AD-3: a {@code Repository}
  * interface of explicit {@code @Query} named-parameter SQL over {@code @Table} record entities,
  * {@code THE}-qualified; no derived queries, no {@code CrudRepository.save}, no {@code JdbcClient}.
- * SQL only — all derivations, the Draft gate, and 404-vs-409 disambiguation live in {@link
+ * SQL only — all derivations, the editability gate, and 404-vs-409 disambiguation live in {@link
  * Schedule7bService}.
  *
  * <p>A culvert = one {@code THE.CULVERT_REPORT} row keyed {@code (ILCR_MILL_ID, REPORT_YEAR,
@@ -48,6 +52,7 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
    * a test rather than silently loading no costs.
    */
   int ITEM_MATERIAL = 77;
+
   int ITEM_INSTALL = 78;
 
   // ===============================================================================================
@@ -61,7 +66,8 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
    * rowCounter} order the service assigns 1..N, which the Check Status messages quote back to the
    * reporter, so this ORDER BY is contractual rather than cosmetic.
    */
-  @Query("""
+  @Query(
+      """
       SELECT CULVERT_REPORT_ID, ILCR_CULVERT_TYPE_CODE, SPAN_SIZE, RISE_SIZE, LENGTH,
              CULVERT_PIECE_COUNT, COMMENTS, REVISION_COUNT
         FROM THE.CULVERT_REPORT
@@ -78,7 +84,8 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
    * attached to a culvert must reach no field. The join is what scopes the read to the mill/year,
    * since {@code ILCR_COST_REPORT_DETAIL} carries no mill or year of its own.
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.CULVERT_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID, d.COST
         FROM THE.ILCR_COST_REPORT_DETAIL d
         JOIN THE.CULVERT_REPORT c ON c.CULVERT_REPORT_ID = d.CULVERT_REPORT_ID
@@ -95,7 +102,8 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
    * Schedule 7B rides this track (BR-01), NOT the silviculture track (AD-9). Empty when there is no
    * report-status row.
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -104,9 +112,30 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
   /**
+   * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row — every WRITE path's editability gate uses this; the read path
+   * keeps the unlocked variant. Holding the row for the whole write transaction makes the
+   * editability gate binding rather than advisory: a status transition (Story 15.3's submit, which
+   * locks the same row before re-running the ten-schedule gate) cannot commit between this gate and
+   * the INSERT/UPDATE/DELETE it guards, and this write cannot commit between the transition's gate
+   * and its commit. Must run inside the write {@code @Transactional}. A mill/year with no status
+   * row locks nothing and returns empty, which the gate already answers as 409.
+   */
+  @Query(
+      """
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
    * True iff a category-{@code '7'} culvert with this id exists under the mill/year (404-vs-409).
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.CULVERT_REPORT
        WHERE CULVERT_REPORT_ID = :id
@@ -137,7 +166,8 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
    * rather than a flat parameter list.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.CULVERT_REPORT
           (CULVERT_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, ILCR_CULVERT_TYPE_CODE,
            SPAN_SIZE, RISE_SIZE, LENGTH, CULVERT_PIECE_COUNT, COMMENTS,
@@ -146,11 +176,13 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
           (:#{#culvert.culvertReportId()}, :year, :millId, '7', :#{#culvert.culvertTypeCode()},
            :#{#culvert.spanSize()}, :#{#culvert.riseSize()}, :#{#culvert.length()},
            :#{#culvert.culvertPieceCount()}, :#{#culvert.comments()},
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCulvert(
-      @Param("culvert") CulvertReportEntity culvert, @Param("millId") long millId,
-      @Param("year") int year, @Param("user") String user);
+      @Param("culvert") CulvertReportEntity culvert,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("user") String user);
 
   /**
    * Optimistic-lock update of one culvert: sets the entered fields, bumps {@code REVISION_COUNT},
@@ -161,7 +193,8 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
    *     revision is stale (→ 409). The service disambiguates via {@link #countCulvert}.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.CULVERT_REPORT
          SET ILCR_CULVERT_TYPE_CODE = :#{#culvert.culvertTypeCode()},
              SPAN_SIZE = :#{#culvert.spanSize()},
@@ -171,7 +204,7 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
              COMMENTS = :#{#culvert.comments()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CULVERT_REPORT_ID = :#{#culvert.culvertReportId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -179,23 +212,25 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateCulvert(
-      @Param("culvert") CulvertReportEntity culvert, @Param("millId") long millId,
-      @Param("year") int year, @Param("expectedRevision") int expectedRevision,
+      @Param("culvert") CulvertReportEntity culvert,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
       @Param("user") String user);
 
   /**
-   * Delete one culvert, scoped to the mill/year/category (never another mill's row). Runs LAST — the
-   * cost children go first ({@link #deleteCostsForCulvert}), because delivery's FK on
-   * {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} has no {@code ON DELETE CASCADE} and would
-   * reject a parent still holding children. Legacy got the same order from Hibernate {@code
-   * CascadeType.ALL} ({@code model/CulvertReport.java:231}), which deletes the collection before its
-   * owner.
+   * Delete one culvert, scoped to the mill/year/category (never another mill's row). Runs LAST —
+   * the cost children go first ({@link #deleteCostsForCulvert}), because delivery's FK on {@code
+   * ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} has no {@code ON DELETE CASCADE} and would reject a
+   * parent still holding children. Legacy got the same order from Hibernate {@code CascadeType.ALL}
+   * ({@code model/CulvertReport.java:231}), which deletes the collection before its owner.
    *
    * @return rows affected — {@code 0} when the id is not a category-{@code '7'} culvert under this
    *     mill/year (the service has already 404'd on that via {@link #countCulvert})
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.CULVERT_REPORT
        WHERE CULVERT_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
@@ -223,32 +258,38 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
 
   /** Update-in-place half of {@link #upsertCost}; {@code 0} rows when the item row is absent. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE CULVERT_REPORT_ID = :culvertReportId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
   int updateCost(
-      @Param("culvertReportId") long culvertReportId, @Param("costItemId") int costItemId,
-      @Param("cost") Integer cost, @Param("user") String user);
+      @Param("culvertReportId") long culvertReportId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /** Insert half of {@link #upsertCost} (summary id NULL; PK from the sequence; audit cols set). */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, CULVERT_REPORT_ID,
            ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :culvertReportId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCost(
-      @Param("id") long id, @Param("culvertReportId") long culvertReportId,
-      @Param("costItemId") int costItemId, @Param("cost") Integer cost,
+      @Param("id") long id,
+      @Param("culvertReportId") long culvertReportId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
       @Param("user") String user);
 
   // ===============================================================================================
@@ -286,10 +327,10 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
   @Table(name = "ILCR_CULVERT_TYPE_CODE", schema = "THE")
   record CulvertTypeCode(
       @Id @Column("ILCR_CULVERT_TYPE_CODE") String code,
-      @Column("DESCRIPTION") String description) {
-  }
+      @Column("DESCRIPTION") String description) {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_CULVERT_TYPE_CODE, DESCRIPTION
         FROM THE.ILCR_CULVERT_TYPE_CODE
        WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
@@ -303,5 +344,53 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
     return findCulvertTypeCodes(effectiveOn(year)).stream()
         .map(r -> new CodeDescriptionDto(r.code(), r.description()))
         .toList();
+  }
+
+  /**
+   * One submitted culvert from {@code THE.CULVERT_REPORT_S_VW} — the licensee's own attributes
+   * (Story 16.2, BR-04).
+   */
+  record CulvertSnapshotRow(
+      long culvertReportId,
+      String culvertTypeCode,
+      Integer spanSize,
+      Integer riseSize,
+      BigDecimal length,
+      Integer culvertPieceCount,
+      String comments) {}
+
+  /** Every submitted culvert for a mill/year (category "7"). */
+  @Query(
+      value =
+          """
+      SELECT CULVERT_REPORT_ID, ILCR_CULVERT_TYPE_CODE, SPAN_SIZE, RISE_SIZE, LENGTH,
+             CULVERT_PIECE_COUNT, COMMENTS
+        FROM THE.CULVERT_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = CulvertSnapshotRowMapper.class)
+  List<CulvertSnapshotRow> findCulvertSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code CULVERT_REPORT_S_VW} row. */
+  class CulvertSnapshotRowMapper implements RowMapper<CulvertSnapshotRow> {
+    @Override
+    public CulvertSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      int span = rs.getInt("SPAN_SIZE");
+      Integer spanSize = rs.wasNull() ? null : span;
+      int rise = rs.getInt("RISE_SIZE");
+      Integer riseSize = rs.wasNull() ? null : rise;
+      int pieces = rs.getInt("CULVERT_PIECE_COUNT");
+      Integer pieceCount = rs.wasNull() ? null : pieces;
+      return new CulvertSnapshotRow(
+          rs.getLong("CULVERT_REPORT_ID"),
+          rs.getString("ILCR_CULVERT_TYPE_CODE"),
+          spanSize,
+          riseSize,
+          rs.getBigDecimal("LENGTH"),
+          pieceCount,
+          rs.getString("COMMENTS"));
+    }
   }
 }

@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Table Maintenance endpoints (Story 24.3 / UC-CODE-001). Every method is gated on the ADMIN-only
  * {@code MAINTAIN_CODE_TABLES} action (AD-7, S13) so a non-admin is denied 403 server-side — the
- * hidden Administration menu is UX only, not the boundary. Delegates all work to
- * {@link CodeTableService}; never touches the repository directly (AD-1 layering).
+ * hidden Administration menu is UX only, not the boundary. Delegates all work to {@link
+ * CodeTableService}; never touches the repository directly (AD-1 layering).
  */
 @RestController
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -54,7 +54,7 @@ public class CodeTableController implements CodeTableApi {
     UpsertResult result = service.save(tableKey, entry, authentication.getName());
     String message =
         messageSource.getMessage(MSG_SAVED, null, MSG_SAVED, LocaleContextHolder.getLocale());
-    return ResponseEntity.ok(new CodeTableSaveResponse(
-        result.name(), MSG_SAVED, message, service.entries(tableKey)));
+    return ResponseEntity.ok(
+        new CodeTableSaveResponse(result.name(), MSG_SAVED, message, service.entries(tableKey)));
   }
 }

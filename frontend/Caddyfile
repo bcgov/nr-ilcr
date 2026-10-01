@@ -8,7 +8,23 @@
 :3000 {
 	log {
 		output stdout
-		format console
+		# Trim the per-request entry (~2KB -> ~300B). resp_headers is pure noise:
+		# every value is static config from the `header` block below — the full
+		# CSP was re-logged byte-identical on every request, which at load-test
+		# rates (2x100 k6 VUs) floods stdout and the platform log aggregation.
+		# Of the request headers, User-Agent and X-Forwarded-For stay (who/where
+		# — the only two with diagnostic value); the other router-injected
+		# X-Forwarded-*/Forwarded headers restate them or are constant.
+		format filter {
+			wrap console
+			fields {
+				resp_headers delete
+				request>headers>Forwarded delete
+				request>headers>X-Forwarded-Host delete
+				request>headers>X-Forwarded-Port delete
+				request>headers>X-Forwarded-Proto delete
+			}
+		}
 		level {$LOG_LEVEL}
 	}
 

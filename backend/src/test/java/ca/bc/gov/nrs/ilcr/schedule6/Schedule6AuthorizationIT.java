@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -30,8 +32,7 @@ class Schedule6AuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -42,10 +43,12 @@ class Schedule6AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -53,10 +56,12 @@ class Schedule6AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ suffix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -64,20 +69,40 @@ class Schedule6AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (not 403)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz (not 403)")
   void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful());
+  }
+
+  // Task 3: DELETE requires EDIT_SCHEDULE, not VIEW_SCHEDULE (AD-7) -- a VIEW-only caller must be
+  // rejected the same as the writes, never merely by naming the read permission above.
+  @Test
+  @DisplayName("DELETE /records/{id} with no group -> 403")
+  void deleteRoadRecord_noGroup_returns403() throws Exception {
+    mockMvc
+        .perform(
+            delete("/api/v1/schedule6/records/8358")
+                .with(csrf())
+                .param("millId", "666")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 }

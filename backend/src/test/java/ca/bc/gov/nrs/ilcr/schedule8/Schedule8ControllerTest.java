@@ -9,14 +9,15 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
@@ -26,12 +27,13 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
@@ -40,11 +42,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for {@link Schedule8Controller}: the no-summary-required context guard
- * ({@code validateMillYearActive}), service delegation across the read / page / sample / rate write
+ * Unit test for {@link Schedule8Controller}: the no-summary-required context guard ({@code
+ * validateMillYearActive}), service delegation across the read / page / sample / rate write
  * endpoints, the server-derived {@code callerMayEdit} flag, the verbatim AD-8 saved/deleted message
- * decoration, and the check-status schedule/page/sample/issue key resolution — collaborators mocked,
- * no Spring context.
+ * decoration, and the check-status schedule/page/sample/issue key resolution — collaborators
+ * mocked, no Spring context.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule8ControllerTest {
@@ -52,23 +54,35 @@ class Schedule8ControllerTest {
   private static final long MILL_ID = 546L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule8Service schedule8Service;
+  @Mock private Schedule8Service schedule8Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
   private Schedule8Controller controller;
+
+  /**
+   * Built by hand rather than {@code @InjectMocks} since Story 15.0: the check-status composition
+   * moved to {@link Schedule8CheckStatusResolver}, and a MOCK resolver would make the check-status
+   * assertions below vacuous. Wiring the real one keeps them proving the actual composed bytes,
+   * through the same path the endpoint takes.
+   */
+  @BeforeEach
+  void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+    controller =
+        new Schedule8Controller(
+            millContextService,
+            schedule8Service,
+            editability,
+            messageSource,
+            new Schedule8CheckStatusResolver(schedule8Service, messageSource));
+  }
 
   private void stubSaved(String key, String text) {
     when(messageSource.getMessage(eq(key), any(), any(), any(Locale.class))).thenReturn(text);
@@ -77,10 +91,11 @@ class Schedule8ControllerTest {
   @Test
   void getSchedule8_validatesContext_derivesEditFlag_returnsDocument() {
     Schedule8Response doc = mock(Schedule8Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule8Service.getSchedule8(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule8Service.getSchedule8(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
-    ResponseEntity<Schedule8Response> response = controller.getSchedule8(MILL_ID, YEAR, authentication);
+    ResponseEntity<Schedule8Response> response =
+        controller.getSchedule8(MILL_ID, YEAR, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(doc, response.getBody());
@@ -105,9 +120,10 @@ class Schedule8ControllerTest {
     Schedule8PageRequest request = mock(Schedule8PageRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.savePage(MILL_ID, YEAR, request, true, "dev-admin")).thenReturn(saved);
+    when(schedule8Service.savePage(MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
     ResponseEntity<Schedule8Response> response =
@@ -128,7 +144,7 @@ class Schedule8ControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
-    verify(schedule8Service).deletePage(MILL_ID, YEAR, 8001);
+    verify(schedule8Service).deletePage(MILL_ID, YEAR, 8001, CallerRights.SUBMITTER);
   }
 
   @Test
@@ -136,9 +152,10 @@ class Schedule8ControllerTest {
     Schedule8SampleRequest request = mock(Schedule8SampleRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.saveSample(MILL_ID, YEAR, 8001, request, true, "dev-admin"))
+    when(schedule8Service.saveSample(
+            MILL_ID, YEAR, 8001, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
@@ -154,8 +171,9 @@ class Schedule8ControllerTest {
   void deleteSample_delegates_andAppliesDeletedMessage() {
     Schedule8Response updated = mock(Schedule8Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule8Service.deleteSample(MILL_ID, YEAR, 8001, 9001, true)).thenReturn(updated);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule8Service.deleteSample(MILL_ID, YEAR, 8001, 9001, CallerRights.SUBMITTER))
+        .thenReturn(updated);
     stubSaved("dataDeletedSuccesfullyInfoMsg", "Data deleted successfully");
 
     ResponseEntity<Schedule8Response> response =
@@ -171,9 +189,10 @@ class Schedule8ControllerTest {
     Schedule8RateRequest request = mock(Schedule8RateRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.saveRate(MILL_ID, YEAR, 9001, null, request, true, "dev-admin"))
+    when(schedule8Service.saveRate(
+            MILL_ID, YEAR, 9001, null, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
@@ -181,7 +200,8 @@ class Schedule8ControllerTest {
         controller.addRate(MILL_ID, YEAR, 9001, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(schedule8Service).saveRate(MILL_ID, YEAR, 9001, null, request, true, "dev-admin");
+    verify(schedule8Service)
+        .saveRate(MILL_ID, YEAR, 9001, null, request, CallerRights.SUBMITTER, "dev-admin");
     verify(saved).withMessage(any());
   }
 
@@ -190,9 +210,10 @@ class Schedule8ControllerTest {
     Schedule8RateRequest request = mock(Schedule8RateRequest.class);
     Schedule8Response saved = mock(Schedule8Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule8Service.saveRate(MILL_ID, YEAR, 9001, 7001, request, true, "dev-admin"))
+    when(schedule8Service.saveRate(
+            MILL_ID, YEAR, 9001, 7001, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     stubSaved("dataSavedSuccesfullyInfoMsg", "Data saved successfully");
 
@@ -200,7 +221,8 @@ class Schedule8ControllerTest {
         controller.updateRate(MILL_ID, YEAR, 9001, 7001, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(schedule8Service).saveRate(MILL_ID, YEAR, 9001, 7001, request, true, "dev-admin");
+    verify(schedule8Service)
+        .saveRate(MILL_ID, YEAR, 9001, 7001, request, CallerRights.SUBMITTER, "dev-admin");
     verify(saved).withMessage(any());
   }
 
@@ -208,8 +230,9 @@ class Schedule8ControllerTest {
   void deleteRate_delegates_andAppliesDeletedMessage() {
     Schedule8Response updated = mock(Schedule8Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule8Service.deleteRate(MILL_ID, YEAR, 9001, 7001, true)).thenReturn(updated);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule8Service.deleteRate(MILL_ID, YEAR, 9001, 7001, CallerRights.SUBMITTER))
+        .thenReturn(updated);
     stubSaved("dataDeletedSuccesfullyInfoMsg", "Data deleted successfully");
 
     ResponseEntity<Schedule8Response> response =
@@ -223,19 +246,30 @@ class Schedule8ControllerTest {
   void checkStatus_resolvesScheduleBanner_pageSample_andFieldIssueKeys() {
     // One failing page carrying a page-level field issue and one sample with its own issue, so the
     // schedule-level, per-page, and per-sample key→text resolution branches are all exercised.
-    Schedule8CheckStatusResponse raw = new Schedule8CheckStatusResponse(
-        "ISSUES",
-        List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
-        List.of(new Schedule8PageCheckResult(
-            8001,
-            false,
-            List.of(new Schedule8CheckFieldIssue("Contact",
-                new MessageInfo("missingRequiredFieldMsg", null))),
-            List.of(new Schedule8SampleCheckResult(
-                9001,
-                false,
-                List.of(new Schedule8CheckFieldIssue("Skidding/Yarding",
-                    new MessageInfo("skiddingYardingEqualsCentPercent", null))))))));
+    Schedule8CheckStatusResponse raw =
+        new Schedule8CheckStatusResponse(
+            "ISSUES",
+            List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
+            List.of(
+                new Schedule8PageCheckResult(
+                    8001,
+                    1,
+                    "Page # 1  -TSA: TSA5 -CP: cp1",
+                    false,
+                    List.of(
+                        new Schedule8CheckFieldIssue(
+                            "Contact", new MessageInfo("missingRequiredFieldMsg", null))),
+                    List.of(
+                        new Schedule8SampleCheckResult(
+                            9001,
+                            1,
+                            "Sample # 1 - C1",
+                            false,
+                            List.of(
+                                new Schedule8CheckFieldIssue(
+                                    "Skidding/Yarding",
+                                    new MessageInfo(
+                                        "skiddingYardingEqualsCentPercent", null))))))));
     when(schedule8Service.checkStatus(MILL_ID, YEAR)).thenReturn(raw);
     when(messageSource.getMessage(anyString(), isNull(), anyString(), any(Locale.class)))
         .thenReturn("resolved text");
@@ -250,13 +284,23 @@ class Schedule8ControllerTest {
     Schedule8PageCheckResult page = response.getBody().pages().get(0);
     assertEquals("resolved text", page.issues().get(0).message().text());
     assertEquals("resolved text", page.samples().get(0).issues().get(0).message().text());
+    // The where-it-belongs fields ride through resolution untouched (#461).
+    assertEquals(1, page.pageNumber());
+    assertEquals("Page # 1  -TSA: TSA5 -CP: cp1", page.pageLabel());
+    assertEquals(1, page.samples().get(0).sampleNumber());
+    assertEquals("Sample # 1 - C1", page.samples().get(0).sampleLabel());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 
   @Test
   void checkStatusPage_delegatesToSinglePageScope_andResolvesKeys() {
-    Schedule8CheckStatusResponse raw = new Schedule8CheckStatusResponse(
-        "MET", List.of(), List.of(new Schedule8PageCheckResult(8001, true, List.of(), List.of())));
+    Schedule8CheckStatusResponse raw =
+        new Schedule8CheckStatusResponse(
+            "MET",
+            List.of(),
+            List.of(
+                new Schedule8PageCheckResult(
+                    8001, 2, "Page # 2  -TSA: TSA5 -CP:  - ", true, List.of(), List.of())));
     when(schedule8Service.checkStatusPage(MILL_ID, YEAR, 8001)).thenReturn(raw);
 
     ResponseEntity<Schedule8CheckStatusResponse> response =

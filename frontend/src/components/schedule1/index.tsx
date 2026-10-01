@@ -2,8 +2,9 @@ import type { FC } from 'react'
 import type Schedule1Response from '@/interfaces/Schedule1Response'
 import type { LineItem } from '@/interfaces/Schedule1Response'
 import type Schedule1Request from '@/interfaces/Schedule1Request'
+import type { Schedule1CheckRequest } from '@/interfaces/Schedule1Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -18,26 +19,30 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { isScheduleSaved } from '@/utils/schedule'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
+import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { validateSchedule1 } from './validation'
+import { deriveSchedule1, enteredFromForm } from './derived'
 import './index.scss'
 
 // ERR-001 (mill/year not selected) and ALT-001 (open-other-costs-before-save) and confirmDeleteMsg
 // are client-side chrome (a suppression with no request / a Carbon Modal / a confirm Modal), so
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
@@ -67,16 +72,13 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
 
 type FieldValues = Record<string, string>
 
-const mapLoadErrorDetail = (
-  detail: string | undefined,
-  millId: number | null,
-  year: number | null,
-): string => {
-  if (detail === 'Schedule not found.' && millId != null && year != null) {
-    return `No Schedule 1 exists for Mill ${millId} in Reporting Year ${year}. Select another mill/year from Home, or create Schedule 1 data for this context.`
-  }
-  return detail || 'Unable to load Schedule 1.'
-}
+// The API's ProblemDetail text, verbatim (AD-8). This used to rewrite a 404 'Schedule not found.'
+// into a longer sentence composed HERE — which broke AD-8, interpolated the internal mill id into
+// user-facing text, and advised an action ('create Schedule 1 data for this context') the app had no
+// way to perform. Defect #296 removed the 404 that reached it, so the branch was unreachable as well
+// as wrong. Schedule 3 has always had this shape.
+const mapLoadErrorDetail = (detail: string | undefined): string =>
+  detail || 'Unable to load Schedule 1.'
 
 // Seed editable form state from the loaded document (writable fields only).
 function seedForm(doc: Schedule1Response): FieldValues {
@@ -121,6 +123,33 @@ function buildRequest(doc: Schedule1Response, form: FieldValues): Schedule1Reque
   }
 }
 
+// The volume-only lines the check reads a volume from; their costs are pulled or derived, never
+// entered, so they are sent as null and the server never tests them.
+const CHECK_VOLUME_ONLY_CODES = [143, 144, 139, 140] as const
+
+// The Check Status body (#359): every checked value as it is ON SCREEN — `form`, the keystroke state,
+// not the blur-committed snapshot, because that is what legacy's full postback submitted. A volume
+// the GET pre-filled from the crown volume is on screen, so it is sent like any other. `toNum`
+// returns null for a blank field and that null is carried through deliberately: the server's check
+// is a pure null test (a stored `0` passes), so a `?? 0` here would turn a missing value into a pass.
+// The itemized Other Costs rows are not on this screen and are not sent.
+function buildCheckRequest(form: FieldValues): Schedule1CheckRequest {
+  const entry = (code: number, withCost: boolean) => ({
+    costItemCode: code,
+    volume: toNum(form[`vol-${code}`] ?? ''),
+    cost: withCost ? toNum(form[`cost-${code}`] ?? '') : null,
+  })
+  return {
+    lineItems: [
+      ...[...WRITABLE_LINE_ITEM_CODES, 1, 2].map((code) => entry(code, true)),
+      ...CHECK_VOLUME_ONLY_CODES.map((code) => entry(code, false)),
+    ],
+    otherCostsVolume: toNum(form['otherCostsVolume'] ?? ''),
+  }
+}
+
+const PAGE_HEADER = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
+
 const Schedule1: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const navigate = useNavigate()
@@ -147,9 +176,20 @@ const Schedule1: FC = () => {
   const [confirmNavOpen, setConfirmNavOpen] = useState(false)
   const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever a
+  // checked field changes, so an older response cannot repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule1Response>({
       path: '/v1/schedule1',
+      scheduleName: 'Schedule 1',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -158,6 +198,21 @@ const Schedule1: FC = () => {
       onReset: resetBanners,
     })
 
+  // The blur-committed snapshot the derived mirror reads (defect #291): `form` tracks every keystroke
+  // because it drives the inputs, `committed` advances only when a field loses focus. Re-seeds
+  // whenever `data` is replaced (load / Save echo / Delete reset).
+  const { committed, commit } = useCommittedValues(form, data)
+
+  // Every numeric input on this page is a checked field (the comments are not), so an edit to any of
+  // them makes a shown Check Status verdict stale.
+  const setCheckedField = (fieldKey: string) => {
+    const set = setField(fieldKey)
+    return (event: Parameters<typeof set>[0]) => {
+      invalidateCheckResult()
+      set(event)
+    }
+  }
+
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
   // (groupInput passes it through) so the inline error still points at what the user actually wrote.
@@ -165,6 +220,22 @@ const Schedule1: FC = () => {
     setForm((prev) => {
       const grouped = groupInput(prev[fieldKey] ?? '')
       return grouped === prev[fieldKey] ? prev : { ...prev, [fieldKey]: grouped }
+    })
+  }
+
+  // A field's blur does two things: re-group its display (as before) and commit its value to the
+  // derived mirror's baseline (defect #291). The GROUPED string is handed to `commit` explicitly —
+  // `groupField` only queues its `setForm`, so reading the ref would give the pre-grouping value and
+  // leave `committed` and `form` holding different strings, defeating the unchanged-value skip
+  // (code review 2026-08-21). An invalid field holds its previous committed value.
+  const commitField = (fieldKey: string) => () => {
+    groupField(fieldKey)()
+    const grouped = groupInput(form[fieldKey] ?? '')
+    // Validated here rather than read from `fieldErrors`, which is computed further down (after the
+    // early returns); same source of truth, and it only runs on blur.
+    commit(fieldKey, {
+      value: grouped,
+      invalid: Boolean(validateSchedule1(form)[fieldKey]),
     })
   }
 
@@ -194,14 +265,22 @@ const Schedule1: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-validate here, not just on the button's `disabled`: a disabled attribute is presentation,
+    // and any other route into this handler (a mis-wired bar, a programmatic open, the modal's
+    // submit) would otherwise fire a DELETE for a schedule that does not exist. Until defect #296
+    // the server made that harmless — it 404'd — but the DELETE is idempotent now and answers 200,
+    // so a stray call would show a success-styled banner for a record that never existed. Schedule 2
+    // has had this gate since #292; Schedules 1/3 relied on the 404 that is gone.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
     clearBanners() // the deleted schedule's check result / save banner are stale
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 1.',
-      // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place (no
+      // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
+      // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, landing on
+      // the same state without the extra round trip. Reset to an empty schedule in place (no
       // re-fetch) and show SUC-002 from the API message. This per-page empty-state lives at the call
       // site (Story 29.6): single-doc Schedules 1/3 reset in place; list pages re-seed from a reload.
       onSuccess: (resp) => {
@@ -209,9 +288,14 @@ const Schedule1: FC = () => {
           prev
             ? {
                 ...prev,
-                // The summary is gone; there is nothing to edit or re-save (create-on-open is not
-                // supported), so render the empty schedule read-only and disable the actions.
-                editable: false,
+                // The summary is gone, so the record is unsaved — but it is NOT uneditable. Before
+                // defect #296 this pinned `editable: false` because "a re-GET would 404 and
+                // create-on-open is not supported"; both halves of that are now false. The server
+                // serves a 200 empty EDITABLE document for this exact state and accepts a PUT that
+                // re-creates it, so freezing the form here would strand the Licensee on a read-only
+                // blank page and force a browser reload to re-enter data (legacy AF1 expects
+                // immediate re-entry). `editable` is left as the server last reported it; dropping
+                // `revisionCount` to null is what closes the Delete gate.
                 revisionCount: null,
                 comments: null,
                 lineItems: [],
@@ -235,18 +319,43 @@ const Schedule1: FC = () => {
     if (!data || saving) {
       return
     }
+    // Legacy Check Status is validateClient="true": invalid entered values block the action with the
+    // same FLD-* messages Save uses. Without this gate `toNum` would send `12x` as null and the
+    // verdict would misreport a typo as "Value Required" (#359).
+    // Gated on `editable`, exactly as `fieldErrors` is: a read-only page highlights nothing, so a stored
+    // value failing the client range check must not block the check silently.
+    if (data.editable && Object.keys(validateSchedule1(form)).length > 0) {
+      setSaveMessage(null)
+      setCheckResult(null)
+      setSaveError('Please correct the highlighted fields before checking status.')
+      return
+    }
     clearBanners() // don't leave a stale Save success banner beside a new check result
-    checkStatus<CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // The body carries the screen (#359); nothing is persisted (AD-5).
+    checkStatus<CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
+      },
+      buildCheckRequest(form),
+    )
   }
 
   const handleOtherCosts = () => {
-    // S08: before the schedule is saved/open, opening Other Costs is blocked with ALT-001. In the
-    // current backend model an openable schedule is always saved (GET 404s for no summary), so this
-    // guard is effectively unreachable.
-    if (!data) {
+    // S08: before the schedule is saved, opening Other Costs is blocked with ALT-001.
+    //
+    // Gated on isScheduleSaved, NOT on `!data`. `!data` was written when an openable schedule was
+    // always a saved one (the GET 404'd for no summary), which made this branch unreachable — defect
+    // #296 removed that 404, so `data` is now truthy on a never-saved schedule and the old condition
+    // could never fire again. It has to fire: the sub-page controllers still require a summary
+    // (validateScheduleViewable, deliberately kept — #296 D1), so without this the click lands on a
+    // 404 dead-end instead of the legacy message.
+    if (!data || !isScheduleSaved(data)) {
       setOtherCostsBlockedOpen(true)
       return
     }
@@ -265,58 +374,7 @@ const Schedule1: FC = () => {
     navigate({ to: '/schedule-1/other-costs' })
   }
 
-  const header = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
-
-  if (contextMissing) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Mill and Reporting Year required"
-              subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-            />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <LoadingScreen label="Loading Schedule 1" />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Unable to load Schedule 1"
-              subtitle={errorDetail}
-            />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -326,13 +384,43 @@ const Schedule1: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
+  // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
+  // read-only cells track data entry the way legacy did. Null whenever the document is NOT editable
+  // for this caller — since Story 16.1 that is the role×status matrix, not Draft alone, so an
+  // administrator correcting at Submitted or Verified DOES get the mirror — or in view mode, where
+  // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
+  const derived = editable ? deriveSchedule1(data, enteredFromForm(committed)) : null
+
   // A value cell: an editable TextInput when the field is writable and the schedule is editable,
   // otherwise read-only text. perUnit is always read-only (server-computed).
+  // The original-value indicator for one cell (Story 16.2, BR-04). `originals` is the owning line
+  // item's map, `field` its own key ("volume"/"cost"); both are undefined for cells that legacy gave
+  // no indicator. Editable cells compare the LIVE form value so the icon appears and clears as the
+  // operator types, the way legacy's `<f:ajax event="change">` re-render did; read-only cells compare
+  // the served value.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: number | null | undefined,
+    typed: string | undefined,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={field}
+        current={typed ?? current}
+        label={label}
+      />
+    )
+
   const numberCell = (
     fieldKey: string,
     label: string,
     writable: boolean,
     current: number | null | undefined,
+    originals?: OriginalValues | null,
+    originalField?: string,
   ) =>
     editable && writable ? (
       // --input marks the cells whose value sits inside a TextInput: the field supplies its own
@@ -345,14 +433,18 @@ const Schedule1: FC = () => {
           hideLabel
           size="sm"
           value={form[fieldKey] ?? ''}
-          onChange={setField(fieldKey)}
-          onBlur={groupField(fieldKey)}
+          onChange={setCheckedField(fieldKey)}
+          onBlur={commitField(fieldKey)}
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
+        {indicator(originals, originalField, label, current, form[fieldKey])}
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">{fmtNumber(current)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtNumber(current)}
+        {indicator(originals, originalField, label, current, undefined)}
+      </TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -364,11 +456,54 @@ const Schedule1: FC = () => {
     return (
       <TableRow key={code}>
         <TableCell>{label}</TableCell>
-        {numberCell(`vol-${code}`, `${label} volume`, writableVolume, item.volume)}
-        {numberCell(`cost-${code}`, `${label} cost`, writableCost, item.cost)}
-        <TableCell className="schedule-1__num">{fmtCurrency(item.perUnit)}</TableCell>
+        {numberCell(
+          `vol-${code}`,
+          `${label} volume`,
+          writableVolume,
+          item.volume,
+          item.originalValues,
+          'volume',
+        )}
+        {numberCell(
+          `cost-${code}`,
+          `${label} cost`,
+          writableCost,
+          item.cost,
+          item.originalValues,
+          // Only the nine entered items carry a submitted cost — legacy set volume alone on the
+          // pulled and subtotal rows, so those get no cost indicator. The backend simply omits the
+          // key, which makes this safe to pass unconditionally.
+          'cost',
+        )}
+        <TableCell className="schedule-1__num">
+          {fmtCurrency(derived ? derived.perUnit[code] : item.perUnit)}
+        </TableCell>
       </TableRow>
     )
+  }
+
+  // 139's cost is pulled from Schedule 3 and stays served even mid-entry, because nothing on this
+  // page is an input to it; only 140's cost has a mirror. Extracted from a nested ternary (SonarQube
+  // 2026-08-21) -- worth doing, because the nesting hid that `derived` changes exactly ONE of these
+  // three branches.
+  const silvicultureCost = (code: number, item: LineItem | null): number | null | undefined => {
+    if (code === 139) return data.lessSilvAdminCost
+    if (code === 140) return derived ? derived.totalSilvicultureCost : data.totalSilvicultureCost
+    return item?.cost
+  }
+
+  // $/m³ = cost ÷ volume (139/140 fold in the Schedule 3 pulls). Mirrored while editable so it
+  // tracks entry; the document's server-computed figure otherwise (#291).
+  //
+  // NOTE the precedence is deliberately the OPPOSITE of `silvicultureCost` above: the mirror
+  // supersedes every row here, 139 and 140 included, because `deriveSchedule1` computes a rate for
+  // both (derived.ts:98,115) even though it computes a cost only for 140. Same two codes, different
+  // answer -- which is precisely what a three-deep ternary is bad at showing.
+  const silviculturePerUnit = (code: number, item: LineItem | null): number | null | undefined => {
+    if (derived) return derived.perUnit[code]
+    if (code === 139) return data.lessSilvAdminPerUnit
+    if (code === 140) return data.totalSilviculturePerUnit
+    return item?.perUnit
   }
 
   const silvicultureRow = (row: (typeof SILV_ROWS)[number]) => {
@@ -376,22 +511,16 @@ const Schedule1: FC = () => {
     // All four silviculture VOLUMES are user-entered; only 1 & 2 have an editable cost. 139's cost is
     // pulled from Schedule 3, 140's is derived — both read-only.
     const writableCost = row.code === 1 || row.code === 2
-    // 139's cost is pulled from Schedule 3; 140's is the derived Total Silviculture cost (both read-only).
-    const costValue =
-      row.code === 139
-        ? data.lessSilvAdminCost
-        : row.code === 140
-          ? data.totalSilvicultureCost
-          : item?.cost
-    // $/m³ = cost ÷ volume, computed server-side (139/140 fold in the Schedule 3 pulls).
-    const perUnitValue =
-      row.code === 139
-        ? data.lessSilvAdminPerUnit
-        : row.code === 140
-          ? data.totalSilviculturePerUnit
-          : item?.perUnit
+    const costValue = silvicultureCost(row.code, item)
+    const perUnitValue = silviculturePerUnit(row.code, item)
     return (
-      <TableRow key={row.code}>
+      // 140 (Total Silviculture) is the one summary row of the four — its cost is derived rather than
+      // entered or pulled — so it takes the lighter subtotal band; it is a total WITHIN the table, not
+      // the table's final figure (#411 Overall 5).
+      <TableRow
+        key={row.code}
+        className={row.code === 140 ? 'schedule-1__subtotal-row' : undefined}
+      >
         <TableCell>{row.label}</TableCell>
         {numberCell(`vol-${row.code}`, `${row.label} volume`, true, item?.volume)}
         {numberCell(`cost-${row.code}`, `${row.label} cost`, writableCost, costValue)}
@@ -413,12 +542,14 @@ const Schedule1: FC = () => {
         data.lineItems.find((li) => li.costItemCode === 143)?.volume,
       )}
       <TableCell className="schedule-1__num">{fmtNumber(data.forestMgmtAdminCost)}</TableCell>
-      <TableCell className="schedule-1__num">{fmtCurrency(data.forestMgmtAdminPerUnit)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(derived ? derived.perUnit[143] : data.forestMgmtAdminPerUnit)}
+      </TableCell>
     </TableRow>
   )
 
   const subtotalCompanyLoggingRow = (
-    <TableRow key={144}>
+    <TableRow key={144} className="schedule-1__subtotal-row">
       <TableCell>{LINE_ITEM_LABELS[144]}</TableCell>
       {numberCell(
         'vol-144',
@@ -427,10 +558,10 @@ const Schedule1: FC = () => {
         data.lineItems.find((li) => li.costItemCode === 144)?.volume,
       )}
       <TableCell className="schedule-1__num">
-        {fmtNumber(data.subtotalCompanyLoggingCost)}
+        {fmtNumber(derived ? derived.subtotalCompanyLoggingCost : data.subtotalCompanyLoggingCost)}
       </TableCell>
       <TableCell className="schedule-1__num">
-        {fmtCurrency(data.subtotalCompanyLoggingPerUnit)}
+        {fmtCurrency(derived ? derived.perUnit[144] : data.subtotalCompanyLoggingPerUnit)}
       </TableCell>
     </TableRow>
   )
@@ -439,7 +570,7 @@ const Schedule1: FC = () => {
   // The label is a link/button that opens the Other Costs sub-page (Story 2.5); the VOLUME is
   // user-entered (editable schedules) while the cost subtotal and $/m³ are server-derived (read-only).
   const otherCostsRow = (
-    <TableRow key="other-costs">
+    <TableRow key="other-costs" className="schedule-1__subtotal-row">
       <TableCell>
         <Button
           kind="ghost"
@@ -461,7 +592,8 @@ const Schedule1: FC = () => {
             hideLabel
             size="sm"
             value={form['otherCostsVolume'] ?? ''}
-            onChange={setField('otherCostsVolume')}
+            onChange={setCheckedField('otherCostsVolume')}
+            onBlur={commitField('otherCostsVolume')}
             invalid={Boolean(fieldErrors['otherCostsVolume'])}
             invalidText={fieldErrors['otherCostsVolume']}
           />
@@ -470,7 +602,9 @@ const Schedule1: FC = () => {
         <TableCell className="schedule-1__num">{fmtNumber(data.otherCosts.volume)}</TableCell>
       )}
       <TableCell className="schedule-1__num">{fmtNumber(data.otherCosts.costSubtotal)}</TableCell>
-      <TableCell className="schedule-1__num">{fmtCurrency(data.otherCosts.perUnit)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(derived ? derived.otherCostsPerUnit : data.otherCosts.perUnit)}
+      </TableCell>
     </TableRow>
   )
 
@@ -481,9 +615,13 @@ const Schedule1: FC = () => {
     <TableRow key="total-company-logging" className="schedule-1__grand-total-row">
       <TableCell>Total Company Logging Costs (Including total Silviculture Cost)</TableCell>
       <TableCell className="schedule-1__num">{fmtNumber(data.schedule3CrownVolume)}</TableCell>
-      <TableCell className="schedule-1__num">{fmtNumber(data.totalCompanyLoggingCost)}</TableCell>
       <TableCell className="schedule-1__num">
-        {fmtCurrency(data.totalCompanyLoggingPerUnit)}
+        {fmtNumber(derived ? derived.totalCompanyLoggingCost : data.totalCompanyLoggingCost)}
+      </TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(
+          derived ? derived.totalCompanyLoggingPerUnit : data.totalCompanyLoggingPerUnit,
+        )}
       </TableCell>
     </TableRow>
   )
@@ -514,6 +652,12 @@ const Schedule1: FC = () => {
   // Save + Check Status + Delete below it (schedule1.xhtml:35-38 vs :796-803). Deleting the whole
   // schedule is the one destructive action on this page, and legacy kept it off the bar a reporter
   // meets first.
+  // Delete is additionally gated on a persisted record, as legacy gated it on isScheduleOpen() as
+  // well as on edit rights. That gate is now LOAD-BEARING, not belt-and-braces: this page used to be
+  // protected incidentally because the GET 404'd when unsaved, and defect #296 removed exactly that
+  // — an unsaved schedule now renders a full editable form, so `isScheduleSaved` is the only thing
+  // standing between a never-saved schedule and a Delete button. The absent-vs-null subtlety lives
+  // in `isScheduleSaved`.
   const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-1__actions"
@@ -523,12 +667,13 @@ const Schedule1: FC = () => {
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}
       showDelete={showDelete}
+      scheduleSaved={isScheduleSaved(data)}
     />
   )
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
         {(data.warnings ?? []).map((w, i) => (
@@ -619,7 +764,7 @@ const Schedule1: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           <TableContainer title="Silviculture">
-            <Table aria-label="Silviculture" className="schedule-1__cost-table">
+            <Table className="schedule-1__cost-table">
               <TableHead>
                 <TableRow>
                   <TableHeader aria-label="Cost item" />
@@ -638,18 +783,37 @@ const Schedule1: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           {editable ? (
-            <TextArea
-              id="comments"
-              labelText="If you have any additional comments, please enter them here:"
-              enableCounter
-              maxCount={COMMENTS_MAX}
-              value={form['comments'] ?? ''}
-              onChange={setField('comments')}
-            />
+            <>
+              <CommentsTextArea
+                id="comments"
+                labelText="If you have any additional comments, please enter them here:"
+                maxCount={COMMENTS_MAX}
+                value={form['comments'] ?? ''}
+                onChange={setField('comments')}
+              />
+              {/* Legacy gave the comments textarea an indicator too, and never a width swap —
+                  icon and tooltip only (schedule1.xhtml:774-785). Text, so compared with equals. */}
+              <OriginalValueIndicator
+                originals={data.originalValues}
+                field="comments"
+                current={form['comments'] ?? ''}
+                numeric={false}
+                label="Comments"
+              />
+            </>
           ) : (
             <>
               <h3 className="schedule-1__heading">Comments</h3>
-              <p className="schedule-1__comments">{data.comments ?? '—'}</p>
+              <p className="schedule-1__comments">
+                {data.comments ?? '—'}
+                <OriginalValueIndicator
+                  originals={data.originalValues}
+                  field="comments"
+                  current={data.comments}
+                  numeric={false}
+                  label="Comments"
+                />
+              </p>
             </>
           )}
         </Column>
@@ -673,16 +837,14 @@ const Schedule1: FC = () => {
 
       {/* Discard-unsaved-edits confirm before leaving an editable schedule for Other Costs. */}
       {editable && (
-        <Modal
+        <ConfirmNavigationModal
           open={confirmNavOpen}
-          modalHeading="Leave Schedule 1"
-          primaryButtonText="Continue"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setConfirmNavOpen(false)}
-          onRequestSubmit={openOtherCosts}
+          heading="Leave Schedule 1"
+          onCancel={() => setConfirmNavOpen(false)}
+          onContinue={openOtherCosts}
         >
-          <p>{CONFIRM_NAVIGATION}</p>
-        </Modal>
+          {CONFIRM_NAVIGATION}
+        </ConfirmNavigationModal>
       )}
 
       {/* ALT-001: schedule must be saved before Other Costs can open (informational, single action). */}

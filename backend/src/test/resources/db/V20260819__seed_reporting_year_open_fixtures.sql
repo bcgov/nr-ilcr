@@ -1,13 +1,15 @@
 -- Story 24.1 (UC-RY-001) Open Reporting Year fixtures. Adds two RESERVED mills to the shared
 -- THE.ILCR_MILL_STATUS_XREF so the open-year IT can prove an ACTIVE mill receives a report-status row
 -- for the newly opened year and a CLOSED mill does not, independent of other seeds' mills. IDs 990/991
--- are used by no other seed; neither has an ILCR_MILL_REPORT_STATUS row, so they never appear in the
+-- are used by no other seed; none has an ILCR_MILL_REPORT_STATUS row, so they never appear in the
 -- Home mill list until the open-year IT creates one (and its @AfterEach removes it). Runs last
 -- (date version > V20260817).
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID)
   VALUES (990, 'ACT', 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID)
   VALUES (991, 'CLS', 'SEED');
+INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID)
+  VALUES (992, 'ACT', 'SEED');
 
 -- THE.ILCR_REPORT_CATEGORY is not modelled by any other slice, so it is created here (last-running
 -- fixture) with the exact delivery shape (verified against the DEV database): composite key

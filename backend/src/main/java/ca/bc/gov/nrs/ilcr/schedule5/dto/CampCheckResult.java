@@ -21,14 +21,20 @@ import java.util.List;
  * the epics AC and {@code UC-SCH5-001-detailed.md:151}, each of which describes an all-met PAIR.
  * Legacy wins.
  *
- * @param campId the camp's DB id ({@code CAMP_REPORT_ID}) — UI correlation only
+ * @param campId the camp's DB id ({@code CAMP_REPORT_ID}) — UI correlation only. <strong>NULL for a
+ *     camp that exists only on screen</strong> (#476): an unsaved new or copied camp in the open
+ *     panel has no {@code CAMP_REPORT_ID} yet, and the transient state is made explicit rather than
+ *     signalled with a synthetic {@code 0}, which would read as a real persisted id to a
+ *     correlating client. Serialised as an explicit {@code null} — {@code ALWAYS} overrides this
+ *     type's {@code NON_NULL} default, so the key is present and a client can tell "unsaved" from
+ *     "field absent"
  * @param campName the camp name — THE identifier the composed message text carries
  * @param requirementsMet whether this camp meets its requirements
  * @param messages the met message, or the per-field {@code Value Required} lines — never both
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CampCheckResult(
-    int campId,
+    @JsonInclude(JsonInclude.Include.ALWAYS) Integer campId,
     String campName,
     boolean requirementsMet,
     List<CampCheckMessage> messages) {
@@ -40,8 +46,8 @@ public record CampCheckResult(
    * <p>{@code field} is present only on a {@code Value Required} finding and is omitted from the
    * JSON on the met message ({@code NON_NULL}) — it names the {@link CampRequest} property the
    * licensee must supply, so a frontend can focus the right input rather than parse the sentence.
-   * The service emits the key and the field with {@code text} null; the controller resolves and
-   * composes the text (the house key/text split, AD-8).
+   * The service emits the key and the field with {@code text} null; the check-status resolver
+   * resolves and composes the text (the house key/text split, AD-8).
    *
    * @param key the legacy {@code messages.properties} key
    * @param field the {@link CampRequest} field name this finding points at (null on the met
@@ -49,6 +55,5 @@ public record CampCheckResult(
    * @param text the resolved, composed verbatim line
    */
   @JsonInclude(JsonInclude.Include.NON_NULL)
-  public record CampCheckMessage(String key, String field, String text) {
-  }
+  public record CampCheckMessage(String key, String field, String text) {}
 }

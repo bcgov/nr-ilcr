@@ -16,7 +16,8 @@ import org.springframework.http.MediaType;
  *
  * <p>Security OFF (no {@code @TestPropertySource}) so the mock {@code ILCR_SUBMITTER} principal
  * applies, isolating document assembly from authz (covered by {@link Schedule2AuthorizationIT}).
- * Asserts the pinned wire contract and the exact server-computed derived figures against the V5 seed.
+ * Asserts the pinned wire contract and the exact server-computed derived figures against the V5
+ * seed.
  */
 @DisplayName("GET /api/v1/schedule2 — aggregate document (Story 3.1)")
 class Schedule2DocumentIT extends AbstractOracleIT {
@@ -26,10 +27,12 @@ class Schedule2DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("621/2021 Draft — full pinned document with server-computed derived values")
   void draftContext_returnsPinnedDocument() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "621")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "621")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(621)))
@@ -43,7 +46,8 @@ class Schedule2DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.purchasedLogCost.cost", is(500000)))
         .andExpect(jsonPath("$.purchasedLogCost.perUnit", is(50.0)))
         // purchasedWoodOverhead: volume Sch3 PO&P timber = 10000; cost = Sch3 Subtotal Actual Costs
-        // PO&P column = 21000 (item 125, the PO&P peer of item 27 — NOT the inert V10 item-135 20000,
+        // PO&P column = 21000 (item 125, the PO&P peer of item 27 — NOT the inert V10 item-135
+        // 20000,
         // which proves the COMPUTED Schedule 3 read); perUnit 21000/10000 = 2.1
         .andExpect(jsonPath("$.purchasedWoodOverhead.volume", is(10000)))
         .andExpect(jsonPath("$.purchasedWoodOverhead.cost", is(21000)))
@@ -56,13 +60,16 @@ class Schedule2DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.lessLogSales.volume", is(2000)))
         .andExpect(jsonPath("$.lessLogSales.cost", is(100000)))
         .andExpect(jsonPath("$.lessLogSales.perUnit", is(50.0)))
-        // netPurchased: volume 10000-2000=8000; cost 521000-100000=421000; perUnit 421000/8000 = 52.625
+        // netPurchased: volume 10000-2000=8000; cost 521000-100000=421000; perUnit 421000/8000 =
+        // 52.625
         .andExpect(jsonPath("$.netPurchased.volume", is(8000)))
         .andExpect(jsonPath("$.netPurchased.cost", is(421000)))
         .andExpect(jsonPath("$.netPurchased.perUnit", is(52.625)))
-        // totalCompanyLogging: volume Sch3 Crown = 12345; cost = 620000 (Sch1 no-FMA subtotal, item 12
+        // totalCompanyLogging: volume Sch3 Crown = 12345; cost = 620000 (Sch1 no-FMA subtotal, item
+        // 12
         //   — NOT the inert V10 item-144 617250) + 99000 (Sch3 actual-costs crown = item 27 crown
-        //   115000−21000=94000 + item 37 crown 5000) + ((20000 Sch1 silvActual − 5000 Sch3 silvAdmin
+        //   115000−21000=94000 + item 37 crown 5000) + ((20000 Sch1 silvActual − 5000 Sch3
+        // silvAdmin
         //   crown) + 8450 Sch1 silvAccrued) = 742450; perUnit 742450/12345 = 60.1418
         .andExpect(jsonPath("$.totalCompanyLogging.volume", is(12345)))
         .andExpect(jsonPath("$.totalCompanyLogging.cost", is(742450)))
@@ -75,10 +82,12 @@ class Schedule2DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("517/2021 non-Draft — trackStatus S, editable false, stored values still shown")
   void nonDraftContext_notEditable_storedValuesShown() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "517")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "517")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("S")))
         .andExpect(jsonPath("$.editable", is(false)))
@@ -88,22 +97,31 @@ class Schedule2DocumentIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("517/2021 empty Schedule 3 — computed-from-zero subtotals (legacy CoreUtil seeds at 0)")
+  @DisplayName(
+      "517/2021 empty Schedule 3 — computed-from-zero subtotals (legacy CoreUtil seeds at 0)")
   void emptySchedule3_computedFromZeroSubtotals() throws Exception {
-    // 517 has an EMPTY category-'3' summary (no PO&P timber / Crown timber / actual-cost lines) and a
-    // minimal Schedule 1 (one logging line, item 12 = 40000). Legacy CoreUtil subtotals seed at 0, so
+    // 517 has an EMPTY category-'3' summary (no PO&P timber / Crown timber / actual-cost lines) and
+    // a
+    // minimal Schedule 1 (one logging line, item 12 = 40000). Legacy CoreUtil subtotals seed at 0,
+    // so
     // the Schedule-3 PO&P actual cost is 0 (not null) — the "absent Schedule 3 → null" case (no
     // category-'3' summary at all) is covered by the Schedule2Service unit test.
     //
-    // AD-12 (product-confirmed): an empty-but-present Schedule 3 reports purchasedWoodOverhead.cost = 0
-    // (a real computed subtotal that happens to be zero), NOT an omitted field. This is deliberately
-    // distinct from an ABSENT Schedule 3, where the figure is null and Jackson non_null omits it. The
-    // two cases are different data states and the UI shows $0 vs blank accordingly. This matches the
+    // AD-12 (product-confirmed): an empty-but-present Schedule 3 reports purchasedWoodOverhead.cost
+    // = 0
+    // (a real computed subtotal that happens to be zero), NOT an omitted field. This is
+    // deliberately
+    // distinct from an ABSENT Schedule 3, where the figure is null and Jackson non_null omits it.
+    // The
+    // two cases are different data states and the UI shows $0 vs blank accordingly. This matches
+    // the
     // legacy CoreUtil behaviour (subtotals initialise to 0). Registry: BMAD architecture decisions.
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "517")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "517")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // No PO&P timber volume (no item 118) -> purchasedLogCost.volume + perUnit omitted.
         .andExpect(jsonPath("$.purchasedLogCost.volume").doesNotExist())
@@ -119,12 +137,15 @@ class Schedule2DocumentIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("515/2021 valid active Draft, no Schedule 2 summary — 200 empty editable doc, NOT 404")
+  @DisplayName(
+      "515/2021 valid active Draft, no Schedule 2 summary — 200 empty editable doc, NOT 404")
   void unsavedSchedule_returnsEmptyEditableDocument() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "515")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))

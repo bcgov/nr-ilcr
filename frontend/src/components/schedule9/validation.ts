@@ -12,6 +12,7 @@
 import type ContractualWorkRecordRequest from '@/interfaces/Schedule9Request'
 import type { ContractualWorkRecord } from '@/interfaces/Schedule9Response'
 import { utf8Length } from '@/utils/forms'
+import { legacyBannerLines, legacyRowLabel } from '@/utils/legacyValidationBanner'
 import { numStrFixed, parseDecimalInput, roundCost } from '@/utils/number'
 
 export { numStrFixed, parseDecimalInput, roundCost }
@@ -275,3 +276,72 @@ export const previewCostPerUnit = (form: RecordFormValues): number | null => {
 }
 
 export const COMMENTS_MAX_LENGTH = COMMENTS_MAX
+
+/** Every record field in on-screen order (`ContractualWorkFields.tsx`), the banner's line order. */
+export const RECORD_FIELD_ORDER: readonly (keyof RecordFormValues)[] = [
+  'contractorId',
+  'contractualItemCode',
+  'itemDescription',
+  'sideSlopePct',
+  'numberOfUnits',
+  'unitCode',
+  'unitDescription',
+  'biogeoclimaticZone',
+  'cost',
+  'sourceCode',
+  'sourceDescription',
+  'comments',
+]
+
+/**
+ * The list-row `label` of each field Save requires, verbatim from `schedule9.xhtml`'s row inputs,
+ * each declared `label="Id: #{contractualWorkReport.rowNumber} - <label>"` with `required="true"`:
+ * company `:434`, contractual item `:451`, unit type `:557`, biogeoclimatic zone `:602`, source
+ * `:661`. These are exactly the five selects `validateRecord` requires; Number of Units, Cost and
+ * the descriptions are `required="false"` there, so their errors are range or length messages.
+ */
+const REQUIRED_LABELS: Partial<Record<keyof RecordFormValues, string>> = {
+  contractorId: 'Company',
+  contractualItemCode: 'Contractual Item',
+  unitCode: 'Unit type',
+  biogeoclimaticZone: 'Biogeoclimatic Zone',
+  sourceCode: 'Source',
+}
+
+/**
+ * The row fields whose legacy range message carried the row prefix — `validatorMessage="Id:
+ * #{contractualWorkReport.rowNumber} - #{msg...}"` in `schedule9.xhtml`: side slope `:496`, number of
+ * units `:533`, cost `:641`. Their inline text is the bundle message itself
+ * (`messages.properties:74,79,82`). The descriptions' and comments' length caps are not legacy
+ * validators and stay unprefixed.
+ */
+const PREFIXED_FIELDS: ReadonlySet<keyof RecordFormValues> = new Set<keyof RecordFormValues>([
+  'sideSlopePct',
+  'numberOfUnits',
+  'cost',
+])
+
+/**
+ * The legacy banner lines for one record ROW's errors. `rowNumber` is the record's 1-based position
+ * in the list — legacy's `rowNumber` was assigned in load order (`Schedule9DAO.java:530`), and the
+ * check numbers its lines the same way. A blank required field reads `Id: <n> - <label>: Value is
+ * required.`, every other error its inline text.
+ */
+export const recordBannerLines = (errors: RecordErrors, rowNumber: number): string[] =>
+  legacyBannerLines(
+    errors,
+    RECORD_FIELD_ORDER,
+    RECORD_MESSAGES.valueRequired,
+    (field) => {
+      const label = REQUIRED_LABELS[field]
+      return label === undefined ? undefined : legacyRowLabel(rowNumber, label)
+    },
+    { rowNumber, fields: PREFIXED_FIELDS },
+  )
+
+/** One field's legacy banner line on a record row (the same text `recordBannerLines` produces). */
+export const recordFieldBannerLine = (
+  field: keyof RecordFormValues,
+  message: string,
+  rowNumber: number,
+): string => recordBannerLines({ [field]: message }, rowNumber)[0]

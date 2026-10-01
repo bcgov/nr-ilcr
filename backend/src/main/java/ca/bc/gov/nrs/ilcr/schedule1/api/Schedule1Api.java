@@ -1,7 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule1.api;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import jakarta.validation.Valid;
@@ -39,7 +40,8 @@ public interface Schedule1Api {
   /**
    * Save (create-or-update) the Schedule 1 entered fields for a mill/year and return the recomputed
    * document (Story 2.1, S01). Range validation on the request body returns 400; a non-Draft track
-   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns 403.
+   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns
+   * 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -61,23 +63,35 @@ public interface Schedule1Api {
    * @param millId the mill id (required)
    * @param year the reporting year (required)
    * @param authentication the caller (drives EDIT_SCHEDULE)
-   * @return 200 with the success {@code message} (SUC-002, AD-8) — supersedes the Story 2.1 pinned 204
+   * @return 200 with the success {@code message} (SUC-002, AD-8) — supersedes the Story 2.1 pinned
+   *     204
    */
   @DeleteMapping
   ResponseEntity<MessageResponse> deleteSchedule1(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Check Status (BR-07, Story 2.6): validate whether Schedule 1 meets all requirements. Read-only —
-   * no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown mill/year or
-   * no summary → 404; closed mill → 409.
+   * Check Status (BR-07, Story 2.6): validate whether Schedule 1 meets all requirements. Read-only
+   * — no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown mill/year
+   * → 404; closed mill → 409. A mill/year with NO summary is NOT a 404 since defect #296 — it is
+   * the unsaved state, and check-status reports every mandatory field missing.
+   *
+   * <p>{@code request} carries the values currently ON SCREEN (#359): legacy's Check Status was a
+   * full postback that judged the screen, not the saved record, so an unsaved edit must move the
+   * verdict. The itemized Other Costs rows are not on this screen and are read from the database.
+   * The body is REQUIRED — an absent one is a clean 400 — but its members are unvalidated, because
+   * reporting missing values is the check's whole job.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param request the on-screen values the check reads
    * @param authentication the caller
    * @return 200 with the check-status result (errors, warnings, requirements-met + success message)
    */
   @PostMapping("/check-status")
-  ResponseEntity<CheckStatusResponse> checkStatus(
-      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+  ResponseEntity<Schedule1CheckStatusResponse> checkStatus(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule1CheckRequest request,
+      Authentication authentication);
 }

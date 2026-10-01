@@ -10,19 +10,26 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit test for the BR-09 Crown Timber push (Story 4.2) — the single entry point Schedule 3's save
- * uses to overwrite Schedule 1 detail VOLUMEs (COST preserved), plus the repository upsert that backs
- * it. Mocked repository — no DB — isolating the "Schedule 1 opened?" gate and the per-item fan-out.
+ * uses to overwrite Schedule 1 detail VOLUMEs (COST preserved), plus the repository upsert that
+ * backs it. Mocked repository — no DB — isolating the "Schedule 1 opened?" gate and the per-item
+ * fan-out.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule1CrownPushTest {
@@ -32,25 +39,36 @@ class Schedule1CrownPushTest {
   private static final int SUMMARY_ID = 1003;
   private static final String USER = "dev-admin";
 
-  @Mock
-  private Schedule1Repository repository;
+  @Mock private Schedule1Repository repository;
 
-  @InjectMocks
-  private Schedule1Service service;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", and a mock would make every
+  // original-value assertion below an assertion about the mock (Story 16.2).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
+  @InjectMocks private Schedule1Service service;
 
   @Test
   void applyCrownTimberVolume_writesVolumes_whenSchedule1Opened() {
     BigDecimal volume = new BigDecimal("54321");
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // Draft → editable
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
+        .thenReturn(Optional.of("D")); // Draft → editable
 
-    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, volume, USER);
+    boolean pushed =
+        service.applyCrownTimberVolume(MILL, YEAR, volume, CallerRights.SUBMITTER, USER);
 
     assertTrue(pushed);
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
     // The aggregate revision is bumped (AR11) so a stale-token main-page save is rejected.
     verify(repository).touchSummary(SUMMARY_ID, USER);
-    // Fixed-line items get a VOLUME-only upsert; the item-19 Other-Costs rows are overwritten en masse.
+    // Fixed-line items get a VOLUME-only upsert; the item-19 Other-Costs rows are overwritten en
+    // masse.
     verify(repository).upsertFixedDetailVolume(SUMMARY_ID, 12, volume, USER);
     verify(repository).upsertFixedDetailVolume(SUMMARY_ID, 144, volume, USER);
     verify(repository).updateAllOtherCostVolumes(SUMMARY_ID, volume, USER);
@@ -60,7 +78,9 @@ class Schedule1CrownPushTest {
   void applyCrownTimberVolume_noOp_whenSchedule1NotOpened() {
     when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
 
-    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
+    boolean pushed =
+        service.applyCrownTimberVolume(
+            MILL, YEAR, new BigDecimal("1"), CallerRights.SUBMITTER, USER);
 
     assertFalse(pushed); // WRN-002: nothing written when Schedule 1 has no summary
     verify(repository, never()).touchSummary(anyInt(), any());
@@ -72,12 +92,18 @@ class Schedule1CrownPushTest {
   void applyCrownTimberVolume_noOp_whenSchedule1NotDraft() {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S")); // submitted, not Draft
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
+        .thenReturn(Optional.of("S")); // submitted, not Draft
 
-    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
+    boolean pushed =
+        service.applyCrownTimberVolume(
+            MILL, YEAR, new BigDecimal("1"), CallerRights.SUBMITTER, USER);
 
-    // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown push.
+    // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown
+    // push.
     assertFalse(pushed);
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
     verify(repository, never()).touchSummary(anyInt(), any());
     verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
     verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());
@@ -99,7 +125,8 @@ class Schedule1CrownPushTest {
   void upsertFixedDetailVolume_inserts_whenNoRowUpdated() {
     Schedule1Repository repo = mock(Schedule1Repository.class);
     BigDecimal volume = new BigDecimal("100");
-    when(repo.updateFixedDetailVolume(SUMMARY_ID, 12, volume, USER)).thenReturn(0); // nothing to update
+    when(repo.updateFixedDetailVolume(SUMMARY_ID, 12, volume, USER))
+        .thenReturn(0); // nothing to update
     doCallRealMethod().when(repo).upsertFixedDetailVolume(SUMMARY_ID, 12, volume, USER);
 
     repo.upsertFixedDetailVolume(SUMMARY_ID, 12, volume, USER);

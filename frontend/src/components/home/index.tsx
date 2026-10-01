@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button, Column, Dropdown, Grid, InlineNotification } from '@carbon/react'
+import { Save } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
@@ -8,8 +9,7 @@ import PageTitle from '@/components/core/PageTitle'
 import type MillSummary from '@/interfaces/MillSummary'
 import type ReportingYear from '@/interfaces/ReportingYear'
 import type WorkingContext from '@/interfaces/WorkingContext'
-import type { ProblemBody } from '@/interfaces/WorkingContext'
-import { extractDetail } from '@/utils/error'
+import { extractDetail, extractMessages } from '@/utils/error'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import type { HomeContentEntry } from '@/interfaces/HomeContent'
 import './index.scss'
@@ -22,28 +22,10 @@ import './index.scss'
 // notification titles), mirroring the ratified schedule1 idiom [schedule1/index.tsx:30-35].
 
 // The verbatim per-field message(s) from a 400 body (S08 shows both together); fall back to `detail`,
-// then a last-resort generic (only if the server sent no problem body at all). Deduplicated — the
-// contract does not guarantee distinct texts, repeated texts add nothing, and unique texts keep the
-// notification list's React keys collision-free.
-function extractSaveErrors(error: unknown): string[] {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const data = (error as { response?: { data?: ProblemBody } }).response?.data
-    const texts = [
-      ...new Set(
-        (data?.messages ?? [])
-          .map((message) => message.text)
-          .filter((text): text is string => Boolean(text)),
-      ),
-    ]
-    if (texts.length > 0) {
-      return texts
-    }
-    if (data?.detail) {
-      return [data.detail]
-    }
-  }
-  return ['Unable to save the working context.']
-}
+// then this page's last-resort generic (only if the server sent no problem body at all). The
+// extraction itself is shared — see utils/error.
+const extractSaveErrors = (error: unknown) =>
+  extractMessages(error, 'Unable to save the working context.')
 
 const millItemToString = (mill: MillSummary | null) =>
   mill ? `${mill.millNumber ?? ''} - ${mill.millName ?? ''}` : ''
@@ -79,9 +61,10 @@ const Home: FC = () => {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveErrors, setSaveErrors] = useState<string[]>([])
-  // Role-specific welcome message (Story 24.2 / UC-CNT-001, FR3 tie). Best-effort: a failure just
-  // hides the section, never blocks the picker.
+  // Role-specific welcome message (Story 24.2 / UC-CNT-001, FR3 tie). A failure is surfaced without
+  // blocking the mill/year picker.
   const [roleMessage, setRoleMessage] = useState<string | null>(null)
+  const [roleMessageError, setRoleMessageError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -89,10 +72,15 @@ const Home: FC = () => {
       .getAxiosInstance()
       .get<HomeContentEntry>('/v1/home-content/mine')
       .then((response) => {
-        if (active) setRoleMessage(response.data.messageText)
+        if (active) {
+          setRoleMessage(response.data.messageText)
+          setRoleMessageError(null)
+        }
       })
-      .catch(() => {
-        // No welcome message to show — leave the section hidden.
+      .catch((error: unknown) => {
+        if (active) {
+          setRoleMessageError(extractDetail(error) || 'Unable to load the Home message.')
+        }
       })
     return () => {
       active = false
@@ -159,7 +147,12 @@ const Home: FC = () => {
           return
         }
         // AR11: the working context is client-side now; a successful resolve makes this selection the
-        // source of context, replacing the 514/2021 default.
+        // source of context, replacing the scaffold default (millYearDefaults). Story 5.5: the mill
+        // LIST is server-scoped to the caller, so the pre-select above (line ~124) operates on the
+        // user's own mills. NOTE: list-scoping is a UX affordance, NOT write authorization — a
+        // submitter could still resolve/save a forged millId. Per-endpoint submitter↔mill
+        // enforcement on the mill-context/schedule endpoints is the follow-up (Story 5.7); until it
+        // lands, the scoped list must not be relied on for access control.
         setContext(response.data.millId, response.data.reportYear)
         // SUC-001 verbatim from the API message (AD-8), never hardcoded.
         setSaveMessage(response.data.message?.text ?? null)
@@ -208,6 +201,17 @@ const Home: FC = () => {
               lowContrast
               title="Unable to load"
               subtitle={loadError}
+            />
+          </Column>
+        )}
+
+        {roleMessageError && (
+          <Column sm={4} md={8} lg={16}>
+            <InlineNotification
+              kind="error"
+              lowContrast
+              title="Unable to load Home message"
+              subtitle={roleMessageError}
             />
           </Column>
         )}
@@ -267,7 +271,7 @@ const Home: FC = () => {
         </Column>
 
         <Column sm={4} md={8} lg={16} className="home__actions">
-          <Button kind="primary" disabled={saving} onClick={handleSave}>
+          <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         </Column>

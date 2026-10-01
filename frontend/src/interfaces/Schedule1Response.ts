@@ -1,12 +1,25 @@
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+
 // Mirrors the backend Schedule1Response DTO (Story 1.2). Numbers are nullable; Jackson omits nulls,
-// so an absent line item / block member simply won't be in the JSON. perUnit and subtotals are
-// computed server-side (read-only) — never recompute them client-side.
+// so an absent line item / block member simply won't be in the JSON. perUnit and the subtotals are
+// computed server-side and are read-only here — never sent on a write, and the server is the sole
+// authority for every stored figure.
+//
+// They ARE mirrored for display while the schedule is being edited, so the read-only cells track entry
+// before Save the way legacy did (defect #291; spine AD-5 amended 2026-08-20). That mirror lives in
+// `components/schedule1/derived.ts` and nowhere else, and the Save echo supersedes it. Note Schedule 1
+// rounds $/m³ with the LEGACY scale-2 rule (divide at scale 10, then scale 2), not the scale-4 rule
+// Schedules 2 and 4 use.
 
 export interface LineItem {
   readonly costItemCode: number
   readonly volume: number | null
   readonly cost: number | null
   readonly perUnit: number | null
+  // The Licensee's submitted volume and cost, once the track has left Draft (Story 16.2, BR-04).
+  // Absent/null at Draft. Which keys appear is per-item legacy parity, not symmetry: every line item
+  // carries a volume original, only the nine entered items carry a cost one.
+  readonly originalValues?: OriginalValues | null
 }
 
 export interface SilvicultureBlock {
@@ -21,6 +34,9 @@ export interface OtherCostsSummary {
   readonly costSubtotal: number | null
   readonly perUnit: number | null
   readonly count: number
+  // The Licensee's submitted shared Other-Costs volume (Story 16.2). costSubtotal and perUnit are
+  // derived and so have no original.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Success message carried on a mutating response (AD-8): the frontend renders `text` verbatim and
@@ -38,15 +54,22 @@ export default interface Schedule1Response {
   readonly crownVolume: number | null
   // The Schedule 3 Crown Timber volume (BR-03 pre-fill source), read-only. Story 2.3.
   readonly schedule3CrownVolume: number | null
-  readonly revisionCount: number | null
+  // Optional AND nullable (defect #292): null until the schedule is saved, and the app-wide Jackson
+  // `default-property-inclusion: non_null` then omits the key — so readers must use a loose `!= null`.
+  // Unreachable through this page today (the GET 404s when unsaved), typed honestly so it stays safe.
+  readonly revisionCount?: number | null
   readonly comments: string | null
+  // Document-level originals (Story 16.2) — only `comments`; every figure's original rides on its own
+  // line item / block / row. Absent at Draft, which is what suppresses every indicator on the page.
+  readonly originalValues?: OriginalValues | null
   readonly lineItems: readonly LineItem[]
   readonly silviculture: SilvicultureBlock
   // BR-04 admin costs pulled from Schedule 3 (read-only): Forest Mgmt Admin (143) / Less Silv Admin (139).
   readonly forestMgmtAdminCost: number | null
   readonly lessSilvAdminCost: number | null
   readonly otherCosts: OtherCostsSummary
-  // Derived read-only figures (legacy Schedule1MB getters) — server-computed, never recompute client-side.
+  // Derived read-only figures (legacy Schedule1MB getters) — server-computed; mirrored for display
+  // during entry by `components/schedule1/derived.ts` only (defect #291).
   readonly forestMgmtAdminPerUnit: number | null // 143 $/m³
   readonly lessSilvAdminPerUnit: number | null // 139 $/m³
   readonly totalSilvicultureCost: number | null // 140 cost (silv actual − Sch3 silv admin + accrued)

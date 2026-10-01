@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
+import { Add, CheckmarkOutline, Close, Copy, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
 import type {
@@ -29,7 +30,6 @@ import { clearFieldError } from '@/utils/forms'
 import { groupFixedInput } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import PageFields from './PageFields'
 import RoadDetailPage from './RoadDetailPage'
@@ -157,8 +157,10 @@ const Schedule10: FC = () => {
     setPendingNav(null)
   }, [resetBanners, closePagePanel, closeRoadPanel])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule10Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule10Response>({
     path: SCHEDULE10_PATH,
+    scheduleName: 'Schedule 10',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -450,16 +452,7 @@ const Schedule10: FC = () => {
     setPendingNav(() => proceed)
   }
 
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 10',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
   if (!data) {
     return null
   }
@@ -572,17 +565,22 @@ const Schedule10: FC = () => {
         {banners}
 
         <Column sm={4} md={8} lg={16} className="schedule-10__actions">
-          <Button kind="primary" disabled={controlsDisabled} onClick={openNewPage}>
+          <Button kind="primary" renderIcon={Add} disabled={controlsDisabled} onClick={openNewPage}>
             Add New Page
           </Button>
-          <Button kind="tertiary" disabled={controlsDisabled} onClick={checkStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={controlsDisabled}
+            onClick={checkStatus}
+          >
             Check Status
           </Button>
         </Column>
 
         <Column sm={4} md={8} lg={16}>
           <TableContainer title="Page Summary" className="schedule-10__section">
-            <Table aria-label="Construction pages">
+            <Table>
               <TableHead>
                 <TableRow>
                   <TableHeader>New Road Construction Pages</TableHeader>
@@ -610,14 +608,16 @@ const Schedule10: FC = () => {
                             <Button
                               kind="ghost"
                               size="sm"
+                              renderIcon={editable ? Edit : View}
                               disabled={saving || isOpen}
                               onClick={() => openPage(page, editable)}
                             >
                               {editable ? 'Edit' : 'View'}
                             </Button>
                             <Button
-                              kind="danger--ghost"
+                              kind="danger--tertiary"
                               size="sm"
+                              renderIcon={TrashCan}
                               disabled={controlsDisabled || isOpen}
                               onClick={() => setDeleteTarget({ kind: 'page', page })}
                             >
@@ -626,6 +626,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="ghost"
                               size="sm"
+                              renderIcon={Copy}
                               disabled={controlsDisabled || isOpen}
                               onClick={() => copyPage(page)}
                             >
@@ -688,12 +689,13 @@ const Schedule10: FC = () => {
                 <Button
                   kind="primary"
                   disabled={controlsDisabled || pagePanelMode === 'view'}
+                  renderIcon={Save}
                   onClick={() => savePage(pages)}
                 >
                   Save
                 </Button>
                 {/* Close discards silently, as legacy does — only the two level changes confirm. */}
-                <Button kind="secondary" onClick={closePagePanel}>
+                <Button kind="secondary" renderIcon={Close} onClick={closePagePanel}>
                   Close
                 </Button>
               </div>

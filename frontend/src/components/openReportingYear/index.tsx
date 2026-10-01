@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { Button, Column, Grid, Modal, Select, SelectItem } from '@carbon/react'
+import { ArrowRight } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import apiService from '@/service/api-service'
@@ -9,6 +10,7 @@ import type {
   OpenReportingYearResponse,
   ReportingYearAdminView,
 } from '@/interfaces/ReportingYearAdmin'
+import './index.scss'
 
 const api = () => apiService.getAxiosInstance()
 const CONFIRM_PROMPT = 'Please confirm you would like to create a new reporting year?'
@@ -107,7 +109,12 @@ const OpenReportingYear: FC = () => {
             </p>
           )}
 
-          <Button disabled={saving || view === null} onClick={requestOpen}>
+          <Button
+            className="open-reporting-year__action"
+            disabled={saving || view === null}
+            renderIcon={ArrowRight}
+            onClick={requestOpen}
+          >
             Open Reporting Year
           </Button>
         </Column>

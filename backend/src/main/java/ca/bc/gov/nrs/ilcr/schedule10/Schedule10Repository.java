@@ -1,37 +1,39 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static ca.bc.gov.nrs.ilcr.util.ResultSetUtil.nullableInt;
+
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 10 tables (AD-3): explicit
  * {@code @Query} named-param SQL plus {@code @Table} record entities — no derived queries, no
  * {@code CrudRepository}.
  *
- * <p><strong>Assembly shape: three queries, fixed, regardless of how many pages or
- * details exist.</strong>
- * The grandchild (cost lines) is joined UP to the root mill/year rather than fetched per detail
- * row,
- * so depth never multiplies round-trips. Fetching cost lines inside a per-row loop is the
- * documented
- * anti-pattern this deliberately avoids.
+ * <p><strong>Assembly shape: three queries, fixed, regardless of how many pages or details
+ * exist.</strong> The grandchild (cost lines) is joined UP to the root mill/year rather than
+ * fetched per detail row, so depth never multiplies round-trips. Fetching cost lines inside a
+ * per-row loop is the documented anti-pattern this deliberately avoids.
  *
  * <p>Storage shape (delivery-confirmed, Story 11.1 Task 1):
+ *
  * <ul>
- *   <li>Pages are {@code ROAD_CONSTRUCTION_REPRT} rows filtered on mill + year + category
- *  {@code '10'}. There is <strong>no category-{@code '10'} {@code ILCR_REPORT_SUMMARY}
- * row</strong>,
- *  so {@code trackStatus} comes straight from {@code ILCR_MILL_REPORT_STATUS} and the guard must
- *       be {@code validateMillYearActive}, never {@code validateScheduleViewable}.</li>
- *   <li>Road details hang off a page by {@code ROAD_CONSTRUCTION_REPRT_ID}.</li>
- *   <li>Costs are keyed {@code ILCR_COST_REPORT_DETAIL} rows joined by
- *  {@code ROAD_CONSTRUCTION_REPRT_DTL_ID}, carrying {@code ILCR_REPORT_SUMMARY_ID} NULL (BR-08).
- *       Delivery holds ZERO such rows today, so an empty cost set is the normal case.</li>
+ *   <li>Pages are {@code ROAD_CONSTRUCTION_REPRT} rows filtered on mill + year + category {@code
+ *       '10'}. There is <strong>no category-{@code '10'} {@code ILCR_REPORT_SUMMARY} row</strong>,
+ *       so {@code trackStatus} comes straight from {@code ILCR_MILL_REPORT_STATUS} and the guard
+ *       must be {@code validateMillYearActive}, never {@code validateScheduleViewable}.
+ *   <li>Road details hang off a page by {@code ROAD_CONSTRUCTION_REPRT_ID}.
+ *   <li>Costs are keyed {@code ILCR_COST_REPORT_DETAIL} rows joined by {@code
+ *       ROAD_CONSTRUCTION_REPRT_DTL_ID}, carrying {@code ILCR_REPORT_SUMMARY_ID} NULL (BR-08).
+ *       Delivery holds ZERO such rows today, so an empty cost set is the normal case.
  * </ul>
  *
  * <p>Ordering is pinned explicitly in SQL (deviation (c)) — legacy relied on a collection
@@ -43,12 +45,14 @@ import org.springframework.data.repository.query.Param;
 public interface Schedule10Repository extends Repository<RoadConstructionReportEntity, Integer> {
 
   /** One cost line for a road detail, keyed by its legacy cost-item ordinal. */
-  record CostLineRow(int roadDetailId, int costItemId, BigDecimal cost) {
-  }
+  record CostLineRow(int roadDetailId, int costItemId, BigDecimal cost) {}
 
   /** One BEC classification, as offered through the surviving BR-06 xref gate. */
   record BecClassificationRow(
-      int biogeoclimaticCatalogueId, String becZoneCode, String subzone, String variant,
+      int biogeoclimaticCatalogueId,
+      String becZoneCode,
+      String subzone,
+      String variant,
       String phase) {
 
     /**
@@ -67,8 +71,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   }
 
   /** A code/description pair from one of the year-filtered lookup tables. */
-  record CodeRow(String code, String description) {
-  }
+  record CodeRow(String code, String description) {}
 
   /**
    * The 1–10 track report status for a mill/year, straight from {@code ILCR_MILL_REPORT_STATUS}.
@@ -81,13 +84,34 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return the track status code, or empty when no context row exists
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row — every WRITE path's editability gate uses this; the read path
+   * keeps the unlocked variant. Holding the row for the whole write transaction makes the
+   * editability gate binding rather than advisory: a status transition (Story 15.3's submit, which
+   * locks the same row before re-running the ten-schedule gate) cannot commit between this gate and
+   * the INSERT/UPDATE/DELETE it guards, and this write cannot commit between the transition's gate
+   * and its commit. Must run inside the write {@code @Transactional}. A mill/year with no status
+   * row locks nothing and returns empty, which the gate already answers as 409.
+   */
+  @Query(
+      """
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
 
   // -----------------------------------------------------------------------------------------
   // Query 1 of 3 — the pages.
@@ -100,7 +124,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return the pages, empty when the mill/year has none (a valid 200 state, not an error)
    */
-  @Query("""
+  @Query(
+      """
       SELECT ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
              CONSTRUCTION_PERIOD, CONSTRUCTION_DIVISION_NAME, ILCR_FOREST_REGION_CODE,
              TSB_NUMBER_CODE, TSA_NUMBER, TFL_NUMBER_CODE, REVISION_COUNT
@@ -127,7 +152,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return the details, ordered by page then detail id
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID, d.ROAD_CONSTRUCTION_REPRT_ID, d.ROAD_NAME,
              d.SIDE_SLOPE_PCT, d.ILCR_ROAD_LIFETIME_CODE, d.RIPPABLE_ROCK_PCT, d.SOLID_ROCK_PCT,
              d.COARSE_MATERIAL_PCT, d.BECBIOGEO_CATALOGUE_ID, d.FINE_MATERIAL_PCT,
@@ -163,7 +189,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return the cost lines, ordered deterministically
    */
-  @Query("""
+  @Query(
+      """
       SELECT c.ROAD_CONSTRUCTION_REPRT_DTL_ID AS road_detail_id,
              c.ILCR_REPORT_COST_ITEM_ID       AS cost_item_id,
              c.COST                           AS cost
@@ -198,7 +225,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_FOREST_REGION_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_FOREST_REGION_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -221,7 +249,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_ROAD_LIFETIME_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_LIFETIME_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -246,7 +275,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_ROAD_BALLAST_METHOD_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_BALLAST_METHOD_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -271,7 +301,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_ROAD_BALLAST_MATERL_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_BALLAST_MATERL_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -298,7 +329,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT REL_SOIL_MOIST_RGM_CLS_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_RL_SOIL_MOIS_RGM_CLS_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -320,16 +352,17 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   /**
    * TSA numbers effective for the reporting year, PLUS any TSA a stored page already references.
    *
-   * <p>Legacy sourced this control from {@code LookUpCaches.getTsaNumberCodeCache()}
-   * ({@code RoadConstructionReportType.java:378}). Serving it here keeps the entry constrained to
-   * real TSA numbers: the write path validates only the WIDTH of this leg, so without a bounded list
-   * an arbitrary value would persist and then serve a blank Road Group.
+   * <p>Legacy sourced this control from {@code LookUpCaches.getTsaNumberCodeCache()} ({@code
+   * RoadConstructionReportType.java:378}). Serving it here keeps the entry constrained to real TSA
+   * numbers: the write path validates only the WIDTH of this leg, so without a bounded list an
+   * arbitrary value would persist and then serve a blank Road Group.
    *
    * @param millId the mill, used to find referenced codes
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT TSA_NUMBER AS code, DESCRIPTION AS description
         FROM THE.TSA_NUMBER_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -349,15 +382,16 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   /**
    * Supply block codes effective for the reporting year, PLUS any block a stored page references.
    *
-   * <p>Legacy narrowed this list to blocks whose code starts with the chosen TSA
-   * ({@code RoadConstructionReportType.java:428-434}); the full list is served and that narrowing is
-   * left to the control, which is where the chosen TSA lives.
+   * <p>Legacy narrowed this list to blocks whose code starts with the chosen TSA ({@code
+   * RoadConstructionReportType.java:428-434}); the full list is served and that narrowing is left
+   * to the control, which is where the chosen TSA lives.
    *
    * @param millId the mill, used to find referenced codes
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
-  @Query("""
+  @Query(
+      """
       SELECT TSB_NUMBER_CODE AS code, DESCRIPTION AS description
         FROM THE.TSB_NUMBER_CODE
        WHERE ((EFFECTIVE_DATE IS NULL
@@ -381,15 +415,15 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * Code and Soil Moisture Code (LD-1/LD-2) kills BR-06's runtime FILTERING of those two lists, but
    * this xref is also the join that decides which catalogue rows the BEC control may offer at all
    * ({@code BiogeoclimaticCatalogue.java:28}). That second leg survives the departures — serving
-   * the
-   * unfiltered catalogue instead would be an unflagged behaviour change (deviation (e)).
+   * the unfiltered catalogue instead would be an unflagged behaviour change (deviation (e)).
    *
    * <p>{@code DISTINCT} because a catalogue row can appear in the xref more than once. Legacy
    * applies no ordering here; an explicit one is added for determinism (deviation (c)).
    *
    * @return the offerable BEC classifications
    */
-  @Query("""
+  @Query(
+      """
       SELECT DISTINCT b.BIOGEOCLIMATIC_CATALOGUE_ID AS biogeoclimatic_catalogue_id,
              b.BEC_ZONE_CODE AS bec_zone_code, b.SUBZONE AS subzone,
              b.VARIANT AS variant, b.PHASE AS phase
@@ -409,7 +443,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param year the reporting year
    * @return the referenced BEC classifications
    */
-  @Query("""
+  @Query(
+      """
       SELECT DISTINCT b.BIOGEOCLIMATIC_CATALOGUE_ID AS biogeoclimatic_catalogue_id,
              b.BEC_ZONE_CODE AS bec_zone_code, b.SUBZONE AS subzone,
              b.VARIANT AS variant, b.PHASE AS phase
@@ -445,8 +480,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   // ===============================================================================================
 
   /** One derived moisture-code pair, as the surviving cross-reference offers it. */
-  record MoistureCodePair(String asmCode, String soilMoistureCode) {
-  }
+  record MoistureCodePair(String asmCode, String soilMoistureCode) {}
 
   /**
    * The moisture codes offered for a BEC classification and RSMR class, through the surviving
@@ -469,7 +503,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param rsmrClass the RSMR class code
    * @return the candidate pairs, empty when the combination is not offered
    */
-  @Query("""
+  @Query(
+      """
       SELECT DISTINCT x.RELATIVE_SOIL_MOISTUR_RGM_CODE AS asm_code,
              x.ILCR_SOIL_MOISTURE_CODE                 AS soil_moisture_code
         FROM THE.ILCR_SOIL_MOISTURE_XREF x
@@ -514,7 +549,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * and all 52 real delivery pages hold NULL.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ROAD_CONSTRUCTION_REPRT
           (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            CONSTRUCTION_PERIOD, CONSTRUCTION_DIVISION_NAME, ILCR_FOREST_REGION_CODE,
@@ -525,11 +561,13 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
            :#{#page.constructionPeriod()}, :#{#page.constructionDivisionName()},
            :#{#page.ilcrForestRegionCode()},
            :#{#page.tsbNumberCode()}, :#{#page.tsaNumber()}, :#{#page.tflNumberCode()},
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertPage(
-      @Param("page") RoadConstructionReportEntity page, @Param("millId") long millId,
-      @Param("year") int year, @Param("user") String user);
+      @Param("page") RoadConstructionReportEntity page,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("user") String user);
 
   /**
    * Optimistic-lock update of one page: sets the entered fields, bumps {@code REVISION_COUNT} and
@@ -541,7 +579,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    *     #countPage}
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ROAD_CONSTRUCTION_REPRT
          SET CONSTRUCTION_PERIOD = :#{#page.constructionPeriod()},
              CONSTRUCTION_DIVISION_NAME = :#{#page.constructionDivisionName()},
@@ -551,7 +590,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
              TFL_NUMBER_CODE = :#{#page.tflNumberCode()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_ID = :#{#page.roadConstructionReprtId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -559,12 +598,15 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
          AND REVISION_COUNT = :expectedRevision
       """)
   int updatePage(
-      @Param("page") RoadConstructionReportEntity page, @Param("millId") long millId,
-      @Param("year") int year, @Param("expectedRevision") int expectedRevision,
+      @Param("page") RoadConstructionReportEntity page,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
       @Param("user") String user);
 
   /** Existence probe scoped to mill/year/category — the 404-versus-409 disambiguator for a page. */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.ROAD_CONSTRUCTION_REPRT
        WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
@@ -588,7 +630,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * <p>{@code BOULDER_AREA_PCT} is likewise removed and simply never written; it is nullable.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ROAD_CONSTRUCTION_REPRT_DTL
           (ROAD_CONSTRUCTION_REPRT_DTL_ID, ROAD_CONSTRUCTION_REPRT_ID, ROAD_NAME,
            SIDE_SLOPE_PCT, ILCR_ROAD_LIFETIME_CODE, RIPPABLE_ROCK_PCT, SOLID_ROCK_PCT,
@@ -615,11 +658,12 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
            :#{#detail.stabilizingDistanceToSource()}, :#{#detail.relSoilMoistRgmClsCode()},
            :#{#detail.comments()},
            :soilMoistureCode, :asmCode,
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertRoadDetail(
       @Param("detail") RoadConstructionReportDetailEntity detail,
-      @Param("soilMoistureCode") String soilMoistureCode, @Param("asmCode") String asmCode,
+      @Param("soilMoistureCode") String soilMoistureCode,
+      @Param("asmCode") String asmCode,
       @Param("user") String user);
 
   /**
@@ -634,7 +678,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    *     the revision is stale, which the service disambiguates via {@link #countRoadDetail}
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ROAD_CONSTRUCTION_REPRT_DTL
          SET ROAD_NAME = :#{#detail.roadName()},
              SIDE_SLOPE_PCT = :#{#detail.sideSlopePct()},
@@ -664,7 +709,7 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
              RELATIVE_SOIL_MOISTUR_RGM_CODE = :asmCode,
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :#{#detail.roadConstructionReprtDtlId()}
          AND ROAD_CONSTRUCTION_REPRT_ID = :#{#detail.roadConstructionReprtId()}
          AND REVISION_COUNT = :expectedRevision
@@ -677,15 +722,19 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
       """)
   int updateRoadDetail(
       @Param("detail") RoadConstructionReportDetailEntity detail,
-      @Param("soilMoistureCode") String soilMoistureCode, @Param("asmCode") String asmCode,
-      @Param("millId") long millId, @Param("year") int year,
-      @Param("expectedRevision") int expectedRevision, @Param("user") String user);
+      @Param("soilMoistureCode") String soilMoistureCode,
+      @Param("asmCode") String asmCode,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("user") String user);
 
   /**
    * Existence probe for a road detail under a specific page and mill/year — the 404-versus-409
    * disambiguator, and the IDOR check for the detail level.
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
         JOIN THE.ROAD_CONSTRUCTION_REPRT r
@@ -697,8 +746,10 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
          AND r.ILCR_CATEGORY_ID = '10'
       """)
   int countRoadDetail(
-      @Param("roadDetailId") int roadDetailId, @Param("pageId") int pageId,
-      @Param("millId") long millId, @Param("year") int year);
+      @Param("roadDetailId") int roadDetailId,
+      @Param("pageId") int pageId,
+      @Param("millId") long millId,
+      @Param("year") int year);
 
   /**
    * Upsert one cost line for a road detail: update in place when the row exists, else insert with a
@@ -726,11 +777,12 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * Update-in-place half of {@link #upsertCostLine}; {@code 0} rows when the item row is absent.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
          AND EXISTS (SELECT 1
@@ -743,8 +795,11 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
                         AND r.ILCR_CATEGORY_ID = '10')
       """)
   int updateCostLine(
-      @Param("roadDetailId") int roadDetailId, @Param("costItemId") int costItemId,
-      @Param("cost") Integer cost, @Param("user") String user, @Param("millId") long millId,
+      @Param("roadDetailId") int roadDetailId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
+      @Param("user") String user,
+      @Param("millId") long millId,
       @Param("year") int year);
 
   /**
@@ -754,18 +809,21 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * COMMENTS} stay NULL: legacy writes none of them for this schedule.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_CONSTRUCTION_REPRT_DTL_ID,
            ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :roadDetailId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCostLine(
-      @Param("id") int id, @Param("roadDetailId") int roadDetailId,
-      @Param("costItemId") int costItemId, @Param("cost") Integer cost,
+      @Param("id") int id,
+      @Param("roadDetailId") int roadDetailId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
       @Param("user") String user);
 
   /**
@@ -774,7 +832,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * parent still holding children is rejected with {@code ORA-02292}.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
          AND EXISTS (SELECT 1
@@ -787,7 +846,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
                         AND r.ILCR_CATEGORY_ID = '10')
       """)
   int deleteCostsForRoadDetail(
-      @Param("roadDetailId") int roadDetailId, @Param("millId") long millId,
+      @Param("roadDetailId") int roadDetailId,
+      @Param("millId") long millId,
       @Param("year") int year);
 
   /**
@@ -795,7 +855,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * cascade, since the grandchildren must go before the children.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (
              SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID
@@ -812,7 +873,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
 
   /** Delete one road detail, scoped to its parent page. Its cost lines must already be gone. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ROAD_CONSTRUCTION_REPRT_DTL
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
          AND ROAD_CONSTRUCTION_REPRT_ID = :pageId
@@ -824,12 +886,15 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
                         AND r.ILCR_CATEGORY_ID = '10')
       """)
   int deleteRoadDetail(
-      @Param("roadDetailId") int roadDetailId, @Param("pageId") int pageId,
-      @Param("millId") long millId, @Param("year") int year);
+      @Param("roadDetailId") int roadDetailId,
+      @Param("pageId") int pageId,
+      @Param("millId") long millId,
+      @Param("year") int year);
 
   /** Delete every road detail of one page — the second step of the page cascade. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ROAD_CONSTRUCTION_REPRT_DTL
        WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
          AND EXISTS (SELECT 1
@@ -850,7 +915,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    *     mill/year, which the service has already answered as a 404
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ROAD_CONSTRUCTION_REPRT
        WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
          AND ILCR_MILL_ID = :millId
@@ -863,7 +929,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   /**
    * The stored classification codes of one road detail, for the unchanged-expired-code exemption.
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_ROAD_LIFETIME_CODE        AS road_lifetime_code,
              d.ILCR_ROAD_BALLAST_METHOD_CODE  AS ballast_method_code,
              d.ILCR_ROAD_BALLAST_MATERL_CODE  AS ballast_material_code,
@@ -892,7 +959,141 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * permanently unsaveable, because the derivation rejects a zero-candidate pair.
    */
   record StoredClassification(
-      String roadLifetimeCode, String ballastMethodCode, String ballastMaterialCode,
-      String rsmrClassCode, Integer becId, String asmCode, String soilMoistureCode) {
+      String roadLifetimeCode,
+      String ballastMethodCode,
+      String ballastMaterialCode,
+      String rsmrClassCode,
+      Integer becId,
+      String asmCode,
+      String soilMoistureCode) {}
+
+  /**
+   * One submitted construction page from {@code THE.ROAD_CONSTRUCTION_REPRT_S_VW} (Story 16.2,
+   * BR-04).
+   */
+  record PageSnapshotRow(
+      int pageId,
+      String divisionName,
+      String constructionPeriod,
+      String forestRegionCode,
+      String tsaNumber,
+      String tsbNumberCode,
+      String tflNumberCode) {}
+
+  /**
+   * One submitted road detail from {@code THE.ROAD_CONSTRUCTN_RPT_DTL_S_VW} (Story 16.2, BR-04).
+   *
+   * <p>Three legacy fields are deliberately absent because the FIELDS are: ASM Code, Soil Moisture
+   * Code and Boulder Area % were removed from Schedule 10 by business direction (PRD LD-1/2/3), so
+   * there is nothing on this document for their indicators to decorate.
+   */
+  record DetailSnapshotRow(
+      int detailId,
+      String roadName,
+      String roadLifetimeCode,
+      Integer becCatalogueId,
+      String relSoilMoistRgmClsCode,
+      Integer sideSlopePct,
+      Integer solidRockPct,
+      Integer rippableRockPct,
+      Integer coarseMaterialPct,
+      Integer fineMaterialPct,
+      Integer organicMaterialPct,
+      BigDecimal subGradeLength,
+      BigDecimal subGradeSurfaceWidth,
+      String ballastMethodCode,
+      String ballastMaterialCode,
+      BigDecimal stabilizingLength,
+      BigDecimal stabilizingSurfaceWidth,
+      BigDecimal stabilizingDepth,
+      BigDecimal stabilizingDistanceToSource,
+      String detailEngineeringCostInd,
+      BigDecimal endHaulDistance,
+      BigDecimal endHaulVolume,
+      BigDecimal overlandDistance,
+      BigDecimal overlandVolume,
+      String comments) {}
+
+  /** Every submitted construction page for a mill/year (category "10"). */
+  @Query(
+      value =
+          """
+      SELECT ROAD_CONSTRUCTION_REPRT_ID, CONSTRUCTION_DIVISION_NAME, CONSTRUCTION_PERIOD,
+             ILCR_FOREST_REGION_CODE, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE
+        FROM THE.ROAD_CONSTRUCTION_REPRT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = PageSnapshotRowMapper.class)
+  List<PageSnapshotRow> findPageSnapshots(@Param("millId") long millId, @Param("year") int year);
+
+  /** Every submitted road detail under a mill/year's construction pages. */
+  @Query(
+      value =
+          """
+      SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID, d.ROAD_NAME, d.ILCR_ROAD_LIFETIME_CODE,
+             d.BECBIOGEO_CATALOGUE_ID, d.REL_SOIL_MOIST_RGM_CLS_CODE, d.SIDE_SLOPE_PCT,
+             d.SOLID_ROCK_PCT, d.RIPPABLE_ROCK_PCT, d.COARSE_MATERIAL_PCT, d.FINE_MATERIAL_PCT,
+             d.ORGANIC_MATERIAL_PCT, d.SUB_GRADE_LENGTH, d.SUB_GRADE_SURFACE_WIDTH,
+             d.ILCR_ROAD_BALLAST_METHOD_CODE, d.ILCR_ROAD_BALLAST_MATERL_CODE,
+             d.STABILIZING_LENGTH, d.STABILIZING_SURFACE_WIDTH, d.STABILIZING_DEPTH,
+             d.STABILIZING_DISTANCE_TO_SOURCE, d.DETAIL_ENGINEERING_COST_IND, d.END_HAUL_DISTANCE,
+             d.END_HAUL_VOLUME, d.OVERLAND_DISTANCE, d.OVERLAND_VOLUME, d.COMMENTS
+        FROM THE.ROAD_CONSTRUCTN_RPT_DTL_S_VW d
+        JOIN THE.ROAD_CONSTRUCTION_REPRT r
+          ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+       WHERE r.ILCR_MILL_ID = :millId
+         AND r.REPORT_YEAR = :year
+      """,
+      rowMapperClass = DetailSnapshotRowMapper.class)
+  List<DetailSnapshotRow> findDetailSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code ROAD_CONSTRUCTION_REPRT_S_VW} row. */
+  class PageSnapshotRowMapper implements RowMapper<PageSnapshotRow> {
+    @Override
+    public PageSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new PageSnapshotRow(
+          rs.getInt("ROAD_CONSTRUCTION_REPRT_ID"),
+          rs.getString("CONSTRUCTION_DIVISION_NAME"),
+          rs.getString("CONSTRUCTION_PERIOD"),
+          rs.getString("ILCR_FOREST_REGION_CODE"),
+          rs.getString("TSA_NUMBER"),
+          rs.getString("TSB_NUMBER_CODE"),
+          rs.getString("TFL_NUMBER_CODE"));
+    }
+  }
+
+  /** Maps a {@code ROAD_CONSTRUCTN_RPT_DTL_S_VW} row. */
+  class DetailSnapshotRowMapper implements RowMapper<DetailSnapshotRow> {
+    @Override
+    public DetailSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new DetailSnapshotRow(
+          rs.getInt("ROAD_CONSTRUCTION_REPRT_DTL_ID"),
+          rs.getString("ROAD_NAME"),
+          rs.getString("ILCR_ROAD_LIFETIME_CODE"),
+          nullableInt(rs, "BECBIOGEO_CATALOGUE_ID"),
+          rs.getString("REL_SOIL_MOIST_RGM_CLS_CODE"),
+          nullableInt(rs, "SIDE_SLOPE_PCT"),
+          nullableInt(rs, "SOLID_ROCK_PCT"),
+          nullableInt(rs, "RIPPABLE_ROCK_PCT"),
+          nullableInt(rs, "COARSE_MATERIAL_PCT"),
+          nullableInt(rs, "FINE_MATERIAL_PCT"),
+          nullableInt(rs, "ORGANIC_MATERIAL_PCT"),
+          rs.getBigDecimal("SUB_GRADE_LENGTH"),
+          rs.getBigDecimal("SUB_GRADE_SURFACE_WIDTH"),
+          rs.getString("ILCR_ROAD_BALLAST_METHOD_CODE"),
+          rs.getString("ILCR_ROAD_BALLAST_MATERL_CODE"),
+          rs.getBigDecimal("STABILIZING_LENGTH"),
+          rs.getBigDecimal("STABILIZING_SURFACE_WIDTH"),
+          rs.getBigDecimal("STABILIZING_DEPTH"),
+          rs.getBigDecimal("STABILIZING_DISTANCE_TO_SOURCE"),
+          rs.getString("DETAIL_ENGINEERING_COST_IND"),
+          rs.getBigDecimal("END_HAUL_DISTANCE"),
+          rs.getBigDecimal("END_HAUL_VOLUME"),
+          rs.getBigDecimal("OVERLAND_DISTANCE"),
+          rs.getBigDecimal("OVERLAND_VOLUME"),
+          rs.getString("COMMENTS"));
+    }
   }
 }

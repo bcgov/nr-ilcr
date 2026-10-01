@@ -4,6 +4,7 @@
 // two costs (BR-05) and is NEVER recomputed here (AD-5); a total with no contributing cost is omitted
 // and must render blank, not 0.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
@@ -46,6 +47,9 @@ export interface Culvert {
   readonly totalCost: number | null
   readonly comments: string | null
   readonly revisionCount: number
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Check Status (BR-07) result — read-only validation, no status transition, mutates nothing.

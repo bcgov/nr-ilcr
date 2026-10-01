@@ -53,8 +53,11 @@ describe('PrintSchedules', () => {
     expect(screen.getByRole('checkbox', { name: 'Schedule 11' })).toBeEnabled()
     // S06 default: Schedule Information is pre-checked.
     expect(screen.getByRole('checkbox', { name: 'Schedule information' })).toBeChecked()
-    // Deferred schedules + the Mill info report are shown but disabled with a coming-soon note.
-    expect(screen.getByRole('checkbox', { name: 'Schedule 1 (coming soon)' })).toBeDisabled()
+    // Schedule 1 through 4 are enabled and available.
+    expect(screen.getByRole('checkbox', { name: 'Schedule 1' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 2' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 3' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 4' })).toBeEnabled()
     expect(
       screen.getByRole('checkbox', { name: 'Mill information report (coming soon)' }),
     ).toBeDisabled()
@@ -66,10 +69,20 @@ describe('PrintSchedules', () => {
   it('"Select all schedules" checks only the renderable schedules', async () => {
     render(<PrintSchedules />)
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select all schedules' }))
-    for (const label of ['Schedule 5', 'Schedule 7B', 'Schedule 9', 'Schedule 11']) {
+    for (const label of [
+      'Schedule 1',
+      'Schedule 2',
+      'Schedule 3',
+      'Schedule 4',
+      'Schedule 5',
+      'Schedule 7B',
+      'Schedule 8',
+      'Schedule 9',
+      'Schedule 11',
+    ]) {
       expect(screen.getByRole('checkbox', { name: label })).toBeChecked()
     }
-    expect(screen.getByRole('checkbox', { name: 'Schedule 1 (coming soon)' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 4' })).toBeChecked()
   })
 
   it('posts the selection and downloads the PDF on success', async () => {
@@ -77,7 +90,11 @@ describe('PrintSchedules', () => {
     server.use(
       http.post(PRINT_URL, async ({ request }) => {
         sentBody = (await request.json()) as Record<string, boolean>
-        return new HttpResponse(new Blob(['%PDF-1.4 mock']), {
+        // arrayBuffer, NOT new HttpResponse(new Blob(...)): this MSW build coerces a Blob body to
+        // its string form, so the old fixture delivered the 13 bytes "[object Blob]" rather than a
+        // PDF. The download assertions below were passing on that, which is what the "MSW/undici
+        // blob defect" notes in this suite were actually seeing.
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
           headers: { 'Content-Type': 'application/pdf' },
         })
       }),
@@ -133,12 +150,28 @@ describe('PrintSchedules', () => {
     expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
   })
 
+  it('falls back to the generic message when the failure carries no problem+json detail (#332)', async () => {
+    // The POST reads its response as a blob, so an empty-bodied 500 parses to no detail at all.
+    server.use(http.post(PRINT_URL, () => new HttpResponse(null, { status: 500 })))
+    render(<PrintSchedules />)
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Schedule 5' }))
+    await userEvent.click(screen.getByRole('button', { name: /Generate PDF/ }))
+
+    expect(
+      await screen.findByText('Unable to generate the PDF. Please try again.'),
+    ).toBeInTheDocument()
+    expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
+    // The busy lock releases on failure, so Generate is available for the retry the message invites.
+    expect(screen.getByRole('button', { name: /Generate PDF/ })).toBeEnabled()
+  })
+
   it('ignores a stale response when the mill/year context changed mid-render (no download)', async () => {
     let handled = false
     server.use(
       http.post(PRINT_URL, () => {
         handled = true
-        return new HttpResponse(new Blob(['%PDF-1.4 mock']), {
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
           headers: { 'Content-Type': 'application/pdf' },
         })
       }),

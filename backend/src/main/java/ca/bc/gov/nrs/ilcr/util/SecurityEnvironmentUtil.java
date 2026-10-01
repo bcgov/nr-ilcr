@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
  * Utility for security-related environment checks.
  *
  * <p>Currently contains a small helper to detect a local environment name. The method is
- * case-insensitive and intended for conditional behavior in environment-specific code paths.</p>
+ * case-insensitive and intended for conditional behavior in environment-specific code paths.
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class SecurityEnvironmentUtil {

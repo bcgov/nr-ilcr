@@ -5,17 +5,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -34,40 +39,40 @@ import org.springframework.security.core.Authentication;
 @ExtendWith(MockitoExtension.class)
 class Schedule1ControllerTest {
 
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
+
   private static final long MILL_ID = 514L;
   private static final int YEAR = 2021;
-  private static final String CATEGORY = "1";
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule1Service schedule1Service;
+  @Mock private Schedule1Service schedule1Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule1Controller controller;
+  @InjectMocks private Schedule1Controller controller;
 
   @Test
   void getSchedule1_validatesContext_derivesEditFlag_andReturnsDocument() {
     Schedule1Response doc = mock(Schedule1Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule1Service.getSchedule1(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule1Service.getSchedule1(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
     ResponseEntity<Schedule1Response> response =
         controller.getSchedule1(MILL_ID, YEAR, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(doc, response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 
   @Test
@@ -75,25 +80,30 @@ class Schedule1ControllerTest {
     Schedule1Request request = mock(Schedule1Request.class);
     Schedule1Response saved = mock(Schedule1Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule1Service.saveSchedule1(MILL_ID, YEAR, request, true, "dev-admin"))
+    when(schedule1Service.saveSchedule1(
+            MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<Schedule1Response> response =
         controller.saveSchedule1(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(saved).withMessage(any());
   }
 
   @Test
   void deleteSchedule1_delegates_andReturnsDeletedMessage() {
+    when(schedule1Service.deleteSchedule1(MILL_ID, YEAR, CallerRights.SUBMITTER)).thenReturn(true);
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");
 
     ResponseEntity<MessageResponse> response =
@@ -101,20 +111,44 @@ class Schedule1ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
-    verify(schedule1Service).deleteSchedule1(MILL_ID, YEAR);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
+    verify(schedule1Service).deleteSchedule1(MILL_ID, YEAR, CallerRights.SUBMITTER);
+  }
+
+  /**
+   * Defect #296: the idempotent no-op must NOT claim a delete happened — same rule the #292 code
+   * review put on Schedule 2.
+   */
+  @Test
+  void deleteSchedule1_noOp_saysNothingWasDeleted() {
+    when(schedule1Service.deleteSchedule1(MILL_ID, YEAR, CallerRights.SUBMITTER)).thenReturn(false);
+    when(messageSource.getMessage(eq("noDataToDeleteInfoMsg"), any(), any(), any(Locale.class)))
+        .thenReturn("No saved data was found, so nothing was deleted");
+
+    ResponseEntity<MessageResponse> response =
+        controller.deleteSchedule1(MILL_ID, YEAR, authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    assertNotNull(response.getBody());
+    assertEquals(
+        "No saved data was found, so nothing was deleted", response.getBody().message().text());
   }
 
   @Test
   void checkStatus_validatesContext_andReturnsServiceResult() {
-    CheckStatusResponse status = mock(CheckStatusResponse.class);
-    when(schedule1Service.checkSchedule1Status(MILL_ID, YEAR)).thenReturn(status);
+    Schedule1CheckStatusResponse status = mock(Schedule1CheckStatusResponse.class);
+    Schedule1CheckRequest request = new Schedule1CheckRequest(List.of(), null);
+    when(schedule1Service.checkStatus(MILL_ID, YEAR, request)).thenReturn(status);
 
-    ResponseEntity<CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+    ResponseEntity<Schedule1CheckStatusResponse> response =
+        controller.checkStatus(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(status, response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 }

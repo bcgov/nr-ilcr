@@ -1,6 +1,14 @@
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+
 // Mirrors the backend Schedule4Response DTO (Story 4.1/4.3 read + 4.4 check-status). Jackson omits
 // nulls (non_null), so absent members simply won't be in the JSON. `perUnit`, `kind`, `editable`,
-// per-category `distance`, and every derived value are computed server-side — never recomputed here.
+// per-category `distance`, and every derived value are computed server-side and are read-only here —
+// never sent on a write, and the server is the sole authority for every stored figure.
+//
+// `perUnit` IS mirrored for display while a location is being edited or copied, so the $/m³ column
+// tracks entry before Save the way legacy did (defect #291; spine AD-5 amended 2026-08-20). That
+// mirror lives in `components/schedule4/derived.ts` and nowhere else; View mode renders these figures
+// untouched, and the Save echo supersedes the mirror.
 
 export interface MessageInfo {
   readonly key: string
@@ -16,6 +24,9 @@ export interface CategoryAmount {
   readonly cost: number | null
   readonly distance: number | null
   readonly perUnit: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // One sub-page list row (Towing 43 / Truck Rehaul 46 [cycle] / Other 55) — its own report sharing
@@ -30,6 +41,9 @@ export interface SubPageRow {
   readonly cost: number | null
   readonly cycle: number | null
   readonly perUnit: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // One dump location = a family of TRANSPORTATION_REPORT rows. `id` is the primary report id (the
@@ -43,6 +57,9 @@ export interface Location {
   readonly comments?: string | null
   readonly categories: CategoryAmount[]
   readonly subPageRows: SubPageRow[]
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 export default interface Schedule4Response {
@@ -55,6 +72,9 @@ export default interface Schedule4Response {
 }
 
 // Check Status (POST check-status, no body): per-location breakdown, read-only, mutates nothing.
+// `code` names the field: 0 is the location description (`FieldIssue.LOCATION_DESCRIPTION`, the one
+// field legacy required — #465); 40–55 are the legacy cost-item codes, which the API no longer
+// emits but the client still labels (`checkStatusFieldLabel`).
 export interface FieldIssue {
   readonly code: number
   readonly message: MessageInfo
@@ -62,7 +82,9 @@ export interface FieldIssue {
 
 export interface LocationCheckResult {
   readonly id: number | null
-  readonly name: string
+  // Null when the stored description is null — the very state the check reports (code 0), passed
+  // through by Schedule4Service unchanged. Render through `checkStatusLocationName`.
+  readonly name: string | null
   readonly met: boolean
   readonly messages: MessageInfo[]
   readonly issues: FieldIssue[]

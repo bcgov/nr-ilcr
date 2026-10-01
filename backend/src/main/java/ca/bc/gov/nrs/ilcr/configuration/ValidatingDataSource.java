@@ -8,29 +8,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 
+/** Data source wrapper that validates the connection upon creation. */
 public class ValidatingDataSource extends DelegatingDataSource {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ValidatingDataSource.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(ValidatingDataSource.class);
 
-    private final String validationQuery;
+  private final String validationQuery;
 
-    public ValidatingDataSource(DataSource targetDataSource, String validationQuery) {
-        super(targetDataSource);
-        this.validationQuery = validationQuery;
-        validate();
+  /**
+   * Constructs a new ValidatingDataSource.
+   *
+   * @param targetDataSource the underlying data source
+   * @param validationQuery the query to execute to validate the connection
+   */
+  public ValidatingDataSource(DataSource targetDataSource, String validationQuery) {
+    super(targetDataSource);
+    this.validationQuery = validationQuery;
+    validate();
+  }
+
+  private void validate() {
+    try (Connection connection = getTargetDataSource().getConnection();
+        Statement statement = connection.createStatement()) {
+      statement.execute(validationQuery);
+      LOGGER.info("Oracle datasource validation successful");
+    } catch (SQLException exception) {
+      throw new IllegalStateException(
+          "Oracle datasource validation failed. Check SPRING_DATASOURCE_URL, "
+              + "SPRING_DATASOURCE_USERNAME, and SPRING_DATASOURCE_PASSWORD.",
+          exception);
     }
-
-    private void validate() {
-        try (Connection connection = getTargetDataSource().getConnection();
-                Statement statement = connection.createStatement()) {
-            statement.execute(validationQuery);
-            LOGGER.info("Oracle datasource validation successful");
-        } catch (SQLException exception) {
-            throw new IllegalStateException(
-                    "Oracle datasource validation failed. Check SPRING_DATASOURCE_URL, "
-                            + "SPRING_DATASOURCE_USERNAME, and SPRING_DATASOURCE_PASSWORD.",
-                    exception
-            );
-        }
-    }
+  }
 }

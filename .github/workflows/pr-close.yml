@@ -33,8 +33,10 @@ jobs:
     secrets:
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
-      # Helper defaults oc_server to Silver; this repo is on Gold
-      oc_server: ${{ secrets.oc_server }}
+      # Helper defaults oc_server to Silver; this repo is on Gold. Read the
+      # vars.OC_SERVER variable every other workflow uses, not the stale
+      # same-named secret, which predates the move to Gold.
+      oc_server: ${{ vars.OC_SERVER }}
     with:
       cleanup: label
       # Resources are labeled with three app values: ${NAME}-${ZONE} (init),
@@ -44,4 +46,7 @@ jobs:
         ${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}
         ${{ github.event.repository.name }}-backend-${{ needs.init.outputs.zone }}
         ${{ github.event.repository.name }}-frontend-${{ needs.init.outputs.zone }}
-      packages: backend frontend
+      # database is promoted too so its `latest` tag stays current for
+      # tag_fallback in pr-open builds. Its OpenShift objects live in the
+      # tools namespace under app=<repo>-tools, so PR cleanup never touches them.
+      packages: backend frontend database

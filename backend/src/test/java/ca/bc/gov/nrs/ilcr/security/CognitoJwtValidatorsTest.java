@@ -9,17 +9,16 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 
 /**
- * The two identity-spike (Story 1.0) token constraints, in isolation: the bearer must be the Cognito
- * ID token ({@code token_use=id}) with this app's client id in {@code aud}. The MockMvc acceptance
- * tests inject a pre-authenticated principal and so bypass decoding — these exercise the validators
- * the real decoder applies.
+ * The two identity-spike (Story 1.0) token constraints, in isolation: the bearer must be the
+ * Cognito ID token ({@code token_use=id}) with this app's client id in {@code aud}. The MockMvc
+ * acceptance tests inject a pre-authenticated principal and so bypass decoding — these exercise the
+ * validators the real decoder applies.
  */
 class CognitoJwtValidatorsTest {
 
   private static Jwt jwtWith(String tokenUse, List<String> audience) {
-    Jwt.Builder builder = Jwt.withTokenValue("token")
-        .header("alg", "none")
-        .claim("token_use", tokenUse);
+    Jwt.Builder builder =
+        Jwt.withTokenValue("token").header("alg", "none").claim("token_use", tokenUse);
     if (audience != null) {
       builder.audience(audience);
     }

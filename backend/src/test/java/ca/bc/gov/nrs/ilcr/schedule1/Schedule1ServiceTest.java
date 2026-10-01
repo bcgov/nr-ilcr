@@ -1,35 +1,48 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.LineItem;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 
 /**
- * Unit test for the Schedule 1 document assembly + server-side derivation (AD-5/AD-6), including the
- * Story 2.3 BR-03 Crown Timber pre-fill and BR-04 Schedule 3 admin-cost pulls. Mocked repository —
- * no DB, no Spring.
+ * Unit test for the Schedule 1 document assembly + server-side derivation (AD-5/AD-6), including
+ * the Story 2.3 BR-03 Crown Timber pre-fill and BR-04 Schedule 3 admin-cost pulls. Mocked
+ * repository — no DB, no Spring.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule1ServiceTest {
@@ -40,72 +53,136 @@ class Schedule1ServiceTest {
   private static final String WARN_TEXT =
       "The Crown Timber (Sch 3) volume has been set for volume fields. Please check and save schedule.";
 
-  @Mock
-  private Schedule1Repository repository;
+  @Mock private Schedule1Repository repository;
 
-  @Mock
-  private Schedule3CostDerivation schedule3CostDerivation;
+  @Mock private Schedule3CostDerivation schedule3CostDerivation;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule1Service service;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
 
-  /** Stub the Schedule 1 side (summary + details + track). Schedule 3 defaults to empty (no pull). */
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", and a mock would make every
+  // original-value assertion below an assertion about the mock (Story 16.2).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
+  @InjectMocks private Schedule1Service service;
+
+  /**
+   * Defect #296: a mill/year with NO category-1 summary is the unsaved state, not a 404 — the
+   * document is served empty and editable so a first entry can be typed and saved.
+   *
+   * <p>The null {@code revisionCount} is the load-bearing assertion, not decoration. The backend
+   * runs {@code default-property-inclusion: non_null}, so a null token is OMITTED from the body,
+   * and the client's {@code isScheduleSaved} reads exactly that omission to keep Delete closed on a
+   * never-saved schedule. If this ever regressed to {@code 0}, the backend suite would stay green
+   * while a Delete button appeared on a schedule that has never existed.
+   */
+  @Test
+  void getSchedule1_noSummary_servesEmptyEditableDocument() {
+    when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
+
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNull(doc.revisionCount(), "an unsaved schedule must carry NO optimistic-lock token");
+    assertNull(doc.comments());
+    assertNull(doc.crownVolume());
+    assertTrue(doc.editable(), "a Draft track + edit rights means the blank form is fillable");
+    assertEquals("D", doc.trackStatus());
+    // No summary means no summary id to read details for.
+    verify(repository, never()).findDetails(anyInt());
+  }
+
+  /**
+   * The cross-schedule counterpart: {@code findSchedule1} must report ABSENCE, because Schedule 2
+   * and the combined report rely on it to keep their carried figures null and their PDF section
+   * skipped. Serving them the empty document instead would turn blanks into $0 (#296 code review).
+   */
+  @Test
+  void findSchedule1_noSummary_isEmpty_whileGetServesADocument() {
+    when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient()
+        .when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
+
+    assertTrue(service.findSchedule1(MILL, YEAR, CallerRights.SUBMITTER).isEmpty());
+    assertNotNull(
+        service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER),
+        "get must still serve a document");
+  }
+
+  /**
+   * Stub the Schedule 1 side (summary + details + track). Schedule 3 defaults to empty (no pull).
+   */
   private void stub(String trackStatus, List<DetailRow> details) {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(1001, 12345, "c", 3)));
     lenient().when(repository.findDetails(1001)).thenReturn(details);
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
     // Schedule 3 defaults to absent: no crown, no pulled admin costs (overridden per-test below).
-    lenient().when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+    lenient()
+        .when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
         .thenReturn(new Schedule1Sources(null, null, null));
   }
 
   /**
    * Stub the Schedule-3-derived sources Schedule 1 reads (BR-03 crown volume, BR-04 Less Silv Admin
-   * cost, BR-04 Forest Mgmt Admin crown cost) — the values {@link Schedule3CostDerivation} computes.
+   * cost, BR-04 Forest Mgmt Admin crown cost) — the values {@link Schedule3CostDerivation}
+   * computes.
    */
-  private void stubSchedule3(BigDecimal crownVolume, Integer silvAdminCost, Long forestMgmtAdminCost) {
-    lenient().when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+  private void stubSchedule3(
+      BigDecimal crownVolume, Integer silvAdminCost, Long forestMgmtAdminCost) {
+    lenient()
+        .when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
         .thenReturn(new Schedule1Sources(crownVolume, silvAdminCost, forestMgmtAdminCost));
   }
 
   private void stubWarningText() {
-    lenient().when(messageSource.getMessage(eq(WARN_CROWN), any(), any(), any(Locale.class)))
+    lenient()
+        .when(messageSource.getMessage(eq(WARN_CROWN), any(), any(), any(Locale.class)))
         .thenReturn(WARN_TEXT);
   }
 
   private LineItem lineItem(Schedule1Response doc, int code) {
-    return doc.lineItems().stream().filter(li -> li.costItemCode() == code).findFirst().orElseThrow();
+    return doc.lineItems().stream()
+        .filter(li -> li.costItemCode() == code)
+        .findFirst()
+        .orElseThrow();
   }
 
   @Test
   void perUnit_isCostOverVolume_asDecimal() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000.0000"), 50000, null)));
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     // 50000 / 1000 = 50.0 (kept as a decimal, scale >= 1)
     assertEquals(0, new BigDecimal("50.0").compareTo(lineItem(doc, 12).perUnit()));
   }
 
   @Test
   void perUnit_nullOrZeroVolume_isNull() {
-    stub("D", List.of(
-        new DetailRow(12, BigDecimal.ZERO, 50000, null),
-        new DetailRow(13, null, 40000, null)));
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    stub(
+        "D",
+        List.of(
+            new DetailRow(12, BigDecimal.ZERO, 50000, null), new DetailRow(13, null, 40000, null)));
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(lineItem(doc, 12).perUnit());
     assertNull(lineItem(doc, 13).perUnit());
   }
 
   @Test
   void otherCosts_subtotalCountPerUnit_fromItem19Rows() {
-    stub("D", List.of(
-        new DetailRow(19, new BigDecimal("8000"), null, null),   // shared volume row
-        new DetailRow(19, null, 12000, "Row A"),                 // itemized
-        new DetailRow(19, null, 12000, "Row B")));               // itemized
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    stub(
+        "D",
+        List.of(
+            new DetailRow(19, new BigDecimal("8000"), null, null), // shared volume row
+            new DetailRow(19, null, 12000, "Row A"), // itemized
+            new DetailRow(19, null, 12000, "Row B"))); // itemized
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0, new BigDecimal("8000").compareTo(doc.otherCosts().volume()));
     assertEquals(24000L, doc.otherCosts().costSubtotal());
     assertEquals(2, doc.otherCosts().count());
@@ -115,12 +192,15 @@ class Schedule1ServiceTest {
   @Test
   void otherCosts_whitespaceDescription_countsAsItemized_matchesLegacy() {
     // Legacy isNullOrEmptyString treats only null/"" as the shared (non-itemized) row; a
-    // whitespace-only description is an itemized row (isNotEmpty), so it counts toward N and its cost
+    // whitespace-only description is an itemized row (isNotEmpty), so it counts toward N and its
+    // cost
     // toward the subtotal — not folded into the shared-volume row.
-    stub("D", List.of(
-        new DetailRow(19, new BigDecimal("1000"), null, null),  // shared volume row (null desc)
-        new DetailRow(19, null, 500, "   ")));                   // whitespace desc -> itemized
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    stub(
+        "D",
+        List.of(
+            new DetailRow(19, new BigDecimal("1000"), null, null), // shared volume row (null desc)
+            new DetailRow(19, null, 500, "   "))); // whitespace desc -> itemized
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(1, doc.otherCosts().count());
     assertEquals(500L, doc.otherCosts().costSubtotal());
     assertEquals(0, new BigDecimal("1000").compareTo(doc.otherCosts().volume()));
@@ -129,13 +209,17 @@ class Schedule1ServiceTest {
   @Test
   void otherCosts_sharedRowWithNullVolume_readsAsNullVolume_notAnNpe() {
     // Regression: a stored shared row (null description) carrying no volume 500'd the whole GET —
-    // toOtherCosts mapped to the nullable volume BEFORE findFirst(), and Stream.findFirst() throws NPE
-    // when the selected element is itself null. The shared volume must simply read back as null while
+    // toOtherCosts mapped to the nullable volume BEFORE findFirst(), and Stream.findFirst() throws
+    // NPE
+    // when the selected element is itself null. The shared volume must simply read back as null
+    // while
     // the itemized rows still aggregate (perUnit null — no volume to divide by).
-    stub("D", List.of(
-        new DetailRow(19, null, null, null),        // shared row, volume never entered / cleared
-        new DetailRow(19, null, 12000, "Row A")));  // itemized
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    stub(
+        "D",
+        List.of(
+            new DetailRow(19, null, null, null), // shared row, volume never entered / cleared
+            new DetailRow(19, null, 12000, "Row A"))); // itemized
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.otherCosts().volume());
     assertEquals(12000L, doc.otherCosts().costSubtotal());
     assertEquals(1, doc.otherCosts().count());
@@ -147,7 +231,7 @@ class Schedule1ServiceTest {
     // A schedule with no Other Costs still carries a zero-summary (present, not null) so the
     // client can tell "zero" from "missing".
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0, doc.otherCosts().count());
     assertEquals(0L, doc.otherCosts().costSubtotal());
     assertNull(doc.otherCosts().volume());
@@ -157,66 +241,79 @@ class Schedule1ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stub("D", List.of());
-    assertTrue(service.getSchedule1(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenNotDraft() {
     stub("S", List.of());
-    assertFalse(service.getSchedule1(MILL, YEAR, true).editable());
+    assertFalse(service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenCallerMayNotEdit() {
     stub("D", List.of());
-    assertFalse(service.getSchedule1(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule1(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
   void silvicultureBlock_mappedFromSchedule1Rows() {
     // The silviculture block line items still come from Schedule 1's own detail rows (only the
     // top-level pulled scalars change source — see the BR-04 tests).
-    stub("D", List.of(
-        new DetailRow(1, new BigDecimal("100"), 500, null),      // silviculture actual
-        new DetailRow(139, new BigDecimal("50"), 300, null)));   // less silv admin (block line item)
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    stub(
+        "D",
+        List.of(
+            new DetailRow(1, new BigDecimal("100"), 500, null), // silviculture actual
+            new DetailRow(
+                139, new BigDecimal("50"), 300, null))); // less silv admin (block line item)
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(500, doc.silviculture().actualSpent().cost());
     assertEquals(300, doc.silviculture().lessAdmin().cost());
   }
 
-  // ---- Story 2.3: BR-04 Schedule 3 pulls -----------------------------------------------------------
+  // ---- Story 2.3: BR-04 Schedule 3 pulls
+  // -----------------------------------------------------------
 
   @Test
   void br04_pulledAdminCosts_comeFromSchedule3_notSchedule1() {
-    // Even with 143/139 rows on Schedule 1, the pulled scalars are sourced from Schedule 3's derived
+    // Even with 143/139 rows on Schedule 1, the pulled scalars are sourced from Schedule 3's
+    // derived
     // Subtotal Actual Costs crown (Forest Mgmt Admin) and item-37 cost (Less Silv Admin).
-    stub("D", List.of(
-        new DetailRow(143, new BigDecimal("70"), 700, null),
-        new DetailRow(139, new BigDecimal("50"), 300, null)));
+    stub(
+        "D",
+        List.of(
+            new DetailRow(143, new BigDecimal("70"), 700, null),
+            new DetailRow(139, new BigDecimal("50"), 300, null)));
     stubSchedule3(null, 150000, 600000L);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(600000, doc.forestMgmtAdminCost());
     assertEquals(150000, doc.lessSilvAdminCost());
   }
 
   @Test
   void derivedTotals_foldInSchedule3AndLineItems() {
-    stub("D", List.of(
-        new DetailRow(12, new BigDecimal("100"), 40000, null),   // logging line
-        new DetailRow(13, new BigDecimal("50"), 10000, null),    // logging line
-        new DetailRow(143, new BigDecimal("1000"), null, null),  // FMA volume (cost pulled from Sch3)
-        new DetailRow(144, new BigDecimal("2000"), null, null),  // Subtotal Company Logging volume
-        new DetailRow(1, new BigDecimal("10"), 200000, null),    // Silviculture Actual $ Spent
-        new DetailRow(2, new BigDecimal("10"), 50000, null),     // Accrued less Actual
-        new DetailRow(140, new BigDecimal("500"), null, null))); // Total Silviculture volume
-    // crown volume 4000 (prefill won't fire — Sch1 has volumes); FMA 600000; Less Silv Admin 150000.
+    stub(
+        "D",
+        List.of(
+            new DetailRow(12, new BigDecimal("100"), 40000, null), // logging line
+            new DetailRow(13, new BigDecimal("50"), 10000, null), // logging line
+            new DetailRow(
+                143, new BigDecimal("1000"), null, null), // FMA volume (cost pulled from Sch3)
+            new DetailRow(
+                144, new BigDecimal("2000"), null, null), // Subtotal Company Logging volume
+            new DetailRow(1, new BigDecimal("10"), 200000, null), // Silviculture Actual $ Spent
+            new DetailRow(2, new BigDecimal("10"), 50000, null), // Accrued less Actual
+            new DetailRow(140, new BigDecimal("500"), null, null))); // Total Silviculture volume
+    // crown volume 4000 (prefill won't fire — Sch1 has volumes); FMA 600000; Less Silv Admin
+    // 150000.
     stubSchedule3(new BigDecimal("4000"), 150000, 600000L);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     // Subtotal Company Logging = (40000 + 10000) + 600000 (FMA) + 0 (other costs) = 650000.
     assertEquals(650000L, doc.subtotalCompanyLoggingCost());
     // Total Silviculture = 200000 (actual) − 150000 (Sch3 silv admin) + 50000 (accrued) = 100000.
     assertEquals(100000L, doc.totalSilvicultureCost());
-    // Total Company Logging = 650000 + 100000 = 750000; its $/m³ = 750000 / 4000 crown volume = 187.5.
+    // Total Company Logging = 650000 + 100000 = 750000; its $/m³ = 750000 / 4000 crown volume =
+    // 187.5.
     assertEquals(750000L, doc.totalCompanyLoggingCost());
     assertEquals(0, new BigDecimal("187.5").compareTo(doc.totalCompanyLoggingPerUnit()));
     // Per-unit cells: FMA 600000/1000 = 600.0; Subtotal 650000/2000 = 325.0.
@@ -229,24 +326,30 @@ class Schedule1ServiceTest {
     // Legacy Schedule1MB.getTotalSilvCost uses CoreUtil null-propagation: with Actual $ Spent (and
     // Accrued) cost blank it returns null (blank) and does NOT subtract the Sch3 admin cost, and a
     // blank Total Silviculture leaves Total Company Logging equal to the subtotal. This is the S02
-    // crown-prefill screen (costs blank, Sch3 Less Silv Admin present) — it must show blank, not −admin.
-    stub("D", List.of(new DetailRow(12, new BigDecimal("100"), 40000, null))); // logging line, no silv costs
+    // crown-prefill screen (costs blank, Sch3 Less Silv Admin present) — it must show blank, not
+    // −admin.
+    stub(
+        "D",
+        List.of(
+            new DetailRow(12, new BigDecimal("100"), 40000, null))); // logging line, no silv costs
     stubSchedule3(null, 150000, null); // Less Silv Admin (item-37 crown) = 150000; no FMA
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
-    assertNull(doc.totalSilvicultureCost());                // blank — NOT -150000
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
+    assertNull(doc.totalSilvicultureCost()); // blank — NOT -150000
     assertEquals(40000L, doc.subtotalCompanyLoggingCost()); // logging line only
-    assertEquals(40000L, doc.totalCompanyLoggingCost());    // subtotal + blank = subtotal, not subtotal-admin
+    assertEquals(
+        40000L, doc.totalCompanyLoggingCost()); // subtotal + blank = subtotal, not subtotal-admin
     assertNull(doc.totalSilviculturePerUnit());
   }
 
   @Test
   void br04_forestMgmtAdmin_derivedSubtotalIsZero_notNull_whenSchedule3Empty() {
     // A Schedule 3 that exists but has no cost lines yields a Subtotal Actual Costs crown of 0 (the
-    // subtotal seeds at 0 — legacy sumCostType), NOT null. Null is reserved for "no Schedule 3 at all"
+    // subtotal seeds at 0 — legacy sumCostType), NOT null. Null is reserved for "no Schedule 3 at
+    // all"
     // (the next test). This distinguishes an opened-but-empty Schedule 3 from a missing one.
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
     stubSchedule3(null, null, 0L);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0L, doc.forestMgmtAdminCost());
     assertNull(doc.lessSilvAdminCost());
   }
@@ -255,26 +358,28 @@ class Schedule1ServiceTest {
   void br04_pulledAdminCosts_nullWhenSchedule3Absent() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
     // Default stub → no Schedule 3 summary → all sources null (legacy shows those cells blank).
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.forestMgmtAdminCost());
     assertNull(doc.lessSilvAdminCost());
   }
 
-  // ---- Story 2.3: BR-03 Crown Timber pre-fill (S02) ----------------------------------------------
+  // ---- Story 2.3: BR-03 Crown Timber pre-fill (S02)
+  // ----------------------------------------------
 
   @Test
   void br03_prefill_firesWhenAllVolumesEmptyAndSch3CrownPresent() {
-    stub("D", List.of());  // first entry: no stored detail rows
+    stub("D", List.of()); // first entry: no stored detail rows
     stubSchedule3(new BigDecimal("7777"), null, null);
     stubWarningText();
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
 
     // Every savable volume field carries the copied crown value (codes 12-18 + silviculture 1 & 2).
     for (int code : List.of(12, 13, 14, 15, 16, 17, 18)) {
       assertEquals(0, new BigDecimal("7777").compareTo(lineItem(doc, code).volume()));
     }
     assertEquals(0, new BigDecimal("7777").compareTo(doc.silviculture().actualSpent().volume()));
-    assertEquals(0, new BigDecimal("7777").compareTo(doc.silviculture().accruedLessActual().volume()));
+    assertEquals(
+        0, new BigDecimal("7777").compareTo(doc.silviculture().accruedLessActual().volume()));
     assertEquals(0, new BigDecimal("7777").compareTo(doc.schedule3CrownVolume()));
     // WRN-001 rides on warnings with verbatim text (AD-8).
     assertEquals(1, doc.warnings().size());
@@ -284,9 +389,9 @@ class Schedule1ServiceTest {
 
   @Test
   void br03_prefill_doesNotFireWhenAnyVolumePresent() {
-    stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));  // populated
+    stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null))); // populated
     stubSchedule3(new BigDecimal("7777"), null, null);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     // No copy: code 12 keeps its stored 1000; no warning.
     assertEquals(0, new BigDecimal("1000").compareTo(lineItem(doc, 12).volume()));
     assertTrue(doc.warnings().isEmpty());
@@ -294,10 +399,108 @@ class Schedule1ServiceTest {
 
   @Test
   void br03_prefill_doesNotFireWhenNoSch3Crown() {
-    stub("D", List.of());  // empty, but no Schedule 3 crown
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    stub("D", List.of()); // empty, but no Schedule 3 crown
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.warnings().isEmpty());
     assertTrue(doc.lineItems().isEmpty());
     assertNull(doc.schedule3CrownVolume());
+  }
+
+  // ---- Epic 21: the REPORTING read must never pre-fill (Data Extract, combined Sch 1+2 layout)
+  // ------------------------------------------------------------------------------------------
+
+  /**
+   * {@code findStoredSchedule1} is the read the Data Extract and the combined Schedule 1+2 layout
+   * take, and its whole reason to exist is the {@code allowCrownPrefill=false} flag it passes into
+   * {@code assemble}. Legacy's extract read the persisted row and printed its no-data marker for a
+   * Schedule 1 nobody had filled in ({@code Schedule1Extract.java:38}, {@code isEmptyAllSchedule}
+   * at {@code :472-486}); the S02 screen read would instead print thirteen copies of the Schedule 3
+   * Crown Timber volume and suppress that marker. Both reads are exercised against the SAME
+   * pre-fill-triggering state, so the flag is what the difference is pinned to.
+   */
+  @Nested
+  @DisplayName("findStoredSchedule1 — the reporting read never applies the BR-03 crown pre-fill")
+  class FindStoredSchedule1 {
+
+    private static final BigDecimal CROWN = new BigDecimal("7777");
+
+    /**
+     * The exact state that fires BR-03 through {@code getSchedule1}: a stored summary whose every
+     * detail row carries a NULL volume, plus a Schedule 3 Crown Timber volume. The rows carry COSTS
+     * on purpose: with no rows at all the served line-item list is empty either way, and "no line
+     * item carries the crown volume" would be vacuously true. A row with a cost but no volume is
+     * served by both reads, so the volume it comes back with is the discriminating fact.
+     */
+    private void arrangePrefillTriggeringState() {
+      // Draft, like every neighbour: it keeps the Story 16.2 snapshot reads out of a test that is
+      // about one flag, and the pre-fill rule itself does not look at the track status.
+      stub(
+          "D",
+          List.of(
+              new DetailRow(12, null, 50000, null), // volume never entered, cost present
+              new DetailRow(13, null, 40000, null),
+              new DetailRow(1, null, 500, null))); // silviculture Actual $ Spent, cost only
+      stubSchedule3(CROWN, null, null);
+      stubWarningText();
+    }
+
+    @Test
+    @DisplayName("serves the stored rows as stored: no crown volume copied, no WRN-001")
+    void findStoredSchedule1_prefillState_servesStoredDocumentWithoutCrownCopy() {
+      arrangePrefillTriggeringState();
+
+      Optional<Schedule1Response> stored =
+          service.findStoredSchedule1(MILL, YEAR, CallerRights.NONE);
+
+      assertThat(stored).as("a stored summary exists, so the read is present").isPresent();
+      Schedule1Response doc = stored.get();
+      // Only the rows that are actually stored are served (no prefilled 14-18 / 143 / 144 shells),
+      // and none of them has acquired the Schedule 3 volume.
+      assertThat(doc.lineItems())
+          .extracting(LineItem::costItemCode)
+          .containsExactlyInAnyOrder(12, 13);
+      assertThat(doc.lineItems())
+          .allSatisfy(
+              li -> {
+                assertThat(li.volume()).as("item %s volume stays null", li.costItemCode()).isNull();
+                assertThat(li.perUnit()).isNull(); // nothing to divide by
+              });
+      assertThat(lineItem(doc, 12).cost()).isEqualTo(50000); // the stored cost is untouched
+      // The silviculture rows follow the same rule: the stored row keeps its null volume, and the
+      // three rows with no stored data stay absent rather than becoming crown-volume shells.
+      assertThat(doc.silviculture().actualSpent().volume()).isNull();
+      assertThat(doc.silviculture().actualSpent().cost()).isEqualTo(500);
+      assertThat(doc.silviculture().accruedLessActual()).isNull();
+      assertThat(doc.silviculture().lessAdmin()).isNull();
+      assertThat(doc.silviculture().total()).isNull();
+      // WRN-001 is the screen's "please save what we just copied" — meaningless for a report.
+      assertThat(doc.warnings()).isEmpty();
+      // The Schedule 3 figure is still REPORTED as a source (the grand-total divisor); it is the
+      // copy into the volume fields that is suppressed, not the read of it.
+      assertThat(doc.schedule3CrownVolume()).isEqualByComparingTo(CROWN);
+    }
+
+    @Test
+    @DisplayName("positive control: findSchedule1 on the same state DOES pre-fill and warns")
+    void findSchedule1_sameState_prefillsEveryVolumeAndWarns() {
+      arrangePrefillTriggeringState();
+
+      Optional<Schedule1Response> screen = service.findSchedule1(MILL, YEAR, CallerRights.NONE);
+
+      assertThat(screen).isPresent();
+      Schedule1Response doc = screen.get();
+      // The screen read serves the FULL nine-item set, each carrying the copied crown volume —
+      // including the 14-18 / 143 / 144 items that have no stored row at all.
+      assertThat(doc.lineItems())
+          .extracting(LineItem::costItemCode)
+          .containsExactlyInAnyOrder(12, 13, 14, 15, 16, 17, 18, 143, 144);
+      assertThat(doc.lineItems())
+          .allSatisfy(li -> assertThat(li.volume()).isEqualByComparingTo(CROWN));
+      assertThat(doc.silviculture().actualSpent().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.silviculture().accruedLessActual().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.silviculture().lessAdmin().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.silviculture().total().volume()).isEqualByComparingTo(CROWN);
+      assertThat(doc.warnings()).extracting(w -> w.key()).containsExactly(WARN_CROWN);
+    }
   }
 }

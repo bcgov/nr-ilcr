@@ -195,22 +195,57 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     with no prompt. A user can now destroy an itemized cost with one mis-click and no undo.
   - **It is also now internally inconsistent:** the whole-schedule delete (S13) KEPT its "Delete
     schedule" confirm Modal, so the same app confirms the large destructive action and not the small one.
-  - **Action — with the Schedule 1 developer (2026-08-07).** Walked through with him as part of the QA
-    review of this UC; when he gets a chance he'll look into it and raise a ticket if it is confirmed.
-    Restoring the prompt means changing the shared `EditableSubPageLayout` / `useEditableCostRows`
-    components either way — the behaviour does not live on the Schedule 1 pages themselves.
-  - **Next step — double-check against the legacy app.** The sidecar evidence is strong
-    (`technical.md:102,154`, `detailed.md:66`), but that is captured source, not the running system, so the
-    dev needs to investigate whether legacy actually prompts. If it does, this is a parity regression to fix
-    in the shared components; if it does not, the sidecars need correcting — which is worth knowing on its own.
-  - **If it is confirmed a defect:** S12 should flip from its current GREEN (re-grounded to the
-    no-confirm behaviour) to a genuinely-failing `@discovered-divergence` red tracking the missing
-    prompt until it is restored. Not done yet — the behaviour under test is real, so an honest red waits
-    on the ruling rather than pre-empting it.
-  - **Priority / env:** p1 · local seeded DB.
-  - **Status:** OPEN — with the Schedule 1 dev, who'll double-check it against legacy when he gets a chance.
-    Found 2026-08 (EditableSubPage rewrite); legacy-source-confirmed 2026-08-07.
-  - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
+  - **The open question is CLOSED against the legacy SOURCE (2026-08-26), not the sidecars.** This entry
+    previously deferred to the Schedule 1 dev to check "whether legacy actually prompts", because the
+    evidence was captured sidecars (`technical.md:102,154`, `detailed.md:66`) rather than legacy code.
+    Checked directly while triaging the same defect on Schedule 3: `webapp/schedule1OtherCosts.xhtml:94-96`
+    carries `<p:confirm header="Confirmation" message="#{msg.confirmDeleteMsg}" icon="ui-icon-alert"/>` on
+    the per-row Delete `p:commandButton`, and `messages.properties:31` resolves that key to *"This will
+    delete the current record. Do you want to continue?"*. The sidecars were right; nothing needs
+    correcting there.
+  - **SAME DEFECT AS SCHEDULE 3 DIV-5 — one ticket, one fix.** The behaviour is in the shared
+    `useEditableCostRows.removeRow` -> `persist(next, 'delete')` (`hooks/useEditableCostRows.ts:270-283`),
+    so all three pages built on it are affected: Schedule 1 Other Costs and both Schedule 3 cost
+    sub-pages. Legacy prompted on all three (`schedule3SubtotalOtherCosts.xhtml:94-96`,
+    `schedule3IncludedUnacceptableCosts.xhtml:80-82`). Eight other row-level deletes in the app still
+    confirm (Schedules 4, 5, 7A, 7B, 8, 9, 10, 11), which is what makes this a defect rather than a
+    house style.
+  - **The re-grounding was the WRONG CALL — ruled by the repo owner 2026-08-26.** From 2026-08-07 this
+    scenario asserted the app's actual no-confirm behaviour and passed. Re-grounding a scenario onto a
+    divergence makes the suite *ratify* the defect instead of tracking it: the green here is why the
+    regression sat unticketed for three weeks, and it is also why Schedule 3's suite had to rediscover
+    it independently. Corrected — S12 now asserts the legacy guarantee and is a tracked red. The rule
+    this entry now carries: re-ground a scenario onto changed *design*, never onto a suspected defect;
+    where the legacy guarantee is in doubt, the honest state is a tagged red, not a green.
+  - **Ticket:** [bcgov/nr-ilcr#362](https://github.com/bcgov/nr-ilcr/issues/362) — *"Deleting an itemized
+    cost row on the Schedule 1 and 3 cost sub-pages destroys it with no confirmation, unlike legacy and
+    every other schedule"*, labelled `bug`, filed by the repo owner 2026-08-26. Repro verified on the
+    extract anchor **727 Updated Mill E2E / 2017** (millId 17052) with no test-data patch applied: a row
+    added and saved, then removed, produced **0 dialogs** and was already gone after a reload — on both
+    this page and Schedule 3's. The filed issue deliberately omits two things this register keeps, as
+    the register is their home: why the suites missed it (the re-grounding above), and the
+    related-ticket comparison (#292 CLOSED — Schedule 2's Delete *button* hidden when no schedule
+    exists; #296 — Schedule 1 and 3 empty data set. Neither concerns confirming a destructive action).
+  - **Priority / env:** p1 · local seeded DB · Chrome. Real data loss, but bounded: the click is
+    deliberate and the row can be retyped, so it is not p0.
+  - **FIXED 2026-09-29 (#362), together with Schedule 3's DIV-5.** `useEditableCostRows` now splits the click from the delete — the trash button calls
+    `requestRemove`, which only records the pending row, and the shared `EditableSubPageLayout` mounts
+    `components/core/ConfirmDeleteModal` (legacy header "Confirmation", `confirmDeleteMsg` verbatim,
+    Yes/No) while one is pending. Yes calls `removeRow`, so the persist-on-answer and the #332/#506
+    rollback are as before; No and Escape send nothing. A follow-up on the same branch matches
+    legacy's `process="@this"` Delete: an invalid edit in ANOTHER row no longer blocks the
+    delete — that row is sent with its saved values and the grid is re-seeded from the server. Legacy also persisted on the click, so
+    deferring the delete to Save would have been a new divergence, not a fix.
+    S12's assertions are unchanged; only the `@discovered-divergence` tag and title marker came off.
+    **Verified live — S12 GREEN** **2026-09-29** on the local real-data seeded DB (`--workers=1 --grep "@other-costs|@row-delete-confirm|@unacceptable-costs|@subpage"` — 233 passed: 220 setup/preflight + 13 scenarios across the Schedule 1 and 3 sub-pages). (A first run earlier the same day, on a DB without a saved
+    Schedule 1 on 9050/2017, could not reach the Remove click — its API seed answered 404 with or
+    without the fix; the seeded DB has the anchor.)
+  - **Status:** CLOSED (fixed and verified) 2026-09-29. Found 2026-08
+    (EditableSubPage rewrite); legacy-source-confirmed 2026-08-07 (sidecars) and 2026-08-26 (legacy
+    code); ticketed 2026-08-26.
+  - **Test:** `other-costs.feature` `@S12 @p1` — tag retired, assertions untouched. It was RED on
+    purpose from 2026-08-26 to 2026-09-29. The seeded row is cleaned by the marker registry whichever way the assertion
+    goes, so the red leaves no residue (verified: anchor 9050/2017 clean after the run).
 
 - **DIV-4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
   - **What it claimed:** that editing a row already in the list skipped browser-side validation, so an
@@ -269,13 +304,97 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     call: this cannot be fixed in the frontend alone, because the API exposes no previous value to render —
     so restoring it means a backend change, not just markup.
   - **Priority / env:** p2 pending triage · local seeded delivery DB.
-  - **Status:** OPEN — with the Schedule 1 dev, who'll look into it when he gets a chance. Found 2026-08-07.
+  - **Status:** **DELIVERED 2026-09-11**, by Story 16.2 (GH #136) — backend PRs #450/#451, frontend
+    PR #452. Found 2026-08-07. The triage question this entry left open — whether losing the
+    post-submission change-tracking view mattered — was answered yes, so it was rebuilt rather than
+    accepted as a drop, and the call that it needed a backend change was correct.
+
+    `ILCR_REPORT_SUMMARY_S_VW` and the cost-detail snapshots now feed an `originalValues` map onto the
+    document, its line items and the Other Costs rows, and the shared
+    `components/core/OriginalValueIndicator` renders from it — including `comments` on the main page
+    (`commentsOB`/`commentsTT`, cited above) and `description`/`cost` per row on the Other Costs sub-page.
+    The four volume-only fields named above are covered too, so DIV-2's partial restoration is now whole.
+
+    Two behaviours are worth knowing, because both are legacy's rather than ours: the comparison runs
+    against the **unsaved** on-screen value (legacy re-rendered the indicator from the field's own
+    `change` event, `schedule1.xhtml:113`), so the icon appears as you type and clears when you put the
+    value back without saving; and nothing renders at Draft for **any** role, because the gate is a status
+    gate, not a permission one.
+
+    Schedule 11's DIV-4 was delivered in the same story and carries a recorded exception for two of its
+    fields — see that entry.
   - **Test:** none — out of reach for this UC's scenarios, which all run against Draft schedules (the
     indicator only renders once a report has left Draft). S22 covers the non-Draft render but asserts
     only that inputs are absent and actions disabled. `not-applicable (E2E, current scope)` in
     coverage.md; revisit with the submission/review UC.
 
+- **DIV-6 — Check Status judges the SAVED schedule and ignores unsaved on-screen edits (APP-WIDE, 11 of 12
+  schedules).**
+  - **This entry is a POINTER, on purpose.** The full analysis — what legacy did, why the rewrite cannot,
+    the app-wide sweep and the fix direction — lives in **ONE** place:
+    **`sch3/defects.md` DIV-6** (`features/sch3/uc-sch3-001-report-admin-costs/defects.md`). Do not restate it here. Two copies
+    of the same reasoning diverged inside a single session on ilcr-bmad PR #92, and this register carries
+    only the facts that are genuinely local to Schedule 1.
+  - **What's wrong, in one line:** Check Status reports on the last saved Schedule 1 and silently ignores
+    anything typed since, so a reporter can be told the schedule is complete while a mandatory value is
+    empty on screen — or told to fix something they have just fixed.
+  - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
+    affected schedule. One fix turns all of these green.
+  - **Local facts (this is what belongs here):**
+    - **Scenarios:** `check-status-unsaved.feature` `@p1 @S27` (the false-GREEN arm —
+      clear a mandatory volume) and `@S28` (the false-RED arm — supply a flagged one). Both arms are needed:
+      they fail in OPPOSITE directions.
+    - **Anchors:** the existing READ-ONLY Check Status fixtures, shared as this suite already shares them —
+      `requirements-met` (24050/2017, `requirementsMet: true` at rest) for S27, and
+      `missing-line-item-volume` (24051/2016, 22 errors at rest) for S28. Typing without saving writes
+      nothing, which each scenario proves with the unchanged revision token.
+    - **Re-grounding note:** S28 asserts only that ITS OWN field's error stops being reported, not that the
+      schedule becomes met — the anchor's other 21 values are genuinely still missing.
+  - **Priority / env:** p1 · local seeded DB · Chrome.
+  - **Status:** **CLOSED 2026-09-25 for Schedule 1 (#359 group A — Schedules 1, 2 and 3).**
+    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 (Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a); see sch3 DIV-6). The fix and its
+    reasoning are recorded in **sch3 DIV-6**, not here. Local to Schedule 1: the endpoint now takes
+    `Schedule1CheckRequest`; every checked line volume/cost and the shared Other Costs volume come from the screen, while the itemized Other Costs rows (count, cost subtotal, WRN-002) stay database-sourced — they are edited on the sub-page, never here. A volume the GET pre-filled from the crown volume is on screen, so the endpoint now passes it while the Story 15.1 sweep (`checkStatusStored`) still flags it; that disagreement is by design. Added 2026-08-27.
+  - **The closure evidence, reproducible (2026-09-25).**
+    - Backend unit: `cd backend && mvn -B -ntp clean test "-Dtest=Schedule1*,Schedule2*,Schedule3*,CheckStatus*"`
+      — 982 run, 0 failed (947 before the fix).
+    - Backend IT: `cd backend && mvn -B -ntp clean -P integration-test verify "-Dit.test=Schedule1*IT,Schedule2*IT,Schedule3*IT,CheckStatus*IT"`
+      — 375 run, 0 failed (362 before), against Testcontainers Oracle `gvenzl/oracle-free:23.9-slim-faststart`.
+      `Schedule1CheckStatusIT` posts bodies that DISAGREE with Oracle, proves the body wins and that no row or revision
+      token moves; the `schedule1-528-2021` and `schedule1-530-2021` goldens in `CheckStatusWireContractIT` are unchanged byte-for-byte, posted with bodies that mirror their stored fixtures.
+    - Frontend: `cd frontend && npx vitest run --mode test` — 2212 passed, 0 failed.
+    - E2E run: `cd frontend/e2e && npx playwright test --grep "@check-status-unsaved"` on 2026-09-25 against the local real-data extract DB, branch at `beb1515d` + this change — 190 passed: 178 setup/preflight tests plus all 12 `@check-status-unsaved` scenarios (sch1 S27/S28, sch2 S17/S18, sch3 S12/S25/S26, sch5 ×3, sch11 ×2)
+  - **Test:** `check-status-unsaved.feature` ×2 — `@S27` and `@S28` had ONLY their `@discovered-divergence` tag and
+    `[DISCOVERED …]` title marker removed, both together; no assertion, step or fixture was edited.
+
 **Coverage gaps (not tested yet — no app problem):**
+
+- **DIV-7 — the save-first gate fires for VIEW-ONLY readers on Other Costs too. POINTER to sch3 DIV-8.**
+  - **This entry is a POINTER, on purpose.** The full analysis — legacy's three link variants, why legacy
+    renders an empty form rather than "Schedule not found.", the rebuild's role x status matrix, and the
+    sub-page-404 question it reopens — lives in
+    `frontend/e2e/features/sch3/uc-sch3-001-report-admin-costs/defects.md` **DIV-8**, because Schedule 3
+    has two of these links and is where the investigation ran. This entry exists so a Schedule 1 reader
+    finds it, and so the defect is not raised twice.
+  - **What's wrong, for Schedule 1 specifically:** on a never-saved Schedule 1, an **ILCR_ADMIN** — who can
+    only view a Draft report — clicks "Subtotal Other Costs(0):" and gets the passive "Save required" modal
+    telling them to save, with the Save button greyed out. Legacy's `otherCostsEditsDisable` variant
+    (`schedule1.xhtml:506-509`,
+    rendered on `#{schedule1MB.disableReportEdits()}` alone) navigated them to the sub-page with no dialog.
+  - **Why (technical):** `components/schedule1/index.tsx:293` — `if (!data || !isScheduleSaved(data))`
+    raises the blocked modal before the `editable` branch is reached. Identical ordering to Schedule 3's
+    `openSubPage`; one shape, two pages, which is why it is one ticket.
+  - **NOT to be confused with Schedule 1's message text, which is correct.** Legacy gives Schedule 1 one
+    such link and one string, "The schedule has to be saved before opening other costs"
+    (`schedule1.xhtml:497`), and `index.tsx:45` matches it verbatim. #373 changed Schedule 3's wording only
+    and did not touch this page. This entry is about *who* sees the message.
+  - **Ticket:** [bcgov/nr-ilcr#488](https://github.com/bcgov/nr-ilcr/issues/488) — the same ticket as sch3
+    DIV-8, filed 2026-09-18. It covers both schedules.
+  - **Coverage: UNCOVERED.** No sch1 scenario reaches view-only x never-saved; the anchor does not exist.
+    `other-costs.feature` `@S08` covers the *editable* never-saved gate and stays green.
+  - **Priority / env:** p2 — found while code-reviewing #373's fix — Chrome.
+  - **Status:** OPEN - tracked by #488 and analysed in sch3 DIV-8. QA closes this pointer and sch3 DIV-8
+    together when the fix lands.
 
 - **GAP-1 — There is no role-dependent Schedule 1 behaviour to cover yet.** _(reworded 2026-08-07 — the
   earlier wording said role branches were "blocked by mock auth", which implied we were failing to cover
@@ -288,18 +407,32 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     Draft-gate are enforced separately in the domain services (AD-9)". Every Schedule 1 endpoint is
     guarded by `VIEW_SCHEDULE` or `EDIT_SCHEDULE` only, so **no admin-only branch and no role-driven 403
     exists on this UC**. There is nothing to assert, not merely something we cannot reach.
-  - **On the header's mock-user selector (ILCR_ADMIN / ILCR_SUBMITTER / both):** it is a **frontend-only
-    display affordance** and does NOT grant roles. `context/auth/mockUsers.ts` persists the choice to
-    `localStorage` under `nr-ilcr.mock-user`; no header or interceptor carries it to the API. The backend
-    stamps ONE authority on every request from the startup property
-    `ilcr.security.mock-role` (default `ILCR_SUBMITTER`, `SecurityConfiguration.java:38` →
-    `MockPrincipalFilter`). The only consumer of the selected user anywhere in the app is
-    `Dashboard.tsx`, which renders `user.displayName` / `user.email` / role chips — nothing branches on
-    it. So switching it changes the name on the Home card, not what you may do.
-  - **Future action:** revisit when FAM auth lands **and the two `ROLE_ACTIONS` sets actually diverge**.
-    At that point the lever is a CI matrix — a second suite run against a backend started with
-    `ilcr.security.mock-role=ILCR_ADMIN` — not a per-test switch, because the authority is fixed per
-    process. Until the maps differ, that second job would assert nothing new.
+  - **On the header's mock-user selector — CORRECTED 2026-09-09, and the correction is the point.** This
+    used to read "a **frontend-only display affordance** … no header or interceptor carries it to the
+    API … the backend stamps ONE authority per process from `ilcr.security.mock-role`". That was true
+    when written and **false since #265** (2026-08-12, Maintain Code Tables): `service/api-service.ts`
+    now sends the selected user's roles as `X-Mock-Groups` on every mock-auth request, and
+    `MockPrincipalFilter` **prefers that header** over its configured `ilcr.security.mock-role`
+    default. The selector is the acting role.
+  - **What that stale note cost.** Because `findMockUser` falls back to `?? MOCK_USERS[0]` and the
+    admin was listed first, this suite ran as **`ILCR_ADMIN`** from #265 until 2026-09-09 while every
+    feature file declared "As a Licensee" — invisible while the write gate was `callerMayEdit &&
+    Draft`, which an administrator satisfied. Story 16.1's role x status matrix made an administrator
+    **read-only at Draft** and ~200 scenarios failed at once, reading as an app regression. Three
+    documents (this one, `coverage.md`, sch11's `defects.md`) asserted the selector could not matter,
+    which is why nobody looked there. Now: the identity is seeded explicitly per scenario
+    (`pages/common/mockUser.ts`, global `page` fixture) and `preflight/mock-user.setup.ts` fails if
+    the ids or roles it names stop matching `mockUsers.ts`. One request still has to borrow the
+    administrator — `GET /v1/mills`, because a mock submitter is offered no mill at all; that is an
+    app-side gap left unfixed on purpose (this change is test-only) and it is recorded with its cost
+    in UC-SEC-001 defects.md GAP-5.
+  - **Future action — also corrected.** "The lever is a CI matrix, not a per-test switch, because the
+    authority is fixed per process" no longer holds: the authority is per REQUEST, so a per-scenario
+    switch is exactly the lever (`seedMockUser(page, 'admin')`). And the premise has already moved —
+    the two `ROLE_ACTIONS` sets are still identical, so there is still no role-driven **403**, but
+    editability is now role-dependent through `ScheduleEditability` rather than through
+    `SchedulePermissions`. An admin-at-non-Draft write arm is owed coverage; it is currently proven by
+    the backend's `*WriteAuthorizationIT` suites (db/R__50, R__51) rather than in the browser.
   - **Status:** OPEN (informational). Re-verified 2026-08-07.
   - **Test:** none needed today — `not-applicable (no role-dependent behaviour)` in coverage.md.
 
@@ -309,14 +442,28 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED 2026-08-07.
   - **Test:** `crown-prefill.feature` `@S02 @p1 @WRN-001` — GREEN. Asserts the WRN-001 advisory, all 13 pre-filled volume fields, that the shared Other-Costs volume is excluded from the pre-filled set, and that nothing is persisted until the user saves.
 
-- **GAP-3 — S08 (open Other Costs before first save) is unreachable in the current backend model.**
-  - **Why not:** The legacy guard blocked opening Other Costs before Schedule 1 was saved. In the new app an openable schedule is always already saved (the GET 404s when no summary exists), so `Schedule1.handleOtherCosts`'s `!data` branch (the ALT-001 "save first" Modal) cannot be produced through the UI against real data.
-  - **It is unreachable by construction, not for want of data (proved 2026-08-07).** No seed patch or
-    probe can produce it, because the requirement is self-contradictory within one render:
-    `index.tsx:341` is `if (!data) { return null }`, and the "Subtotal Other Costs(N):" button that calls
-    `handleOtherCosts` is rendered *below* that guard. So triggering the `if (!data)` branch at
-    `index.tsx:261` needs `data` to be null, while clicking the button that reaches it needs `data` to be
-    non-null. Dead code — the component's own comment already says "effectively unreachable".
+- **GAP-3 — S08 (open Other Costs before first save) was unreachable dead code. Defect #296 REWIRED the
+  branch and made it live; the gap is now CLOSED by a test.**
+  - **CLOSED 2026-08-27 — and the reasoning below expired rather than being wrong.** #296 makes an unsaved
+    Schedule 1 serve a 200 empty editable document, so `data` is truthy on a never-saved schedule and the
+    old `!data` condition could never fire again. Rylan re-gated it on saved-ness instead —
+    `if (!data || !isScheduleSaved(data))` (`components/schedule1/index.tsx:288`) — and his commit comment
+    at `:280-287` cites this slice by name, explaining that the sub-page controllers still require a
+    summary (`validateScheduleViewable`, deliberately kept, #296 D1) so without the gate the click would
+    land on a 404 dead-end. So the branch is now reachable by an ordinary user action, and the legacy
+    guarantee is testable. Covered by `save-first-gate.feature` `@p1 @S08`, GREEN — the verbatim message
+    plus the refusal to navigate. The `not-applicable (E2E)` row in coverage.md moved to `covered`.
+  - **The lesson worth keeping:** "unreachable by construction" is a claim about *today's* construction. It
+    was true and proved when written, and a fix elsewhere silently falsified it. Schedule 3's S18/S19 and
+    its DIV-3 entry expired the same way, on the same day, from the same fix.
+  - **Why it was unreachable, as proved 2026-08-07** *(historical — superseded above)*: the legacy guard
+    blocked opening Other Costs before Schedule 1 was saved, and in the new app an openable schedule was
+    always already saved (the GET 404'd when no summary existed). The requirement was self-contradictory
+    within one render: `if (!data) { return null }` sat ABOVE the "Subtotal Other Costs(N):" button that
+    calls `handleOtherCosts`, so triggering the `!data` branch needed `data` to be null while clicking the
+    button that reaches it needed `data` to be non-null. Dead code — the component's own comment said
+    "effectively unreachable". (Those line numbers have since moved: the `return null` guard is
+    `index.tsx:360` today.)
   - **Not related to BUG-3** (a different register — see the id legend at the top). While that 500 still
     existed, it did not expose this branch either: `data` was null, so the component rendered the error
     state and the button never existed — BUG-3 stopped the page rendering rather than reaching this guard.
@@ -328,12 +475,16 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     confirm) and none forces a null-data state. The BR-06 hits in
     `Schedule1OtherCostsServiceTest`/`Schedule1OtherCostsIT` are about the shared-volume **inheritance**
     rule, not the save-before-open gate. So this branch is currently covered by nothing, at any level.
-  - **Future action:** with the Schedule 1 dev, who'll look into it when he gets a chance — either delete the
-    dead branch (a guard that cannot fire is a maintenance trap) or, if it is being kept for a future backend
-    model with create-on-open, add the component test that mounts `Schedule1` with a forced null-data state.
-    Either way it is not an E2E concern.
-  - **Status:** OPEN — with the Schedule 1 dev, who'll look into it when he gets a chance. Re-verified 2026-08-07.
-  - **Test:** none, at any level — `not-applicable (E2E; unreachable by construction)` in coverage.md.
+  - **What happened to the "future action":** it asked the Schedule 1 dev to either delete the dead branch
+    or unit-test it with a forced null-data state. He did neither, and the third option was the right one —
+    #296 gave the branch a real trigger, so it needed re-gating rather than deleting. Nothing is outstanding.
+  - **Status:** CLOSED (covered) 2026-08-27. Raised 2026-08-07 and re-verified then; made reachable by #296
+    (2026-08-26); closed by writing the E2E scenario 2026-08-27.
+  - **Test:** `save-first-gate.feature` `@p1 @S08` — GREEN. Mirrors `sch3`'s `save-first-gate.feature`,
+    which covers the same behaviour on the other schedule #296 touched. That suite's second sub-page
+    carried the wrong wording (sch3 DIV-7 → [#373](https://github.com/bcgov/nr-ilcr/issues/373)); **fixed
+    2026-09-18**, and Schedule 1 was never affected — legacy gives it one such link and one string
+    (`schedule1.xhtml:497`), which this scenario asserts verbatim and which the fix did not touch.
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
 
@@ -356,6 +507,69 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     all GREEN. The rejects run on the validate anchor and each proves a zero-write with the spy. (An earlier DIV-4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
 
 **Verified — not a defect:**
+
+_(Entries in this register are unnumbered unless something cross-references them — VER-1 below is cited
+from a step comment, so it carries an id.)_
+
+- **VER-1 — The delete read-back asserted `lineItems.length === 0`, which passes in CI and fails locally.
+  Found 2026-08-28; the app is correct and the assertion was wrong.** The `S13` delete scenario went red
+  on merging `main`, on `And the Schedule 1 should no longer be saved`: `revisionCount=undefined,
+  lineItems=9`.
+  - **What's wrong, in plain terms:** nothing, for any user. The delete works. The test was reading the
+    wrong thing to prove it, and only one of our two databases exposed that.
+  - **The delete genuinely worked.** Watched at the DB through the scenario: summary 3564 and all 13 of
+    its detail rows present, then **gone**, then restored by the teardown. `revisionCount` absent is the
+    correct "not saved" signal, exactly what `utils/schedule.ts isScheduleSaved` reads.
+  - **Why nine line items still came back:** `lineItems` is the SERVED projection, not a store readout.
+    When Schedule 1 holds no volumes and its Schedule 3 carries a Crown Timber volume, the server
+    pre-fills all nine codes from it — `Schedule1Service:686` `prefill = sch3CrownVolume != null &&
+    allVolumesEmpty(details)` (BR-09 / WRN-001, and this suite's own `crown-prefill.feature` covers it).
+    The delete target 25052/2016 has precisely that Schedule 3: summary 3563, item 119 volume 1111. So
+    the response carries nine pre-filled rows **before and after** the delete, and the clause could never
+    be satisfied there. (Its stored rows all carried volume 1111 too — someone had saved after a
+    pre-fill — so the shape is identical either side of the delete.)
+  - **Why it looked correct to whoever wrote it — and the part worth remembering:** the CI Flyway seed
+    (`db-e2e/R__80_e2e_anchor_seed.sql`) gives 25052/2016 **no category-3 summary at all**, so there is no
+    crown volume to pre-fill from and `lineItems` really is empty in CI. The assertion therefore **passes
+    in CI and fails locally against the real extract**. That is the environment-split failure
+    `preflight/ci-seed-parity.setup.ts` was written to prevent, arriving in the one direction that gate
+    cannot see: it compares openability — a mill, a status row, a reporting year — not whether a
+    NEIGHBOURING schedule on the same mill-year holds data that changes this one's served document. The
+    seed's header claims the two databases hold "identical states" so the unmodified suite passes against
+    either; this is a counter-example to that claim, and it is now noted in both files.
+  - **Fix:** the clause is gone, with the measurement recorded at `steps/sch1/schedule1.steps.ts`.
+    `revisionCount == null` is the whole assertion, which is also what the step is named for. Proving the
+    detail rows went too would need a DB read, not this projection; the rows are deleted in one
+    repository call with the summary (`Schedule1Repository.deleteSchedule` → `deleteDetailsBySummary` then
+    `deleteSummary`), so the summary's absence is sufficient evidence through the API.
+  - **Status:** CLOSED 2026-08-28 — assertion corrected, no app change. `delete.feature` `@S13 @p1` GREEN;
+    the sch1 domain re-run afterwards was **204 passed, 6 tracked `@discovered-*` reds, none untagged**
+    (that grep spans sch11 too, since `@sch1` prefixes `@sch11`).
+
+- **The #296 fix left TWO stale assertions in THIS suite, red on `main` before this branch
+  touched them. Re-grounded 2026-08-26 against legacy; no app defect.**
+  - **What was stale:** defect #296 ("open a blank, usable form when nothing is saved yet", `main`
+    `60c24dd`) deliberately removed the 404 for an unsaved or just-deleted Schedule 1 — the GET now serves
+    a 200 empty EDITABLE document so the reporter can start over. Two places still asserted the old
+    behaviour: `Then the Schedule 1 should no longer exist` polled for a GET **404**
+    (`steps/sch1/schedule1.steps.ts`), and `delete.feature` asserted the post-delete form was
+    **read-only** with **all actions disabled**. Measured on the merge commit before any edit: this suite
+    ran **163 passed / 1 failed**, the failure being `@delete @S13`.
+  - **Re-grounded against LEGACY, not against the fix's description** — the discipline the S12 episode
+    taught. `Schedule1MB`'s delete mirrors Schedule 3's (`Schedule3MB.delete():125-136`): delete, re-read
+    the schedule, stay on the page. Editability is gated on the track status / role
+    (`disableReportEdits()` → `userSessionMB.disableUserInput()`), never on summary existence, and Delete
+    renders only while the summary exists (`schedule3.xhtml:426` is the Schedule 3 twin). So a blank
+    EDITABLE form with Delete withdrawn IS legacy behaviour; the pre-#296 read-only strand was the
+    divergence.
+  - **What it asserts now:** the steps #296's own suite work added but never wired into `delete.feature` —
+    `the Schedule 1 input form is displayed`, `every Schedule 1 amount is blank`, `the Schedule 1 Delete
+    action is not offered` — and "no longer exists" now means UNSAVED (`revisionCount` absent), the
+    predicate the app itself uses (`utils/schedule.ts isScheduleSaved`).
+  - **Worth passing to whoever owns #296:** their PR merged with this suite red on `main`.
+  - **Status:** CLOSED (re-grounded) 2026-08-26. Suite state after: **164 passed, 1 deliberate
+    `@discovered-divergence` red** (DIV-3 / #362), no untagged failures. (`delete.feature` `@S13 @p1` —
+    GREEN.)
 
 - **Accessibility (AC4 / NFR1): zero WCAG 2.1 AA violations.** `@axe-core/playwright` (tags `wcag2a` + `wcag2aa` + `wcag21a` + `wcag21aa`) ran against the Schedule 1 page (24050/2017) and the Other Costs sub-page (17052/2016) → **zero violations** on both, so no triage/dispositions are required. (`accessibility.feature`, verified 2026-07-30; still green 2026-08-07.) If a future change introduces a violation, the axe helper prints each rule + node + help URL for a recorded disposition.
 

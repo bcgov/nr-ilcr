@@ -16,26 +16,26 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Unit tests for the executable Java on {@link Schedule7bRepository} — its {@code default} methods.
  *
  * <p>These exist because the {@code @Query} SQL is proven only by the {@code *IT} suite, which this
  * project's Sonar pipeline does not run (surefire only). Everything in this interface that is real
- * Java rather than SQL — the {@code upsertCost} update-then-insert fallback and the
- * {@code culvertTypeOptions} year-to-as-of mapping — was therefore executed by nothing under
- * surefire, and {@code Schedule7bServiceTest} cannot help: it {@code @Mock}s this interface, so
- * Mockito replaces the very methods that hold the logic. Uses
- * {@link Answers#CALLS_REAL_METHODS} so the default bodies run against stubbed abstract methods.
+ * Java rather than SQL — the {@code upsertCost} update-then-insert fallback and the {@code
+ * culvertTypeOptions} year-to-as-of mapping — was therefore executed by nothing under surefire, and
+ * {@code Schedule7bServiceTest} cannot help: it {@code @Mock}s this interface, so Mockito replaces
+ * the very methods that hold the logic. Uses {@link Answers#CALLS_REAL_METHODS} so the default
+ * bodies run against stubbed abstract methods.
  */
 @DisplayName("Schedule7bRepository — default-method logic (upsert fallback, year-scoped code list)")
 class Schedule7bRepositoryTest {
 
   private static Schedule7bRepository realDefaults() {
-    return mock(Schedule7bRepository.class, withSettings()
-        .defaultAnswer(Answers.CALLS_REAL_METHODS));
+    return mock(
+        Schedule7bRepository.class, withSettings().defaultAnswer(Answers.CALLS_REAL_METHODS));
   }
 
   @Test
@@ -65,7 +65,8 @@ class Schedule7bRepositoryTest {
   }
 
   @Test
-  @DisplayName("upsertCost carries a NULL cost through both branches — a cleared cost keeps its row")
+  @DisplayName(
+      "upsertCost carries a NULL cost through both branches — a cleared cost keeps its row")
   void upsertCarriesNullCost() {
     Schedule7bRepository updating = realDefaults();
     when(updating.updateCost(7801L, 77, null, "tester")).thenReturn(1);
@@ -100,14 +101,17 @@ class Schedule7bRepositoryTest {
   @DisplayName("culvertTypeOptions maps code-table rows to the shared option DTO, order preserved")
   void codeListMapsToOptionDto() {
     Schedule7bRepository repository = realDefaults();
-    when(repository.findCulvertTypeCodes(LocalDate.of(2021, 1, 1))).thenReturn(List.of(
-        new Schedule7bRepository.CulvertTypeCode("O", "Others"),
-        new Schedule7bRepository.CulvertTypeCode("R", "Round")));
+    when(repository.findCulvertTypeCodes(LocalDate.of(2021, 1, 1)))
+        .thenReturn(
+            List.of(
+                new Schedule7bRepository.CulvertTypeCode("O", "Others"),
+                new Schedule7bRepository.CulvertTypeCode("R", "Round")));
 
     List<CodeDescriptionDto> options = repository.culvertTypeOptions(2021);
 
-    assertThat(options).containsExactly(
-        new CodeDescriptionDto("O", "Others"), new CodeDescriptionDto("R", "Round"));
+    assertThat(options)
+        .containsExactly(
+            new CodeDescriptionDto("O", "Others"), new CodeDescriptionDto("R", "Round"));
   }
 
   @Test
@@ -121,18 +125,26 @@ class Schedule7bRepositoryTest {
     assertThat(Schedule7bRepository.ITEM_INSTALL).isEqualTo(78);
 
     String sql = queryOf("findCostDetails");
-    assertThat(sql).contains(
-        "IN (" + Schedule7bRepository.ITEM_MATERIAL + ", " + Schedule7bRepository.ITEM_INSTALL + ")");
+    assertThat(sql)
+        .contains(
+            "IN ("
+                + Schedule7bRepository.ITEM_MATERIAL
+                + ", "
+                + Schedule7bRepository.ITEM_INSTALL
+                + ")");
   }
 
   @Test
   @DisplayName("Every culvert-row statement is scoped to mill, year and category '7' (IDOR)")
   void culvertStatementsAreMillYearScoped() {
-    // The repository javadoc makes this claim; this asserts it rather than trusting the prose. The two
-    // cost-CHILD writes are deliberately excluded — their ownership is call-order based and recorded
+    // The repository javadoc makes this claim; this asserts it rather than trusting the prose. The
+    // two
+    // cost-CHILD writes are deliberately excluded — their ownership is call-order based and
+    // recorded
     // as deferred work.
-    for (String method : List.of(
-        "findCulverts", "findCostDetails", "countCulvert", "updateCulvert", "deleteCulvert")) {
+    for (String method :
+        List.of(
+            "findCulverts", "findCostDetails", "countCulvert", "updateCulvert", "deleteCulvert")) {
       String sql = queryOf(method);
       assertThat(sql).as("%s scopes by mill", method).contains("ILCR_MILL_ID = :millId");
       assertThat(sql).as("%s scopes by year", method).contains("REPORT_YEAR = :year");
@@ -144,8 +156,8 @@ class Schedule7bRepositoryTest {
   private static String queryOf(String methodName) {
     for (var method : Schedule7bRepository.class.getDeclaredMethods()) {
       if (method.getName().equals(methodName)) {
-        var query = method.getAnnotation(
-            org.springframework.data.jdbc.repository.query.Query.class);
+        var query =
+            method.getAnnotation(org.springframework.data.jdbc.repository.query.Query.class);
         if (query != null) {
           return query.value();
         }

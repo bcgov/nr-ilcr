@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -13,27 +14,31 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
-
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Unit test for the Schedule 4 sub-page list-row write path (Story 4.3). Mocked repository — isolates
- * the add (separate report + detail-with-description; cycle written for Truck Rehaul only), the
- * unknown-location 404, the Draft gate, persistence-failure translation, and the guarded/idempotent
- * row delete.
+ * Unit test for the Schedule 4 sub-page list-row write path (Story 4.3). Mocked repository —
+ * isolates the add (separate report + detail-with-description; cycle written for Truck Rehaul
+ * only), the unknown-location 404, the Draft gate, persistence-failure translation, and the
+ * guarded/idempotent row delete.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4SubPageServiceTest {
@@ -44,11 +49,17 @@ class Schedule4SubPageServiceTest {
   private static final String NAME = "Rowed Dump";
   private static final String USER = "dev-submitter";
 
-  @Mock
-  private Schedule4Repository repository;
+  @Mock private Schedule4Repository repository;
 
-  @InjectMocks
-  private Schedule4Service service;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
+  @InjectMocks private Schedule4Service service;
 
   private static Schedule4SubPageRowRequest req(SubPageRowType type, Integer cycle) {
     return new Schedule4SubPageRowRequest(type, "  New Row  ", bd("30.0"), bd("100"), 3000, cycle);
@@ -62,13 +73,16 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_towing_insertsReportAndDescriptionDetail_noCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
-    when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(),
-        eq(USER))).thenReturn(9100);
+    when(repository.insertSubPageReport(
+            eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(), eq(USER)))
+        .thenReturn(9100);
     stubRecompute();
 
-    service.addSubPageRow(MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER);
+    service.addSubPageRow(
+        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), CallerRights.SUBMITTER, USER);
 
     verify(repository).insertSubPageReport(MILL, YEAR, NAME, bd("30.0"), null, USER);
     // code 43, description trimmed.
@@ -77,13 +91,16 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_truckRehaul_writesCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
-    when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), eq(7),
-        eq(USER))).thenReturn(9101);
+    when(repository.insertSubPageReport(
+            eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), eq(7), eq(USER)))
+        .thenReturn(9101);
     stubRecompute();
 
-    service.addSubPageRow(MILL, YEAR, LOCATION_ID, req(SubPageRowType.TRUCK_REHAUL, 7), true, USER);
+    service.addSubPageRow(
+        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TRUCK_REHAUL, 7), CallerRights.SUBMITTER, USER);
 
     verify(repository).insertSubPageReport(MILL, YEAR, NAME, bd("30.0"), 7, USER); // cycle kept
     verify(repository).insertDetailWithDescription(9101, 46, bd("100"), 3000, "New Row", USER);
@@ -91,14 +108,17 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_other_ignoresCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
-    when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(),
-        eq(USER))).thenReturn(9102);
+    when(repository.insertSubPageReport(
+            eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(), eq(USER)))
+        .thenReturn(9102);
     stubRecompute();
 
     // A cycle sent on a non-Rehaul type is ignored (null written).
-    service.addSubPageRow(MILL, YEAR, LOCATION_ID, req(SubPageRowType.OTHER, 9), true, USER);
+    service.addSubPageRow(
+        MILL, YEAR, LOCATION_ID, req(SubPageRowType.OTHER, 9), CallerRights.SUBMITTER, USER);
 
     verify(repository).insertSubPageReport(MILL, YEAR, NAME, bd("30.0"), null, USER);
     verify(repository).insertDetailWithDescription(9102, 55, bd("100"), 3000, "New Row", USER);
@@ -106,48 +126,83 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void add_unknownLocation_throws404_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
 
-    assertThrows(ScheduleNotFoundException.class, () -> service.addSubPageRow(
-        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotFoundException.class,
+        () ->
+            service.addSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
-    verify(repository, never()).insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(),
-        anyString());
+    verify(repository, never())
+        .insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(), anyString());
   }
 
   @Test
   void add_notDraft_throws409_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () -> service.addSubPageRow(
-        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () ->
+            service.addSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
-    verify(repository, never()).insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(),
-        anyString());
+    verify(repository, never())
+        .insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(), anyString());
   }
 
   @Test
   void add_persistenceFailure_translatesToScheduleNotSaved() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
-    when(repository.insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(), anyString()))
+    when(repository.insertSubPageReport(
+            anyLong(), anyInt(), anyString(), any(), any(), anyString()))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    assertThrows(ScheduleNotSavedException.class, () -> service.addSubPageRow(
-        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () ->
+            service.addSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
   }
 
   @Test
   void update_towing_updatesReportAndDescriptionDetail_noCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(9100, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
 
     service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER);
+        MILL,
+        YEAR,
+        LOCATION_ID,
+        9100,
+        req(SubPageRowType.TOWING, null),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).updateSubPageReport(9100, bd("30.0"), null, USER); // no cycle for Towing
     // code 43, description trimmed.
@@ -156,13 +211,20 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_truckRehaul_writesCycle() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(9101, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
 
     service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9101, req(SubPageRowType.TRUCK_REHAUL, 7), true, USER);
+        MILL,
+        YEAR,
+        LOCATION_ID,
+        9101,
+        req(SubPageRowType.TRUCK_REHAUL, 7),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).updateSubPageReport(9101, bd("30.0"), 7, USER); // cycle kept
     verify(repository).updateSubPageDetail(9101, 46, bd("100"), 3000, "New Row", USER);
@@ -170,39 +232,69 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_unknownLocation_throws404_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
 
-    assertThrows(ScheduleNotFoundException.class, () -> service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotFoundException.class,
+        () ->
+            service.updateSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                9100,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
-    verify(repository, never()).updateSubPageDetail(anyInt(), anyInt(), any(), any(), anyString(),
-        anyString());
+    verify(repository, never())
+        .updateSubPageDetail(anyInt(), anyInt(), any(), any(), anyString(), anyString());
   }
 
   @Test
   void update_rowNotUnderThisLocation_throws404_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     // Not a sub-page row of THIS location (a primary/category report, or a row under another
     // location in the same mill/year) — the path-scoped guard makes it a 404.
     when(repository.isSubPageRowOfLocation(8050, NAME, MILL, YEAR)).thenReturn(false);
 
-    assertThrows(ScheduleNotFoundException.class, () -> service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 8050, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotFoundException.class,
+        () ->
+            service.updateSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                8050,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
-    verify(repository, never()).updateSubPageDetail(anyInt(), anyInt(), any(), any(), anyString(),
-        anyString());
+    verify(repository, never())
+        .updateSubPageDetail(anyInt(), anyInt(), any(), any(), anyString(), anyString());
   }
 
   @Test
   void update_notDraft_throws409_writesNothing() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () -> service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () ->
+            service.updateSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                9100,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
     verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
@@ -210,50 +302,65 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void update_persistenceFailure_translatesToScheduleNotSaved() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(9100, NAME, MILL, YEAR)).thenReturn(true);
     doThrow(new DataIntegrityViolationException("boom"))
-        .when(repository).updateSubPageReport(anyInt(), any(), any(), anyString());
+        .when(repository)
+        .updateSubPageReport(anyInt(), any(), any(), anyString());
 
-    assertThrows(ScheduleNotSavedException.class, () -> service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () ->
+            service.updateSubPageRow(
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                9100,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
   }
 
   @Test
   void delete_subPageRow_deletesReport() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.isSubPageRowOfLocation(8051, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, true);
+    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, CallerRights.SUBMITTER);
 
     verify(repository).deleteReport(8051);
   }
 
   @Test
   void delete_rowNotUnderThisLocation_isIdempotentNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     // Not a sub-page row of THIS location (a primary/category report, or a row under another
     // location in the same mill/year) — the path-scoped guard makes it a no-op.
     when(repository.isSubPageRowOfLocation(8050, NAME, MILL, YEAR)).thenReturn(false);
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8050, true); // must not throw, must not delete
+    service.deleteSubPageRow(
+        MILL, YEAR, LOCATION_ID, 8050, CallerRights.SUBMITTER); // must not throw, must not delete
 
     verify(repository, never()).deleteReport(anyInt());
   }
 
   @Test
   void delete_foreignLocationId_isIdempotentNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     // locationId not in this mill/year (foreign/cross-context) → no name → never touches the row.
     when(repository.findLocationName(9999, MILL, YEAR)).thenReturn(Optional.empty());
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, 9999, 8051, true);
+    service.deleteSubPageRow(MILL, YEAR, 9999, 8051, CallerRights.SUBMITTER);
 
     verify(repository, never()).isSubPageRowOfLocation(anyInt(), anyString(), anyLong(), anyInt());
     verify(repository, never()).deleteReport(anyInt());
@@ -261,10 +368,12 @@ class Schedule4SubPageServiceTest {
 
   @Test
   void delete_notDraft_throws409() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class,
-        () -> service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, true));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () -> service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, CallerRights.SUBMITTER));
 
     verify(repository, never()).deleteReport(anyInt());
   }

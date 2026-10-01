@@ -26,7 +26,9 @@ const config: Schedule3SubPageConfig<UnacceptableRow, UnacceptableDocument> = {
     value: (doc) => doc.annualRentsTotal,
   },
   fields: [{ key: 'total', header: 'Total $', label: 'total', get: (row) => row.total }],
-  summaryItems: [{ label: 'Subtotal Total $', value: (doc) => doc.subtotalTotal }],
+  // No `deriveSummary`: this page's legacy grid handlers carry no derived render target, so its
+  // footer is left to the Save echo (verified against schedule3IncludedUnacceptableCosts.xhtml).
+  summaryItems: [{ key: 'total', label: 'Subtotal Total $', value: (doc) => doc.subtotalTotal }],
   rows: (doc) => doc.rows ?? [],
   validate: (description, values) => validateUnacceptable(description, values.total),
 }

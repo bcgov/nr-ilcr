@@ -12,20 +12,20 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 /**
- * Add/edit request for one Schedule 7A bridge (AD-12). Entered fields only — the four derived totals
- * and read-only document fields are never client-supplied. Range/required messages resolve the
- * LEGACY bundle keys (AD-8) via the wired {@code MessageSource} ({@code ValidationConfiguration}).
+ * Add/edit request for one Schedule 7A bridge (AD-12). Entered fields only — the four derived
+ * totals and read-only document fields are never client-supplied. Range/required messages resolve
+ * the LEGACY bundle keys (AD-8) via the wired {@code MessageSource} ({@code
+ * ValidationConfiguration}).
  *
- * <p>Required (legacy JSF {@code required="true"} on {@code schedule7A.xhtml}, BR-03/BR-04):
- * {@code locationName}, {@code builtDate}, the five code values, {@code lifeSpan},
- * {@code abutmentHeight}, {@code length}, {@code width}, {@code distance} (slices S06/S07/S15/
- * S21–S26). The ten costs are OPTIONAL at Save (legacy — only Check Status flags missing costs,
- * BR-08). Ranges: life span 0–999 (BR-04); abutment height / length / width 0.0–9,999.9 (BR-04);
- * distance 0–9,999 (BR-04 — corrected range, the legacy message text said 0–999.99 against an
- * enforced 0–9,999); each cost ±99,999,999 (BR-06). {@code builtDate} format ({@code yyyy-MM},
- * non-lenient) is checked in {@link ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService} (verbatim
- * {@code bridgeDateformatErrorMsg}) since Bean Validation cannot express a non-lenient calendar
- * parse.
+ * <p>Required (legacy JSF {@code required="true"} on {@code schedule7A.xhtml}, BR-03/BR-04): {@code
+ * locationName}, {@code builtDate}, the five code values, {@code lifeSpan}, {@code abutmentHeight},
+ * {@code length}, {@code width}, {@code distance} (slices S06/S07/S15/ S21–S26). The ten costs are
+ * OPTIONAL at Save (legacy — only Check Status flags missing costs, BR-08). Ranges: life span 0–999
+ * (BR-04); abutment height / length / width 0.0–9,999.9 (BR-04); distance 0–9,999 (BR-04 —
+ * corrected range, the legacy message text said 0–999.99 against an enforced 0–9,999); each cost
+ * ±99,999,999 (BR-06). {@code builtDate} format ({@code yyyy-MM}, non-lenient) is checked in {@link
+ * ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService} (verbatim {@code bridgeDateformatErrorMsg})
+ * since Bean Validation cannot express a non-lenient calendar parse.
  *
  * <p>{@code revisionCount} is the per-row optimistic-lock token — required only on UPDATE (the
  * {@link OnUpdate} group), ignored on create.
@@ -61,103 +61,33 @@ public record BridgeRequest(
     // characters passed @Size and then overflowed the column — Oracle raised ORA-12899 and the
     // service's blanket DataAccessException catch could only surface it as an opaque 500 "Schedule
     // could not be saved." instead of a field-level length message.
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    @Size(max = 30, message = "{bridgeLocationMaxLengthErrorMsg}")
-    @MaxByteLength(value = 30, charMax = 30, message = "{bridgeLocationMaxLengthErrorMsg}")
-    String locationName,
+    @NotBlank(message = "{missingRequiredFieldMsg}") @Size(max = 30, message = "{bridgeLocationMaxLengthErrorMsg}") @MaxByteLength(value = 30, charMax = 30, message = "{bridgeLocationMaxLengthErrorMsg}")
+        String locationName,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String builtDate,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String constructionTypeCode,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String superstructureTypeCode,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String deckTypeCode,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String abutmentTypeCode,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String loadRatingCode,
+    @NotNull(message = "{missingRequiredFieldMsg}") @Min(value = 0, message = "{lifeSpanValidatorErrorMsg}") @Max(value = 999, message = "{lifeSpanValidatorErrorMsg}") Integer lifeSpan,
+    @NotNull(message = "{missingRequiredFieldMsg}") @DecimalMin(value = "0.0", message = "{abutmentsHtValidatorErrorMsg}") @DecimalMax(value = "9999.9", message = "{abutmentsHtValidatorErrorMsg}") @Digits(integer = 4, fraction = 1, message = "{abutmentsHtValidatorErrorMsg}") BigDecimal abutmentHeight,
+    @NotNull(message = "{missingRequiredFieldMsg}") @DecimalMin(value = "0.0", message = "{bridgeLengthValidatorErrorMsg}") @DecimalMax(value = "9999.9", message = "{bridgeLengthValidatorErrorMsg}") @Digits(integer = 4, fraction = 1, message = "{bridgeLengthValidatorErrorMsg}") BigDecimal length,
+    @NotNull(message = "{missingRequiredFieldMsg}") @DecimalMin(value = "0.0", message = "{bridgeWidthValidatorErrorMsg}") @DecimalMax(value = "9999.9", message = "{bridgeWidthValidatorErrorMsg}") @Digits(integer = 4, fraction = 1, message = "{bridgeWidthValidatorErrorMsg}") BigDecimal width,
+    @NotNull(message = "{missingRequiredFieldMsg}") @Min(value = 0, message = "{bridgeDistanceValidatorErrorMsg}") @Max(value = 9999, message = "{bridgeDistanceValidatorErrorMsg}") Integer distance,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer sitePlanCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer superstructureMaterialCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer superstructureDeliverCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer superstructureInstallCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer abutmentMaterialCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer abutmentDeliverCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer abutmentInstallCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer approachCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer afterInstallCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer otherCost,
 
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String builtDate,
-
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String constructionTypeCode,
-
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String superstructureTypeCode,
-
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String deckTypeCode,
-
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String abutmentTypeCode,
-
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String loadRatingCode,
-
-    @NotNull(message = "{missingRequiredFieldMsg}")
-    @Min(value = 0, message = "{lifeSpanValidatorErrorMsg}")
-    @Max(value = 999, message = "{lifeSpanValidatorErrorMsg}")
-    Integer lifeSpan,
-
-    @NotNull(message = "{missingRequiredFieldMsg}")
-    @DecimalMin(value = "0.0", message = "{abutmentsHtValidatorErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{abutmentsHtValidatorErrorMsg}")
-    @Digits(integer = 4, fraction = 1, message = "{abutmentsHtValidatorErrorMsg}")
-    BigDecimal abutmentHeight,
-
-    @NotNull(message = "{missingRequiredFieldMsg}")
-    @DecimalMin(value = "0.0", message = "{bridgeLengthValidatorErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{bridgeLengthValidatorErrorMsg}")
-    @Digits(integer = 4, fraction = 1, message = "{bridgeLengthValidatorErrorMsg}")
-    BigDecimal length,
-
-    @NotNull(message = "{missingRequiredFieldMsg}")
-    @DecimalMin(value = "0.0", message = "{bridgeWidthValidatorErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{bridgeWidthValidatorErrorMsg}")
-    @Digits(integer = 4, fraction = 1, message = "{bridgeWidthValidatorErrorMsg}")
-    BigDecimal width,
-
-    @NotNull(message = "{missingRequiredFieldMsg}")
-    @Min(value = 0, message = "{bridgeDistanceValidatorErrorMsg}")
-    @Max(value = 9999, message = "{bridgeDistanceValidatorErrorMsg}")
-    Integer distance,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer sitePlanCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer superstructureMaterialCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer superstructureDeliverCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer superstructureInstallCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer abutmentMaterialCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer abutmentDeliverCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer abutmentInstallCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer approachCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer afterInstallCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer otherCost,
-
-    // 3,500 CHARACTERS is the legacy textarea's own maxlength (schedule7A.xhtml:455); 4,000 BYTES is
+    // 3,500 CHARACTERS is the legacy textarea's own maxlength (schedule7A.xhtml:455); 4,000 BYTES
+    // is
     // the column's real width (VARCHAR2(4000 BYTE)). Same pairing as Schedule 7B's comments.
-    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
-    @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
-    String comments,
-
-    @NotNull(groups = OnUpdate.class, message = "{missingRequiredFieldMsg}")
-    Integer revisionCount) {
-}
+    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}") @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
+        String comments,
+    @NotNull(groups = OnUpdate.class, message = "{missingRequiredFieldMsg}") Integer revisionCount) {}

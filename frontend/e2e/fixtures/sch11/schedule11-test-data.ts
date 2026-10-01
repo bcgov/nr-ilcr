@@ -80,6 +80,31 @@ export const PERSIST_ANCHOR: Sch11Anchor = { key: { millId: 24051, year: 2020 },
 /** S04 — seed a location carrying BOTH costs, then Check Status reports all requirements met. */
 export const CHECK_MET_ANCHOR: Sch11Anchor = { key: { millId: 24051, year: 2021 }, mill: MILL_8888 };
 
+/**
+ * S21/S22 — BR-12 / #359: Check Status must judge what is on screen, not the last saved data.
+ *
+ * SEEDED, not discovered (`real-test-data-patches/sch11/unsaved-check-anchors.sql`). Both scenarios seed a
+ * location, so each needs a mill-year no other scenario writes to, and the extract had none left: 114
+ * (mill, year) keys are already pinned across the six fixtures, Home only offers reporting years 2015-2021,
+ * and every unclaimed openable pair in that range is non-Draft (which disables Check Status).
+ *
+ * Reusing `check-met` / `check-missing-actual` was tried FIRST and is unsafe: their Givens add a location
+ * through the API, so a second scenario on either collides with S04/S05 under `fullyParallel` — observed as
+ * red tests on 2026-08-27.
+ *
+ * WHAT "UNSAVED" MEANS HERE. Schedule 11 has no page-level Save (DIV-1); the unsaved state is a row sitting
+ * in the INLINE EDITOR with typed-but-unconfirmed values. See the feature file for why the upstream slices'
+ * `addActualCost` (the Add panel) cannot express the rule.
+ */
+export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch11Anchor = {
+  key: { millId: 10050, year: 2015 },
+  mill: MILL_2121,
+};
+export const CHECK_UNSAVED_FIX_ANCHOR: Sch11Anchor = {
+  key: { millId: 10050, year: 2016 },
+  mill: MILL_2121,
+};
+
 /** S05 — seed a location with a NULL actual cost, then Check Status flags it. */
 export const CHECK_MISSING_ACTUAL_ANCHOR: Sch11Anchor = {
   key: { millId: 10050, year: 2017 },
@@ -242,8 +267,8 @@ export const scheduleUrl = (millId: number, year: number): string =>
 export const locationsUrl = (millId: number, year: number): string =>
   `${SCHEDULE11_API}/locations?millId=${millId}&year=${year}`;
 
-export const locationUrl = (id: number, millId: number, year: number): string =>
-  `${SCHEDULE11_API}/locations/${id}?millId=${millId}&year=${year}`;
+// No per-location URL: edits and deletes go through the one page-level save on `locationsUrl`
+// (PUT, `LocationSaveAllRequest`) — the per-row PUT and DELETE are retired (Story 26.2).
 
 // No `checkStatusUrl` builder: Check Status is only ever exercised through the button and asserted on the
 // rendered result, so nothing needs the endpoint's URL (see the note in steps/sch11/schedule11Api.ts).
@@ -270,9 +295,13 @@ export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
 // ---------------------------------------------------------------------------------------------------
 
 export const MSG = {
-  /** SUC-001 `dataSavedSuccesfullyInfoMsg` — echoed by the add POST and the inline-edit PUT. */
+  /** SUC-001 `dataSavedSuccesfullyInfoMsg` — echoed by the add POST and the page-level Save PUT. */
   saved: 'Data saved successfully',
-  /** SUC-002 `dataDeletedSuccesfullyInfoMsg` — echoed by the location DELETE. */
+  /**
+   * SUC-002 `dataDeletedSuccesfullyInfoMsg` — NO LONGER RENDERED by this page (Story 26.2 D6(b)): Delete
+   * only flags a row until Save, and legacy's "deleted" at the flag was untrue. Kept so the scenarios can
+   * assert its ABSENCE.
+   */
   deleted: 'Data deleted successfully',
   /** SUC-004 `checkStatusMessage` — present on EVERY check-status invocation, pass or fail. */
   statusChecked: 'Status has been checked',
@@ -352,6 +381,15 @@ export const CONFIRM_DELETE = {
 /** The empty-table placeholder rendered when a Schedule 11 has no locations. */
 export const EMPTY_TABLE_TEXT = 'No silviculture locations have been added.';
 
+/** The placeholder while every served row is flagged for deletion but not yet saved (Story 26.2). */
+export const ALL_FLAGGED_TEXT = 'Every location is marked for deletion. Save to remove them.';
+
+/** Client chrome when Save is blocked by a row that fails validation (Story 26.2 AC 3). */
+export const SAVE_BLOCKED = 'Please correct the highlighted fields before saving.';
+
+/** The screen-reader reason both Check Status buttons carry while a change is unsaved (26.2 D7(a)). */
+export const CHECK_NEEDS_SAVE = 'Save your changes before checking status';
+
 /**
  * Per-scenario row markers. Each mutating scenario tags the rows it creates with its own marker so
  * teardown deletes exactly what that scenario made and nothing else (`location` is the only
@@ -367,6 +405,9 @@ export const MARKER = {
   persist: 'E2E S09 persist',
   checkMet: 'E2E S04 met',
   checkMissingActual: 'E2E S05 noactual',
+  // BR-12 / #359 — own markers so a seeded row can never be confused with S04's or S05's.
+  checkUnsavedViolation: 'E2E S21 unsaved',
+  checkUnsavedFix: 'E2E S22 unsaved',
   checkMissingPlanned: 'E2E S06 noplanned',
   trackIndependence: 'E2E S10 indep',
   a11y: 'E2E a11y row',

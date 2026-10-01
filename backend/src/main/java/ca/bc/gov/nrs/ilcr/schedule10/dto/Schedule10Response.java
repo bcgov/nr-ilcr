@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 

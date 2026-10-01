@@ -1,7 +1,19 @@
 import type { ReactNode } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  fireEvent,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -422,10 +434,13 @@ describe('Schedule 7B page', () => {
     await savePage(user)
 
     // Legacy prefixed the row id onto the cost validator message on list rows only, and the
-    // page-level Save is exactly the case where the reporter needs to know which row failed.
+    // page-level Save is exactly the case where the reporter needs to know which row failed. The same
+    // verbatim line shows inline AND in the top banner (#359 group B).
     expect(
-      await screen.findByText('Id: 1 - Entered cost must be between -99,999,999 and 99,999,999.'),
-    ).toBeInTheDocument()
+      await screen.findAllByText(
+        'Id: 1 - Entered cost must be between -99,999,999 and 99,999,999.',
+      ),
+    ).toHaveLength(2)
     expect(put).toBe(false)
   })
 
@@ -449,8 +464,9 @@ describe('Schedule 7B page', () => {
 
     await savePage(user)
 
-    // Without the banner the button reads as dead: no request, no error, no way to find the row.
-    expect(await screen.findByText(/Cannot save.*Culvert report Id: 6/)).toBeInTheDocument()
+    // Without the banner the button reads as dead: no request, no error, no way to find the row. The
+    // banner names the failing field of row 6 in legacy's wording (#359 group B).
+    expect(await screen.findByText('Id: 6 - No of pieces: Value is required.')).toBeInTheDocument()
     expect(called).toBe(false)
     // And the offending row is actually reachable — paged to and EXPANDED, not merely named. Asserted
     // on aria-expanded, not toBeVisible(): Carbon collapses an accordion with CSS, which jsdom does not
@@ -484,7 +500,7 @@ describe('Schedule 7B page', () => {
     // tracking just "the row Save revealed" left the prop stuck at true and this second Save named the
     // row in the banner without ever reopening it.
     await savePage(user)
-    expect(await screen.findByText(/Cannot save.*Culvert report Id: 1/)).toBeInTheDocument()
+    expect(await screen.findByText('Id: 1 - No of pieces: Value is required.')).toBeInTheDocument()
     await waitFor(() => {
       expect(row).toHaveAttribute('aria-expanded', 'true')
     })
@@ -1044,18 +1060,18 @@ describe('Schedule 7B page', () => {
     expect(entryFor(captured, 7801)?.installCost).toBe(1234567)
   })
 
-  test('the comments counter counts UP toward the 3500 limit, and typing stops at the cap', async () => {
+  test('the comments counter shows characters remaining, and typing stops at the cap', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7b />)
     await openCulvert(user, 1)
 
-    // Carbon's counter is used-of-limit, matching the 7A twin (legacy's own counterTemplate counted
-    // down — a recorded deviation, decided by the team). 'Main haul road' is 14 characters.
-    expect(screen.getByText('14/3500')).toBeInTheDocument()
+    // Remaining, counting down — restores legacy's own counterTemplate (#312 Overall 10). 'Main haul
+    // road' is 14 characters, so 3500 - 14 = 3486 remain.
+    expect(screen.getByText('3486 characters remaining')).toBeInTheDocument()
     await user.type(field('Comments'), '!')
-    expect(screen.getByText('15/3500')).toBeInTheDocument()
-    // Carbon applies maxLength alongside the counter, reproducing legacy's hard `maxlength="3500"`.
+    expect(screen.getByText('3485 characters remaining')).toBeInTheDocument()
+    // The hard cap is still applied via maxLength, reproducing legacy's `maxlength="3500"`.
     expect(field('Comments')).toHaveAttribute('maxLength', '3500')
   })
 
@@ -1137,5 +1153,890 @@ describe('Schedule 7B page', () => {
     await waitFor(() => {
       expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     })
+  })
+
+  // #332: every request carries a hardcoded fallback for a failure with NO ProblemDetail detail
+  // (a bare 500, a gateway timeout, a dropped connection). Each case fails ONE request with an empty
+  // body and asserts the exact literal, so a fallback cannot be dropped or reworded unnoticed.
+  describe('detail-less error fallbacks (#332)', () => {
+    const detailLess = () => new HttpResponse(null, { status: 500 })
+
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(URL, detailLess))
+      render(<Schedule7b />)
+
+      // Exact match: the panel TITLE is "Unable to load Schedule 7B" (no period); the fallback is
+      // the subtitle. The work area stays suppressed like every other load failure.
+      expect(await screen.findByText('Unable to load Schedule 7B.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Add Report failure falls back to the generic save message and keeps the draft', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc({ culverts: [] }))),
+        http.post(CULVERTS_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7b />)
+
+      await user.click(await screen.findByRole('button', { name: 'Add' }))
+      await fillAddForm(user)
+      await user.click(screen.getByRole('button', { name: 'Add Report' }))
+
+      expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+      expect(addPanel().getByLabelText('Span (mm)')).toHaveValue('900')
+    })
+
+    test('a detail-less page Save failure falls back to the generic save message', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.put(CULVERTS_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7b />)
+      await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+      await savePage(user)
+
+      expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less confirmed delete falls back to the generic delete message and keeps the row', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.delete(`${CULVERTS_URL}/7801`, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7b />)
+      await openCulvert(user, 1)
+
+      await user.click(culvertPanel(7801).getByRole('button', { name: 'Delete' }))
+      await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+      expect(await screen.findByText('Unable to delete culvert report.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Culvert report Id: 1' })).toBeInTheDocument()
+    })
+
+    test('a detail-less Check Status failure falls back to the generic check message', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.post(CHECK_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7b />)
+
+      await user.click((await screen.findAllByRole('button', { name: 'Check Status' }))[0])
+
+      expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+      // The in-flight lock releases on failure, so the reporter can retry.
+      expect(screen.getAllByRole('button', { name: 'Check Status' })[0]).toBeEnabled()
+    })
+  })
+})
+
+// Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
+// name as the label text, so a by-name lookup still finds the button AND proves the decorative icon is
+// there — a later edit that drops an icon fails here. Added for the #381 review (paulushcgcj): this
+// page's action bar and add-new trigger were still text-only after 30.3 reached the shared bars.
+describe('Schedule 7B action icons (Story 30.3 / #312 Overall 6)', () => {
+  test('Save, Check Status and the Add toggle all carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+
+    for (const name of [/^save$/i, /check status/i]) {
+      for (const button of await screen.findAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+
+    const toggle = screen.getByRole('button', { name: 'Add' })
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    await user.click(toggle)
+    expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// Story 16.3 — the ministry-correction journey on Schedule 7B.
+//
+// Two things are declared per arm, and they are NOT the same thing: WHO is acting (the role, via
+// `renderAsAdmin` / `renderAsSubmitter`, which seeds the mock-user key so the browser identity and
+// the `X-Mock-Groups` wire identity agree) and WHAT that actor may do (the server-computed
+// `editable` boolean on the document). The page reads only the latter — it never derives
+// editability from `trackStatus` or from the role (AD-9).
+//
+// So the fixtures below do NOT hardcode `editable`: the MSW handler COMPUTES it from the 16.1
+// matrix over the acting role the request actually carried. That makes each arm's role declaration
+// LOAD-BEARING rather than documentation — `renderAsSubmitter` genuinely changes what the server
+// answers, and a broken identity helper shows up as the admin arms and the submitter arms agreeing.
+// It is the whole point of this story: a silently-wrong identity went undetected for a month.
+//
+// Scoped to THIS describe: the suite's pre-existing tests declare no role and serve their own
+// hardcoded `editable`, and they are left exactly as they were.
+//
+// Every user-facing string is asserted VERBATIM against
+// `backend/src/main/resources/messages.properties` (AD-8).
+// -------------------------------------------------------------------------------------------------
+
+describe('Schedule 7B at Submitted — the ministry correction journey (Story 16.3)', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill
+  // still owns the data. Anything else — `O`, a missing row, an unknown role — is read-only.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes the falsification check
+  // trivial (flip the admin entry to ['D'] and every admin-at-Submitted arm below must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock
+   * user's roles onto `X-Mock-Groups` (api-service.ts:11-17), so this is the same signal the real
+   * mock backend gates on — not something the test asserts about itself.
+   *
+   * The throw below can never fire and is NOT the identity guard: `mockUserGroups()` calls
+   * `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` — the ADMIN — so a header is
+   * ALWAYS sent, even by a test that declared no role at all. The guard is `sentRole`, asserted in
+   * each arm's own body (in the BODY, not in the resolver: an `expect` that throws inside an MSW
+   * resolver surfaces as a failed request and is misattributed to the page).
+   *
+   * The header alone cannot close the ADMIN case: the fallback identity IS the admin, so a request
+   * from an arm that forgot `renderAsAdmin` is byte-identical to one that declared it (verified by
+   * deleting it — the arm used to pass). That other half is closed by `declaredRole()`
+   * (test-utils.tsx), which reports what THIS test seeded and `null` when nothing did — the one
+   * thing a declared admin and a fallback admin do not share. So every arm asserts BOTH, via
+   * `expectActingAs`: what the test declared, and what the request carried.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /** The identity the DOCUMENT request actually carried, recorded for the arm to assert. */
+  let sentRole: string | null = null
+
+  /**
+   * The full identity claim an arm's name makes, in both halves: the DECLARATION this test made
+   * (null if it made none — which is what catches a forgotten `renderAs*` even when the fallback
+   * would have sent the same role) and what the request actually CARRIED on the wire. The header is
+   * `roles.join(',')` over a single-role mock user, so it compares equal to the role itself, which
+   * additionally pins that no second role rode along.
+   */
+  const expectActingAs = (role: IlcrRole, ...headers: (string | null)[]) => {
+    expect(declaredRole()).toBe(role)
+    for (const header of headers) {
+      expect(header).toBe(role)
+    }
+  }
+
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * A Schedule 7B document on `trackStatus`, answered for whoever is asking: `editable` is the
+   * matrix's verdict on (acting role, track), never the fixture's assertion about itself. Used for
+   * the GET and for every write echo, so the whole conversation stays identity-driven.
+   */
+  const matrixBody = (
+    request: Request,
+    trackStatus: string | null,
+    over: Record<string, unknown> = {},
+  ) => {
+    const body = doc({ trackStatus, ...over })
+    // The header is `roles.join(',')` (api-service.ts:14) and the backend UNIONS the permitted
+    // statuses across every role the caller holds (`ScheduleEditability.forCaller`). One mock user
+    // holds exactly one role today, so the split is unreachable — but encoding "the whole header is
+    // one role" would be the wrong rule the day a combined caller exists. An unrecognised role
+    // contributes nothing, which is the fail-closed half of the same behaviour.
+    const permitted = new Set(
+      actingRole(request)
+        .split(',')
+        .flatMap((role) => EDITABLE_STATUSES[role] ?? []),
+    )
+    return { ...body, editable: permitted.has(String(trackStatus)) }
+  }
+
+  const matrixGet = (trackStatus: string | null, over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => {
+      sentRole = actingRole(request)
+      return HttpResponse.json(matrixBody(request, trackStatus, over))
+    })
+
+  // Masked numeric editors re-render through their converter on every change, and every culvert row
+  // mounts its own editor at once, so `user.type` here is O(rows x characters) and has timed out CI.
+  // One change event carries the whole corrected value instead.
+  //
+  // On Schedule 7B the VALUE commits on change — `CulvertFields` binds `onChange` straight to the
+  // page's `setRowField` (CulvertFields.tsx:91) — and `onBlur` only re-applies the legacy mask for
+  // display (`onMask` → `maskRowField`, CulvertFields.tsx:105). The blur is fired anyway, because a
+  // real correction ends with the field left, and it lets an arm assert the MASKED display before
+  // saving, so an edit the converter never accepted fails at the field rather than in the request
+  // body. (Schedule 2's same-named helper needs its blur for a different reason: its derived mirror
+  // listens to that event, defect #291.)
+  const enterValue = (input: HTMLElement, value: string) => {
+    fireEvent.change(input, { target: { value } })
+    fireEvent.blur(input)
+  }
+
+  /** The write surface live: the mirror image of `expectReadOnly`, for the editable arms. */
+  const expectEditable = () => {
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeEnabled()
+    expect(culvertPanel(7801).getByLabelText('Material costs ($)')).toBeEnabled()
+    expect(culvertPanel(7801).getByLabelText('Comments')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: /Type/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+    expect(culvertPanel(7801).getByRole('button', { name: 'Delete' })).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeEnabled()
+    }
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeEnabled()
+    }
+  }
+
+  /** Every control this page can disable, for the read-only arms. */
+  const expectReadOnly = () => {
+    for (const label of [
+      'Span (mm)',
+      'Rise (mm)',
+      'Length (m)',
+      'No of Pieces',
+      'Material costs ($)',
+      'Install costs ($)',
+      'Comments',
+    ] as const) {
+      expect(culvertPanel(7801).getByLabelText(label)).toBeDisabled()
+    }
+    expect(screen.getByRole('combobox', { name: /Type/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+    expect(culvertPanel(7801).getByRole('button', { name: 'Delete' })).toBeDisabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeDisabled()
+    }
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeDisabled()
+    }
+  }
+
+  test('an ADMIN corrects a Submitted culvert and saves: PUT issued, SUC-001 verbatim (CHK-010 S01)', async () => {
+    let captured: SaveAllBody | null = null
+    let puts = 0
+    let putRole: string | null = null
+    server.use(
+      matrixGet('S'),
+      http.put(CULVERTS_URL, async ({ request }) => {
+        puts += 1
+        putRole = actingRole(request)
+        captured = (await request.json()) as SaveAllBody
+        return HttpResponse.json(
+          matrixBody(request, 'S', {
+            culverts: [{ ...mainHaul, spanSize: 1500 }],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // The whole point of 16.1's admin row: at Submitted the write surface is LIVE for this actor,
+    // and nothing asserted it until now. Both halves: this test DECLARED admin, and the document
+    // request CARRIED admin — so the served `editable` is the matrix's verdict on a stated identity,
+    // not on the silent `MOCK_USERS[0]` fallback.
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expectEditable()
+
+    const span = culvertPanel(7801).getByLabelText('Span (mm)')
+    enterValue(span, '1500')
+    // Committed THROUGH the legacy mask (`#,###,##0`), so a value the converter never accepted
+    // fails here rather than silently in the request body.
+    expect(span).toHaveValue('1,500')
+    await savePage(user)
+
+    // Verbatim SUC-001, straight from the API's `message.text` (AD-8): the bundle value is
+    // `dataSavedSuccesfullyInfoMsg=Data saved successfully`, with no trailing period.
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(puts).toBe(1)
+    // The correction itself was issued as the admin, not merely the read that preceded it.
+    expectActingAs(ILCR_ROLES.admin, putRole)
+    expect(entryFor(captured, 7801)).toMatchObject({ spanSize: 1500, revisionCount: 3 })
+  })
+
+  test('the correction request structurally cannot ask for a status transition (AC: track still S)', async () => {
+    // `trackStatus` is rendered NOWHERE on any schedule page (the tombstone shows the working
+    // context's mill status, not the document's track), so "the save did not move the status" is not
+    // assertable from the DOM. Three proxies stand in for it, and together they are stronger than a
+    // label would be:
+    //   (a) the PUT body's exact key set — no status member exists anywhere in it, at either level,
+    //       so the client cannot request a transition even if the server would honour one;
+    //   (b) MSW is strict (`onUnhandledRequest: 'error'`), so a call to any transition endpoint —
+    //       none exists in the backend today — fails this test rather than passing silently;
+    //   (c) the echo still carries `'S'` and the matrix still answers editable for this actor, so
+    //       the corrected document stays correctable.
+    let captured: SaveAllBody | null = null
+    let rawBody = ''
+    server.use(
+      matrixGet('S'),
+      http.put(CULVERTS_URL, async ({ request }) => {
+        rawBody = await request.text()
+        captured = JSON.parse(rawBody) as SaveAllBody
+        return HttpResponse.json(
+          matrixBody(request, 'S', {
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    const install = culvertPanel(7801).getByLabelText('Install costs ($)')
+    enterValue(install, '1600')
+    expect(install).toHaveValue('1,600')
+    await savePage(user)
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // (a) Exact key sets, at both levels of the batch. A new member — a status, a role, an `editable`
+    // — would fail here rather than quietly crossing the wire.
+    expect(Object.keys(captured ?? {})).toEqual(['culverts'])
+    expect(Object.keys(captured?.culverts[0] ?? {}).sort()).toEqual(['culvert', 'culvertReportId'])
+    expect(Object.keys(entryFor(captured, 7801) ?? {}).sort()).toEqual([
+      'comments',
+      'culvertPieceCount',
+      'culvertTypeCode',
+      'installCost',
+      'length',
+      'materialCost',
+      'revisionCount',
+      'riseSize',
+      'spanSize',
+    ])
+    expect(rawBody).not.toMatch(/status/i)
+    expect(rawBody).not.toMatch(/editable/i)
+
+    // (c) The served track is still `'S'` after the write, and the page is still editable on it.
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeEnabled()
+    }
+  })
+
+  test('a SUBMITTER at Submitted is read-only: inputs, Save, Check Status and Delete all disabled (S13/S17)', async () => {
+    let wrote = false
+    server.use(
+      // The SAME handler the admin arm uses. Only the acting identity differs, and the matrix does
+      // the rest — which is what makes `renderAsSubmitter` a constraint rather than a label.
+      matrixGet('S'),
+      // Handled, not omitted, so a write that DID escape is reported as a wrong request rather than
+      // as an MSW "unhandled request" failure that could be read as harness noise.
+      http.put(CULVERTS_URL, ({ request }) => {
+        wrote = true
+        return HttpResponse.json(matrixBody(request, 'S'))
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsSubmitter(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // The licensee's own submitted data is still fully visible — read-only is not "hidden" (legacy
+    // bound `disabled` and never removed a control, STA-001).
+    expectActingAs(ILCR_ROLES.submitter, sentRole)
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toHaveValue('1,200')
+    expectReadOnly()
+
+    await savePage(user)
+    expect(wrote).toBe(false)
+  })
+
+  test('an ADMIN at DRAFT is read-only — the capability 16.1 deliberately removed', async () => {
+    let wrote = false
+    server.use(
+      matrixGet('D'),
+      http.put(CULVERTS_URL, ({ request }) => {
+        wrote = true
+        return HttpResponse.json(matrixBody(request, 'D'))
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // The matrix is bidirectional: ADMIN gains Submitted and Verified and LOSES Draft, where the
+    // licensee is still working. Without this arm a gate widened to "admin may always edit" would
+    // pass every other test in the suite.
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expectReadOnly()
+
+    await savePage(user)
+    expect(wrote).toBe(false)
+  })
+
+  test('a SUBMITTER at DRAFT still edits — the discriminator that keeps the read-only arms honest', async () => {
+    // Without this, an always-false handler (or a page that disabled everything unconditionally)
+    // would satisfy both read-only arms above and look like passing evidence. Same handler shape,
+    // same track as the admin-at-Draft arm — only the identity changes, and the verdict flips.
+    server.use(matrixGet('D'))
+    const user = userEvent.setup()
+    renderAsSubmitter(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    expectActingAs(ILCR_ROLES.submitter, sentRole)
+    expectEditable()
+  })
+
+  // The two cells nobody serves. `trackStatus: 'V'` appears ZERO times across the repo's fixtures,
+  // so narrowing the backend matrix's admin row from {S,V} to {S} would leave all twelve suites
+  // green — half the admin capability (the VERIFIED correction) had no evidence at all. `'O'` and a
+  // NULL track are the fail-closed cells 16.1 pinned: not editable by anyone, for any role.
+  test.each([
+    ['V', true],
+    ['O', false],
+    [null, false],
+  ] as const)(
+    'an ADMIN on trackStatus %s is editable: %s — the cells no other fixture serves',
+    async (trackStatus, editable) => {
+      server.use(matrixGet(trackStatus))
+      const user = userEvent.setup()
+      renderAsAdmin(<Schedule7b />)
+      await openCulvert(user, 1)
+
+      expectActingAs(ILCR_ROLES.admin, sentRole)
+      if (editable) {
+        expectEditable()
+      } else {
+        expectReadOnly()
+      }
+    },
+  )
+
+  test('an ADMIN deletes at Submitted: cancel sends nothing, confirm sends the DELETE (S06/S07)', async () => {
+    // Both delete paths in one arm, in the order that makes the cancel meaningful: a cancel asserted
+    // on its own can pass on a page whose Delete is simply broken, so the same actor goes on to
+    // confirm and the DELETE must then fire.
+    let deletes = 0
+    let gets = 0
+    let deleteRole: string | null = null
+    server.use(
+      http.get(URL, ({ request }) => {
+        gets += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(
+          matrixBody(request, 'S', { culverts: [mainHaul, culvertAt(7802, 2)] }),
+        )
+      }),
+      http.delete(`${CULVERTS_URL}/7801`, ({ request }) => {
+        deletes += 1
+        deleteRole = actingRole(request)
+        return HttpResponse.json(
+          matrixBody(request, 'S', {
+            culverts: [culvertAt(7802, 1)],
+            message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+    await waitFor(() => {
+      expect(gets).toBe(1)
+    })
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+
+    // The shared `core/ConfirmDeleteModal` (header "Confirmation", Yes/No) — asserted through, never
+    // modified (user ruling 2026-09-11). Its message is the bundle's `confirmDeleteMsg` verbatim.
+    await user.click(culvertPanel(7801).getByRole('button', { name: 'Delete' }))
+    const cancelDialog = await deleteModal()
+    expect(
+      cancelDialog.getByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    await user.click(cancelDialog.getByRole('button', { name: 'No' }))
+
+    // Cancelled: no DELETE, no re-GET, no banner, and the row is still there.
+    expect(deletes).toBe(0)
+    expect(gets).toBe(1)
+    expect(screen.getByRole('button', { name: 'Culvert report Id: 1' })).toBeInTheDocument()
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+
+    // Now confirm, as the same ADMIN on the same Submitted document.
+    await user.click(culvertPanel(7801).getByRole('button', { name: 'Delete' }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(deletes).toBe(1)
+    expectActingAs(ILCR_ROLES.admin, deleteRole)
+  })
+
+  test('Check Status is available to an ADMIN at Submitted and mutates nothing (S02-S05)', async () => {
+    let posts = 0
+    let gets = 0
+    let writes = 0
+    let checkRole: string | null = null
+    server.use(
+      http.get(URL, ({ request }) => {
+        gets += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(matrixBody(request, 'S'))
+      }),
+      http.put(CULVERTS_URL, ({ request }) => {
+        writes += 1
+        return HttpResponse.json(matrixBody(request, 'S'))
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        posts += 1
+        checkRole = actingRole(request)
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderAsAdmin(<Schedule7b />)
+    await openCulvert(user, 1)
+    await waitFor(() => {
+      expect(gets).toBe(1)
+    })
+
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    const checkButtons = screen.getAllByRole('button', { name: 'Check Status' })
+    for (const button of checkButtons) {
+      expect(button).toBeEnabled()
+    }
+    await user.click(checkButtons[0])
+
+    // Verbatim `scheduleRequirementsMetMsg` — 7B's own key (Schedule7bService.java:75); the sibling
+    // schedules do not all use this one, so it is read from the bundle rather than assumed.
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    // Read-only (BR-07): exactly one POST, and NOTHING else moved — no write, and a stable GET count
+    // (the confirmed-delete path re-GETs, so an unchanged count is a real "nothing ran" signal).
+    expect(posts).toBe(1)
+    expectActingAs(ILCR_ROLES.admin, checkRole)
+    expect(writes).toBe(0)
+    expect(gets).toBe(1)
+    // The document on screen is untouched by the check.
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toHaveValue('1,200')
+    expect(screen.getByText('5,500')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B — Check Status evaluates the SCREEN, not the saved record.
+// ---------------------------------------------------------------------------------------------------
+
+// Every error banner's subtitle, in render order — the validation banner is one line per failing field.
+const errorBannerLines = () =>
+  Array.from(
+    document.querySelectorAll(
+      '.cds--inline-notification--error .cds--inline-notification__subtitle',
+    ),
+  ).map((node) => node.textContent)
+
+const checkStatusButton = () => screen.getAllByRole('button', { name: 'Check Status' })[0]
+
+const MET_RESPONSE = {
+  requirementsMet: true,
+  errors: [],
+  requirementsMetMessage: {
+    key: 'scheduleRequirementsMetMsg',
+    text: 'All requirements for this schedule have been met',
+  },
+}
+
+describe('Schedule 7B Check Status evaluates the screen (#359 group B)', () => {
+  test('the body carries EVERY culvert as on screen, in order — blank → null, typed 0 stays 0, other pages included, no Add draft', async () => {
+    const culverts = Array.from({ length: 7 }, (_, index) => culvertAt(7801 + index, index + 1))
+    let body: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ culverts }))),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    // Row 1 (page 1): clear the length, type a zero material cost.
+    await user.clear(culvertPanel(7801).getByLabelText('Length (m)'))
+    const material = culvertPanel(7801).getByLabelText('Material costs ($)')
+    await user.clear(material)
+    await user.type(material, '0')
+
+    // Row 6 (page 2): an edit made on another paginator page.
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await openCulvert(user, 6)
+    const span6 = culvertPanel(7806).getByLabelText('Span (mm)')
+    await user.clear(span6)
+    await user.type(span6, '777')
+    await user.click(screen.getByRole('button', { name: /previous page/i }))
+
+    // An Add draft on screen is never part of the check (Add saves at once in legacy).
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(addPanel().getByLabelText('Span (mm)'), '4242')
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    const served = {
+      culvertTypeCode: 'R',
+      spanSize: 1200,
+      length: 12.5,
+      culvertPieceCount: 3,
+      materialCost: 4000,
+      installCost: 1500,
+    }
+    expect(body).toEqual({
+      culverts: [
+        { ...served, length: null, materialCost: 0, comments: 'Culvert 1' },
+        { ...served, comments: 'Culvert 2' },
+        { ...served, comments: 'Culvert 3' },
+        { ...served, comments: 'Culvert 4' },
+        { ...served, comments: 'Culvert 5' },
+        { ...served, spanSize: 777, comments: 'Culvert 6' },
+        { ...served, comments: 'Culvert 7' },
+      ],
+    })
+  })
+
+  test('a cleared optional field is sent as null, never 0, and a blank type as null', async () => {
+    let body: { culverts: Record<string, unknown>[] } | null = null
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            culverts: [
+              culvertAt(7801, 1, {
+                culvertTypeCode: null,
+                spanSize: null,
+                length: null,
+                materialCost: null,
+                installCost: null,
+                comments: null,
+              }),
+            ],
+          }),
+        ),
+      ),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as { culverts: Record<string, unknown>[] }
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+
+    // The type is Save-required, so a blank one blocks the check; fill it so the request goes out
+    // with every OPTIONAL field still blank.
+    await openCulvert(user, 1)
+    await user.click(culvertPanel(7801).getByRole('combobox', { name: /Type/i }))
+    await user.click(await culvertPanel(7801).findByRole('option', { name: 'Others' }))
+    await user.click(checkStatusButton())
+    await screen.findByText('All requirements for this schedule have been met')
+
+    expect(body).toEqual({
+      culverts: [
+        {
+          culvertTypeCode: 'O',
+          spanSize: null,
+          length: null,
+          culvertPieceCount: 3,
+          materialCost: null,
+          installCost: null,
+          comments: null,
+        },
+      ],
+    })
+  })
+
+  test("Check Status is gated on Save's validator: no request, the banner names each field verbatim, inline Value Required stays", async () => {
+    const culverts = Array.from({ length: 7 }, (_, index) =>
+      culvertAt(7801 + index, index + 1, index === 5 ? { culvertPieceCount: null } : {}),
+    )
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ culverts }))),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+    // Row 1 (page 1): the piece count cleared, and an out-of-range cost whose validator text already
+    // carries the row prefix. Row 6 (page 2) holds a stored NULL piece count.
+    await user.clear(culvertPanel(7801).getByLabelText('No of Pieces'))
+    const material = culvertPanel(7801).getByLabelText('Material costs ($)')
+    await user.clear(material)
+    await user.type(material, '100000000')
+
+    await user.click(checkStatusButton())
+
+    // Row by row, field by field in screen order, in legacy's words.
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Id: 1 - No of pieces: Value is required.',
+        'Id: 1 - Entered cost must be between -99,999,999 and 99,999,999.',
+        'Id: 6 - No of pieces: Value is required.',
+      ])
+    })
+    expect(posts).toBe(0)
+    expect(
+      screen.queryByText('Please correct the highlighted fields before saving.'),
+    ).not.toBeInTheDocument()
+    // The inline marker stays the rebuild's own `Value Required` (plus the row-prefixed range text).
+    expect(culvertPanel(7801).getByText('Value Required')).toBeInTheDocument()
+
+    // Row 6, on the other page, carries its inline marker too.
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await openCulvert(user, 6)
+    expect(culvertPanel(7806).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('Save and Check Status show the SAME verbatim banner lines for the same blocked screen', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            culverts: [culvertAt(7801, 1, { culvertTypeCode: null, culvertPieceCount: null })],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+    const expected = [
+      'Id: 1 - Type: Value is required.',
+      'Id: 1 - No of pieces: Value is required.',
+    ]
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(culvertPanel(7801).getAllByText('Value Required')).toHaveLength(2)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(culvertPanel(7801).getAllByText('Value Required')).toHaveLength(2)
+  })
+
+  test('editing a row after a check clears the shown verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_RESPONSE)),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    await user.type(culvertPanel(7801).getByLabelText('Span (mm)'), '1')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a check in flight locks every checked editor, so no edit can outrun its verdict', async () => {
+    // The snapshot guard (`checkSnapshotVersionRef`) drops a response for superseded values; on this
+    // page the editors are ALSO disabled for the whole request (`controlsDisabled` covers `saving`),
+    // so no edit can reach the screen before the verdict does. Pinned here, because that lock is what
+    // makes the verdict always describe the values it was computed from.
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(checkStatusButton()).toBeDisabled()
+    })
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeDisabled()
+    expect(culvertPanel(7801).getByLabelText('Material costs ($)')).toBeDisabled()
+
+    releaseCheck()
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    expect(culvertPanel(7801).getByLabelText('Span (mm)')).toBeEnabled()
+  })
+
+  test('whitespace-only comments are sent as typed, not trimmed to null (the server rule is untrimmed)', async () => {
+    let body: { culverts: Record<string, unknown>[] } | null = null
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ culverts: [culvertAt(7801, 1, { culvertTypeCode: 'O', comments: '   ' })] }),
+        ),
+      ),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as { culverts: Record<string, unknown>[] }
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+
+    await user.click(checkStatusButton())
+    await screen.findByText('All requirements for this schedule have been met')
+    expect(body!.culverts[0].comments).toBe('   ')
+  })
+
+  test('editing a field clears the validation banner lines (legacy re-rendered its messages on change)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ culverts: [culvertAt(7801, 1, { culvertPieceCount: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await screen.findByRole('button', { name: 'Culvert report Id: 1' })
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 1 - No of pieces: Value is required.'])
+    })
+    await user.type(culvertPanel(7801).getByLabelText('No of Pieces'), '2')
+    expect(errorBannerLines()).toEqual([])
   })
 })

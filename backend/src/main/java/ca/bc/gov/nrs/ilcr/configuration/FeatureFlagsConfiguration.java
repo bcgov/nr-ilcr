@@ -55,14 +55,10 @@ public class FeatureFlagsConfiguration {
 
   private static final String PRODUCTION_PROFILE = "production";
 
-  /**
-   * Map of feature flag names to their enabled/disabled state.
-   */
-  @Builder.Default
-  private Map<String, Boolean> flags = Collections.emptyMap();
+  /** Map of feature flag names to their enabled/disabled state. */
+  @Builder.Default private Map<String, Boolean> flags = Collections.emptyMap();
 
-  @Builder.Default
-  private Map<String, Counter> evaluationCounters = new ConcurrentHashMap<>();
+  @Builder.Default private Map<String, Counter> evaluationCounters = new ConcurrentHashMap<>();
 
   @Autowired(required = false)
   private MeterRegistry meterRegistry;
@@ -73,8 +69,8 @@ public class FeatureFlagsConfiguration {
   /**
    * Returns whether the given feature flag is enabled.
    *
-   * <p>Prefer {@link #isEnabled(FeatureFlag)} for production callers; this overload
-   * is retained for configuration-mechanism tests and framework use.
+   * <p>Prefer {@link #isEnabled(FeatureFlag)} for production callers; this overload is retained for
+   * configuration-mechanism tests and framework use.
    *
    * @param flag the flag name (must match the key in {@code features.flags.*})
    * @return {@code true} if the flag exists and is set to {@code true}; {@code false} otherwise
@@ -88,8 +84,8 @@ public class FeatureFlagsConfiguration {
   /**
    * Returns whether the given feature flag is enabled.
    *
-   * <p>Prefer this overload over {@link #isEnabled(String)} — the {@link FeatureFlag} enum
-   * provides compile-time discoverability of all known flags and prevents silent typos.
+   * <p>Prefer this overload over {@link #isEnabled(String)} — the {@link FeatureFlag} enum provides
+   * compile-time discoverability of all known flags and prevents silent typos.
    *
    * @param flag the flag to evaluate
    * @return {@code true} if the flag exists and is set to {@code true}; {@code false} otherwise
@@ -99,9 +95,7 @@ public class FeatureFlagsConfiguration {
     return isEnabled(flag.getKey());
   }
 
-  /**
-   * Logs all configured feature flags at startup.
-   */
+  /** Logs all configured feature flags at startup. */
   @PostConstruct
   void logFlags() {
     if (flags == null || flags.isEmpty()) {
@@ -117,16 +111,13 @@ public class FeatureFlagsConfiguration {
           "Feature flags configured. total={}, enabled={}, disabled={}",
           flags.size(),
           enabledCount,
-          disabledCount
-      );
+          disabledCount);
       flags.forEach(
           (name, enabled) ->
               log.debug(
                   "Feature flag '{}' is {}",
                   name,
-                  Boolean.TRUE.equals(enabled) ? "ENABLED" : "DISABLED"
-              )
-      );
+                  Boolean.TRUE.equals(enabled) ? "ENABLED" : "DISABLED"));
       return;
     }
 
@@ -135,9 +126,7 @@ public class FeatureFlagsConfiguration {
             log.info(
                 "Feature flag '{}' is {}",
                 name,
-                Boolean.TRUE.equals(enabled) ? "ENABLED" : "DISABLED"
-            )
-    );
+                Boolean.TRUE.equals(enabled) ? "ENABLED" : "DISABLED"));
   }
 
   private void recordEvaluation(String flag, boolean enabled) {
@@ -149,13 +138,15 @@ public class FeatureFlagsConfiguration {
     String valueTag = Boolean.toString(enabled);
     String cacheKey = flagName + ':' + valueTag;
 
-    Counter counter = evaluationCounters.computeIfAbsent(cacheKey, ignored ->
-        Counter.builder(FEATURE_FLAG_EVALUATION_METRIC)
-            .description("Count of feature flag evaluations by flag and value")
-            .tag("flag", flagName)
-            .tag("value", valueTag)
-            .register(meterRegistry)
-    );
+    Counter counter =
+        evaluationCounters.computeIfAbsent(
+            cacheKey,
+            ignored ->
+                Counter.builder(FEATURE_FLAG_EVALUATION_METRIC)
+                    .description("Count of feature flag evaluations by flag and value")
+                    .tag("flag", flagName)
+                    .tag("value", valueTag)
+                    .register(meterRegistry));
     counter.increment();
   }
 
@@ -166,8 +157,6 @@ public class FeatureFlagsConfiguration {
 
     return Arrays.stream(environment.getActiveProfiles())
         .map(String::toLowerCase)
-        .anyMatch(
-            profile -> PROD_PROFILE.equals(profile) || PRODUCTION_PROFILE.equals(profile)
-        );
+        .anyMatch(profile -> PROD_PROFILE.equals(profile) || PRODUCTION_PROFILE.equals(profile));
   }
 }

@@ -5,6 +5,7 @@
 // The footer `totals` and every `costPerVolume` are computed server-side (AD-5) and are never
 // recomputed here. There is deliberately no client-side sum anywhere in this feature.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { CategoryAmount, MessageInfo } from './Schedule5Response'
 
 export type { CategoryAmount, MessageInfo }
@@ -29,6 +30,9 @@ export interface SubPageRow {
   readonly volume?: number | null
   readonly cost?: number | null
   readonly costPerVolume?: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /**

@@ -1,7 +1,6 @@
 import { type APIRequestContext, expect } from '@playwright/test';
 import {
   type ScheduleKey,
-  locationUrl,
   locationsUrl,
   scheduleUrl,
 } from '../../fixtures/sch11/schedule11-test-data';
@@ -109,8 +108,21 @@ export async function addLocation(
 }
 
 /**
- * PUT one location through the app's own endpoint, using whatever `revisionCount` the row currently
- * carries. Used to simulate **another session** changing a row while the browser holds an open editor
+ * The page-level save (`PUT /locations`, `LocationSaveAllRequest`): the rows to update and the ids to
+ * delete, in one transaction. The only write the page makes besides Add (Story 26.2).
+ */
+async function saveAll(
+  request: APIRequestContext,
+  { millId, year }: ScheduleKey,
+  locations: { basicSilvicultureReportId: number; location: Record<string, unknown> }[],
+  deletedIds: number[],
+) {
+  return request.put(locationsUrl(millId, year), { data: { locations, deletedIds } });
+}
+
+/**
+ * Save one location through the app's own page-level save, using whatever `revisionCount` the row
+ * currently carries. Used to simulate **another session** changing a row while the browser holds an open editor
  * (GAP-3): this write succeeds and bumps the token, so the browser's pending save is then stale.
  *
  * Deliberately re-reads the row first rather than taking a token from the caller — hard-coding one would
@@ -123,22 +135,30 @@ export async function editLocationAsAnotherSession(
   changes: Partial<SeedLocation>,
 ): Promise<Sch11Location> {
   const row = await locationByMarker(request, key, marker);
-  const res = await request.put(locationUrl(row.locationId, key.millId, key.year), {
-    data: {
-      location: row.location,
-      enhancedIndicator: row.enhancedIndicator,
-      biogeoclimaticCatalogueId: row.biogeoclimaticCatalogueId,
-      netArea: row.netArea,
-      actualCost: row.actualCost ?? null,
-      plannedCost: row.plannedCost ?? null,
-      comments: row.comments ?? null,
-      revisionCount: row.revisionCount,
-      ...changes,
-    },
-  });
+  const res = await saveAll(
+    request,
+    key,
+    [
+      {
+        basicSilvicultureReportId: row.locationId,
+        location: {
+          location: row.location,
+          enhancedIndicator: row.enhancedIndicator,
+          biogeoclimaticCatalogueId: row.biogeoclimaticCatalogueId,
+          netArea: row.netArea,
+          actualCost: row.actualCost ?? null,
+          plannedCost: row.plannedCost ?? null,
+          comments: row.comments ?? null,
+          revisionCount: row.revisionCount,
+          ...changes,
+        },
+      },
+    ],
+    [],
+  );
   expect(
     res.ok(),
-    `concurrent PUT on "${marker}" (${key.millId}/${key.year}) returned HTTP ${res.status()}: ${await res.text()}`,
+    `concurrent save on "${marker}" (${key.millId}/${key.year}) returned HTTP ${res.status()}: ${await res.text()}`,
   ).toBeTruthy();
   const after = await locationByMarker(request, key, marker);
   // The whole point is that the token MOVED — if it didn't, the browser's save would not be stale and the
@@ -179,20 +199,23 @@ export async function locationByMarker(
 }
 
 /**
- * Delete every location carrying `marker`, then PROVE none remain (fail loud). A 404 means the UI
- * already deleted it — the expected outcome for the S07 happy path — so it counts as already-gone.
+ * Delete every location carrying `marker` in one page-level save, then PROVE none remain (fail loud).
+ * Only rows still served are sent, so a row the UI already deleted — the S07 happy path — is simply not
+ * in the list. The save is ATOMIC: a 404 means NOTHING was deleted (one id vanished between the read and
+ * the save and the whole request rolled back), so it is a failure here, not "already gone".
  */
 export async function deleteLocationsByMarker(
   request: APIRequestContext,
   key: ScheduleKey,
   marker: string,
 ): Promise<void> {
-  for (const row of await locationsByMarker(request, key, marker)) {
-    const res = await request.delete(locationUrl(row.locationId, key.millId, key.year));
+  const ids = (await locationsByMarker(request, key, marker)).map((row) => row.locationId);
+  if (ids.length > 0) {
+    const res = await saveAll(request, key, [], ids);
     expect(
-      [200, 404].includes(res.status()),
-      `DELETE location ${row.locationId} ("${marker}") returned HTTP ${res.status()}`,
-    ).toBeTruthy();
+      res.status(),
+      `delete-save of locations ${ids.join(', ')} ("${marker}") returned HTTP ${res.status()}: ${await res.text()}`,
+    ).toBe(200);
   }
   const remaining = await locationsByMarker(request, key, marker);
   expect(

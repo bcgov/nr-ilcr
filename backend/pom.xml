@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -61,14 +61,15 @@
         <skip.integration.tests>true</skip.integration.tests>
         <skip.unit.tests>false</skip.unit.tests>
         <jacoco.skip>false</jacoco.skip>
-        <checkstyle.skip>true</checkstyle.skip>
-        <checkstyle.failsOnError>false</checkstyle.failsOnError>
+        <checkstyle.skip>false</checkstyle.skip>
+        <checkstyle.failsOnError>true</checkstyle.failsOnError>
         <checkstyle.includeTestSourceDirectory>false</checkstyle.includeTestSourceDirectory>
         <cyclonedx.skip>false</cyclonedx.skip>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <jasperreports.version>7.0.8</jasperreports.version>
         <sonar.organization>bcgov-sonarcloud</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.java.checkstyle.reportPaths>target/checkstyle-result.xml</sonar.java.checkstyle.reportPaths>
         <!-- Keep Sonar coverage measurement in step with the jacoco instrumentation excludes
              below: config/dto/exception/boilerplate are not instrumented, so counting them as
              uncovered would understate new-code coverage for lines jacoco never reports on. -->
@@ -114,6 +115,51 @@
             <properties>
                 <skip.unit.tests>true</skip.unit.tests>
             </properties>
+        </profile>
+        <profile>
+            <!-- CI e2e database reset (reusable-tests.yml e2e-full job): applies the
+                 test-scope Flyway chain PLUS the e2e-only anchor seed (db-e2e/, which the
+                 *IT suite must never load — see that file's header) to the shared
+                 tools-namespace Oracle (database/openshift.deploy.yml) through a
+                 port-forward:
+                   mvn -P e2e-db flyway:clean flyway:migrate \
+                     -Dflyway.url=jdbc:oracle:thin:@//localhost:1525/ILCR \
+                     -Dflyway.user=$DB_USER -Dflyway.password=$DB_PASS
+                 (credentials read at job time from the deployment's own OpenShift
+                 Secret, <name>-tools-database).
+                 clean+migrate at job start is what makes the shared long-lived DB start
+                 every run from the identical fixture state. Versions resolve from the
+                 Spring Boot parent (flyway.version / oracle-database.version) so the plugin
+                 always matches the flyway-core the ITs run. -->
+            <id>e2e-db</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-maven-plugin</artifactId>
+                        <version>${flyway.version}</version>
+                        <configuration>
+                            <locations>
+                                <location>filesystem:src/test/resources/db</location>
+                                <location>filesystem:src/test/resources/db-e2e</location>
+                            </locations>
+                            <cleanDisabled>false</cleanDisabled>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.flywaydb</groupId>
+                                <artifactId>flyway-database-oracle</artifactId>
+                                <version>${flyway.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>com.oracle.database.jdbc</groupId>
+                                <artifactId>ojdbc11</artifactId>
+                                <version>${oracle-database.version}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 
@@ -300,7 +346,7 @@
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <version>11.0.25</version>
+                <version>11.0.26</version>
             </dependency>
             <dependency>
                 <groupId>org.antlr</groupId>
@@ -341,7 +387,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.3</version>
+                <version>3.6.4</version>
                 <executions>
                     <execution>
                         <id>precompile-jasper-reports</id>
@@ -511,6 +557,29 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>3.10.2</version>
+                <configuration>
+                    <java>
+                        <googleJavaFormat>
+                            <version>1.25.2</version>
+                            <style>GOOGLE</style>
+                        </googleJavaFormat>
+                        <formatAnnotations />
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <version>3.6.0</version>
@@ -518,7 +587,7 @@
                     <dependency>
                         <groupId>com.puppycrawl.tools</groupId>
                         <artifactId>checkstyle</artifactId>
-                        <version>13.10.0</version>
+                        <version>14.1.0</version>
                     </dependency>
                 </dependencies>
                 <configuration>
@@ -532,7 +601,7 @@
                 <executions>
                     <execution>
                         <id>validate</id>
-                        <phase>checkstyle</phase>
+                        <phase>validate</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>

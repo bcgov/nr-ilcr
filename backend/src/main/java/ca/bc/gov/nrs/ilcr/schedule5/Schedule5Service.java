@@ -1,9 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
@@ -12,12 +18,15 @@ import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryEntry;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest.CampEntry;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -60,12 +69,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule5Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String INDICATOR_YES = "Y";
   private static final String INDICATOR_NO = "N";
-
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_CAMP_MET = "campRequirementsMetMsg";
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
@@ -78,6 +83,16 @@ public class Schedule5Service {
   static final String FIELD_ROAD_DISTANCE = "roadDistanceToOperatingArea";
   static final String FIELD_SIZE_OF_CAMP = "sizeOfCamp";
   static final String FIELD_ASSOCIATED_CAMP_VOLUME = "associatedCampVolume";
+
+  /**
+   * The two per-category original-value keys (Story 16.2). Named constants because every category
+   * on the page uses the same pair, and because they are the same field vocabulary the check-status
+   * keys above use — a rename has to move both together or the indicator stops addressing the cell
+   * its message names.
+   */
+  static final String FIELD_VOLUME = "volume";
+
+  static final String FIELD_COST = "cost";
   static final String FIELD_OTHER_CAMP_DESCRIPTION = "otherCampExpenseDescription";
   static final String FIELD_OTHER_CAMP_COST = "otherCampExpenseCost";
   static final String FIELD_OTHER_ACCESS_DESCRIPTION = "otherAccessExpenseDescription";
@@ -122,41 +137,66 @@ public class Schedule5Service {
    * Package-private so the tests can tie BOTH consumers — the read routing (7.1's review patch) and
    * {@link #writeCategoryRows}'s twelve-item write map — to this one set.
    */
-  static final Set<Integer> SINGLE_ROW_ITEMS = Set.of(
-      ITEM_CATERING_AND_FOOD, ITEM_WAGES_AND_BENEFITS, ITEM_DEPRECIATION_LEASE,
-      ITEM_GENERAL_CAMP_EXPENSES, ITEM_RECOVERIES, ITEM_CREW_TRANSPORTATION, ITEM_EQUIP_LAND,
-      ITEM_EQUIP_RAIL, ITEM_EQUIP_AIR, ITEM_EQUIP_WATER, ITEM_OTHER_CAMP_EXPENSES_VOLUME,
-      ITEM_OTHER_ACCESS_EXPENSES_VOLUME);
+  static final Set<Integer> SINGLE_ROW_ITEMS =
+      Set.of(
+          ITEM_CATERING_AND_FOOD,
+          ITEM_WAGES_AND_BENEFITS,
+          ITEM_DEPRECIATION_LEASE,
+          ITEM_GENERAL_CAMP_EXPENSES,
+          ITEM_RECOVERIES,
+          ITEM_CREW_TRANSPORTATION,
+          ITEM_EQUIP_LAND,
+          ITEM_EQUIP_RAIL,
+          ITEM_EQUIP_AIR,
+          ITEM_EQUIP_WATER,
+          ITEM_OTHER_CAMP_EXPENSES_VOLUME,
+          ITEM_OTHER_ACCESS_EXPENSES_VOLUME);
 
   private final Schedule5Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
   /** Wires the Schedule 5 repository. */
-  public Schedule5Service(Schedule5Repository repository) {
+  public Schedule5Service(
+      Schedule5Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
    * The Schedule 5 document for a validated mill/year.
    *
+   * <p>A valid mill/year holding no camps is a 200 with an EMPTY list, never a 404 — the 404
+   * belongs solely to a missing {@code ILCR_MILL_REPORT_STATUS} row and is raised upstream by
+   * {@code MillContextService.validateMillYearActive}. Legacy cannot reach its own not-found branch
+   * here at all ({@code Schedule5DAO.getCampReports} returns {@code Query.list()}, an empty list
+   * and never null), and the Ministry confirmed the behaviour on PR #370, 2026-08-27 (ruling 4 of
+   * {@code docs/decisions/camps-and-access-expenses.md}). The page renders a "no camps" empty state
+   * over this empty list; that is presentation, and it does NOT change the contract below.
+   *
    * @param millId the validated mill id
    * @param year the validated reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (AD-9: combined with the
-   *     Draft track status to decide {@code editable}; the server is the sole authority)
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (AD-9: combined with the Draft
+   *     track status to decide {@code editable}; the server is the sole authority)
    * @return the document — {@code camps: []} when the mill/year stores none
    */
   @Transactional(readOnly = true)
-  public Schedule5Response getSchedule5(long millId, int year, boolean callerMayEdit) {
+  public Schedule5Response getSchedule5(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
    * Assemble the served document for a KNOWN track status. Story 7.2 reuses this with the {@code D}
-   * its Draft gate just proved (same transaction) rather than re-running the track-status query.
+   * its editability gate just proved (same transaction) rather than re-running the track-status
+   * query.
    */
   private Schedule5Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     // Camps FIRST, then their details. The two reads are separate statements and Oracle READ
     // COMMITTED gives each its own snapshot, so a camp committed between them is visible to one and
@@ -166,10 +206,40 @@ public class Schedule5Service {
     // camp: wrong money, silently. 7.2's write path makes that reachable in normal use.
     List<CampRow> campRows = repository.findCamps(millId, year);
     Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
-    List<Camp> camps = campRows.stream()
-        .map(row -> toCamp(millId, year, row,
-            detailsByCamp.getOrDefault(row.campId(), CampDetails.empty())))
-        .toList();
+
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft; read once for every
+    // camp rather than per camp, so the page costs two queries however many camps it holds.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule5Repository.CampSnapshotRow> campSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, CostDetailSnapshotRepository.Row>> detailSnapshots = new HashMap<>();
+    if (exposeOriginals && !campRows.isEmpty()) {
+      for (Schedule5Repository.CampSnapshotRow snap : repository.findCampSnapshots(millId, year)) {
+        campSnapshots.putIfAbsent(snap.campId(), snap);
+      }
+      List<Long> campIds = campRows.stream().map(row -> (long) row.campId()).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCampReports(campIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          detailSnapshots
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r);
+        }
+      }
+    }
+    List<Camp> camps =
+        campRows.stream()
+            .map(
+                row ->
+                    toCamp(
+                        new CampOriginals(
+                            originalValues,
+                            trackStatus,
+                            campSnapshots.get(row.campId()),
+                            detailSnapshots.getOrDefault((long) row.campId(), Map.of())),
+                        millId,
+                        year,
+                        row,
+                        detailsByCamp.getOrDefault(row.campId(), CampDetails.empty())))
+            .toList();
 
     return new Schedule5Response(millId, year, trackStatus, editable, camps, null);
   }
@@ -201,7 +271,10 @@ public class Schedule5Service {
         log.warn(
             "Schedule 5 mill {} year {} camp {} has a NULL cost item id (detail id {}); row"
                 + " dropped",
-            millId, year, row.campId(), row.detailId());
+            millId,
+            year,
+            row.campId(),
+            row.detailId());
       } else if (itemId == ITEM_OTHER_CAMP_EXPENSE_ROW) {
         camp.otherCampRows().add(row);
       } else if (itemId == ITEM_OTHER_ACCESS_EXPENSE_ROW) {
@@ -221,13 +294,22 @@ public class Schedule5Service {
           log.debug(
               "Schedule 5 mill {} year {} camp {} has more than one row for cost item {}; keeping"
                   + " detail id {} and ignoring detail id {}",
-              millId, year, row.campId(), itemId, kept.detailId(), row.detailId());
+              millId,
+              year,
+              row.campId(),
+              itemId,
+              kept.detailId(),
+              row.detailId());
         }
       } else {
         log.debug(
             "Schedule 5 mill {} year {} camp {} references unrecognized cost item {} (detail id"
                 + " {}); row dropped, matching legacy Schedule5DAO",
-            millId, year, row.campId(), itemId, row.detailId());
+            millId,
+            year,
+            row.campId(),
+            itemId,
+            row.detailId());
       }
     }
     return byCamp;
@@ -244,27 +326,56 @@ public class Schedule5Service {
    * campTotal} would get {@code null - recoveries} and silently collapse {@code campAndAccessTotal}
    * to the Access total alone.
    */
-  private Camp toCamp(long millId, int year, CampRow row, CampDetails details) {
+  private Camp toCamp(
+      CampOriginals originals, long millId, int year, CampRow row, CampDetails details) {
     BigDecimal campVolume = row.associatedCampVolume();
 
-    CategoryAmount cateringAndFood = amount(details, ITEM_CATERING_AND_FOOD);
-    CategoryAmount wagesAndBenefits = amount(details, ITEM_WAGES_AND_BENEFITS);
-    CategoryAmount depreciationLease = amount(details, ITEM_DEPRECIATION_LEASE);
-    CategoryAmount generalCampExpenses = amount(details, ITEM_GENERAL_CAMP_EXPENSES);
+    CategoryAmount cateringAndFood = amount(details, ITEM_CATERING_AND_FOOD, originals);
+    CategoryAmount wagesAndBenefits = amount(details, ITEM_WAGES_AND_BENEFITS, originals);
+    CategoryAmount depreciationLease = amount(details, ITEM_DEPRECIATION_LEASE, originals);
+    CategoryAmount generalCampExpenses = amount(details, ITEM_GENERAL_CAMP_EXPENSES, originals);
 
     // Other Camp Expenses: volume is the STORED item-141 amount (never a sum of the rows); cost is
     // the sum of the item-62 row costs; $/m3 is per-term-rounded (see costPerVolumePerTerm).
     BigDecimal otherCampVolume = volumeOf(details, ITEM_OTHER_CAMP_EXPENSES_VOLUME);
     Long otherCampCost = otherCampExpensesCost(details.otherCampRows(), otherCampVolume);
-    CategoryAmount otherCampExpenses = new CategoryAmount(otherCampVolume, otherCampCost,
-        costPerVolumePerTerm(details.otherCampRows(), otherCampVolume));
+    CategoryAmount otherCampExpenses =
+        new CategoryAmount(
+            otherCampVolume,
+            otherCampCost,
+            costPerVolumePerTerm(details.otherCampRows(), otherCampVolume),
+            // Volume only. The volume is the stored item-141 amount and legacy set its original
+            // (Schedule5DAO.java:240); the cost is the SUM of the sub-page rows, so it has no
+            // snapshot column of its own and legacy set none.
+            originals
+                .builder()
+                .put(
+                    FIELD_VOLUME,
+                    originals.volume(ITEM_OTHER_CAMP_EXPENSES_VOLUME),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // Recoveries is the volume-less category: legacy sets cost only (Schedule5DAO.java:242-244).
-    CategoryAmount recoveries = new CategoryAmount(null, costOf(details, ITEM_RECOVERIES), null);
+    CategoryAmount recoveries =
+        new CategoryAmount(
+            null,
+            costOf(details, ITEM_RECOVERIES),
+            null,
+            // Cost only, matching legacy: Schedule5DAO.java:242-244 sets a cost original for
+            // Recoveries and no volume original, because the category has no volume.
+            originals
+                .builder()
+                .put(FIELD_COST, originals.cost(ITEM_RECOVERIES), OriginalValueFormat.WHOLE)
+                .build());
 
     // (1) Sub-Total over EXACTLY five costs — Recoveries excluded (CampReportType.java:335-347).
-    Long campSubTotalCost = sumCosts(cateringAndFood.cost(), wagesAndBenefits.cost(),
-        depreciationLease.cost(), generalCampExpenses.cost(), otherCampCost);
+    Long campSubTotalCost =
+        sumCosts(
+            cateringAndFood.cost(),
+            wagesAndBenefits.cost(),
+            depreciationLease.cost(),
+            generalCampExpenses.cost(),
+            otherCampCost);
     CategoryAmount campSubTotal = derived(campSubTotalCost, campVolume);
 
     // (2) Camp Total = Sub-Total - Recoveries (BR-04/S09). Recoveries is stored POSITIVE and
@@ -273,24 +384,40 @@ public class Schedule5Service {
     CategoryAmount campTotal =
         derived(subtractCost(campSubTotalCost, recoveries.cost()), campVolume);
 
-    CategoryAmount crewTransportation = amount(details, ITEM_CREW_TRANSPORTATION);
-    CategoryAmount equipAndSuppliesLand = amount(details, ITEM_EQUIP_LAND);
-    CategoryAmount equipAndSuppliesRail = amount(details, ITEM_EQUIP_RAIL);
-    CategoryAmount equipAndSuppliesAir = amount(details, ITEM_EQUIP_AIR);
-    CategoryAmount equipAndSuppliesWater = amount(details, ITEM_EQUIP_WATER);
+    CategoryAmount crewTransportation = amount(details, ITEM_CREW_TRANSPORTATION, originals);
+    CategoryAmount equipAndSuppliesLand = amount(details, ITEM_EQUIP_LAND, originals);
+    CategoryAmount equipAndSuppliesRail = amount(details, ITEM_EQUIP_RAIL, originals);
+    CategoryAmount equipAndSuppliesAir = amount(details, ITEM_EQUIP_AIR, originals);
+    CategoryAmount equipAndSuppliesWater = amount(details, ITEM_EQUIP_WATER, originals);
 
     BigDecimal otherAccessVolume = volumeOf(details, ITEM_OTHER_ACCESS_EXPENSES_VOLUME);
     Long otherAccessCost = otherAccessExpensesCost(details.otherAccessRows());
-    CategoryAmount otherAccessExpenses = new CategoryAmount(otherAccessVolume, otherAccessCost,
-        costPerVolumePerTerm(details.otherAccessRows(), otherAccessVolume));
+    CategoryAmount otherAccessExpenses =
+        new CategoryAmount(
+            otherAccessVolume,
+            otherAccessCost,
+            costPerVolumePerTerm(details.otherAccessRows(), otherAccessVolume),
+            // Volume only, for the same reason (Schedule5DAO.java:281).
+            originals
+                .builder()
+                .put(
+                    FIELD_VOLUME,
+                    originals.volume(ITEM_OTHER_ACCESS_EXPENSES_VOLUME),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // (3) Access Expense Total over EXACTLY six costs (CampReportType.java:413-425). It sums the
     // CORRECT item-68 total; legacy's getOtherAccessExpenses() cross-wiring bug (:404-407, which
     // assigns the CAMP total) is deliberately NOT ported — deviation (d). The bug is latent in
     // legacy precisely because this total, and every display path, reads the item-68 sum instead.
-    Long accessExpenseTotalCost = sumCosts(crewTransportation.cost(), equipAndSuppliesLand.cost(),
-        equipAndSuppliesRail.cost(), equipAndSuppliesAir.cost(), equipAndSuppliesWater.cost(),
-        otherAccessCost);
+    Long accessExpenseTotalCost =
+        sumCosts(
+            crewTransportation.cost(),
+            equipAndSuppliesLand.cost(),
+            equipAndSuppliesRail.cost(),
+            equipAndSuppliesAir.cost(),
+            equipAndSuppliesWater.cost(),
+            otherAccessCost);
     CategoryAmount accessExpenseTotal = derived(accessExpenseTotalCost, campVolume);
 
     // (4) Camp and Access Total — null-tolerant addition, null only when BOTH sides are null
@@ -327,7 +454,36 @@ public class Schedule5Service {
         // cost still count (CampReportType.java:474-482; DescriptionCostVolumeType.
         // countTowardsTotal() exists for that case and is never called on the read path).
         details.otherCampRows().size(),
-        details.otherAccessRows().size());
+        details.otherAccessRows().size(),
+        // The camp's own attributes. Legacy declares NO original for a camp's comments
+        // (CampReportType.java:29 has the field and no commentsOriginalVal), so none is served.
+        // isolatedCamp is included through the SHARED rule rather than legacy's hand-rolled
+        // isIsolatedCampOriginalValue() (CampReportType.java:559), which took no isSubmit, bypassed
+        // CoreUtil, never flagged a camp that GAINED the flag on submit, and NPE'd on a null
+        // current value — deviation D6.
+        originals
+            .builder()
+            .put(
+                FIELD_CAMP_NAME,
+                originals.camp(Schedule5Repository.CampSnapshotRow::campName),
+                OriginalValueFormat.TEXT)
+            .put(
+                FIELD_ROAD_DISTANCE,
+                originals.camp(Schedule5Repository.CampSnapshotRow::distanceToOperatingArea),
+                OriginalValueFormat.ONE_DECIMAL)
+            .put(
+                FIELD_SIZE_OF_CAMP,
+                originals.camp(Schedule5Repository.CampSnapshotRow::sizeOfCamp),
+                OriginalValueFormat.WHOLE)
+            .put(
+                FIELD_ASSOCIATED_CAMP_VOLUME,
+                originals.camp(Schedule5Repository.CampSnapshotRow::associatedCampVolume),
+                OriginalValueFormat.WHOLE)
+            .put(
+                "isolatedCamp",
+                originals.camp(Schedule5Repository.CampSnapshotRow::isolatedCampInd),
+                OriginalValueFormat.YES_NO)
+            .build());
   }
 
   /**
@@ -346,23 +502,39 @@ public class Schedule5Service {
       log.warn(
           "Schedule 5 mill {} year {} camp {} has a NULL ISOLATED_CAMP_IND despite the column being"
               + " NOT NULL; serving null rather than failing the request",
-          millId, year, row.campId());
+          millId,
+          year,
+          row.campId());
       return null;
     }
     return INDICATOR_YES.equals(row.isolatedCampInd());
   }
 
-  /** A stored category amount: volume and cost as saved, $/m&sup3; derived from the pair. */
-  private CategoryAmount amount(CampDetails details, int itemId) {
+  /**
+   * A stored category amount: volume and cost as saved, $/m&sup3; derived from the pair, and both
+   * submitted originals (legacy set the pair on all nine of these — {@code
+   * Schedule5DAO.java:214-274}).
+   *
+   * <p>An absent row still carries the map, because "no row stored" and "no value submitted" are
+   * different states: a category the licensee filled and the ministry then cleared must still show
+   * its indicator.
+   */
+  private CategoryAmount amount(CampDetails details, int itemId, CampOriginals originals) {
+    Map<String, OriginalValue> submitted =
+        originals
+            .builder()
+            .put(FIELD_VOLUME, originals.volume(itemId), OriginalValueFormat.WHOLE)
+            .put(FIELD_COST, originals.cost(itemId), OriginalValueFormat.WHOLE)
+            .build();
     DetailRow row = details.fixed().get(itemId);
     if (row == null) {
       // The category still exists in the response as an empty object — legacy pre-initializes every
       // CostVolumeType field, so an absent row reads as null cost/volume, not as a missing
       // category.
-      return new CategoryAmount(null, null, null);
+      return new CategoryAmount(null, null, null, submitted);
     }
     Long cost = row.cost() == null ? null : row.cost().longValue();
-    return new CategoryAmount(row.volume(), cost, costPerVolume(cost, row.volume()));
+    return new CategoryAmount(row.volume(), cost, costPerVolume(cost, row.volume()), submitted);
   }
 
   /** A derived total: the camp's associated volume, the computed cost, and their $/m&sup3;. */
@@ -509,15 +681,18 @@ public class Schedule5Service {
   }
 
   // ===============================================================================================
-  // Writes (Story 7.2). Each is ONE transaction whose FIRST statement is the Draft gate, and each
-  // ends by returning the recomputed document built from the "D" that gate just proved rather than
+  // Writes (Story 7.2). Each is ONE transaction whose FIRST statement is the editability gate, and
+  // each
+  // ends by returning the recomputed document built from the status that gate just proved rather
+  // than
   // re-querying the track (the Schedule 6/11 idiom). The success message is attached by the
   // controller via Schedule5Response.withMessage (AD-8), so the service stays message-free. Legacy
   // had NO concurrency control, NO server-side edit gate, and swallowed every failure:
   // saveCampReport sets REVISION_COUNT = 0 and never increments it (Schedule5DAO.java:363, 649),
   // save()/deleteExistingCamp() are protected only by the buttons' disabled= attribute, and the DAO
   // returns -1/false on any exception (:410-427, :557-569). The optimistic lock (deviation (K)),
-  // the Draft gate, and ScheduleNotSavedException (deviation (P)) are all ADDED here per the house
+  // the editability gate, and ScheduleNotSavedException (deviation (P)) are all ADDED here per the
+  // house
   // pattern — there is no legacy code to port for them. Costs and volumes are NEVER logged (AD-11)
   // — only mill/year/camp/item identifiers.
   // ===============================================================================================
@@ -536,34 +711,45 @@ public class Schedule5Service {
    * @param millId the mill id (context already validated by the controller, AD-4)
    * @param year the reporting year
    * @param request the entered camp fields
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
-   *     editable})
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code editable})
    * @param user the acting user id (audit columns)
    * @return the recomputed document, the new camp included
    */
   @Transactional
   public Schedule5Response addCamp(
-      long millId, int year, CampRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, CampRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     String campName = trimmedCampName(request);
     validateCostRanges(request);
     // BR-02 as a PRE-CHECK, not a caught constraint violation: nothing in delivery enforces
     // camp-name uniqueness (Task 1 gates (i)/(vi) — CAMP_REPORT has only its PK, the category FK
     // and eleven NOT NULL checks), so a duplicate would simply persist if this were left to the
-    // database. The pre-check is therefore check-then-act — but NOT a race: requireDraft above holds
-    // a FOR UPDATE lock on this mill/year's report-status row for the rest of this transaction, so a
-    // second create for the same mill/year cannot reach this count until the first has committed and
-    // become visible to it. That lock is the substitute for the unique index this project cannot add
-    // (no DDL on THE); see findTrackStatusForUpdate. Ordering matters: the count MUST stay below the
+    // database. The pre-check is therefore check-then-act — but NOT a race: requireEditable above
+    // holds
+    // a FOR UPDATE lock on this mill/year's report-status row for the rest of this transaction, so
+    // a
+    // second create for the same mill/year cannot reach this count until the first has committed
+    // and
+    // become visible to it. That lock is the substitute for the unique index this project cannot
+    // add
+    // (no DDL on THE); see findTrackStatusForUpdate. Ordering matters: the count MUST stay below
+    // the
     // gate.
     if (repository.countCampsNamed(millId, year, campName) > 0) {
       throw new CampNameConflictException();
     }
     try {
       int campId = repository.nextCampReportId();
-      repository.insertCamp(campId, millId, year, campName,
-          request.roadDistanceToOperatingArea(), request.sizeOfCamp(),
-          request.associatedCampVolume(), indicator(request.isolatedCamp()), request.comments(),
+      repository.insertCamp(
+          campId,
+          millId,
+          year,
+          campName,
+          request.roadDistanceToOperatingArea(),
+          request.sizeOfCamp(),
+          request.associatedCampVolume(),
+          indicator(request.isolatedCamp()),
+          request.comments(),
           user);
       // The camp MUST be inserted before its details: the delivery trigger ILCR_CRDA_B_I_U resolves
       // the parent's mill/year/category with its own SELECT against CAMP_REPORT for
@@ -574,12 +760,15 @@ public class Schedule5Service {
       // Class name plus most-specific cause, the Schedule 2 idiom (Schedule2Service.java:143-144):
       // an ORA code and its message carry no cost or volume values (AD-11), and without them a
       // production save failure is undiagnosable.
-      log.warn("Schedule 5 add failed for mill {} year {} [{}]: {}",
-          millId, year, ex.getClass().getSimpleName(),
+      log.warn(
+          "Schedule 5 add failed for mill {} year {} [{}]: {}",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -596,14 +785,19 @@ public class Schedule5Service {
    * @param year the reporting year
    * @param campId the camp to edit
    * @param request the entered fields plus the required {@code revisionCount} token
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the recomputed document
    */
   @Transactional
   public Schedule5Response updateCamp(
-      long millId, int year, int campId, CampRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      int campId,
+      CampRequest request,
+      EditableStatuses caller,
+      String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     // Defence in depth for the AR11 token: the API's @Validated OnUpdate group already rejects a
     // null revisionCount as a clean 400, but this method unboxes it, so a direct caller that
     // bypassed the group would otherwise NPE into a 500. Never a coerced 409 (the Story 2.1
@@ -629,10 +823,19 @@ public class Schedule5Service {
       throw new CampNameConflictException();
     }
     try {
-      int updated = repository.updateCamp(campId, millId, year, request.revisionCount(), campName,
-          request.roadDistanceToOperatingArea(), request.sizeOfCamp(),
-          request.associatedCampVolume(), indicator(request.isolatedCamp()), request.comments(),
-          user);
+      int updated =
+          repository.updateCamp(
+              campId,
+              millId,
+              year,
+              request.revisionCount(),
+              campName,
+              request.roadDistanceToOperatingArea(),
+              request.sizeOfCamp(),
+              request.associatedCampVolume(),
+              indicator(request.isolatedCamp()),
+              request.comments(),
+              user);
       if (updated == 0) {
         // Zero rows means the id is absent/foreign OR the token is stale, and the guarded UPDATE
         // cannot tell which. Only the scoped probe can.
@@ -643,12 +846,16 @@ public class Schedule5Service {
       }
       writeCategoryRows(campId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 update failed for mill {} year {} camp {} [{}]: {}",
-          millId, year, campId, ex.getClass().getSimpleName(),
+      log.warn(
+          "Schedule 5 update failed for mill {} year {} camp {} [{}]: {}",
+          millId,
+          year,
+          campId,
+          ex.getClass().getSimpleName(),
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -667,13 +874,12 @@ public class Schedule5Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param campId the camp to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the recomputed document without the deleted camp
    */
   @Transactional
-  public Schedule5Response deleteCamp(
-      long millId, int year, int campId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+  public Schedule5Response deleteCamp(long millId, int year, int campId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countCamp(campId, millId, year) == 0) {
         throw new CampNotFoundException();
@@ -686,18 +892,22 @@ public class Schedule5Service {
         throw new CampNotFoundException();
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 delete failed for mill {} year {} camp {} [{}]: {}",
-          millId, year, campId, ex.getClass().getSimpleName(),
+      log.warn(
+          "Schedule 5 delete failed for mill {} year {} camp {} [{}]: {}",
+          millId,
+          year,
+          campId,
+          ex.getClass().getSimpleName(),
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Check Status for Schedule 5 (S06, S20, BR-08) — read-only, mutates nothing, and NOT Draft-gated
-   * ({@code VIEW_SCHEDULE} only; the 2.6 precedent, {@code deferred-work.md:23}), so a Submitted
-   * mill can still be checked.
+   * Check Status for Schedule 5 (S06, S20, BR-08) — read-only, mutates nothing, and NOT
+   * editability-gated ({@code VIEW_SCHEDULE} only; the 2.6 precedent, {@code deferred-work.md:23}),
+   * so a Submitted mill can still be checked.
    *
    * <p>Camps are evaluated in {@code CAMP_REPORT_ID} order (7.1 deviation (c) — legacy iterates a
    * {@code HashMap} with no ORDER BY, {@code Schedule5DAO.java:58, 111-113}). A schedule passes iff
@@ -707,34 +917,188 @@ public class Schedule5Service {
    * per-camp loop ({@code Schedule5MB.java:324-333}) — which is deviation (C), contradicting both
    * the epics AC and {@code UC-SCH5-001-detailed.md:151}.
    *
-   * <p>The service emits bundle KEYS with null text; the controller resolves and composes (AD-8).
+   * <p>The service emits bundle KEYS with null text; {@link Schedule5CheckStatusResolver} resolves
+   * and composes (AD-8).
+   *
+   * <p>{@code request} carries the camp panel currently ON SCREEN (#476) — a sanctioned divergence
+   * from the legacy Schedule 5 screen, which judges the last SAVED record unlike legacy's other
+   * schedules; the business area ruled in September 2026 that Schedule 5 match the others. It
+   * OVERLAYS the stored camps; see {@link Schedule5CheckRequest} for why it carries one camp rather
+   * than all of them. The itemized sub-list rows are never on this screen and are read from the
+   * database on both paths.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
+   * @param request the camp panel on screen, if any
    * @return the MET/ISSUES result with key-only messages for the controller to resolve
    */
   @Transactional(readOnly = true)
-  public Schedule5CheckStatusResponse checkStatus(long millId, int year) {
-    List<CampRow> campRows = repository.findCamps(millId, year);
-    Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
+  public Schedule5CheckStatusResponse checkStatus(
+      long millId, int year, Schedule5CheckRequest request) {
+    return evaluate(overlay(storedCandidates(millId, year), request));
+  }
 
+  /**
+   * Is the SAVED Schedule 5 complete? The stored-data counterpart of {@link #checkStatus}, for
+   * report-level callers (Story 15.0/15.1) that have no screen to describe.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * {@code POST /schedule5/check-status} answers "is what I'm LOOKING AT complete?"; this answers
+   * "is what is SAVED complete?". They can legitimately disagree — legacy's own consolidated Check
+   * Status page read stored data while its per-schedule button read the screen. Named apart from
+   * {@link #checkStatus} on purpose: with both called {@code checkStatus} a future caller picks the
+   * wrong one by autocomplete and the failure is SILENT, either a sweep that reads a screen or an
+   * endpoint that ignores one. Schedule 6 names them apart for the same reason.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the MET/ISSUES result with key-only messages for the resolver to compose
+   */
+  @Transactional(readOnly = true)
+  public Schedule5CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedCandidates(millId, year));
+  }
+
+  /**
+   * The verdict, source-agnostic: identical for an overlaid camp and a stored one, which is the
+   * whole point of routing both through {@link CheckCandidate}. Neither {@link #checkStatus} nor
+   * {@link #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the camps to judge, already in their contractual order
+   * @return the MET banner alone, or the per-camp results
+   */
+  private Schedule5CheckStatusResponse evaluate(List<CheckCandidate> candidates) {
     List<CampCheckResult> camps = new ArrayList<>();
     boolean schedulePasses = true;
-    for (CampRow row : campRows) {
-      CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
+    for (CheckCandidate candidate : candidates) {
       List<CampCheckMessage> issues =
-          evaluateCamp(row, details.otherCampRows(), details.otherAccessRows());
+          evaluateCamp(candidate.row(), candidate.otherCampRows(), candidate.otherAccessRows());
       boolean met = issues.isEmpty();
       schedulePasses = schedulePasses && met;
-      camps.add(new CampCheckResult(row.campId(), row.campName(), met,
-          met ? List.of(new CampCheckMessage(MSG_CAMP_MET, null, null)) : issues));
+      camps.add(
+          new CampCheckResult(
+              candidate.campId(),
+              candidate.row().campName(),
+              met,
+              met ? List.of(new CampCheckMessage(MSG_CAMP_MET, null, null)) : issues));
     }
 
     if (schedulePasses) {
       return new Schedule5CheckStatusResponse(
-          OUTCOME_MET, List.of(new MessageInfo(MSG_SCHEDULE_MET, null)), List.of());
+          CheckStatusOutcome.MET, List.of(new MessageInfo(MSG_SCHEDULE_MET, null)), List.of());
     }
-    return new Schedule5CheckStatusResponse(OUTCOME_ISSUES, List.of(), camps);
+    return new Schedule5CheckStatusResponse(CheckStatusOutcome.ISSUES, List.of(), camps);
+  }
+
+  /**
+   * The stored source: one candidate per camp row, in {@code CAMP_REPORT_ID} order, each carrying
+   * its own itemized sub-list rows.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the stored camps as candidates
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    // Preserve the original check-status read order. Under Oracle READ COMMITTED each statement can
+    // see a newer commit, so reading details first could pair a newly visible camp with an older,
+    // incomplete detail snapshot and change the stored-path verdict during a concurrent save.
+    List<CampRow> campRows = repository.findCamps(millId, year);
+    Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (CampRow row : campRows) {
+      CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
+      candidates.add(
+          new CheckCandidate(
+              row.campId(), row, details.otherCampRows(), details.otherAccessRows()));
+    }
+    return candidates;
+  }
+
+  /**
+   * Write the on-screen panel over the stored camps — the whole of what the payload path adds.
+   *
+   * <p>Three cases, and the third is the one that is easy to get wrong:
+   *
+   * <ul>
+   *   <li>no panel open ({@code request} or its {@code camp} is null) → the stored camps,
+   *       unchanged;
+   *   <li>the panel holds a STORED camp → that candidate's descriptors are replaced in place, so it
+   *       keeps its position and its sub-list rows (which the screen does not carry and cannot have
+   *       changed);
+   *   <li>the panel holds an UNSAVED camp — a new one, a copy, or one another session deleted — →
+   *       APPENDED as an additional candidate. It is on screen, so legacy evaluated it, and
+   *       omitting it would report "requirements met" over a camp with four missing fields. Its
+   *       sub-lists are necessarily empty: an unsaved camp owns no rows yet, and both sub-list
+   *       conditions pass vacuously on an empty list, exactly as they do for a saved camp with no
+   *       itemized rows.
+   * </ul>
+   *
+   * <p>The descriptors are taken from the payload VERBATIM, nulls included. The check is a null
+   * test, so coercing a missing value to zero here would turn every missing descriptor into a pass.
+   *
+   * @param stored the stored candidates, in order
+   * @param request the body, possibly null
+   * @return the candidates to judge
+   */
+  private static List<CheckCandidate> overlay(
+      List<CheckCandidate> stored, Schedule5CheckRequest request) {
+    CampEntry entry = request == null ? null : request.camp();
+    if (entry == null) {
+      return stored;
+    }
+    List<CheckCandidate> result = new ArrayList<>(stored);
+    for (int i = 0; i < result.size(); i++) {
+      CheckCandidate candidate = result.get(i);
+      if (entry.campId() != null && entry.campId() == candidate.row().campId()) {
+        result.set(i, candidate.withScreenValues(entry));
+        return result;
+      }
+    }
+    // campId NULL, not a synthetic 0: this camp has no CAMP_REPORT_ID yet, and 0 would read as a
+    // real persisted id to a client correlating the verdict back to a row (PR #504 review).
+    result.add(new CheckCandidate(null, screenRow(entry), new ArrayList<>(), new ArrayList<>()));
+    return result;
+  }
+
+  /**
+   * One camp to judge, from either source. Carries the row shape {@link #evaluateCamp} already
+   * takes, so the rule itself needs no variant and no re-statement (AD-5).
+   *
+   * @param row the camp's checked descriptors
+   * @param otherCampRows the itemized Other Camp expense rows, always from the database
+   * @param otherAccessRows the itemized Other Access expense rows, always from the database
+   */
+  private record CheckCandidate(
+      Integer campId, CampRow row, List<DetailRow> otherCampRows, List<DetailRow> otherAccessRows) {
+
+    /**
+     * The same camp with the screen's descriptors written over the stored ones — keeping its stored
+     * {@code campId}, because overlaying a panel does not make the camp unsaved.
+     */
+    CheckCandidate withScreenValues(CampEntry entry) {
+      return new CheckCandidate(campId, screenRow(entry), otherCampRows, otherAccessRows);
+    }
+  }
+
+  /**
+   * A {@link CampRow} carrying the screen's four checked descriptors. The fields the check never
+   * reads — {@code campId}, {@code isolatedCampInd}, {@code comments}, {@code revisionCount} — are
+   * left null/zero rather than sourced, because reading them would imply this row is usable for
+   * something other than the verdict. It is not: it reaches no write path and is never served.
+   */
+  private static CampRow screenRow(CampEntry entry) {
+    return new CampRow(
+        // Unused: the reported id travels on CheckCandidate, and evaluateCamp reads only the four
+        // descriptors below. CampRow.campId is a primitive int, which is the whole reason the
+        // nullable id cannot live here.
+        0,
+        entry.campName(),
+        entry.roadDistanceToOperatingArea(),
+        entry.sizeOfCamp(),
+        entry.associatedCampVolume(),
+        null,
+        null,
+        0);
   }
 
   /**
@@ -747,13 +1111,15 @@ public class Schedule5Service {
    * observable, so that is the one reproduced.
    *
    * <p>Three parity details that a tidier implementation would get wrong:
+   *
    * <ul>
-   * <li>the camp-name test is TRIMMED ({@code CoreUtil.isNullOrEmptyString(name, true)} at :17), so
-   * a whitespace-only name FAILS;
-   * <li>the three numeric descriptors are PURE null tests (:18-20), so a stored {@code 0} PASSES —
-   * the D2 precedent ({@code deferred-work.md:135}); <li>the sub-list description test is NOT
-   * trimmed ({@code CheckStatusUtil.java:134} is {@code == null || "".equals(…)}), so a
-   * whitespace-only description PASSES. Using {@code isBlank} here would silently tighten legacy.
+   *   <li>the camp-name test is TRIMMED ({@code CoreUtil.isNullOrEmptyString(name, true)} at :17),
+   *       so a whitespace-only name FAILS;
+   *   <li>the three numeric descriptors are PURE null tests (:18-20), so a stored {@code 0} PASSES
+   *       — the D2 precedent ({@code deferred-work.md:135});
+   *   <li>the sub-list description test is NOT trimmed ({@code CheckStatusUtil.java:134} is {@code
+   *       == null || "".equals(…)}), so a whitespace-only description PASSES. Using {@code isBlank}
+   *       here would silently tighten legacy.
    * </ul>
    *
    * <p>The twelve category cost/volume fields are NOT tested (deviation (D) — legacy's conditions
@@ -815,40 +1181,43 @@ public class Schedule5Service {
   }
 
   /**
-   * The Draft gate for every write: the Schedules 1–10 track must be {@code D}, else 409 (BR-06,
-   * AD-9). Never reads the silviculture track. The mill/year context (400/404/409) is already
-   * validated by the controller before this runs (AD-4).
+   * The editability gate for every write: the caller must be permitted to write at the Schedules
+   * 1–10 track's current status, else 409 (BR-06, AD-9). Never reads the silviculture track. The
+   * mill/year context (400/404/409) is already validated by the controller before this runs (AD-4).
    *
-   * <p><strong>The read is {@code FOR UPDATE}, and that is load-bearing rather than defensive.</strong>
-   * An unlocked {@code SELECT} makes this gate advisory: under Oracle READ COMMITTED nothing pins the
-   * status for the rest of the transaction, so a transition committing between the gate and the write
-   * lets the write land on a schedule that is no longer Draft. Holding the row for the whole
-   * transaction also serializes concurrent Schedule 5 writes per mill/year, which is the only
-   * available backstop for BR-02's count-then-insert and for {@code upsertCostDetail}'s
-   * update-then-insert — this project owns no DDL on {@code THE}, so neither race can be closed by a
-   * unique constraint. {@link Schedule5Repository#findTrackStatusForUpdate} carries the full
-   * reasoning; Schedule 2 established the pattern ({@code Schedule2Service.java:193-198}).
+   * <p><strong>The read is {@code FOR UPDATE}, and that is load-bearing rather than
+   * defensive.</strong> An unlocked {@code SELECT} makes this gate advisory: under Oracle READ
+   * COMMITTED nothing pins the status for the rest of the transaction, so a transition committing
+   * between the gate and the write lets the write land on a schedule that is no longer Draft.
+   * Holding the row for the whole transaction also serializes concurrent Schedule 5 writes per
+   * mill/year, which is the only available backstop for BR-02's count-then-insert and for {@code
+   * upsertCostDetail}'s update-then-insert — this project owns no DDL on {@code THE}, so neither
+   * race can be closed by a unique constraint. {@link Schedule5Repository#findTrackStatusForUpdate}
+   * carries the full reasoning; Schedule 2 established the pattern ({@code
+   * Schedule2Service.java:193-198}).
    *
-   * <p>Called only from the three {@code @Transactional} write methods, so the lock is always held to
-   * commit. {@code checkStatus} is read-only and ungated, and the 7.1 read path keeps the unlocked
-   * {@code findTrackStatus} — a reader must never take a row lock.
+   * <p>Called only from the three {@code @Transactional} write methods, so the lock is always held
+   * to commit. {@code checkStatus} is read-only and ungated, and the 7.1 read path keeps the
+   * unlocked {@code findTrackStatus} — a reader must never take a row lock.
    *
-   * <p>Acknowledged cost: this adds a SECOND track-status query to this repository, so the duplication
-   * {@code deferred-work.md} already records against the status read (nine repositories carrying a
-   * near-identical copy, contradicting AD-9's stated millcontext ownership) gets marginally worse
-   * rather than better. Taken deliberately — the two variants differ in locking, which is exactly the
-   * distinction that must not be lost, and the alternative is leaving a known race open until the
-   * hoist happens. Both variants go when that read moves into {@code MillYearContext}.
+   * <p>Acknowledged cost: this adds a SECOND track-status query to this repository, so the
+   * duplication {@code deferred-work.md} already records against the status read (nine repositories
+   * carrying a near-identical copy, contradicting AD-9's stated millcontext ownership) gets
+   * marginally worse rather than better. Taken deliberately — the two variants differ in locking,
+   * which is exactly the distinction that must not be lost, and the alternative is leaving a known
+   * race open until the hoist happens. Both variants go when that read moves into {@code
+   * MillYearContext}.
    *
    * <p>Recorded hardening: legacy has no server-side gate at all — {@code save()} and {@code
    * deleteExistingCamp()} are guarded only by the {@code disabled=} attribute on the buttons
    * ({@code schedule5.xhtml:69, 92, 115, 159, 182, 211, 234}), which a crafted post ignores.
    */
-  private void requireDraft(long millId, int year) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
@@ -865,8 +1234,8 @@ public class Schedule5Service {
 
   /**
    * The {@code Y}/{@code N} indicator for a validated non-null {@code isolatedCamp} ({@code
-   * Schedule5DAO.java:377}, which dereferences the Boolean unguarded and would NPE on null — {@code
-   * @NotNull} on the request makes that unreachable here).
+   * Schedule5DAO.java:377}, which dereferences the Boolean unguarded and would NPE on null —
+   * {@code @NotNull} on the request makes that unreachable here).
    */
   private static String indicator(Boolean isolatedCamp) {
     return Boolean.TRUE.equals(isolatedCamp) ? INDICATOR_YES : INDICATOR_NO;
@@ -881,8 +1250,10 @@ public class Schedule5Service {
    *
    * <p>{@code wagesAndBenefits} is deliberately absent: its input is missing the {@code costSize}
    * attribute in BOTH pages, so legacy validates it at the default &plusmn;99,999,999 — which
-   * {@code CategoryEntry} already enforces declaratively (deviation (F), an Open Question for the
-   * Ministry, preserved verbatim rather than "fixed").
+   * {@code CategoryEntry} already enforces declaratively (deviation (F), <strong>RATIFIED by the
+   * Ministry</strong> on PR #370, 2026-08-27: "Keep it as is, as this is somewhat on purpose."
+   * Adding it to the standard-range checks below would CONTRADICT that ruling — ruling 2 of {@code
+   * docs/decisions/camps-and-access-expenses.md}).
    *
    * <p>{@code otherCampExpenses}/{@code otherAccessExpenses} are absent too: this path writes
    * {@code null} for their cost regardless of what was sent (§ ITEM WRITE MAP), because those costs
@@ -983,7 +1354,8 @@ public class Schedule5Service {
    * first-wins survivor is visible in order), plus the two sub-page row lists.
    */
   private record CampDetails(
-      Map<Integer, DetailRow> fixed, List<DetailRow> otherCampRows,
+      Map<Integer, DetailRow> fixed,
+      List<DetailRow> otherCampRows,
       List<DetailRow> otherAccessRows) {
 
     static CampDetails empty() {
@@ -1001,15 +1373,15 @@ public class Schedule5Service {
   /**
    * The two sub-pages, and every way in which they differ, in one place.
    *
-   * <p>Keeping the differences here rather than in branches is what makes the asymmetries auditable:
-   * they are not arbitrary, but neither are they symmetric, and each one is a separately verified
-   * legacy fact. The cost bound is per PAGE, not per control — every cost input on the Camp
-   * sub-page carries {@code costSize="7"} ({@code schedule5CampExpenses.xhtml:45} add-form and
+   * <p>Keeping the differences here rather than in branches is what makes the asymmetries
+   * auditable: they are not arbitrary, but neither are they symmetric, and each one is a separately
+   * verified legacy fact. The cost bound is per PAGE, not per control — every cost input on the
+   * Camp sub-page carries {@code costSize="7"} ({@code schedule5CampExpenses.xhtml:45} add-form and
    * {@code :79} grid) and neither Access one does ({@code schedule5AccessExpenses.xhtml:36-38},
    * {@code :71-76}), which the story's committed AC and the UC documents both record incorrectly
    * (deviation (A)).
    */
-  enum SubPage {
+  public enum SubPage {
 
     /** Other Camp Expenses — item 62, &plusmn;9,999,999, footer volume = SUM of row volumes. */
     CAMP(ITEM_OTHER_CAMP_EXPENSE_ROW, COST_STANDARD_LIMIT, COST_KEY_STANDARD),
@@ -1039,27 +1411,32 @@ public class Schedule5Service {
    * @param year the validated reporting year
    * @param campId the parent camp
    * @param page which sub-page
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the sub-page document
    * @throws CampNotFoundException when the camp is unknown or belongs to another mill/year
    */
   @Transactional(readOnly = true)
   public SubPageDocument getSubPage(
-      long millId, int year, int campId, SubPage page, boolean callerMayEdit) {
+      long millId, int year, int campId, SubPage page, EditableStatuses caller) {
     CampRow camp = requireCamp(millId, year, campId);
-    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year,
-        callerMayEdit));
+    return buildSubPageDocument(
+        millId,
+        year,
+        camp,
+        page,
+        subPageEditable(millId, year, caller),
+        repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
    * The served {@code editable} flag, derived the same way on the read AND on every write echo
-   * (AD-9: server-authoritative). The writes could hardcode {@code callerMayEdit} because
-   * {@code requireDraft} just proved the Draft half under its lock — but that would couple the
-   * echoed flag to the gate staying exactly as strict as it is today; deriving it here keeps the
-   * invariant structural rather than incidental.
+   * (AD-9: server-authoritative). The writes could hardcode {@code caller} because {@code
+   * requireEditable} just proved the Draft half under its lock — but that would couple the echoed
+   * flag to the gate staying exactly as strict as it is today; deriving it here keeps the invariant
+   * structural rather than incidental.
    */
-  private boolean subPageEditable(long millId, int year, boolean callerMayEdit) {
-    return callerMayEdit && STATUS_DRAFT.equals(trackStatus(millId, year));
+  private boolean subPageEditable(long millId, int year, EditableStatuses caller) {
+    return caller.allows(trackStatus(millId, year));
   }
 
   /**
@@ -1067,29 +1444,35 @@ public class Schedule5Service {
    * item id.
    *
    * <p>Reconcile semantics are Schedule 3's ({@code Schedule3Service.classifySaveRow}, {@code
-   * :441-449}): a null {@code rowId} INSERTs, a known one UPDATEs in place, a row absent from the body is
-   * DELETEd, and an id this camp does not hold for this item raises 404 with NOTHING persisted. The
-   * 404 is raised BEFORE any statement runs, so a stale id cannot half-apply a batch — the
-   * classification pass is separate from the write pass for exactly that reason.
+   * :441-449}): a null {@code rowId} INSERTs, a known one UPDATEs in place, a row absent from the
+   * body is DELETEd, and an id this camp does not hold for this item raises 404 with NOTHING
+   * persisted. The 404 is raised BEFORE any statement runs, so a stale id cannot half-apply a batch
+   * — the classification pass is separate from the write pass for exactly that reason.
    *
-   * <p>{@code requireDraft} runs first and its {@code SELECT … FOR UPDATE} on the mill/year status
-   * row is what serializes concurrent sub-page writers; the schema offers no unique key to lean on
-   * (no DDL on {@code THE}).
+   * <p>{@code requireEditable} runs first and its {@code SELECT … FOR UPDATE} on the mill/year
+   * status row is what serializes concurrent sub-page writers; the schema offers no unique key to
+   * lean on (no DDL on {@code THE}).
    *
    * @param millId the validated mill id
    * @param year the validated reporting year
    * @param campId the parent camp
    * @param page which sub-page
    * @param request the complete row set the camp should hold afterwards
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the refreshed sub-page document
    */
   @Transactional
-  public SubPageDocument saveSubPage(long millId, int year, int campId, SubPage page,
-      SubPageSaveRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
-    CampRow camp = requireCamp(millId, year, campId);
+  public SubPageDocument saveSubPage(
+      long millId,
+      int year,
+      int campId,
+      SubPage page,
+      SubPageSaveRequest request,
+      EditableStatuses caller,
+      String user) {
+    requireEditable(millId, year, caller);
+    final CampRow camp = requireCamp(millId, year, campId);
     // Non-null by Bean Validation: an omitted rows field is a 400, never a silent delete-all.
     List<SubPageRowRequest> incoming = request.rows();
     validateSubPageCosts(page, incoming);
@@ -1114,29 +1497,45 @@ public class Schedule5Service {
     try {
       for (SubPageRowRequest row : incoming) {
         if (row.rowId() == null) {
-          repository.insertSubPageRow(repository.nextCostDetailId(), campId, page.itemId(),
-              row.cost(), row.description(), user);
-        } else if (repository.updateSubPageRow(row.rowId(), campId, page.itemId(), row.cost(),
-            row.description(), user) == 0) {
+          repository.insertSubPageRow(
+              repository.nextCostDetailId(),
+              campId,
+              page.itemId(),
+              row.cost(),
+              row.description(),
+              user);
+        } else if (repository.updateSubPageRow(
+                row.rowId(), campId, page.itemId(), row.cost(), row.description(), user)
+            == 0) {
           // Classified as present a moment ago, so a zero here means it vanished under the lock.
           // Checked rather than assumed — the 4.4 lesson, where an edit silently dropped its value.
           throw new CampNotFoundException();
         }
       }
       for (Integer storedId : storedById.keySet()) {
-        if (!kept.contains(storedId) && repository.deleteSubPageRow(
-            storedId, campId, page.itemId()) == 0) {
+        if (!kept.contains(storedId)
+            && repository.deleteSubPageRow(storedId, campId, page.itemId()) == 0) {
           throw new CampNotFoundException();
         }
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 sub-page save failed for mill {} year {} camp {} item {} [{}]: {}",
-          millId, year, campId, page.itemId(), ex.getClass().getSimpleName(),
+      log.warn(
+          "Schedule 5 sub-page save failed for mill {} year {} camp {} item {} [{}]: {}",
+          millId,
+          year,
+          campId,
+          page.itemId(),
+          ex.getClass().getSimpleName(),
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(millId, year, camp, page,
-        subPageEditable(millId, year, callerMayEdit));
+    return buildSubPageDocument(
+        millId,
+        year,
+        camp,
+        page,
+        subPageEditable(millId, year, caller),
+        repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -1151,26 +1550,36 @@ public class Schedule5Service {
    * @param campId the parent camp
    * @param page which sub-page
    * @param rowId the row to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed sub-page document
    */
   @Transactional
   public SubPageDocument deleteSubPageRow(
-      long millId, int year, int campId, SubPage page, int rowId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int campId, SubPage page, int rowId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     CampRow camp = requireCamp(millId, year, campId);
     try {
       if (repository.deleteSubPageRow(rowId, campId, page.itemId()) == 0) {
         throw new CampNotFoundException();
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 sub-page delete failed for mill {} year {} camp {} item {} [{}]: {}",
-          millId, year, campId, page.itemId(), ex.getClass().getSimpleName(),
+      log.warn(
+          "Schedule 5 sub-page delete failed for mill {} year {} camp {} item {} [{}]: {}",
+          millId,
+          year,
+          campId,
+          page.itemId(),
+          ex.getClass().getSimpleName(),
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(millId, year, camp, page,
-        subPageEditable(millId, year, callerMayEdit));
+    return buildSubPageDocument(
+        millId,
+        year,
+        camp,
+        page,
+        subPageEditable(millId, year, caller),
+        repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -1194,9 +1603,9 @@ public class Schedule5Service {
   /**
    * The per-page cost bounds, applied HERE and only here — {@link SubPageRowRequest} deliberately
    * carries no declarative {@code @Min}/{@code @Max}, because a DTO-level bound at the wider Access
-   * limit would fire first and reject an out-of-band Camp cost with the ACCESS message (AD-8).
-   * Each page's own bound pairs with its own message key, exactly as {@link #validateCostRanges}
-   * narrows the eight {@code costSize="7"} camp categories that {@code CategoryEntry} cannot.
+   * limit would fire first and reject an out-of-band Camp cost with the ACCESS message (AD-8). Each
+   * page's own bound pairs with its own message key, exactly as {@link #validateCostRanges} narrows
+   * the eight {@code costSize="7"} camp categories that {@code CategoryEntry} cannot.
    */
   private static void validateSubPageCosts(SubPage page, List<SubPageRowRequest> rows) {
     for (SubPageRowRequest row : rows) {
@@ -1209,16 +1618,43 @@ public class Schedule5Service {
 
   /** Reads the rows back and assembles the document — never hand-patches a total. */
   private SubPageDocument buildSubPageDocument(
-      long millId, int year, CampRow camp, SubPage page, boolean editable) {
+      long millId, int year, CampRow camp, SubPage page, boolean editable, String trackStatus) {
     BigDecimal stampedVolume = stampedVolume(millId, year, camp.campId(), page);
     List<DetailRow> stored = repository.findSubPageRows(camp.campId(), page.itemId(), millId, year);
-    List<SubPageRow> rows = stored.stream()
-        .map(row -> new SubPageRow(row.detailId(), row.itemDescription(), stampedVolume,
-            row.cost(), costPerVolume(row.cost() == null ? null : row.cost().longValue(),
-                stampedVolume)))
-        .toList();
-    return new SubPageDocument(camp.campId(), camp.campName(), stampedVolume, editable, rows,
-        subPageTotals(page, stored, stampedVolume), null);
+
+    // The licensee's submitted rows, keyed by detail id: every row on this page shares one cost
+    // item (62 or 68), so the item cannot address them (Story 16.2).
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId = new HashMap<>();
+    if (originalValues.exposesOriginalValues(trackStatus)) {
+      for (CostDetailSnapshotRepository.Row r :
+          costSnapshots.findByCampReports(List.of((long) camp.campId()))) {
+        if (r.detailId() != null) {
+          snapshotByDetailId.putIfAbsent(r.detailId(), r);
+        }
+      }
+    }
+
+    List<SubPageRow> rows =
+        stored.stream()
+            .map(
+                row ->
+                    new SubPageRow(
+                        row.detailId(),
+                        row.itemDescription(),
+                        stampedVolume,
+                        row.cost(),
+                        costPerVolume(
+                            row.cost() == null ? null : row.cost().longValue(), stampedVolume),
+                        subPageRowOriginals(trackStatus, snapshotByDetailId.get(row.detailId()))))
+            .toList();
+    return new SubPageDocument(
+        camp.campId(),
+        camp.campName(),
+        stampedVolume,
+        editable,
+        rows,
+        subPageTotals(page, stored, stampedVolume),
+        null);
   }
 
   /**
@@ -1230,11 +1666,14 @@ public class Schedule5Service {
    * (first-by-detail-id wins, 7.1 deviation (f)).
    */
   private BigDecimal stampedVolume(long millId, int year, int campId, SubPage page) {
-    int volumeItemId = page == SubPage.CAMP
-        ? ITEM_OTHER_CAMP_EXPENSES_VOLUME : ITEM_OTHER_ACCESS_EXPENSES_VOLUME;
+    int volumeItemId =
+        page == SubPage.CAMP ? ITEM_OTHER_CAMP_EXPENSES_VOLUME : ITEM_OTHER_ACCESS_EXPENSES_VOLUME;
     return repository.findCostDetails(millId, year).stream()
-        .filter(row -> row.campId() == campId && row.costItemId() != null
-            && row.costItemId() == volumeItemId)
+        .filter(
+            row ->
+                row.campId() == campId
+                    && row.costItemId() != null
+                    && row.costItemId() == volumeItemId)
         .map(DetailRow::volume)
         .findFirst()
         .orElse(null);
@@ -1246,16 +1685,16 @@ public class Schedule5Service {
    * <p>CAMP is {@code CoreUtil.sumDescriptionCostVolumeType} ({@code :610-632}): it sums cost AND
    * volume, and sets its "something contributed" flag on a non-null cost <em>or</em> a non-null
    * volume. Because {@code CampReportType.getOtherCampExpensesList()} ({@code :433-438}) stamps
-   * every row's volume with the camp-level amount before the sum runs, the summed volume is
-   * {@code n × campVolume} — and, critically, a list of rows whose costs are ALL null still flags as
+   * every row's volume with the camp-level amount before the sum runs, the summed volume is {@code
+   * n × campVolume} — and, critically, a list of rows whose costs are ALL null still flags as
    * contributing whenever the camp volume is non-null, yielding a cost of {@code 0} rather than
    * null. That zero then propagates into Camp Sub-Total, Camp Total and Camp and Access Total. This
    * is 7.1 deviation (h)/(L), unreachable until this story writes the first item-62 rows.
    *
    * <p>ACCESS is {@code sumDescriptionCostVolumeTypeCostOnly} ({@code :590-608}) — cost only, so an
-   * all-null-cost list correctly yields null whatever the volume is — after which
-   * {@code getOtherAccessExpensesTotal()} ({@code :460-464}) overwrites the total's volume with the
-   * SINGLE camp volume, unconditionally, including on the empty list.
+   * all-null-cost list correctly yields null whatever the volume is — after which {@code
+   * getOtherAccessExpensesTotal()} ({@code :460-464}) overwrites the total's volume with the SINGLE
+   * camp volume, unconditionally, including on the empty list.
    *
    * <p>Do not symmetrize these. They look identical on screen and are not, and each side is pinned
    * by its own test.
@@ -1274,17 +1713,80 @@ public class Schedule5Service {
     }
     if (page == SubPage.ACCESS) {
       // Volume is the single camp volume, set even when no cost contributed.
-      return new CategoryAmount(stampedVolume, contributed ? cost : null,
+      return new CategoryAmount(
+          stampedVolume,
+          contributed ? cost : null,
           contributed ? costPerVolume(cost, stampedVolume) : null);
     }
     if (!contributed) {
       return new CategoryAmount(null, null, null);
     }
     // Legacy starts the running volume at ZERO and only adds non-null row volumes, so a camp whose
-    // item-141 volume is null totals 0 here rather than null — matching sumDescriptionCostVolumeType
+    // item-141 volume is null totals 0 here rather than null — matching
+    // sumDescriptionCostVolumeType
     // returning its zero-initialised accumulator once any cost flagged it.
-    BigDecimal summedVolume = stampedVolume == null
-        ? BigDecimal.ZERO : stampedVolume.multiply(BigDecimal.valueOf(rows.size()));
+    BigDecimal summedVolume =
+        stampedVolume == null
+            ? BigDecimal.ZERO
+            : stampedVolume.multiply(BigDecimal.valueOf(rows.size()));
     return new CategoryAmount(summedVolume, cost, costPerVolume(cost, summedVolume));
+  }
+
+  /**
+   * One camp's submitted state, gathered so {@code toCamp} and its per-category helpers can ask for
+   * a field without each of them re-deciding how a snapshot is addressed (Story 16.2).
+   *
+   * @param gate the shared original-value component
+   * @param trackStatus the track's status, which decides whether anything is exposed at all
+   * @param camp the submitted camp attributes, or null when the camp is not in the snapshot
+   * @param byItem the submitted cost rows for this camp, keyed by cost item
+   */
+  private record CampOriginals(
+      OriginalValues gate,
+      String trackStatus,
+      Schedule5Repository.CampSnapshotRow camp,
+      Map<Integer, CostDetailSnapshotRepository.Row> byItem) {
+
+    /**
+     * A fresh builder for one object's map. Named {@code builder()}, not {@code build()}: the thing
+     * it returns is a builder, and the collected map comes from {@link
+     * OriginalValues.Builder#build()} at the end of the chain — {@code originals.build()...build()}
+     * read as though the same call were being made twice.
+     */
+    OriginalValues.Builder builder() {
+      return gate.forTrack(trackStatus);
+    }
+
+    Object volume(int itemId) {
+      CostDetailSnapshotRepository.Row row = byItem.get(itemId);
+      return row == null ? null : row.volume();
+    }
+
+    Object cost(int itemId) {
+      CostDetailSnapshotRepository.Row row = byItem.get(itemId);
+      return row == null ? null : row.cost();
+    }
+
+    <T> T camp(java.util.function.Function<Schedule5Repository.CampSnapshotRow, T> field) {
+      return camp == null ? null : field.apply(camp);
+    }
+  }
+
+  /**
+   * One sub-page row's submitted figures: description and cost only. The volume shown on these rows
+   * is the camp's stamped item-141/168 volume, shared by every row rather than stored per row, so
+   * legacy set no volume original for them ({@code Schedule5DAO.java:288-300} — description and
+   * cost, and nothing else).
+   */
+  private Map<String, OriginalValue> subPageRowOriginals(
+      String trackStatus, CostDetailSnapshotRepository.Row snapshot) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "description",
+            snapshot == null ? null : snapshot.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put(FIELD_COST, snapshot == null ? null : snapshot.cost(), OriginalValueFormat.WHOLE)
+        .build();
   }
 }

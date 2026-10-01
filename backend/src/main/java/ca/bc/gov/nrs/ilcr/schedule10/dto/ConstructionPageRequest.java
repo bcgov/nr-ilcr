@@ -46,29 +46,20 @@ import jakarta.validation.constraints.Size;
  * @param revisionCount the optimistic-lock token echoed from the served page (required on UPDATE)
  */
 public record ConstructionPageRequest(
-    @NotBlank(message = "{regionRequiredErrorMsg}")
-    @Size(max = 10, message = "{invalidCodeValueErrorMsg}")
-    String forestRegionCode,
+    @NotBlank(message = "{regionRequiredErrorMsg}") @Size(max = 10, message = "{invalidCodeValueErrorMsg}") String forestRegionCode,
 
     // max 3 accommodates the literal "TFL" sentinel. The TSA branch is additionally checked against
     // TSA_NUMBER's VARCHAR2(2) in the service, because a 3-character non-TFL code would otherwise
     // reach Oracle and raise ORA-12899 as an opaque 500 instead of a 400 naming the field.
-    @NotBlank(message = "{schedule10TsaOrTflRequiredErrorMsg}")
-    @Size(max = 3, message = "{invalidCodeValueErrorMsg}")
-    String tsaOrTfl,
-
-    @Size(max = 3, message = "{invalidCodeValueErrorMsg}")
-    String supplyBlock,
-
-    @Size(max = 2, message = "{tflNumberValidatorErrorMsg}")
-    String tflNumberCode,
+    @NotBlank(message = "{schedule10TsaOrTflRequiredErrorMsg}") @Size(max = 3, message = "{invalidCodeValueErrorMsg}") String tsaOrTfl,
+    @Size(max = 3, message = "{invalidCodeValueErrorMsg}") String supplyBlock,
+    @Size(max = 2, message = "{tflNumberValidatorErrorMsg}") String tflNumberCode,
 
     // Both units. The column is VARCHAR2(20) with BYTE semantics, so 20 accented characters clear
     // @Size and then raise ORA-12899 — the opaque 500 this field's own message exists to replace
     // (code review 2026-08-18).
-    @Size(max = 20, message = "{divisionNameMaxLengthErrorMsg}")
-    @MaxByteLength(value = 20, charMax = 20, message = "{divisionNameMaxLengthErrorMsg}")
-    String divisionName,
+    @Size(max = 20, message = "{divisionNameMaxLengthErrorMsg}") @MaxByteLength(value = 20, charMax = 20, message = "{divisionNameMaxLengthErrorMsg}")
+        String divisionName,
 
     // The month is range-checked, not just shaped. Legacy stores the raw string (its converter has
     // no dateType attribute), so "2024-99" persists there and then flows into every page label and
@@ -76,12 +67,9 @@ public record ConstructionPageRequest(
     // field rather than adding a new one: the rationale is identical — keep an unrenderable value
     // out of a VARCHAR2 column (code review 2026-08-18).
     @Pattern(regexp = "\\d{4}-(0[1-9]|1[0-2])", message = "{bridgeDateformatErrorMsg}")
-    String constructionPeriod,
+        String constructionPeriod,
 
     // @Min(0) as well as @NotNull: a never-issued token like -1 matches no row, so without the
     // floor it reaches the optimistic-lock UPDATE, misses, and surfaces as a 409 "changed by
     // another user" for what is simply a malformed body.
-    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}")
-    @Min(value = 0, message = "{revisionCountRequiredErrorMsg}")
-    Integer revisionCount) {
-}
+    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}") @Min(value = 0, message = "{revisionCountRequiredErrorMsg}") Integer revisionCount) {}

@@ -10,28 +10,33 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Authorization on VIEW_SCHEDULE (AD-7) for POST check-status. Security ON; drives the real
- * {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without VIEW_SCHEDULE must
- * get 403 {@code problem+json}; a submitter/admin passes authz. Mirrors {@link Schedule2AuthorizationIT}.
+ * Authorization on VIEW_SCHEDULE (AD-7) for POST check-status. Security ON; drives the real {@code
+ * oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without VIEW_SCHEDULE must get
+ * 403 {@code problem+json}; a submitter/admin passes authz. Mirrors {@link
+ * Schedule2AuthorizationIT}.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("POST /api/v1/schedule2/check-status — authorization on VIEW_SCHEDULE (AD-7)")
 class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2/check-status";
+
+  /** Since #359 the endpoint requires the on-screen body; its content is irrelevant to authz. */
+  private static final String BODY = "{\"purchasedLogCostCost\":null}";
+
   private static final long SEEDED_MILL = 514L;
   private static final int SEEDED_YEAR = 2021;
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -42,10 +47,41 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403 problem+json")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(post(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  /**
+   * The case above is also refused by Story 5.7 mill-scope (no associated GUID), which raises the
+   * same 403 body — so on its own it would stay green without the VIEW_SCHEDULE gate. This caller
+   * carries the canonical submitter's GUID, which passes mill-scope for the seeded mill, but no
+   * ILCR group: only the {@code @PreAuthorize} gate can refuse it.
+   */
+  @Test
+  @DisplayName("mill-associated GUID but no ILCR group -> 403 from the VIEW_SCHEDULE gate itself")
+  void millAssociatedWithoutGroup_returns403() throws Exception {
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(
+                    jwt()
+                        .jwt(
+                            j ->
+                                j.claim("custom:idp_user_id", CANONICAL_SUBMITTER_GUID)
+                                    .claim("cognito:groups", List.of()))
+                        .authorities(j -> CONVERTER.convert(j).getAuthorities())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -53,10 +89,14 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (not 403)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(post(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 }

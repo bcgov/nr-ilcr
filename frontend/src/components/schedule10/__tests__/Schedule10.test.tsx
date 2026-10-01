@@ -8,12 +8,23 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
 import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import Schedule10 from '@/components/schedule10'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
 import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
@@ -188,12 +199,12 @@ const openPagePanel = async () => {
 }
 
 const fillMinimalRoad = async () => {
-  await userEvent.type(await screen.findByLabelText('Road Name'), 'Mainline C')
-  await userEvent.click(screen.getByRole('combobox', { name: 'Road Type' }))
+  await userEvent.type(await screen.findByLabelText('Road Name:'), 'Mainline C')
+  await userEvent.click(screen.getByRole('combobox', { name: 'Road Type:' }))
   await userEvent.click(await screen.findByRole('option', { name: 'Permanent' }))
-  await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone:' }))
   await userEvent.click(await screen.findByRole('option', { name: 'ICHdw1' }))
-  await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class:' }))
   await userEvent.click(await screen.findByRole('option', { name: '1 - Very Dry' }))
   await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
   await userEvent.click(await screen.findByRole('option', { name: 'None' }))
@@ -204,6 +215,25 @@ describe('rendering the document', () => {
     renderSchedule10()
     expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
     expect(screen.getByText('Page Summary')).toBeInTheDocument()
+  })
+
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    renderSchedule10()
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText(page().pageLabel)).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/add new page/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
   })
 
   test('preserves the legacy page-label quirks exactly', async () => {
@@ -299,10 +329,23 @@ describe('the page panel', () => {
   test('renders the derived road group read-only, not as an input', async () => {
     renderSchedule10()
     await openPagePanel()
-    expect(await screen.findByText('Road Group')).toBeInTheDocument()
+    // The class is asserted, not just the text. It is what carries the typography that makes this
+    // <span> read like the six Carbon labels beside it, and that typography comes from TWO
+    // stylesheets (#366): `label-01` metrics in schedule10/index.scss, and the size from the
+    // `.schedule-page` rule in styles/index.scss, which sets every label on the page to 0.875rem
+    // and which a hand-rolled <span> only picks up by being named in it.
+    //
+    // This one line is ALL the automated protection that fix has, deliberately. A source-level SCSS
+    // tripwire was written for it and then deleted: it could not have caught #366 (the original rule
+    // existed and looked fine — its number was wrong relative to another file), and the review of it
+    // found three of its assertions could not fail at all. A 2px label is caught by the next person
+    // who opens the page, which is how this was found and how the fix was signed off. What no eye
+    // catches is a rename here, silently detaching the span from both rules — so that is what this
+    // pins, and it is the half of the contract jsdom can actually see.
+    expect(await screen.findByText('Road Group:')).toHaveClass('schedule-10__field-label')
     expect(screen.getByText('11')).toBeInTheDocument()
     // Derived values render as TEXT so a screen reader announces a value, not a dead control.
-    expect(screen.queryByLabelText('Road Group')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Road Group:')).not.toBeInTheDocument()
   })
 
   test('renders an absent road group as blank, never as an error', async () => {
@@ -310,7 +353,7 @@ describe('the page panel', () => {
     renderSchedule10()
     await openPagePanel()
     // An unmapped location is a saved state, not a failure: the em dash placeholder, no value.
-    expect(await screen.findByText('Road Group')).toBeInTheDocument()
+    expect(await screen.findByText('Road Group:')).toBeInTheDocument()
     expect(screen.queryByText('11')).not.toBeInTheDocument()
   })
 
@@ -321,13 +364,13 @@ describe('the page panel', () => {
     await openPagePanel()
     expect(await screen.findByText('11')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Lakes TSA' }))
 
     await waitFor(() => {
       expect(screen.queryByText('11')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('Road Group')).toBeInTheDocument()
+    expect(screen.getByText('Road Group:')).toBeInTheDocument()
   })
 
   test('creates a page and sends the body with mill and year', async () => {
@@ -346,10 +389,10 @@ describe('the page panel', () => {
     renderSchedule10()
     await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
 
-    await userEvent.type(await screen.findByLabelText('Division'), 'New Division')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Region' }))
+    await userEvent.type(await screen.findByLabelText('Division:'), 'New Division')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Arrow TSA' }))
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
@@ -451,13 +494,13 @@ describe('the TSA and TFL branches', () => {
     await openPagePanel()
     await screen.findByDisplayValue('North Division')
 
-    expect(screen.getByLabelText('TFL')).toBeDisabled()
+    expect(screen.getByLabelText('TFL:')).toBeDisabled()
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'TFL' }))
 
-    expect(screen.getByLabelText('TFL')).toBeEnabled()
-    expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeDisabled()
+    expect(screen.getByLabelText('TFL:')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Supply Block:' })).toBeDisabled()
   })
 
   test('sends only the branch in use', async () => {
@@ -472,9 +515,9 @@ describe('the TSA and TFL branches', () => {
     await openPagePanel()
     await screen.findByDisplayValue('North Division')
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'TFL' }))
-    await userEvent.type(screen.getByLabelText('TFL'), '08')
+    await userEvent.type(screen.getByLabelText('TFL:'), '08')
     await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
 
     await waitFor(() => {
@@ -495,7 +538,7 @@ describe('the TSA and TFL branches', () => {
     renderSchedule10()
     await openPagePanel()
     await screen.findByDisplayValue('North Division')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Supply Block' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Supply Block:' }))
     expect(await screen.findByRole('option', { name: 'Arrow TSA Block A' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Lakes TSA Block G' })).not.toBeInTheDocument()
   })
@@ -596,12 +639,12 @@ describe('the road level', () => {
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
 
-    await userEvent.type(await screen.findByLabelText('Road Name'), 'New Road')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Road Type' }))
+    await userEvent.type(await screen.findByLabelText('Road Name:'), 'New Road')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Road Type:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Permanent' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'ICHdw1' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class:' }))
     await userEvent.click(await screen.findByRole('option', { name: '1 - Very Dry' }))
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'None' }))
@@ -806,7 +849,7 @@ describe('read-only rendering outside Draft', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'View' }))
 
     expect(await screen.findByText('North Division')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Division')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Division:')).not.toBeInTheDocument()
     // AC11 and deviation 7: DISABLED, never removed. Removing it left a screen reader with no
     // evidence the action exists, and contradicted the AC this page inherited from Story 12.3.
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
@@ -864,9 +907,9 @@ describe('every endpoint carries the working context (guardrail R12)', () => {
     )
     renderSchedule10()
     await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'Region' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Arrow TSA' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => {
@@ -1032,7 +1075,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     await openPagePanel()
     await screen.findByDisplayValue('Arrow TSA Block A')
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL:' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Lakes TSA' }))
     expect(screen.getByDisplayValue('Arrow TSA Block A')).toBeInTheDocument()
 
@@ -1052,7 +1095,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     // Carbon's own clear affordance, which is the real path to `onSelect('')`; clearing the text
     // alone leaves the selection intact and fires no change. Scoped to THIS combo — Region and
     // Supply Block render an identical button.
-    const tsaCombo = screen.getByRole('combobox', { name: 'TSA or TFL' })
+    const tsaCombo = screen.getByRole('combobox', { name: 'TSA or TFL:' })
     const clear = within(tsaCombo.closest('.cds--list-box__wrapper') as HTMLElement).getByRole(
       'button',
       { name: /clear selected item/i },
@@ -1263,7 +1306,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     )
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
-    const bec = await screen.findByRole('combobox', { name: 'BEC Zone' })
+    const bec = await screen.findByRole('combobox', { name: 'BEC Zone:' })
     await userEvent.clear(bec)
     await userEvent.type(bec, 'ICH')
 
@@ -1286,7 +1329,7 @@ describe('regressions from the 2026-08-19 code review', () => {
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'None' }))
-    expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Type:' })).toBeDisabled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => {
@@ -1319,10 +1362,12 @@ describe('regressions from the 2026-08-19 code review', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'None' }))
 
     for (const label of [
+      // The prefixed names are `aria-label`s standing in for an ambiguous printed label, so they
+      // carry no colon; `Depth` and `Distance to Source` are printed in full and do.
       'Additional Stabilizing Length (km)',
       'Additional Stabilizing Surface Width (m)',
-      'Depth (m)',
-      'Distance to Source (km)',
+      'Depth (m):',
+      'Distance to Source (km):',
       'Additional Stabilizing Actual Costs ($)',
       'Additional Stabilizing Other Transfer ($)',
     ]) {
@@ -1354,7 +1399,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Dirt' }))
 
-    expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Type:' })).toBeDisabled()
     // D stores its figures as submitted, so they must stay editable.
     expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toBeEnabled()
     expect(screen.getByLabelText('Additional Stabilizing Actual Costs ($)')).toBeEnabled()
@@ -1384,18 +1429,172 @@ describe('regressions from the 2026-08-19 code review', () => {
     expect(screen.queryByText('150,000.00')).not.toBeInTheDocument()
   })
 
-  test('L5 — the material hint stays quiet until a ballast method is chosen', async () => {
-    const hint = 'A material Type is required for this Additional Stabilizing code.'
+  test('L5 — the material requirement is reported ON the Type field, not as a standing line (#440 item 8)', async () => {
+    const oldHint = 'A material Type is required for this Additional Stabilizing code.'
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
     await screen.findByRole('combobox', { name: 'Ballast Method Code' })
-    // A BLANK code lands in the `C` branch server-side, so the predicate is true for it — but the
-    // reporter has chosen nothing yet and has nothing to correct.
-    expect(screen.queryByText(hint)).not.toBeInTheDocument()
 
+    // The standing advance warning above Save is gone: legacy prints nothing in advance either,
+    // and choosing a `C` method is not yet a mistake to correct.
     await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Crushed' }))
-    expect(await screen.findByText(hint)).toBeInTheDocument()
+    expect(screen.queryByText(oldHint)).not.toBeInTheDocument()
+
+    // Pressing Save is what reports it, and it is reported against the field the reporter must fix
+    // — inside the Type combo's own wrapper, where the issue asks for it, not above the buttons.
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const message = await screen.findByText('Material Code Type: Value is required.')
+    const field = message.closest('.schedule-10__field')
+    expect(field).not.toBeNull()
+    expect(
+      within(field as HTMLElement).getByRole('combobox', { name: 'Type:' }),
+    ).toBeInTheDocument()
+  })
+
+  test('L5 — the road form reproduces the legacy row grid (#440 items 1-3)', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    // Item 3: the VISIBLE label is legacy's short one — colon and all — and it is only unique
+    // within its column.
+    const visible = (name: string) => screen.getAllByText(name, { selector: 'label' })
+    expect(visible('Length (km):')).toHaveLength(2)
+    expect(visible('Surface Width (m):')).toHaveLength(2)
+    expect(visible('TtT Transfer ($):')).toHaveLength(2)
+    expect(visible('Other Transfer ($):')).toHaveLength(2)
+    expect(visible('Actual Cost ($):')).toHaveLength(1)
+    expect(visible('Actual Costs ($):')).toHaveLength(1)
+    expect(visible('Code:')).toHaveLength(1)
+    expect(screen.queryByText('Sub-Grade Length (km):', { selector: 'label' })).toBeNull()
+
+    // ...and the ACCESSIBLE name still carries the column, so no two controls answer to one name.
+    expect(screen.getByLabelText('Sub-Grade Length (km)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Ballast Method Code' })).toBeInTheDocument()
+
+    // Items 1-2: the three alignments the issue names, as legacy rows 5, 11 and 14. Row 7, 9 and 12
+    // are vacant in column 1 (LD-1/2/3), which is exactly why the row has to be declared rather
+    // than fall out of the order fields happen to be listed in.
+    const rowOf = (element: Element) =>
+      element
+        .closest<HTMLElement>('.schedule-10__detail-cell')
+        ?.style.getPropertyValue('--cell-row')
+    const sameRow = (...elements: Element[]) => {
+      const rows = elements.map(rowOf)
+      expect(rows[0]).toBeTruthy()
+      for (const row of rows) expect(row).toBe(rows[0])
+    }
+    sameRow(
+      screen.getByRole('combobox', { name: 'BEC Zone:' }),
+      screen.getByLabelText('Sub-Grade Actual Cost ($)'),
+      screen.getByLabelText('Additional Stabilizing Surface Width (m)'),
+    )
+    sameRow(
+      screen.getByLabelText('Side Slope (%):'),
+      screen.getByLabelText('Distance to Source (km):'),
+    )
+    sameRow(
+      screen.getByLabelText('Solid (Hard) Rock (%):'),
+      screen.getByLabelText('Less Landings ($):'),
+      screen.getByLabelText('Additional Stabilizing Other Transfer ($)'),
+    )
+
+    // NO row is empty in all three columns. A row a reserved LD field left empty in one column
+    // only (7 and 10 here) still has row-mates and must stay; a row left empty in EVERY column is
+    // dead, and in a CSS grid — unlike legacy's table — it costs a full row-gap. Both of legacy's
+    // (its blank row 8, and row 9 once LD-2 took its only occupant) are closed up. This pins the
+    // distinction, which the alignment checks above cannot see: they compare rows to each other
+    // and would agree with any number of dead rows in between.
+    const occupied = new Set(
+      [...document.querySelectorAll<HTMLElement>('.schedule-10__detail-cell')].map((cell) =>
+        Number(cell.style.getPropertyValue('--cell-row')),
+      ),
+    )
+    const last = Math.max(...occupied)
+    const empty = [...Array(last).keys()].map((i) => i + 1).filter((row) => !occupied.has(row))
+    expect(empty).toEqual([])
+  })
+
+  test('L5 — every printed label carries legacy’s colon as real text, no heading does', async () => {
+    // Legacy punctuates every field label with `:`. It has to be part of the label's own TEXT, not
+    // drawn with a CSS `::after`: generated content cannot be selected or copied, which is a
+    // problem the moment anyone wants to quote a field name out of the screen. So this asserts the
+    // text, and there is no stylesheet rule left to assert.
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    const panel = document.querySelector('.schedule-10__panel')
+    // PRINTED labels only: a hidden one has no text on screen to punctuate. Carbon hides the haul
+    // figures' labels with its own class; the Yes/No combo's is hidden by ours.
+    const labels = [
+      ...(panel?.querySelectorAll(
+        '.cds--label:not(.cds--visually-hidden):not(.schedule-10__haul-eng-combo .cds--label),' +
+          ' .schedule-10__field-label',
+      ) ?? []),
+    ].map((node) => node.textContent ?? '')
+    expect(labels.length).toBeGreaterThan(20)
+    for (const label of labels) {
+      expect(label, label).toMatch(/:$/)
+    }
+
+    // A section heading takes none — legacy prints `Road Information` and `Material Type` bare —
+    // and neither does a column heading over the haul figures.
+    const bare = [
+      ...(panel?.querySelectorAll('.schedule-10__detail-heading, .schedule-10__haul-column-head') ??
+        []),
+    ].map((node) => node.textContent ?? '')
+    expect(bare).toHaveLength(10)
+    for (const heading of bare) {
+      expect(heading, heading).not.toMatch(/:$/)
+    }
+  })
+
+  test('L5 — the closing block matches legacy’s layout (#440 items 4-7)', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    // Item 4: the Yes/No menu is the SAME combo box as every other dropdown on this screen — a
+    // Carbon `Select` could not be made to show the field fill the way its neighbours do — its own
+    // label is hidden, and the printed one sits beside it, so the two are on one line.
+    const engCosts = screen.getByRole('combobox', { name: 'Includes Detailed Engineering Costs' })
+    const roadType = screen.getByRole('combobox', { name: 'Road Type:' })
+    expect(engCosts.className).toBe(roadType.className)
+    expect(engCosts.closest('.schedule-10__haul-eng-combo')).not.toBeNull()
+    expect(document.querySelector('.schedule-10__haul-inline-label')?.textContent).toBe(
+      'Includes Detailed Engineering Costs:',
+    )
+
+    // Item 5: Distance / Volume / $-per-unit are printed ONCE as column headings over the two haul
+    // rows, which are labelled `… Details` as in legacy — not repeated on each of the six controls.
+    const heads = [...document.querySelectorAll('.schedule-10__haul-column-head')].map(
+      (node) => node.textContent,
+    )
+    expect(heads).toEqual(['Distance (km)', 'Volume (m3)', '$/m3/km'])
+    expect(screen.getByText('End Haul Details:')).toBeInTheDocument()
+    expect(screen.getByText('Overland Details:')).toBeInTheDocument()
+    // The figures keep the names they have always answered to, hidden rather than dropped.
+    expect(screen.getByLabelText('End Haul Distance (km)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Overland Volume (m3)')).toBeInTheDocument()
+
+    // Items 6 and 7: all seven road-detail headings take ONE class, so none of them can be a size
+    // or a rule apart from the others.
+    const headings = [...document.querySelectorAll('.schedule-10__detail-heading')].map(
+      (node) => node.textContent,
+    )
+    expect(headings).toEqual([
+      'Road Information',
+      'Moisture',
+      'Shoulder',
+      'Material Type',
+      'Sub-Grade',
+      'Costs',
+      'Additional Stabilizing',
+    ])
+    expect(document.querySelector('.schedule-10__detail-subheading')).toBeNull()
   })
 
   test('L9 — the road form meets the accessibility floor (AC15)', async () => {
@@ -1404,14 +1603,14 @@ describe('regressions from the 2026-08-19 code review', () => {
     await screen.findByDisplayValue('Mainline A')
 
     // Every input is reachable by its programmatic label, never by placeholder or position.
-    expect(screen.getByLabelText('Road Name')).toBeInTheDocument()
+    expect(screen.getByLabelText('Road Name:')).toBeInTheDocument()
     expect(screen.getByLabelText('Sub-Grade Length (km)')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'BEC Zone' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'BEC Zone:' })).toBeInTheDocument()
     // Both tables carry real header cells so a screen reader can navigate them.
     expect(screen.getByRole('columnheader', { name: 'Roads' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument()
     // Derived totals are text, not disabled inputs, so they are announced as values.
-    expect(screen.queryByLabelText('Total ($)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Total ($):')).not.toBeInTheDocument()
   })
 
   test('L9 — an advisory error is bound to its field and clears as it is fixed', async () => {
@@ -1419,7 +1618,7 @@ describe('regressions from the 2026-08-19 code review', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    const roadName = await screen.findByLabelText('Road Name')
+    const roadName = await screen.findByLabelText('Road Name:')
     expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
     expect(roadName).toHaveAttribute('aria-invalid', 'true')
 
@@ -1467,5 +1666,647 @@ describe('stale context', () => {
     await new Promise((resolve) => setTimeout(resolve, 120))
     expect(screen.queryByText('STALE PAGE')).not.toBeInTheDocument()
     expect(screen.getByText('FRESH PAGE')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The road detail's comments indicator (Story 16.2 AC7, added in review of PR #452).
+ *
+ * The road detail renders its comments through the shared `CommentsTextArea` rather than through
+ * `RoadDetailFields`' own `indicator()` helper, which is how it came to be the one served key with
+ * no indicator beside it — `Schedule10DocumentAssembler` has put `comments` in the detail's
+ * originals from the start.
+ */
+describe('the road detail comments original-value indicator', () => {
+  const submittedRoad = () =>
+    roadDetail({
+      roadName: 'Mainline A Revised',
+      comments: 'the ministry corrected this',
+      detailedEngineeringCostInd: 'Y',
+      originalValues: {
+        roadName: { value: 'Mainline A', tooltip: 'Original Submission Value: Mainline A' },
+        detailedEngineeringCostInd: { value: 'N', tooltip: 'Original Submission Value: No' },
+        comments: {
+          value: 'what the mill actually reported',
+          tooltip: 'Original Submission Value: what the mill actually reported',
+        },
+      },
+    })
+
+  const submittedDoc = (over: Partial<Schedule10Response> = {}) =>
+    doc({
+      trackStatus: 'S',
+      pages: [page({ roadDetails: [submittedRoad()] })],
+      ...over,
+    })
+
+  test('renders beside the comments textarea when it differs from the submitted original', async () => {
+    server.use(getHandler(submittedDoc()))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const indicator = await screen.findByTestId('original-value-comments')
+    expect(indicator).toHaveAccessibleName('Comments differs from the originally submitted value')
+    expect(indicator).toHaveAccessibleDescription(
+      'Original Submission Value: what the mill actually reported',
+    )
+  })
+
+  test('renders in the read-only view too — visibility is a status gate, not a permission one', async () => {
+    server.use(getHandler(submittedDoc({ editable: false })))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'View' }))
+
+    // AC6 pinned cell 3: an ILCR_SUBMITTER is read-only on a Submitted report and still sees every
+    // indicator. The View panel renders its fields as text through `readOnlyField`, which the first
+    // cut of this wiring left without indicators altogether — so this asserts a plain field, not
+    // only comments.
+    expect(await screen.findByTestId('original-value-roadName')).toBeInTheDocument()
+    expect(screen.getByTestId('original-value-comments')).toBeInTheDocument()
+    expect(screen.getByTestId('original-value-detailedEngineeringCostInd')).toBeInTheDocument()
+  })
+
+  test('the engineering-costs selector carries one in the edit panel too', async () => {
+    server.use(getHandler(submittedDoc()))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const indicator = await screen.findByTestId('original-value-detailedEngineeringCostInd')
+    // `YES_NO` on the wire, the `Y`/`N` code in the form — so the tooltip reads "No" while the
+    // comparison is against the stored code.
+    expect(indicator).toHaveAccessibleDescription('Original Submission Value: No')
+  })
+
+  test('no indicator at Draft, however far the comment has diverged', async () => {
+    server.use(
+      getHandler(
+        doc({
+          trackStatus: 'D',
+          pages: [
+            page({
+              roadDetails: [
+                roadDetail({ comments: 'the ministry corrected this', originalValues: null }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    await screen.findByLabelText('Road Name:')
+    expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
+  })
+
+  test('reverting the comment to exactly the submitted text clears the indicator', async () => {
+    server.use(getHandler(submittedDoc()))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const textarea = await screen.findByLabelText(
+      /If you have any comments, please enter them here:/,
+    )
+    expect(await screen.findByTestId('original-value-comments')).toBeInTheDocument()
+
+    // Paste rather than type: this editor re-renders ~30 fields per keystroke, so typing the
+    // 31-character comment is what pushes the suite past its timeout.
+    await userEvent.clear(textarea)
+    await userEvent.click(textarea)
+    await userEvent.paste('what the mill actually reported')
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
+    })
+  })
+})
+
+// ---- Story 16.3: the ministry correction journey at Submitted -----------------------------------
+//
+// Story 16.1 shipped the role×status editability matrix: an ILCR_SUBMITTER edits only at Draft, while
+// an ILCR_ADMIN edits at Submitted and Verified and is deliberately READ-ONLY at Draft. This page
+// learns all of it from ONE server-computed boolean — `data.editable` (index.tsx:467) — and never
+// derives it from `trackStatus` or from the acting role (AD-9).
+//
+// Every pre-16.3 `'S'` test in this file pairs it with a HARDCODED `editable: false`, so nothing here
+// could tell a correct gate from a widened one, and the ministry-correction journey itself was
+// unverified. These arms close that, and they make the acting identity load-bearing rather than
+// decorative: the MSW GET COMPUTES `editable` from the 16.1 matrix over the request's own
+// `X-Mock-Groups` header. So `renderAsAdmin` versus `renderAsSubmitter` genuinely changes what the
+// server answers — a fixture that hardcoded the flag would pass these arms whichever role it declared,
+// which is the same class of silent-identity defect (`findMockUser(null)` -> `MOCK_USERS[0]`) that ran
+// the e2e suite as the wrong role for a month.
+describe('Schedule 10 ministry correction at Submitted (Story 16.3)', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill still
+  // owns the data. Anything else — `O`, an absent track, an unknown role — is read-only.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes the falsification check trivial
+  // (flip the admin entry to ['D'] and every admin-at-Submitted arm below must fail; narrow it to
+  // ['S'] and the Verified arm must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock user
+   * onto `X-Mock-Groups` (api-service.ts:11-17), so this is the same signal the real mock backend
+   * gates on — not something the test asserts about itself.
+   *
+   * The throw is a sanity rail only, NOT the identity guard: `findMockUser` falls back to
+   * `MOCK_USERS[0]` (the admin) and joins its roles, so a header is always sent and this branch can
+   * never fire. Nor is the header itself the whole guard — see `expectActingAs` below. What it does
+   * buy is that the captured value is asserted in each arm's BODY: an `expect` inside an MSW resolver
+   * surfaces as a failed request and gets misattributed to whatever the page did next.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /**
+   * Answer `editable` per the matrix for whoever is asking. Applied to the load AND to every write
+   * echo, so a corrected document comes back with the same server-computed flag the load had.
+   *
+   * The header is `roles.join(',')` (api-service.ts:13) and `ScheduleEditability.forCaller` UNIONS
+   * the permitted statuses across every role the caller holds, so this splits and unions rather than
+   * keying on the raw header. Unreachable while each mock user holds exactly one role, but keying on
+   * the raw string would encode the wrong rule and quietly fail closed the day a caller holds two.
+   */
+  const withMatrixEditable = (request: Request, body: Schedule10Response): Schedule10Response => {
+    const permitted = new Set(
+      actingRole(request)
+        .split(',')
+        .flatMap((role) => EDITABLE_STATUSES[role] ?? []),
+    )
+    return { ...body, editable: permitted.has(String(body.trackStatus)) }
+  }
+
+  /** A Submitted Schedule 10 by default; `editable` is never asserted by the fixture, only computed. */
+  const submittedDoc = (over: Partial<Schedule10Response> = {}) =>
+    doc({ trackStatus: 'S', ...over })
+
+  // The identity the LOAD actually carried, recorded by the handler and asserted in each arm's body.
+  // This is what makes `renderAsAdmin`/`renderAsSubmitter` a constraint rather than a comment: an arm
+  // that lost its helper would come through as the `MOCK_USERS[0]` admin and fail here.
+  let sentRole: string | null = null
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * BOTH halves of an arm's identity claim, for one request:
+   *
+   *   * `declaredRole()` — the role THIS TEST seeded through `renderAs*`, and `null` when nothing
+   *     declared one. This is the half that catches a FORGOTTEN declaration. The wire assertion
+   *     cannot: `api-service` resolves the identity through the very same `MOCK_USERS[0]` admin
+   *     fallback (api-service.ts:11-17), so a declared admin and an undeclared one are byte-identical
+   *     on the wire — dropping `renderAsAdmin` left every admin arm here green until this was added.
+   *   * the captured `X-Mock-Groups` value — what the request actually CARRIED, which is what the
+   *     server (and `matrixGet`) gates on. It keeps the declaration honest: seeding a role the
+   *     request then failed to send would pass the first half on its own.
+   *
+   * Both are compared against the same `IlcrRole`, because the header IS the joined role list and a
+   * mock user holds exactly one role (mockUsers.ts:14-16).
+   */
+  const expectActingAs = (role: IlcrRole, carried: string | null) => {
+    expect(declaredRole()).toBe(role)
+    expect(carried).toBe(role)
+  }
+
+  /** GET that answers `editable` per the matrix for whoever is asking. */
+  const matrixGet = (over: Partial<Schedule10Response> = {}) =>
+    http.get(URL, ({ request }) => {
+      sentRole = actingRole(request)
+      return HttpResponse.json(withMatrixEditable(request, submittedDoc(over)))
+    })
+
+  // The router has to wrap the page (the road level is URL-driven), so the acting identity is seeded
+  // by rendering the RouterProvider through the role-declaring helpers rather than through `render`.
+  const renderSchedule10AsAdmin = (initialUrl = '/schedule-10') => {
+    const router = makeRouter(initialUrl)
+    return { router, ...renderAsAdmin(<RouterProvider router={router} />) }
+  }
+  const renderSchedule10AsSubmitter = (initialUrl = '/schedule-10') => {
+    const router = makeRouter(initialUrl)
+    return { router, ...renderAsSubmitter(<RouterProvider router={router} />) }
+  }
+
+  test('admin at Submitted corrects a page and saves it — SUC-001 verbatim, status unmoved', async () => {
+    let body: Record<string, unknown> | null = null
+    let putRole: string | null = null
+    let putCalls = 0
+    const corrected = page({ divisionName: 'Ministry Division', revisionCount: 3 })
+    server.use(
+      matrixGet(),
+      http.put(`${PAGES_URL}/8900`, async ({ request }) => {
+        putCalls += 1
+        putRole = actingRole(request)
+        body = (await request.json()) as Record<string, unknown>
+        // The echo is the corrected page over a track that is STILL 'S'. There is exactly one status
+        // writer in the whole backend (the year-open INSERT, ReportingYearRepository:139) and no
+        // transition endpoint at all, so the save path cannot move a track.
+        return HttpResponse.json(
+          withMatrixEditable(
+            request,
+            submittedDoc({
+              pages: [corrected],
+              message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+            }),
+          ),
+        )
+      }),
+    )
+    renderSchedule10AsAdmin()
+
+    // The correcting affordance itself: at Submitted-editable the row offers Edit, not View
+    // (index.tsx:619), and every write control is live — the capability 16.1 added.
+    expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add New Page' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeEnabled()
+
+    await openPagePanel()
+    const division = await screen.findByLabelText('Division:')
+    expect(division).toBeEnabled()
+    expect(screen.getByLabelText('Period Surveyed:')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Region:' })).toBeEnabled()
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled()
+
+    // click + clear + paste, never a per-character `type`: this panel re-renders its whole field set
+    // on every keystroke, and per-character typing is what has timed these suites out on CI.
+    await userEvent.click(division)
+    await userEvent.clear(division)
+    await userEvent.paste('Ministry Division')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    // SUC-001 verbatim (messages.properties:173 `dataSavedSuccesfullyInfoMsg`), rendered from the
+    // API's own `message.text` and never from a client literal (AD-8).
+    expect(await screen.findByText('Data saved successfully', verbatim)).toBeInTheDocument()
+    expect(putCalls).toBe(1)
+    // The correction was issued AS the declared admin — not as whoever MOCK_USERS[0] happens to be.
+    expectActingAs(ILCR_ROLES.admin, putRole)
+    expect(body).toMatchObject({ divisionName: 'Ministry Division', revisionCount: 2 })
+
+    // `trackStatus` is rendered NOWHERE on any schedule page (the tombstone shows the working
+    // context's mill status, not the document's track), so "the save did not move status" is not
+    // directly assertable from the DOM. Two proxies stand in for it:
+    //
+    // (a) the exact top-level key set of the PUT body — it carries no status field of any kind, so
+    //     the client structurally cannot ask for a transition, and a request DTO that later grew one
+    //     would fail here rather than pass unnoticed;
+    // (b) MSW is strict (`onUnhandledRequest: 'error'`), so a call to any transition endpoint would
+    //     fail this test rather than pass quietly.
+    expect(Object.keys(body as unknown as Record<string, unknown>).sort()).toEqual([
+      'constructionPeriod',
+      'divisionName',
+      'forestRegionCode',
+      'revisionCount',
+      'supplyBlock',
+      'tflNumberCode',
+      'tsaOrTfl',
+    ])
+
+    // The echo applied — and the page is STILL editable over a track that is still 'S'. A page that
+    // derived read-only from `trackStatus` (or from the role) would have locked itself right here on
+    // applying this echo, which is what makes this the AD-9 assertion.
+    const echoed = await screen.findByDisplayValue('Ministry Division')
+    expect(echoed).toBeEnabled()
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+  })
+
+  // The negative arm. Same screen, same served document, a different actor — and because the handler
+  // computes the flag, the SERVER answers `editable: false` here purely because a submitter asked.
+  // Without this, a widened gate (one that let the licensee edit a Submitted report) would pass the
+  // arm above completely unnoticed.
+  test('submitter at Submitted is read-only — no Edit, Save, Check Status or Delete', async () => {
+    // Counters rather than throwing tripwires: a throw inside an MSW resolver surfaces as a failed
+    // request, not a failed assertion. Counted here and asserted in the body, with the disabled
+    // controls actually CLICKED, so "no write is reachable" is exercised rather than assumed.
+    let writes = 0
+    server.use(
+      matrixGet(),
+      http.put(`${PAGES_URL}/8900`, () => {
+        writes += 1
+        return HttpResponse.json(submittedDoc({ editable: false }))
+      }),
+      http.delete(`${PAGES_URL}/8900`, () => {
+        writes += 1
+        return HttpResponse.json(submittedDoc({ editable: false, pages: [] }))
+      }),
+    )
+    renderSchedule10AsSubmitter()
+
+    expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.submitter, sentRole)
+    // The row-level affordance swaps Edit -> View (index.tsx:619) — the licensee may look, not touch.
+    expect(screen.getByRole('button', { name: 'View' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add New Page' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check Status' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled()
+
+    // Pressing the disabled Delete reaches no confirmation, so there is no route to a DELETE at all.
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(
+      screen.queryByText('This will delete the current record. Do you want to continue?'),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }))
+    // Read-only means the values RENDER as text — a locked screen, not a suppressed one.
+    expect(await screen.findByText('North Division')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Division:')).not.toBeInTheDocument()
+    // Deviation 7 (ratified in defect #292): the write controls stay RENDERED and disabled, never
+    // removed from the DOM. Pressing Save writes nothing — `savePage` refuses a `view` panel too.
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+    await userEvent.click(save)
+
+    expect(writes).toBe(0)
+  })
+
+  // The other direction of the same matrix, and the direction nothing covered: 16.1 deliberately
+  // REMOVED the administrator's edit rights at Draft. Assert the capability is gone, rather than only
+  // that the admin has rights somewhere.
+  test('admin at Draft is read-only — the capability 16.1 removed', async () => {
+    let writes = 0
+    server.use(
+      matrixGet({ trackStatus: 'D' }),
+      http.put(`${PAGES_URL}/8900`, () => {
+        writes += 1
+        return HttpResponse.json(submittedDoc({ trackStatus: 'D', editable: false }))
+      }),
+      http.delete(`${PAGES_URL}/8900`, () => {
+        writes += 1
+        return HttpResponse.json(submittedDoc({ trackStatus: 'D', editable: false, pages: [] }))
+      }),
+    )
+    renderSchedule10AsAdmin()
+
+    expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expect(screen.getByRole('button', { name: 'View' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add New Page' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check Status' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(
+      screen.queryByText('This will delete the current record. Do you want to continue?'),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }))
+    expect(await screen.findByText('North Division')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Division:')).not.toBeInTheDocument()
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+    await userEvent.click(save)
+
+    expect(writes).toBe(0)
+  })
+
+  test('submitter at Draft still edits — the matrix discriminates, it is not uniformly closed', async () => {
+    // Guards the two read-only arms above against a degenerate handler (or a broken identity helper)
+    // that simply answered `editable: false` to everything.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderSchedule10AsSubmitter()
+
+    expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.submitter, sentRole)
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add New Page' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled()
+    await openPagePanel()
+    expect(await screen.findByLabelText('Division:')).toBeEnabled()
+  })
+
+  // The rest of the admin row, and the cells 16.1 pinned to fail CLOSED. `'V'` is served nowhere in
+  // the repo, so without this the whole Verified half of the admin row has no evidence and narrowing
+  // the backend matrix to `['S']` would leave every suite green.
+  test.each([
+    ['V', 'correctable — Verified, the other half of the admin row', true],
+    ['O', 'read-only — the O track no matrix row lists', false],
+    [null, 'read-only — no track at all', false],
+  ])('admin at %s is %s', async (trackStatus, _outcome, correctable) => {
+    server.use(matrixGet({ trackStatus }))
+    renderSchedule10AsAdmin()
+
+    expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    const rowAction = correctable ? 'Edit' : 'View'
+    const withheld = correctable ? 'View' : 'Edit'
+    expect(screen.getByRole('button', { name: rowAction })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: withheld })).not.toBeInTheDocument()
+    for (const name of ['Add New Page', 'Check Status', 'Delete', 'Copy']) {
+      const button = screen.getByRole('button', { name })
+      if (correctable) {
+        expect(button).toBeEnabled()
+      } else {
+        expect(button).toBeDisabled()
+      }
+    }
+  })
+
+  // Delete per the matrix, both paths, for THIS actor at THIS status. The confirm is the SHARED
+  // `core/ConfirmDeleteModal` and is not touched here (user ruling 2026-09-11) — it is asserted where
+  // it stands: the verbatim `confirmDeleteMsg` (messages.properties:202) under legacy's
+  // "Confirmation" header with its Yes/No answers.
+  test('admin at Submitted deletes a page behind the verbatim confirm', async () => {
+    let deleteCalls = 0
+    let deleteRole: string | null = null
+    server.use(
+      matrixGet(),
+      http.delete(`${PAGES_URL}/8900`, ({ request }) => {
+        deleteCalls += 1
+        deleteRole = actingRole(request)
+        return HttpResponse.json(
+          withMatrixEditable(
+            request,
+            submittedDoc({
+              pages: [],
+              message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+            }),
+          ),
+        )
+      }),
+    )
+    renderSchedule10AsAdmin()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    expect(
+      screen.getByText('This will delete the current record. Do you want to continue?', verbatim),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+
+    await waitFor(() => {
+      expect(deleteCalls).toBe(1)
+    })
+    expectActingAs(ILCR_ROLES.admin, deleteRole)
+    // DEL-001 verbatim (messages.properties:174), from the API's own message text.
+    expect(await screen.findByText('Data deleted successfully', verbatim)).toBeInTheDocument()
+    expect(screen.getByText('No records found.')).toBeInTheDocument()
+    expect(screen.queryByText(page().pageLabel)).not.toBeInTheDocument()
+  })
+
+  test('admin at Submitted cancelling the confirm issues NO delete and leaves the page alone', async () => {
+    let deleteCalls = 0
+    server.use(
+      matrixGet(),
+      http.delete(`${PAGES_URL}/8900`, ({ request }) => {
+        deleteCalls += 1
+        return HttpResponse.json(withMatrixEditable(request, submittedDoc({ pages: [] })))
+      }),
+    )
+    renderSchedule10AsAdmin()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'No' }))
+
+    expect(deleteCalls).toBe(0)
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+    // The document is untouched: the row still stands with its stored values, there is no banner, and
+    // the page is still correctable.
+    expect(screen.getByText(page().pageLabel)).toBeInTheDocument()
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    expect(screen.queryByText('No records found.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled()
+  })
+
+  // Check Status is available to the correcting administrator and mutates nothing. Legacy gated the
+  // BUTTON on edit rights (deviation 5 / 26 of 26 buttons), so at Submitted-editable it is live here
+  // rather than dead — and its result is read-only.
+  test('admin at Submitted can run Check Status, and it changes nothing', async () => {
+    let getCalls = 0
+    let checkCalls = 0
+    let checkRole: string | null = null
+    let writes = 0
+    server.use(
+      http.get(URL, ({ request }) => {
+        getCalls += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(withMatrixEditable(request, submittedDoc()))
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        checkCalls += 1
+        checkRole = actingRole(request)
+        return HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          pages: [],
+        })
+      }),
+      // Read-only means read-only, counted rather than thrown so the assertion lands in the body.
+      http.put(`${PAGES_URL}/8900`, ({ request }) => {
+        writes += 1
+        return HttpResponse.json(withMatrixEditable(request, submittedDoc()))
+      }),
+      http.delete(`${PAGES_URL}/8900`, ({ request }) => {
+        writes += 1
+        return HttpResponse.json(withMatrixEditable(request, submittedDoc({ pages: [] })))
+      }),
+    )
+    renderSchedule10AsAdmin()
+
+    expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, sentRole)
+    const button = screen.getByRole('button', { name: 'Check Status' })
+    expect(button).toBeEnabled()
+    const getsBeforeCheck = getCalls
+    await userEvent.click(button)
+
+    // SUC-002 verbatim (messages.properties:184 `scheduleRequirementsMetMsg` — the key Schedule 10's
+    // own resolver emits, Schedule10CheckStatusResolver.java:41).
+    expect(
+      await screen.findByText('All requirements for this schedule have been met', verbatim),
+    ).toBeInTheDocument()
+    expect(checkCalls).toBe(1)
+    expectActingAs(ILCR_ROLES.admin, checkRole)
+    // Nothing wrote, and nothing re-read: the check applies no document client-side and is
+    // `@Transactional(readOnly)` server-side, so a stable GET count is a real "nothing ran" signal.
+    // Only Check Status can use that signal on THIS page: unlike the other schedules, Schedule 10's
+    // confirmed delete applies the returned document in place and never re-GETs, so a GET count says
+    // nothing there either way.
+    expect(writes).toBe(0)
+    expect(getCalls).toBe(getsBeforeCheck)
+    // The document on screen is exactly as served, and still correctable afterwards.
+    expect(screen.getByText(page().pageLabel)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled()
+    await openPagePanel()
+    expect(await screen.findByDisplayValue('North Division')).toBeEnabled()
+  })
+})
+
+// Legacy left a road row live while it was open; the business adopted the page list's freeze
+// (legacy Schedule 8's) for every row editor, so the road level now matches the page level.
+describe('the road level open-row freeze', () => {
+  test('the road open in the panel has its row actions disabled; other roads stay live', async () => {
+    server.use(
+      getHandler(
+        doc({
+          pages: [
+            page({
+              roadDetailCount: 2,
+              roadDetails: [
+                roadDetail(),
+                roadDetail({
+                  roadDetailId: 8911,
+                  rowNumber: 2,
+                  roadDetailLabel: 'Road #2, Spur B',
+                  roadName: 'Spur B',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+
+    // Carbon names the table by its container title, so reach it through a row it holds.
+    const table = (await screen.findByText('Road #1, Mainline A')).closest('table') as HTMLElement
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    const actions = ['Edit', 'Delete']
+    for (const name of actions) {
+      expect(within(rowOf('Road #1, Mainline A')).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await userEvent.click(
+      within(rowOf('Road #1, Mainline A')).getByRole('button', { name: 'Edit' }),
+    )
+
+    await waitFor(() =>
+      expect(
+        within(rowOf('Road #1, Mainline A')).getByRole('button', { name: 'Edit' }),
+      ).toBeDisabled(),
+    )
+    for (const name of actions) {
+      expect(within(rowOf('Road #1, Mainline A')).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowOf('Road #2, Spur B')).getByRole('button', { name })).toBeEnabled()
+    }
   })
 })

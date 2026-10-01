@@ -26,6 +26,20 @@ Then(
   },
 );
 
+Then(
+  'the {string} view has no WCAG 2.1 AA accessibility violations in its current pointer state',
+  async ({ page, $testInfo, $tags }, label) => {
+    // Same scan as above, but WITHOUT parking the pointer first — for a scenario that has deliberately
+    // hovered something and is testing that state (see pages/common/axe.ts for why every other scan parks
+    // it). Kept as its own phrase so a hover-dependent assertion can never be written by accident.
+    $testInfo.setTimeout($testInfo.timeout + 60_000);
+    await assertNoA11yViolations(page, label, {
+      known: $tags.includes('@discovered-bug'),
+      keepPointer: true,
+    });
+  },
+);
+
 Then('I should see the error {string}', async ({ page }, message) => {
   // .first(): some forms surface the same message in BOTH the error banner and the field's inline
   // text (2 matches) — asserting the message is visible somewhere is the intent, so avoid a strict-mode
@@ -66,11 +80,23 @@ Then('I should see the message {string}', async ({ page }, message) => {
   await expect(page.getByText(message).first()).toBeVisible();
 });
 
+Then('I should not see the error {string}', async ({ page }, message) => {
+  // Same mechanism as "I should not see the message" below — kept as its own phrasing because the BR-12
+  // unsaved-edit arms assert that a Check Status ERROR has stopped being reported, and calling that a
+  // "message" in a feature file reads as though a success banner were meant.
+  await expect(page.getByText(message)).toHaveCount(0);
+});
+
 Then('I should not see the message {string}', async ({ page }, message) => {
   // Absence assertion — for a message that is CONDITIONAL on a branch not taken (e.g. Schedule 11's
   // SUC-003 "requirements met", which must NOT appear alongside a Check Status failure). `toHaveCount(0)`
   // rather than `not.toBeVisible()` so a message rendered anywhere in the DOM fails, not just a visible one.
   await expect(page.getByText(message)).toHaveCount(0);
+});
+
+Then('the {string} dialog closes', async ({ page }, name) => {
+  // A Carbon Modal is unmounted (or hidden) on close; either way it stops being an accessible dialog.
+  await expect(page.getByRole('dialog', { name })).toHaveCount(0);
 });
 
 Then('I should see the warning {string}', async ({ page }, message) => {

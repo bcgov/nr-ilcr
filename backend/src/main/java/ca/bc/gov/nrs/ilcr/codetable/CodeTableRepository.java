@@ -16,14 +16,16 @@ import org.springframework.stereotype.Repository;
  * Generic read/upsert over the maintainable {@code THE.*_CODE} lookup tables (Story 24.3 / T2).
  *
  * <p>One repository serves all 18 backing tables rather than 18 hand-written ones: the table and
- * code-column identifiers come from {@link CodeTableRegistry} (a fixed enum), never from a caller, so
- * interpolating them into the SQL is safe — every VALUE (code, description, dates) is still a bound
- * named parameter. Columns are exactly those the legacy {@code AbstractILCRCode} mapped: the code PK,
- * {@code DESCRIPTION}, {@code EFFECTIVE_DATE}, {@code EXPIRY_DATE}, and {@code UPDATE_TIMESTAMP}
- * (stamped {@code SYSTIMESTAMP} on every write — the only audit column these reference tables carry).
+ * code-column identifiers come from {@link CodeTableRegistry} (a fixed enum), never from a caller,
+ * so interpolating them into the SQL is safe — every VALUE (code, description, dates) is still a
+ * bound named parameter. Columns are exactly those the legacy {@code AbstractILCRCode} mapped: the
+ * code PK, {@code DESCRIPTION}, {@code EFFECTIVE_DATE}, {@code EXPIRY_DATE}, and {@code
+ * UPDATE_TIMESTAMP} (stamped {@code SYSDATE} on every write — the only audit column these reference
+ * tables carry).
  *
- * <p>The Contractual Item Codes table has no backing {@code *_CODE} table (BR-08) and is rejected
- * here; it is maintained through the Schedule 9 cost-item path instead.
+ * <p>The Contractual Item Codes table has no backing {@code *_CODE} table (BR-08), so its
+ * description-only operations use the Schedule 9 cost-item table in this repository as a
+ * specialized path.
  */
 @Repository
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -51,16 +53,80 @@ public class CodeTableRepository {
   /** All entries of a table, ordered by code — the full maintenance grid (not year-filtered). */
   public List<CodeTableEntry> findEntries(CodeTableRegistry table) {
     String codeColumn = requireBackingTable(table).codeColumn();
-    String sql = "SELECT %s AS code, DESCRIPTION AS description, EFFECTIVE_DATE, EXPIRY_DATE FROM %s "
-        .formatted(codeColumn, qualified(table)) + "ORDER BY " + codeColumn;
+    String sql =
+        "SELECT %s AS code, DESCRIPTION AS description, EFFECTIVE_DATE, EXPIRY_DATE FROM %s "
+                .formatted(codeColumn, qualified(table))
+            + "ORDER BY "
+            + codeColumn;
     return jdbc.query(sql, ENTRY_MAPPER);
   }
 
-  /** Whether a code already exists in the table (BR-03: existing-row check drives insert vs update). */
+  /** Schedule 9 category-9 cost items exposed as description-only maintenance entries. */
+  public List<CodeTableEntry> findContractualEntries() {
+    return jdbc.query(
+        "SELECT TO_CHAR(ILCR_REPORT_COST_ITEM_ID) AS code, ITEM_NAME AS description, "
+            + "EFFECTIVE_DATE, EXPIRY_DATE FROM THE.ILCR_REPORT_COST_ITEM "
+            + "WHERE ILCR_CATEGORY_ID = '9' ORDER BY ILCR_REPORT_COST_ITEM_ID",
+        ENTRY_MAPPER);
+  }
+
+  /** Add or update a Schedule 9 contractual item. A blank code allocates the legacy sequence id. */
+  public UpsertResult upsertContractualItem(CodeTableEntry entry, String user) {
+    if (entry.code() != null && !entry.code().isBlank()) {
+      final int id;
+      try {
+        id = Integer.parseInt(entry.code());
+      } catch (NumberFormatException ex) {
+        throw CodeTableException.invalidContractualCode();
+      }
+      int updated =
+          jdbc.update(
+              "UPDATE THE.ILCR_REPORT_COST_ITEM SET ITEM_NAME = :description, "
+                  + "EFFECTIVE_DATE = :effectiveDate, EXPIRY_DATE = :expiryDate, "
+                  + "UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSDATE, "
+                  + "REVISION_COUNT = REVISION_COUNT + 1 "
+                  + "WHERE ILCR_REPORT_COST_ITEM_ID = :id AND ILCR_CATEGORY_ID = '9'",
+              new MapSqlParameterSource()
+                  .addValue("id", id)
+                  .addValue("description", entry.description())
+                  .addValue("effectiveDate", entry.effectiveDate())
+                  .addValue("expiryDate", entry.expiryDate())
+                  .addValue("user", user));
+      if (updated == 0) {
+        throw CodeTableException.contractualItemNotFound();
+      }
+      return UpsertResult.UPDATED;
+    }
+
+    Integer id =
+        jdbc.queryForObject(
+            "SELECT THE.ILCR_REPORT_COST_ITEM_SEQ.NEXTVAL FROM DUAL",
+            new MapSqlParameterSource(),
+            Integer.class);
+    jdbc.update(
+        "INSERT INTO THE.ILCR_REPORT_COST_ITEM "
+            + "(ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, LUMP_SUM_IND, ILCR_CATEGORY_ID, "
+            + "ILCR_SUBCATEGORY_ID, EFFECTIVE_DATE, EXPIRY_DATE, REVISION_COUNT, "
+            + "ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+            + "VALUES (:id, :description, 'Y', '9', '1', :effectiveDate, :expiryDate, 0, "
+            + ":user, SYSDATE, :user, SYSDATE)",
+        new MapSqlParameterSource()
+            .addValue("id", id)
+            .addValue("description", entry.description())
+            .addValue("effectiveDate", entry.effectiveDate())
+            .addValue("expiryDate", entry.expiryDate())
+            .addValue("user", user));
+    return UpsertResult.INSERTED;
+  }
+
+  /**
+   * Whether a code already exists in the table (BR-03: existing-row check drives insert vs update).
+   */
   public boolean exists(CodeTableRegistry table, String code) {
     String codeColumn = requireBackingTable(table).codeColumn();
     String sql = "SELECT COUNT(*) FROM %s WHERE %s = :code".formatted(qualified(table), codeColumn);
-    Integer count = jdbc.queryForObject(sql, new MapSqlParameterSource("code", code), Integer.class);
+    Integer count =
+        jdbc.queryForObject(sql, new MapSqlParameterSource("code", code), Integer.class);
     return count != null && count > 0;
   }
 
@@ -70,14 +136,14 @@ public class CodeTableRepository {
    *
    * <p>Atomic: it tries the UPDATE first (one statement), and only INSERTs when no row matched.
    *
-   * <p>An {@code INSERT} that raises an integrity violation is NOT assumed to be a duplicate-key race.
-   * It can equally be a genuine failure — a NOT NULL / CHECK / FK constraint the insert does not
-   * satisfy — in which case NO row was written and returning success would be silent data loss (the
-   * caller sees "saved" but the entry never appears). We distinguish the two by the fallback UPDATE's
-   * row count: only a real race (the row now exists because a concurrent save inserted it) updates a
-   * row, and is absorbed as the intended silent-update (S05). If the fallback UPDATE matches nothing,
-   * the write truly failed, so the original exception propagates and the caller surfaces an error
-   * instead of a false success.
+   * <p>An {@code INSERT} that raises an integrity violation is NOT assumed to be a duplicate-key
+   * race. It can equally be a genuine failure — a NOT NULL / CHECK / FK constraint the insert does
+   * not satisfy — in which case NO row was written and returning success would be silent data loss
+   * (the caller sees "saved" but the entry never appears). We distinguish the two by the fallback
+   * UPDATE's row count: only a real race (the row now exists because a concurrent save inserted it)
+   * updates a row, and is absorbed as the intended silent-update (S05). If the fallback UPDATE
+   * matches nothing, the write truly failed, so the original exception propagates and the caller
+   * surfaces an error instead of a false success.
    */
   public UpsertResult upsert(CodeTableRegistry table, CodeTableEntry entry) {
     if (update(table, entry) > 0) {
@@ -96,17 +162,19 @@ public class CodeTableRepository {
 
   private void insert(CodeTableRegistry table, CodeTableEntry entry) {
     String codeColumn = requireBackingTable(table).codeColumn();
-    String sql = ("INSERT INTO %s (%s, DESCRIPTION, EFFECTIVE_DATE, EXPIRY_DATE, UPDATE_TIMESTAMP) "
-        + "VALUES (:code, :description, :effectiveDate, :expiryDate, SYSTIMESTAMP)")
-        .formatted(qualified(table), codeColumn);
+    String sql =
+        ("INSERT INTO %s (%s, DESCRIPTION, EFFECTIVE_DATE, EXPIRY_DATE, UPDATE_TIMESTAMP) "
+                + "VALUES (:code, :description, :effectiveDate, :expiryDate, SYSDATE)")
+            .formatted(qualified(table), codeColumn);
     jdbc.update(sql, params(entry));
   }
 
   private int update(CodeTableRegistry table, CodeTableEntry entry) {
     String codeColumn = requireBackingTable(table).codeColumn();
-    String sql = ("UPDATE %s SET DESCRIPTION = :description, EFFECTIVE_DATE = :effectiveDate, "
-        + "EXPIRY_DATE = :expiryDate, UPDATE_TIMESTAMP = SYSTIMESTAMP WHERE %s = :code")
-        .formatted(qualified(table), codeColumn);
+    String sql =
+        ("UPDATE %s SET DESCRIPTION = :description, EFFECTIVE_DATE = :effectiveDate, "
+                + "EXPIRY_DATE = :expiryDate, UPDATE_TIMESTAMP = SYSDATE WHERE %s = :code")
+            .formatted(qualified(table), codeColumn);
     return jdbc.update(sql, params(entry));
   }
 

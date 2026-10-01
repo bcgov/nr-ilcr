@@ -1,7 +1,10 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
+import type { Schedule4CheckRequest } from '@/interfaces/Schedule4Request'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -16,31 +19,49 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
+import {
+  Add,
+  ArrowLeft,
+  CheckmarkOutline,
+  Close,
+  Copy,
+  Edit,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { getRouteApi } from '@tanstack/react-router'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import {
   ALL_CATEGORIES,
+  checkStatusFieldLabel,
+  checkStatusLocationName,
   isLocationFormValid,
+  locationBannerEntries,
+  locationFieldBannerEntry,
   validateLocationForm,
   type CategoryForm,
+  type LegacyPanel,
 } from './validation'
+import { isUnusableEntry } from '@/utils/derivedMath'
+import { deriveCategoryPerUnits } from './derived'
+import { setBannerEntry, type BannerEntry } from '@/utils/legacyValidationBanner'
 import SubPage from './SubPage'
 import { SUB_PAGE_DEFS, type SubPageDef } from './subPageDefs'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. All success/error text
 // comes from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8).
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 // WRN-001, {0} = source location name.
 const copyWarning = (name: string): string =>
@@ -51,6 +72,18 @@ const copyWarning = (name: string): string =>
 // Per-location comments cap (backend @Size(3500); the TRANSPORTATION_REPORT.COMMENTS column is 4000).
 const COMMENTS_MAX = 3500
 
+// A Check Status issue arrives as {code, message} — the API names the field by code and sends the
+// bare "Value Required" (Story 10.4 §Decision 4). Legacy named the field on every issue
+// ("Location : <name> - Lakeside Dry Dump (Cost $): Value Required", Schedule4MB.java:688); without
+// it two issues on one location render as two identical banners (#326). The label is the client's
+// own display name for that code (validation.ts), so prefixing it is not inventing text the API
+// never sent (AD-8) — the same route Schedule 8 takes with `field`. An unknown code falls back to
+// the bare text. Since #465 the only field the API reports is the location description.
+const describeIssue = (code: number, text: string): string => {
+  const label = checkStatusFieldLabel(code)
+  return label === undefined ? text : `${label}: ${text}`
+}
+
 // Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
 // browser Back button returns from a sub-page to the location list.
 const scheduleRoute = getRouteApi('/schedule-4')
@@ -60,6 +93,26 @@ const NAV_SAVE_FIRST =
   'The information for the New Location must be saved before you can add other Transportation. Would you like to save the information now?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
+
+// The legacy panel each mode renders, for the banner's field labels: New and Copy were both
+// `schedule4NewLocation.xhtml`, an open existing location `schedule4ExistingLocation.xhtml`.
+const legacyPanelFor = (mode: PanelMode): LegacyPanel =>
+  mode === 'new' || mode === 'copy' ? 'new' : 'existing'
+
+// NAV-001 (#324): the panel-leaving action held behind the "unsaved data will be lost" confirm while the
+// panel is dirty — Back/Close, Add New Location, and Edit/View/Copy of a (different) location. Legacy
+// attached `confirmNavigationMsg` to every one of these controls (schedule4.xhtml:74,130,160,189,213)
+// unconditionally; like Schedule 5's camp panel this fires only when there is something to lose.
+type PanelLeave =
+  | { kind: 'close' }
+  | { kind: 'new' }
+  | { kind: 'copy'; location: Location }
+  | { kind: 'open'; location: Location; mode: 'edit' | 'view' }
+
+// What the panel held when it was opened (or last saved) — the baseline the dirty check compares the
+// live entry against. Compared as the ENTERED TEXT, like Schedule 5: CommaNumberInput never rewrites
+// the raw string on blur, so merely tabbing through a field cannot fake a change.
+type PanelSnapshot = { name: string; categories: CategoryForm; comments: string }
 
 const emptyCategoryForm = (): CategoryForm => {
   const form: CategoryForm = {}
@@ -91,6 +144,49 @@ function seedCategoryForm(location: Location): {
 type CategoryDef = (typeof ALL_CATEGORIES)[number]
 type CategoryField = 'volume' | 'cost' | 'distance'
 
+const CATEGORY_FIELDS: CategoryField[] = ['volume', 'cost', 'distance']
+
+const emptySnapshot = (): PanelSnapshot => ({
+  name: '',
+  categories: emptyCategoryForm(),
+  comments: '',
+})
+
+const blankEntry = () => ({ volume: '', cost: '', distance: '' })
+
+// Field-by-field over the known category codes rather than a JSON comparison, so key order and a
+// missing (never-touched) code both compare as equal to their blank counterpart.
+const sameCategoryForm = (a: CategoryForm, b: CategoryForm): boolean =>
+  ALL_CATEGORIES.every((def) => {
+    const left = a[def.code] ?? blankEntry()
+    const right = b[def.code] ?? blankEntry()
+    return CATEGORY_FIELDS.every((field) => left[field] === right[field])
+  })
+
+// The grid after a Save resolves. The inputs stay live while the PUT is in flight, so a plain re-seed
+// from the echo would wipe anything typed meanwhile AND (against an echo baseline) call it clean —
+// exactly the edit NAV-001 exists to protect (PR #492 review). So: a field the user has NOT touched
+// since dispatch takes the server's echo (AD-5 — the echo supersedes the mirror); a field typed into
+// during the request keeps its live value, which stays visible and, measured against the echo, dirty.
+const rebaseCategoryForm = (
+  live: CategoryForm,
+  sent: CategoryForm,
+  echo: CategoryForm,
+): CategoryForm => {
+  const merged: CategoryForm = {}
+  for (const def of ALL_CATEGORIES) {
+    const liveEntry = live[def.code] ?? blankEntry()
+    const sentEntry = sent[def.code] ?? blankEntry()
+    const echoEntry = echo[def.code] ?? blankEntry()
+    merged[def.code] = {
+      volume: liveEntry.volume !== sentEntry.volume ? liveEntry.volume : echoEntry.volume,
+      cost: liveEntry.cost !== sentEntry.cost ? liveEntry.cost : echoEntry.cost,
+      distance: liveEntry.distance !== sentEntry.distance ? liveEntry.distance : echoEntry.distance,
+    }
+  }
+  return merged
+}
+
 // The category grid renders every transportation line in legacy code order (40–55): the 12 amount
 // categories interleaved with the 3 list sub-page group rows (43 Towing, 46 Truck Rehaul, 55 Other).
 // A sub-page row links to its own list page and shows a row count instead of amounts.
@@ -112,10 +208,37 @@ const CategoryCell: FC<{
   readOnly: boolean
   invalidText?: string
   onValueChange: (raw: string) => void
-}> = ({ inputId, label, value, readOnly, invalidText, onValueChange }) => {
+  onCommit: () => void
+  // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its keys
+  // this cell is. Null at Draft.
+  originals?: OriginalValues | null
+  originalField?: CategoryField
+}> = ({
+  inputId,
+  label,
+  value,
+  readOnly,
+  invalidText,
+  onValueChange,
+  onCommit,
+  originals,
+  originalField,
+}) => {
+  const indicator =
+    originalField === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={originalField}
+        current={value}
+        label={label}
+      />
+    )
   if (readOnly) {
     return (
-      <TableCell className="schedule-4__num">{value === '' ? '—' : groupInput(value)}</TableCell>
+      <TableCell className="schedule-4__num">
+        {value === '' ? '—' : groupInput(value)}
+        {indicator}
+      </TableCell>
     )
   }
   return (
@@ -127,9 +250,11 @@ const CategoryCell: FC<{
         size="sm"
         value={value}
         onValueChange={onValueChange}
+        onBlur={onCommit}
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
+      {indicator}
     </TableCell>
   )
 }
@@ -144,7 +269,10 @@ const CategoryRow: FC<{
   readOnly: boolean
   fieldErrors: Record<string, string>
   onFieldChange: (code: number, field: CategoryField) => (raw: string) => void
-}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange }) => {
+  onFieldCommit: (code: number, field: CategoryField) => () => void
+  /** The Licensee's submitted values for this category (Story 16.2, BR-04). Null at Draft. */
+  originals?: OriginalValues | null
+}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange, onFieldCommit, originals }) => {
   const isDistance = def.kind === 'DISTANCE'
   return (
     <TableRow>
@@ -157,6 +285,9 @@ const CategoryRow: FC<{
           readOnly={readOnly}
           invalidText={fieldErrors[`${def.code}-distance`]}
           onValueChange={onFieldChange(def.code, 'distance')}
+          onCommit={onFieldCommit(def.code, 'distance')}
+          originals={originals}
+          originalField="distance"
         />
       ) : (
         <TableCell className="schedule-4__num">—</TableCell>
@@ -168,6 +299,9 @@ const CategoryRow: FC<{
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-volume`]}
         onValueChange={onFieldChange(def.code, 'volume')}
+        onCommit={onFieldCommit(def.code, 'volume')}
+        originals={originals}
+        originalField="volume"
       />
       <CategoryCell
         inputId={`${def.code}-cost`}
@@ -176,12 +310,21 @@ const CategoryRow: FC<{
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-cost`]}
         onValueChange={onFieldChange(def.code, 'cost')}
+        onCommit={onFieldCommit(def.code, 'cost')}
+        originals={originals}
+        originalField="cost"
       />
       <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
       <TableCell className="schedule-4__num">—</TableCell>
     </TableRow>
   )
 }
+
+const SCH4_BASE = 'Special Log Transportation Systems'
+const renderHeader = (trail: string[] = [SCH4_BASE]) => (
+  <ScheduleTombstone title="Schedule 4" subtitle={trail} />
+)
+const PAGE_HEADER = renderHeader()
 
 const Schedule4: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
@@ -234,16 +377,29 @@ const Schedule4: FC = () => {
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [panelName, setPanelName] = useState('')
   const [panelCategories, setPanelCategories] = useState<CategoryForm>(() => emptyCategoryForm())
+  // The $/m³ captured from the server when the panel opened. Still the source in VIEW mode, where
+  // there is no entry to track (defect #291 AC7); the editable modes read the mirror below instead.
   const [panelPerUnit, setPanelPerUnit] = useState<Record<number, number | null>>({})
+  // The blur-committed copy of the category grid that feeds the mirror. Legacy recalculated when focus
+  // left the field, so `panelCategories` keeps every keystroke (it drives the inputs) and this only
+  // advances on blur — and on save dispatch, since what was sent is by definition committed.
+  const [panelCommitted, setPanelCommitted] = useState<CategoryForm>(() => emptyCategoryForm())
   const [panelEditId, setPanelEditId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
   const [panelComments, setPanelComments] = useState('')
+  // The NAV-001 baseline: set when the panel opens and again after each successful save, so "dirty"
+  // means "changed since the last save". `null` (no panel) cannot be compared and counts as clean.
+  const [panelBaseline, setPanelBaseline] = useState<PanelSnapshot | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Location | null>(null)
-  // Pending sub-page open awaiting a NAV-002 (existing) / NAV-003 (new, save-first) confirm.
-  const [navConfirm, setNavConfirm] = useState<{
-    kind: 'existing' | 'new'
-    def: SubPageDef
-  } | null>(null)
+  // The one navigation held behind the confirm modal: a sub-page open awaiting NAV-002 (existing) /
+  // NAV-003 (new, save-first), or a panel-leaving action awaiting NAV-001 (leave). One modal instance
+  // serves all three so a hidden duplicate never shadows the visible one.
+  const [navConfirm, setNavConfirm] = useState<
+    | { kind: 'existing'; def: SubPageDef }
+    | { kind: 'new'; def: SubPageDef }
+    | { kind: 'leave'; leave: PanelLeave }
+    | null
+  >(null)
 
   // Clear the transient mutation notifications + close the panel whenever a fresh document loads
   // (mill/year change), mirroring Schedule 9's resetTransient: resetBanners() drops the hook-owned
@@ -257,8 +413,10 @@ const Schedule4: FC = () => {
   // Shared load-on-context-change concern (Schedule 1/2 idiom): owns data/errorDetail/isLoading,
   // resets on mill/year change, and ignores a stale response. Schedule 4's writable state is the
   // on-demand location panel (not a flat form), so seedForm is unused here.
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule4Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule4Response>({
     path: '/v1/schedule4',
+    scheduleName: 'Schedule 4',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -267,65 +425,215 @@ const Schedule4: FC = () => {
     onReset: resetTransient,
   })
 
+  // Check Status describes one exact screen snapshot — the open panel (#359). Bumped synchronously
+  // whenever a checked panel value (the name, a category amount) changes, and whenever the banners are
+  // cleared for a new action, so an older response can never repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  // A checked panel value changed (or the panel went away): the shown verdict, and any check in flight,
+  // describe the old screen. The validation banner is NOT wiped here: it accumulates per cell (see
+  // `commitCategoryField`), so only a changed cell's own line is recomputed, on its change.
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  // The validation banner, one keyed line per failing field in panel order (#359 group B change log).
+  // Save and Check Status REPLACE it with the full list; a category cell's change adds or removes only
+  // its own line — a deliberate deviation from legacy, which replaced the banner on every change
+  // (BA ruling). The Location Name has no change listener in legacy, so its line comes from Save /
+  // Check Status only.
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // The inline errors of the category grid. NOT derived on every keystroke any more: a cell is judged
+  // when it is changed and left (legacy `f:ajax event="change"`), and the whole panel by Save / Check.
+  const [panelFieldErrors, setPanelFieldErrors] = useState<Record<string, string>>({})
+  // The cells changed since they were last judged — a focus-and-leave with no change judges nothing.
+  const changedCellsRef = useRef<Set<string>>(new Set())
+
+  // ERR-001 marks the name once an action has been blocked on this panel, and stays until the panel is
+  // re-opened: clearing the banner on the next keystroke must not also hide the name's own marker while
+  // the name is still blank (legacy's field highlight outlived a re-render of the messages).
+  const [nameMarked, setNameMarked] = useState(false)
+
   // Drop every banner before an action: the hook-owned success/error/check banners plus the
   // page-local copy nudge.
   const clearMessages = () => {
+    checkSnapshotVersionRef.current += 1
     clearBanners()
     setWarnMessage(null)
+    setBannerEntries([])
+    setPanelFieldErrors({})
+    changedCellsRef.current.clear()
   }
 
   const openNew = () => {
     clearMessages()
+    setNameMarked(false)
     setPanelMode('new')
     setPanelName('')
     setPanelCategories(emptyCategoryForm())
+    setPanelCommitted(emptyCategoryForm())
     setPanelPerUnit({})
     setPanelEditId(null)
     setPanelRevision(null)
     setPanelComments('')
+    setPanelBaseline(emptySnapshot()) // an untouched New panel closes silently
   }
 
   const openEditOrView = (location: Location, mode: 'edit' | 'view') => {
     clearMessages()
+    setNameMarked(false)
     const seeded = seedCategoryForm(location)
     setPanelMode(mode)
     setPanelName(location.name)
     setPanelCategories(seeded.form)
+    setPanelCommitted(seeded.form)
     setPanelPerUnit(seeded.perUnit)
     setPanelEditId(location.id)
     setPanelRevision(location.revisionCount)
     setPanelComments(location.comments ?? '')
+    setPanelBaseline({
+      name: location.name,
+      categories: seeded.form,
+      comments: location.comments ?? '',
+    })
   }
 
   const openCopy = (location: Location) => {
     clearMessages()
+    setNameMarked(false)
     const seeded = seedCategoryForm(location)
     setPanelMode('copy')
     setPanelName('') // name cleared — a copy must be given a new unique name (WRN-001)
     setPanelCategories(seeded.form)
+    // A copy clones the amounts, so their $/m³ is known immediately — the mirror shows it without
+    // waiting for a save, where `panelPerUnit` would have left the column blank.
+    setPanelCommitted(seeded.form)
     setPanelPerUnit({})
     setPanelEditId(null)
     setPanelRevision(null)
     setPanelComments(location.comments ?? '') // copy clones the comments (not the name)
     setWarnMessage(copyWarning(location.name))
+    // A copy is dirty from the moment it opens (Schedule 5 does the same): it carries the source's
+    // amounts against an empty baseline, and leaving it abandons the location the user asked to create.
+    setPanelBaseline(emptySnapshot())
   }
 
-  const closePanel = () => setPanelMode('closed')
+  // A verdict (or a check in flight) on the closed panel's values is stale the moment it closes.
+  const closePanel = () => {
+    invalidateCheckResult()
+    // Lines and red cells about a panel that is gone describe nothing on screen.
+    setBannerEntries([])
+    setPanelFieldErrors({})
+    changedCellsRef.current.clear()
+    setPanelMode('closed')
+  }
 
-  const setCategoryField =
-    (code: number, field: 'volume' | 'cost' | 'distance') => (value: string) => {
-      // value is already the raw digit string (CommaNumberInput strips its display grouping).
-      setPanelCategories((prev) => ({
-        ...prev,
-        [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
-      }))
+  // ---- NAV-001 (#324): confirm before a dirty panel is discarded. ---------------------------------
+
+  // A `view` panel is excluded explicitly: there is no entry to lose, and it is the only mode reachable
+  // on a non-editable document. An unprovable baseline (open panel, no snapshot) is treated as dirty —
+  // a spurious confirm costs a click, a missing one costs the user's work.
+  const panelDirty =
+    panelMode !== 'closed' &&
+    panelMode !== 'view' &&
+    (panelBaseline === null ||
+      panelName !== panelBaseline.name ||
+      panelComments !== panelBaseline.comments ||
+      !sameCategoryForm(panelCategories, panelBaseline.categories))
+
+  const runLeave = (leave: PanelLeave) => {
+    switch (leave.kind) {
+      case 'close':
+        closePanel()
+        break
+      case 'new':
+        openNew()
+        break
+      case 'copy':
+        openCopy(leave.location)
+        break
+      case 'open':
+        openEditOrView(leave.location, leave.mode)
+        break
     }
+  }
+
+  // Every panel-leaving control goes through here: straight through when nothing would be lost, else
+  // held behind the NAV-001 modal until the user continues (runs it) or cancels (stays put).
+  const requestLeave = (leave: PanelLeave) => {
+    if (panelDirty) {
+      setNavConfirm({ kind: 'leave', leave })
+    } else {
+      runLeave(leave)
+    }
+  }
+
+  const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
+    // A shown verdict described the panel before this edit; a check in flight is dropped on landing.
+    invalidateCheckResult()
+    changedCellsRef.current.add(`${code}-${field}`)
+    // value is already the raw digit string (CommaNumberInput strips its display grouping).
+    setPanelCategories((prev) => ({
+      ...prev,
+      [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
+    }))
+  }
+
+  // Commit one category field (its `onBlur`), advancing the mirror's baseline for that field only.
+  // An invalid or unusable entry holds its previous committed value rather than driving the $/m³ from
+  // something the server would refuse (ruled 2026-08-21 after code review).
+  const commitCategoryField = (code: number, field: CategoryField) => () => {
+    const key = `${code}-${field}`
+    // The same rules Save runs, read for THIS cell only: the Distance ⇄ Volume/Cost rule is judged
+    // for the cell just changed, against the other cells' current values.
+    const message = validateLocationForm(panelName, panelCategories).fieldErrors[key]
+    const invalid = message !== undefined
+    // Changed and left → judge this cell (#359 group B change log): red + its legacy banner line, or,
+    // passing, neither. A focus-and-leave with no change judges nothing.
+    if (changedCellsRef.current.has(key)) {
+      changedCellsRef.current.delete(key)
+      setPanelFieldErrors((prev) => {
+        if (message === undefined) {
+          if (!(key in prev)) return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        }
+        return { ...prev, [key]: message }
+      })
+      setBannerEntries((prev) =>
+        setBannerEntry(
+          prev,
+          key,
+          locationFieldBannerEntry(key, message, legacyPanelFor(panelMode)),
+        ),
+      )
+    }
+    setPanelCommitted((prev) => {
+      const live = panelCategories[code] ?? { volume: '', cost: '', distance: '' }
+      const committed = prev[code] ?? { volume: '', cost: '', distance: '' }
+      if (invalid || isUnusableEntry(live[field])) {
+        return prev
+      }
+      if (committed[field] === live[field]) {
+        return prev // tabbing through an untouched field must not re-render the grid
+      }
+      return { ...prev, [code]: { ...committed, [field]: live[field] } }
+    })
+  }
 
   const buildRequest = (): Schedule4LocationRequest => ({
     id: panelMode === 'edit' ? panelEditId : null,
     revisionCount: panelMode === 'edit' ? (panelRevision ?? 0) : null,
     name: panelName.trim(),
     comments: panelComments.trim() || null,
+    // Only the categories with something in them are sent, and the server reads the list as the
+    // location's COMPLETE desired state: on an edit it clears every in-scope category that is
+    // missing (#335). So a category the user has just emptied is omitted here and still cleared
+    // there — the same wire shape as one that was never filled in. Do not "fix" this by sending
+    // nulls for cleared categories: the server does not need it, and that would make the payload
+    // depend on this component knowing what is stored.
     categories: ALL_CATEGORIES.flatMap((def) => {
       const value = panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }
       const isDistance = def.kind === 'DISTANCE'
@@ -354,13 +662,23 @@ const Schedule4: FC = () => {
   const putLocation = (afterSave: (doc: Schedule4Response) => void): void => {
     const validation = validateLocationForm(panelName, panelCategories)
     if (!isLocationFormValid(validation)) {
-      // Generic banner; the specific verbatim messages (ERR-001, ranges, BR-04) show inline on the
-      // fields so they are not duplicated.
+      // The banner names each failing field in legacy's wording (#359 group B); the inline markers
+      // (ERR-001, ranges, BR-04's `Value Required`) stay under the fields as well.
       setSaveMessage(null)
-      setSaveError('Please correct the highlighted fields before saving.')
+      setSaveError(null)
+      // A shown "requirements met" must never sit beside the lines saying the panel is incomplete.
+      invalidateCheckResult()
+      setNameMarked(true)
+      // Save judges the whole panel and REPLACES the banner with the full list.
+      setPanelFieldErrors(validation.fieldErrors)
+      changedCellsRef.current.clear()
+      setBannerEntries(locationBannerEntries(panelName, validation, legacyPanelFor(panelMode)))
       return
     }
     clearMessages()
+    // What is being sent is committed by definition — this also covers a Save clicked from a field
+    // whose blur has not landed yet.
+    setPanelCommitted(panelCategories)
     save<Schedule4Response>(buildRequest(), {
       suffix: '/locations',
       fallback: 'Schedule could not be saved.',
@@ -379,10 +697,17 @@ const Schedule4: FC = () => {
     const wasEdit = panelMode === 'edit'
     const editId = panelEditId
     const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
+    // What was SENT: the new baseline for name/comments (the echo is trimmed, the inputs are not), and
+    // the reference that tells a category field typed into while the save was in flight from one that
+    // was not. The inputs stay live during the request, so post-dispatch entry must survive the echo
+    // re-seed AND still count as unsaved.
+    const sentName = panelName
+    const sentComments = panelComments
+    const sentCategories = panelCategories
     putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
-      // save doesn't 409. The panel form already holds the saved values, so nothing re-seeds.
+      // save doesn't 409.
       const saved =
         wasEdit && editId !== null
           ? document.locations.find((l) => l.id === editId)
@@ -391,6 +716,21 @@ const Schedule4: FC = () => {
         setPanelMode('edit')
         setPanelEditId(saved.id)
         setPanelRevision(saved.revisionCount ?? 0)
+        // Re-seed from the ECHO, not from the retained form. AD-5's amendment requires the server echo
+        // to supersede the mirror on every Save; without this the panel kept rendering
+        // `deriveCategoryPerUnits(panelCommitted)` for the rest of the session, so a category whose
+        // rate the mirror rounded differently would show one figure in the panel and another in the
+        // list row beneath it (code review 2026-08-21). Fields typed into since dispatch are the one
+        // exception: they keep the live value (see rebaseCategoryForm), so nothing entered during the
+        // request is silently replaced.
+        const echoed = seedCategoryForm(saved)
+        setPanelCategories((live) => rebaseCategoryForm(live, sentCategories, echoed.form))
+        setPanelCommitted(echoed.form)
+        setPanelPerUnit(echoed.perUnit)
+        // The baseline is what the server now holds. An untouched panel is clean again (Back/Edit/Add
+        // New close or switch it without NAV-001); anything typed while the PUT was pending differs
+        // from it and is still guarded.
+        setPanelBaseline({ name: sentName, categories: echoed.form, comments: sentComments })
       } else {
         setPanelMode('closed')
       }
@@ -433,13 +773,69 @@ const Schedule4: FC = () => {
     )
   }
 
+  // Focus, not scroll (PR #353 review). The verdict renders in the `schedule-4__check` column at the
+  // TOP of the page while the second Check Status sits at the foot, so a press down there changed
+  // nothing the user could see. An earlier version answered that with `window.scrollTo(0, 0)`, which
+  // moved the viewport but left focus on the now-off-screen button — no announcement for a screen
+  // reader, and the next Tab scrolled straight back down. Focusing the verdict region instead brings
+  // it into view, announces it, and respects prefers-reduced-motion, in one move. `focusVerdictRef`
+  // makes it fire for THIS action only: a Save validation error must not yank focus off the field
+  // the user is correcting.
+  const focusVerdictRef = useRef(false)
+  const verdictRef = useRef<HTMLDivElement>(null)
+  const actionErrorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!focusVerdictRef.current) return
+    if (checkResult === null && saveError === null && bannerEntries.length === 0) return
+    focusVerdictRef.current = false
+    // Whichever landed: the verdict column on success, the "Action failed" column on an error or on a
+    // panel the validation gate blocked.
+    ;(verdictRef.current ?? actionErrorRef.current)?.focus()
+  }, [checkResult, saveError, bannerEntries])
+
+  // The Check Status body (#359): the open panel as it is on screen, or null with no panel open. An
+  // open existing location (edit, or view) carries its id; a New/Copy panel is unsaved, so id null.
+  const buildCheckRequest = (): Schedule4CheckRequest => ({
+    location:
+      panelMode === 'closed'
+        ? null
+        : {
+            id: panelMode === 'edit' || panelMode === 'view' ? panelEditId : null,
+            name: panelName.trim() === '' ? null : panelName.trim(),
+          },
+  })
+
   const handleCheckStatus = () => {
     if (saving) return
     clearMessages()
-    checkStatus<Schedule4CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    focusVerdictRef.current = true
+    // Legacy ran the page's own field validation over the open panel's on-screen values before
+    // checking — the rules Save runs (Distance ⇄ Volume/Cost; a blank name). Gated only while the
+    // panel is editable: a View panel (or a read-only page) highlights nothing, so it must not block.
+    const panelEditable = data?.editable === true && panelMode !== 'closed' && panelMode !== 'view'
+    if (panelEditable) {
+      const validation = validateLocationForm(panelName, panelCategories)
+      if (!isLocationFormValid(validation)) {
+        setNameMarked(true)
+        // Check Status judges the whole panel and REPLACES the banner with the full list.
+        setPanelFieldErrors(validation.fieldErrors)
+        setBannerEntries(locationBannerEntries(panelName, validation, legacyPanelFor(panelMode)))
+        return
+      }
+    }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void checkStatus<Schedule4CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes a panel no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
+      buildCheckRequest(),
+    )
   }
 
   // ---- Sub-page navigation (Story 10.6). ---------------------------------------------------------
@@ -475,57 +871,18 @@ const Schedule4: FC = () => {
 
   const confirmNav = () => {
     if (!navConfirm) return
-    const { kind, def } = navConfirm
+    const pending = navConfirm
     setNavConfirm(null)
-    if (kind === 'existing' && panelEditId !== null) {
-      openSubPage(def, panelEditId) // discard panel edits, open the sub-page
+    if (pending.kind === 'leave') {
+      runLeave(pending.leave) // NAV-001: discard the panel entry, then do what was asked
+    } else if (pending.kind === 'existing' && panelEditId !== null) {
+      openSubPage(pending.def, panelEditId) // discard panel edits, open the sub-page
     } else {
-      saveLocationThenOpen(def)
+      saveLocationThenOpen(pending.def)
     }
   }
 
-  const SCH4_BASE = 'Special Log Transportation Systems'
-  const renderHeader = (trail: string[] = [SCH4_BASE]) => (
-    <ScheduleTombstone title="Schedule 4" subtitle={trail} />
-  )
-  const header = renderHeader()
-
-  const shell = (body: React.ReactNode) => (
-    <div className="app-page schedule-page">
-      {header}
-      <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16}>
-          {body}
-        </Column>
-      </Grid>
-    </div>
-  )
-
-  if (contextMissing) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Mill and Reporting Year required"
-        subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-      />,
-    )
-  }
-  if (isLoading) {
-    return shell(<LoadingScreen label="Loading Schedule 4" />)
-  }
-  if (errorDetail) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Unable to load Schedule 4"
-        subtitle={errorDetail}
-      />,
-    )
-  }
+  if (loadState) return loadState
   if (!data) return null
 
   const editable = data.editable
@@ -568,7 +925,9 @@ const Schedule4: FC = () => {
   }
 
   const validation = validateLocationForm(panelName, panelCategories)
-  const fieldErrors = panelMode === 'view' ? {} : validation.fieldErrors
+  // The name's ERR-001 still reads the live `validation` (shown once `nameMarked`); the grid shows
+  // only what a change or Save / Check Status has judged.
+  const fieldErrors = panelMode === 'view' ? {} : panelFieldErrors
   const panelOpen = panelMode !== 'closed'
   const readOnlyPanel = panelMode === 'view'
   const panelLocation =
@@ -595,7 +954,7 @@ const Schedule4: FC = () => {
   // ---- Existing Locations table. -----------------------------------------------------------------
   const locationsTable = (
     <TableContainer title="Existing Locations">
-      <Table aria-label="Existing Locations">
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Location Name</TableHeader>
@@ -608,45 +967,52 @@ const Schedule4: FC = () => {
               <TableCell colSpan={2}>No locations have been added.</TableCell>
             </TableRow>
           ) : (
-            data.locations.map((location) => (
-              <TableRow
-                key={location.id ?? location.name}
-                className={
-                  panelOpen && location.id != null && location.id === panelEditId
-                    ? 'schedule-4__row--editing'
-                    : undefined
-                }
-              >
-                <TableCell>{location.name}</TableCell>
-                <TableCell>
-                  <div className="schedule-4__row-actions">
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
-                    >
-                      {editable ? 'Edit' : 'View'}
-                    </Button>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      disabled={!editable || saving}
-                      onClick={() => openCopy(location)}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      kind="danger--ghost"
-                      size="sm"
-                      disabled={!editable || saving}
-                      onClick={() => setConfirmDelete(location)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+            data.locations.map((location) => {
+              // The location open in the panel cannot act on itself: its row actions grey out while
+              // it is open — the business ruling that adopts legacy Schedule 8's freeze everywhere.
+              const isOpen = panelOpen && location.id != null && location.id === panelEditId
+              return (
+                <TableRow
+                  key={location.id ?? location.name}
+                  className={isOpen ? 'schedule-4__row--editing' : undefined}
+                >
+                  <TableCell>{location.name}</TableCell>
+                  <TableCell>
+                    <div className="schedule-4__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={editable ? Edit : View}
+                        disabled={isOpen}
+                        onClick={() =>
+                          requestLeave({ kind: 'open', location, mode: editable ? 'edit' : 'view' })
+                        }
+                      >
+                        {editable ? 'Edit' : 'View'}
+                      </Button>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={Copy}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => requestLeave({ kind: 'copy', location })}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        kind="danger--tertiary"
+                        size="sm"
+                        renderIcon={TrashCan}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => setConfirmDelete(location)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>
@@ -654,15 +1020,22 @@ const Schedule4: FC = () => {
   )
 
   // ---- Category grid (inside the panel). ---------------------------------------------------------
+  // Per-category $/m³ mirrored from the committed values, so the column tracks entry before Save
+  // (defect #291). View mode has no entry, so it keeps rendering the server's own figures (AC7); after
+  // a Save the panel is re-seeded from the echo, so the mirror recomputes from the server's own values.
+  const mirroredPerUnit = readOnlyPanel ? panelPerUnit : deriveCategoryPerUnits(panelCommitted)
+
   const renderCategoryRow = (def: CategoryDef) => (
     <CategoryRow
       key={def.code}
       def={def}
       values={panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }}
-      perUnit={panelPerUnit[def.code]}
+      perUnit={mirroredPerUnit[def.code]}
       readOnly={readOnlyPanel}
       fieldErrors={fieldErrors}
       onFieldChange={setCategoryField}
+      onFieldCommit={commitCategoryField}
+      originals={panelLocation?.categories.find((c) => c.code === def.code)?.originalValues ?? null}
     />
   )
 
@@ -712,11 +1085,25 @@ const Schedule4: FC = () => {
           labelText="Location Name"
           maxLength={30}
           value={panelName}
-          onChange={(event) => setPanelName(event.target.value)}
-          invalid={Boolean(validation.nameError) && saveError !== null}
+          onChange={(event) => {
+            invalidateCheckResult()
+            setPanelName(event.target.value)
+          }}
+          // ERR-001 marks the name only once an action has been attempted and blocked (or failed).
+          invalid={Boolean(validation.nameError) && (saveError !== null || nameMarked)}
           invalidText={validation.nameError}
         />
       )}
+      {/* Legacy wires an indicator to the location name; its COMMENTS has no original at all
+          (TransportationReportType.java:30 declares the field and no commentsOriginalVal), so the
+          comments box below gets none — "only if the legacy app does it". */}
+      <OriginalValueIndicator
+        originals={panelMode === 'new' ? null : panelLocation?.originalValues}
+        field="name"
+        current={panelName}
+        numeric={false}
+        label="Location Name"
+      />
 
       <TableContainer className="schedule-4__grid">
         <Table aria-label="Transportation Categories">
@@ -748,10 +1135,9 @@ const Schedule4: FC = () => {
           <p className="schedule-4__comments">{panelComments || '—'}</p>
         </div>
       ) : (
-        <TextArea
+        <CommentsTextArea
           id="location-comments"
           labelText="If you have any additional comments, please enter them here:"
-          enableCounter
           maxCount={COMMENTS_MAX}
           value={panelComments}
           onChange={(event) => setPanelComments(event.target.value)}
@@ -760,34 +1146,95 @@ const Schedule4: FC = () => {
 
       <div className="schedule-4__panel-actions">
         {!readOnlyPanel && (
-          <Button kind="primary" disabled={saving} onClick={handleSave}>
+          <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={saving} onClick={closePanel}>
+        <Button
+          kind="secondary"
+          disabled={saving}
+          // The icon tracks the label: this one button is Close on a view panel and Back on an
+          // editable one, so a fixed glyph would contradict half of its own uses.
+          renderIcon={readOnlyPanel ? Close : ArrowLeft}
+          onClick={() => requestLeave({ kind: 'close' })}
+        >
           {readOnlyPanel ? 'Close' : 'Back'}
         </Button>
       </div>
     </div>
   )
 
+  // Two instances, deliberately asymmetric: the top bar carries Add New Location plus Check Status,
+  // the bottom is Check Status alone. Add rides the top bar only because it toggles the panel that
+  // opens directly beneath it. `bottom` governs that difference and the marker, nothing else — both
+  // buttons share one handler and behave identically.
+  //
+  // The legacy grounding for this layout, the deviation it carries, and the branches that bypass this
+  // helper (the sub-page view and the context/loading/error shells) are recorded in
+  // defect-293-check-status-bottom-row-schedules-4-6.md.
+  const actionBar = (bottom: boolean) => (
+    <Column
+      sm={4}
+      md={8}
+      lg={16}
+      className={`schedule-4__actions${bottom ? ' schedule-4__actions--bottom' : ''}`}
+      data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
+    >
+      {!bottom && (
+        <Button
+          kind="primary"
+          renderIcon={Add}
+          disabled={!editable || saving}
+          onClick={() => requestLeave({ kind: 'new' })}
+        >
+          Add New Location
+        </Button>
+      )}
+      {/* `!editable` closes DIV-1 / issue #322 for Schedule 4: legacy bound EVERY Check Status instance
+          to disableReportEdits() (schedule4.xhtml:43 and :220-221, schedule4NewLocation.xhtml:275,
+          schedule4ExistingLocation.xhtml:1144), and the other seven schedules already include the term —
+          Schedules 4 and 8 were the outliers. Schedule 8 followed on 2026-09-14 (#464), so every Check
+          Status button in the app now carries it; #322 is closed. */}
+      <Button
+        kind="tertiary"
+        renderIcon={CheckmarkOutline}
+        disabled={!editable || saving}
+        onClick={handleCheckStatus}
+      >
+        Check Status
+      </Button>
+    </Column>
+  )
+
   return (
     <div className="app-page schedule-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
           <Column sm={4} md={8} lg={16}>
             <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
           </Column>
         )}
-        {saveError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
+        {(saveError || bannerEntries.length > 0) && (
+          <Column sm={4} md={8} lg={16} ref={actionErrorRef} tabIndex={-1}>
+            {saveError && (
+              <InlineNotification
+                kind="error"
+                lowContrast
+                title="Action failed"
+                subtitle={saveError}
+              />
+            )}
+            {/* The validation banner: one legacy line per failing field, in panel order. */}
+            {bannerEntries.map(({ line }, index) => (
+              <InlineNotification
+                key={`validation-${String(index)}`}
+                kind="error"
+                lowContrast
+                title="Action failed"
+                subtitle={line}
+              />
+            ))}
           </Column>
         )}
         {warnMessage && (
@@ -801,7 +1248,15 @@ const Schedule4: FC = () => {
           </Column>
         )}
         {checkResult && (
-          <Column sm={4} md={8} lg={16} className="schedule-4__check">
+          // tabIndex={-1} makes this a programmatic focus target only — never in the tab order.
+          <Column
+            sm={4}
+            md={8}
+            lg={16}
+            className="schedule-4__check"
+            ref={verdictRef}
+            tabIndex={-1}
+          >
             {checkResult.messages.map((msg) => (
               <InlineNotification
                 key={`schedule-${msg.key}-${msg.text}`}
@@ -812,10 +1267,10 @@ const Schedule4: FC = () => {
               />
             ))}
             {checkResult.locations.map((location) => (
-              <div key={`loc-${location.id ?? location.name}`}>
+              <div key={`loc-${location.id ?? checkStatusLocationName(location)}`}>
                 {location.messages.map((msg) => (
                   <InlineNotification
-                    key={`met-${location.id ?? location.name}-${msg.key}-${msg.text}`}
+                    key={`met-${location.id ?? checkStatusLocationName(location)}-${msg.key}-${msg.text}`}
                     kind="success"
                     lowContrast
                     title="Check Status"
@@ -824,11 +1279,11 @@ const Schedule4: FC = () => {
                 ))}
                 {location.issues.map((issue) => (
                   <InlineNotification
-                    key={`issue-${location.id ?? location.name}-${issue.code}`}
+                    key={`issue-${location.id ?? checkStatusLocationName(location)}-${issue.code}`}
                     kind="warning"
                     lowContrast
-                    title={`${location.name} — required`}
-                    subtitle={issue.message.text}
+                    title={`${checkStatusLocationName(location)} — required`}
+                    subtitle={describeIssue(issue.code, issue.message.text)}
                   />
                 ))}
               </div>
@@ -836,14 +1291,7 @@ const Schedule4: FC = () => {
           </Column>
         )}
 
-        <Column sm={4} md={8} lg={16} className="schedule-4__actions">
-          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
-            Add New Location
-          </Button>
-          <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>
-            Check Status
-          </Button>
-        </Column>
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-4__section">
           {locationsTable}
@@ -854,6 +1302,9 @@ const Schedule4: FC = () => {
             {panel}
           </Column>
         )}
+
+        {/* The page's bottom row (deviation D) — Check Status alone, always last in the body. */}
+        {actionBar(true)}
       </Grid>
 
       {editable && (
@@ -870,16 +1321,17 @@ const Schedule4: FC = () => {
         </Modal>
       )}
 
-      <Modal
+      {/* NAV-002 / NAV-003 (sub-page open from the panel) and NAV-001 (leaving a dirty panel, #324)
+          share this one instance; NAV-001 and NAV-002 carry the same legacy `confirmNavigationMsg`. */}
+      <ConfirmNavigationModal
         open={navConfirm !== null}
-        modalHeading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
-        primaryButtonText={navConfirm?.kind === 'new' ? 'Save and continue' : 'Continue'}
-        secondaryButtonText="Cancel"
-        onRequestClose={() => setNavConfirm(null)}
-        onRequestSubmit={confirmNav}
+        heading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
+        continueLabel={navConfirm?.kind === 'new' ? 'Save and continue' : 'Continue'}
+        onCancel={() => setNavConfirm(null)}
+        onContinue={confirmNav}
       >
-        <p>{navConfirm?.kind === 'new' ? NAV_SAVE_FIRST : NAV_UNSAVED_LOST}</p>
-      </Modal>
+        {navConfirm?.kind === 'new' ? NAV_SAVE_FIRST : NAV_UNSAVED_LOST}
+      </ConfirmNavigationModal>
     </div>
   )
 }

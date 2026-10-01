@@ -2,7 +2,8 @@
 
 > New to these files? See [`coverage-guide.md`](../../../coverage-guide.md) at the e2e root for the column + status-flag legend.
 
-Sources reconciled: `UC-SCH2-001-S01..S16.feature` (16 slices, 21 scenarios) + `UC-SCH2-001-slices.md`
+Sources reconciled: `UC-SCH2-001-S01..S18.feature` (18 slices, 21 scenarios for S01–S16) +
+`UC-SCH2-001-slices.md`
 (control/message/field/rule matrix
 and its Gap Analysis Summary) + `UC-SCH2-001-detailed.md` + `UC-SCH2-001-technical.md` (message catalog:
 SUC-001..003, FLD-001..004, ERR-001..004, STA-001), against the app's real write path
@@ -39,10 +40,26 @@ S13–S16 entry rejection (`validation.feature`); the save round-trip surviving 
 (`persistence.feature`); and WCAG 2.1 AA (NFR1) across four structurally distinct renders
 (`accessibility.feature`).
 
-**Every one of the 16 slices is dispositioned `covered`.** 33 scenarios (39 tests after Scenario-Outline
-expansion): **38 green + 1 deliberate `@discovered-bug` RED** tracking a genuine app defect this suite
-found — Delete is offered on a schedule that has never been saved (defects.md **BUG-1**, BR-08/S06). A
-clean run is `npm run test:gate` (regenerates the features first and excludes every `@discovered-*` red).
+**All 18 slices are `covered`.** The last two to land were **S17/S18**, the Check-Status-on-unsaved-edits
+arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by two deliberate
+`@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — see defects.md
+**DIV-2**, a pointer; the analysis for that app-wide divergence (11 of 12 schedules; Schedule 6 is the only
+correct implementation) lives once, in `sch3/defects.md` DIV-6. Their tags and title markers came off on
+**2026-09-25**, when #359 group A (Schedules 1–3) made the endpoint judge the screen.
+
+> ### Suite state — the ONE place this is recorded
+> **35 scenarios / 41 tests after Scenario-Outline expansion: 41 green, 0 tracked reds.** S17/S18 / DIV-2
+> (Check Status on unsaved edits) lost their tags and markers on 2026-09-25 with the #359 group A fix.
+> Re-measured **2026-09-25** from the generated specs: `npm run bddgen`, then
+> `npx playwright test --list --project=chromium` filtered to `uc-sch2-001` gives **41**, and with
+> `--grep @discovered-divergence` / `@discovered-bug`, **0** / **0**. The confirming e2e run passed on **2026-09-25** (`--grep @check-status-unsaved`, local real-data extract DB — 190 passed: 178 setup/preflight + 12 scenarios).
+
+**All green as of 2026-08-24:** the one deliberate `@discovered-bug` RED — Delete offered on a
+schedule that has never been saved (defects.md **BUG-1**, BR-08/S06) — was fixed in nr-ilcr #292, so its tag
+is removed and the scenario now runs in the gate as the regression barrier. The suite's own `deleteButton`
+locator moved from the top bar to the bottom one at the same time, because #292 also restored legacy's
+bottom-bar-only Delete. A clean run is `npm run test:gate` (regenerates the features first and excludes
+every `@discovered-*` red — of which Schedule 2 now has none).
 
 Priorities: **5 × p0, 17 × p1, 11 × p2.**
 
@@ -58,11 +75,11 @@ reading the matrix below:
 | computed Net Purchased / Total Average figures displaying correctly | `happy-path.feature` `@p0 @S01` (full arithmetic, UI **and** stored) | `covered` |
 | enter / save / update / **retry** (S01–S04, S12) | `happy-path`, `update`, `blank-fields`, `save-error` (both arms) | `covered` |
 | out-of-range and multi-error rejection (S13–S16) | `validation.feature` (9 scenarios, 14 tests) | `covered` |
-| delete (S05) **and Delete absent when unsaved (S06)** | `delete.feature` ×2; `render-states.feature` `@discovered-bug @S06` | `covered` (S06 is the RED — BUG-1) |
+| delete (S05) **and Delete absent when unsaved (S06)** | `delete.feature` ×2; `render-states.feature` `@S06` | `covered` (S06 was the RED — BUG-1, fixed #292) |
 | Check Status success / missing (S07, S08) | `check-status.feature` ×3 | `covered` |
 | written after implementation per AD-10 (verification, not red phase) | 3.1–3.3 were `done` before this suite was authored | satisfied |
 | axe: zero violations **or** triaged disposition (NFR1) | `accessibility.feature` — 4 clean renders; the 5th is GAP-4's recorded disposition | `covered` |
-| CI: wired into the pipeline **or** documented as a manual gate | `reusable-tests.yml` runs the data-independent `@smoke` project; the data-backed suite is a documented manual gate in `e2e/README.md` | satisfied (manual-gate branch) |
+| CI: wired into the pipeline **or** documented as a manual gate | `reusable-tests.yml` runs the FULL suite on every PR since upstream #327 (2026-08-28) — `smoke`, `setup` and `chromium` against the shared tools-namespace Oracle, gated on `npm run test:gate`. This row previously read "manual gate"; it is now the pipeline branch of the AC | satisfied (pipeline branch) |
 
 > **Note on the issue's stated context (`514/2021`).** #78 describes the local setup as "context 514/2021";
 > that is an example working context for bringing the stack up, not a constraint on which records the
@@ -121,8 +138,8 @@ recorded rather than silently dropped:
 | Save with both (less) Log Sales fields blank | `S04` | same | `blank-fields.feature` `@p1 @S04` | `covered` | — |
 | Delete a saved schedule → empty editable document | `S05` | `Schedule2Service.deleteSchedule2` / `index.tsx:145` | `delete.feature` `@p0 @S05` | `covered` | — |
 | Cancelling the delete confirmation is a no-op | `S05` (AF1 dismiss) | Carbon `Modal` secondary action | `delete.feature` `@p1 @S05` | `covered` | — |
-| Delete not available for an unsaved (new) schedule | `S06`, BR-08 | `index.tsx:245` `deletable` | `render-states.feature` `@discovered-bug @p1 @S06` | `divergence` | **BUG-1** |
-| A never-saved schedule still renders both action bars + legacy row order | `S06` (Relevant Controls) | `index.tsx:314` `actions`, `:368` row order | `render-states.feature` `@p1 @S06` | `covered` | — |
+| Delete not available for an unsaved (new) schedule | `S06`, BR-08 | `utils/schedule.ts` `isScheduleSaved` → `ScheduleActions` `scheduleSaved` | `render-states.feature` `@p1 @S06` | `covered` | BUG-1 fixed #292 |
+| A never-saved schedule still renders both action bars + legacy row order | `S06` (Relevant Controls) | `index.tsx` `actionBar()` (Delete on the bottom bar only, #292), row order below it | `render-states.feature` `@p1 @S06` | `covered` | — |
 | Check Status — all requirements met | `S07`, BR-07 | `Schedule2Service.checkStatus` | `check-status.feature` `@p0 @S07` | `covered` | — |
 | Check Status — purchased-log cost missing | `S08`, BR-07 | same | `check-status.feature` `@p0 @S08` | `covered` | — |
 | A **saved** schedule with no cost still fails Check Status | `S08` (follow-on of `S03`) | same | `check-status.feature` `@p1 @S08` | `covered` | — |
@@ -139,7 +156,7 @@ recorded rather than silently dropped:
 | (less) Log Sales cost out of range (wider range) | `S15`, FLD-003, BR-05 | `validation.ts` `ITEM_26_COST` | `validation.feature` `@p1 @S15` outline | `covered` | — |
 | …and an in-range value accepted afterwards (recovery arm) | `S15` recovery | same | `validation.feature` `@p2 @S15` | `covered` | GAP-2 |
 | Multiple field errors reported together on one Save | `S16` | `validateSchedule2` returns a map of ALL invalid fields | `validation.feature` `@p1 @S16` | `covered` | — |
-| Check Status also blocked while a field is invalid | `S16` / legacy `validateClient="true"` | `index.tsx:184` | `validation.feature` `@p2 @S16` | `covered` | — |
+| Check Status also blocked while a field is invalid | `S16` / legacy `validateClient="true"` | `index.tsx:208` | `validation.feature` `@p2 @S16` | `covered` | — |
 
 ## Message catalog
 
@@ -152,16 +169,19 @@ recorded rather than silently dropped:
 | FLD-002 | `Entered volume must be between 0 and 9,999,999.` | same | `validation.feature` `@p1 @S14` | `covered` |
 | FLD-003 | `Entered cost must be between -999,999,999 and 999,999,999.` | same | `validation.feature` `@p1 @S15` | `covered` |
 | FLD-004 | `Purchased/Private Log Costs - Cost: Value Required` | `Schedule2Controller:88-95` prefixes the label onto `missingRequiredFieldMsg` | `check-status.feature` `@p0 @S08` | `covered` |
-| ERR-001 | `Please Select Mill and Reporting Year in the Home Page.` | client-side (no request), `index.tsx:36` | `render-states.feature` `@p1 @S09` | `covered` |
+| ERR-001 | `Please Select Mill and Reporting Year in the Home Page.` | client-side (no request), `index.tsx:40` | `render-states.feature` `@p1 @S09` | `covered` |
 | ERR-002 | `This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.` | API `ProblemDetail.detail` (409) | `render-states.feature` `@p1 @S10` | `covered` |
 | ERR-003 | `Schedule could not be saved.` | page fallback when the API returns no detail | `save-error.feature` `@p1 @S12` | `covered` |
 | ERR-004 | `Schedule not found.` | API `ProblemDetail.detail` (404) | `render-states.feature` `@p2 @S10` | `covered` *(gain)* |
 | STA-001 | read-only state (controls disabled/absent) | `Schedule2Response.editable` | `render-states.feature` `@p1 @S11` | `covered` |
-| *(new)* | `Please correct the highlighted fields before saving.` | client gate, `index.tsx:119` | `validation.feature` `@p1 @S13/@S14/@S15/@S16` | `covered` |
-| *(new)* | `Please correct the highlighted fields before checking status.` | client gate, `index.tsx:187` | `validation.feature` `@p2 @S16` | `covered` |
+| *(new)* | `Please correct the highlighted fields before saving.` | client gate, `index.tsx:136` | `validation.feature` `@p1 @S13/@S14/@S15/@S16` | `covered` |
+| *(new)* | `Please correct the highlighted fields before checking status.` | client gate, `index.tsx:211` | `validation.feature` `@p2 @S16` | `covered` |
 | *(new)* | `Entered cost is invalid.` | `validation.ts` integer guard | `validation.feature` `@p2 @S13` | `covered` |
 | *(new)* | `Entered volume entry is invalid.` | `validation.ts` NaN guard | `validation.feature` `@p2 @S14` | `covered` |
-| *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail | — | `deferred` — GAP-3 (belongs in Vitest, not E2E; no unit coverage exists today) |
+| *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail, `index.tsx:60` / `:162` | `Schedule2.test.tsx` — *"a load failure carrying no detail… — %s"* ×4, *"a DELETE failure carrying no detail… — %s"* ×4 and *"a failed DELETE renders the API detail verbatim"* ×1 (`test.each`, so the emitted names carry the shape suffix), plus 2 in `fallback-strings.test.ts` — 11 cases, suite 43 → 54 | `covered (unit)` — GAP-3 closed by [#298](https://github.com/bcgov/nr-ilcr/issues/298), 2026-08-26. Deliberately unit, not E2E: pure client-side branches, and Vitest gates in CI where this suite does not. Label matches the project's existing `covered (unit)` (see `sch11/…/coverage.md:169`) rather than coining a third name for one concept |
+
+| *(new)* | `Unable to check status.` | page fallback when the API returns no detail, `index.tsx:216` | `Schedule2.test.tsx` — *"a Check Status failure carrying no detail falls back to the generic check message — %s (AC5, #332)"* ×4 (`test.each` over the same `detailLessFailures` shapes as the load/delete cases) | `covered (unit)` — the page's fourth owned fallback. Added to this catalog by the #298 code review, which found the verdict below claiming "every row" against a list that omitted it; closed 2026-09-24 by [#332](https://github.com/bcgov/nr-ilcr/issues/332) (the app-wide fallback sweep), which also added the save fallback's detail-less arm (*"a Save failure carrying no detail falls back to the generic Save message and keeps the entries — %s (AC3, #332)"* ×4) |
+| *(new)* | `Deleted, but the list could not be refreshed.` | post-delete reload failure, `index.tsx:188` | `Schedule2.test.tsx` — *"a FAILED post-delete reload still closes the Delete gate"* | `covered (unit)` — listed for completeness; it was never a catalog row despite being user-facing |
 
 ## Controls (8 in the legacy Field Reference)
 
@@ -188,13 +208,14 @@ recorded rather than silently dropped:
 | BR-05 amounts within their allowed ranges | `validation.feature` (all outlines) | `covered` |
 | BR-06 net/subtotal/total-average computed read-only | `happy-path` (full derived arithmetic, UI **and** stored) | `covered` |
 | BR-07 Check Status requires the purchased-log cost | `check-status.feature` both sides | `covered` |
-| BR-08 Delete only when saved **and** editable | `render-states` (`@discovered-bug`), `update`/`persistence` (available when saved) | `divergence` — **BUG-1** |
+| BR-08 Delete only when saved **and** editable | `render-states` (`@p1 @S06`, in the gate), `delete`/`update`/`persistence` (available when saved, unavailable again after the delete) | `covered` — BUG-1 fixed #292 |
 
-> **Honest note on the "Delete is available" assertions.** `update.feature`, `delete.feature` and
-> `persistence.feature` each assert Delete **is** available on a saved schedule, and those pass — but
-> while BUG-1 stands they are **non-discriminating**, because Delete is currently enabled whenever the
-> schedule is editable. They are kept deliberately: they cost nothing, they document the intended
-> behaviour, and they regain their power the moment BUG-1 is fixed.
+> **Honest note on the "Delete is available" assertions — resolved 2026-08-24.** `update.feature`,
+> `delete.feature` and `persistence.feature` each assert Delete **is** available on a saved schedule. While
+> BUG-1 stood those assertions were **non-discriminating**, because Delete was enabled whenever the schedule
+> was editable; they were kept on the grounds that they would regain their power the moment BUG-1 was fixed.
+> It is fixed (nr-ilcr #292), so they now discriminate: the gate is `editable && isScheduleSaved(doc)`, and
+> `delete.feature` additionally asserts the button goes unavailable again once the record is gone.
 
 ## Deliberately excluded by the slice catalogue — re-checked against the new app
 
@@ -257,12 +278,22 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
 
 - **P0: 100%** — all 5 P0 scenarios green (happy path incl. full derived arithmetic, delete, both Check
   Status arms, persistence).
-- **P1: 100%** of P1 items covered — 17 scenarios, all green except the deliberate `@discovered-bug` red,
-  which **counts as covered** (it maps to BR-08/S06 and is red on purpose).
-- **Overall: 16/16 slices covered**, plus every message-catalog row except the two `deferred` fallbacks
-  (GAP-3) and the `blocked` role item (GAP-1). Both remain above the 80% bar.
-- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-3/GAP-4
-  (`deferred`, documented) are the only non-covered items and none is P0/P1-critical.
+- **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
+  formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
+- **Overall: 18/18 slices covered** (S17/S18, the unsaved-edit arms, covered 2026-08-27 by two deliberate
+  reds against #359 and untagged 2026-09-25 by its group A fix — see the header). On messages: **the two GAP-3 fallbacks are no longer
+  `deferred`** — covered in Vitest by [#298](https://github.com/bcgov/nr-ilcr/issues/298) on
+  2026-08-26, which is where they belong (a route-interception fallback is a component concern, and Vitest
+  needs no database to prove it).
+  Two rows remain uncovered: the `blocked` role item (GAP-1) and `Unable to check status.`, the latter
+  **added to the catalog by the #298 code review** — the verdict here previously read "every
+  message-catalog row except GAP-1", measured against a list that silently omitted the page's fourth
+  fallback. Still above the 80% bar.
+- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-4 (`deferred`,
+  documented) are the only non-covered items and neither is P0/P1-critical; `Unable to check status.`
+  moved to `covered (unit)` with #332 on 2026-09-24. Note this matrix now mixes levels: the GAP-3 row is credited to Vitest inside an
+  E2E coverage table, which is established practice here (`covered (+ backend)`, `covered (unit)`) but
+  is invisible in a percentage.
 
 ## Accessibility (NFR1 / Story 3.4 AC2)
 

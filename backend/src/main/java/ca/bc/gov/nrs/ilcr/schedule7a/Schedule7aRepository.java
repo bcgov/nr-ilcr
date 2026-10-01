@@ -1,27 +1,31 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC reads and writes for Schedule 7A (Bridge Costs) — AD-3: a {@code Repository}
  * interface of explicit {@code @Query} named-parameter SQL over {@code @Table} record entities,
  * {@code THE}-qualified; no derived queries, no {@code CrudRepository.save}, no {@code JdbcClient}.
- * SQL only — all derivations, the Draft gate, and 404-vs-409 disambiguation live in
- * {@link Schedule7aService}.
+ * SQL only — all derivations, the editability gate, and 404-vs-409 disambiguation live in {@link
+ * Schedule7aService}.
  *
  * <p>A bridge = one {@code THE.BRIDGE_REPORT} row keyed {@code (ILCR_MILL_ID, REPORT_YEAR,
  * ILCR_CATEGORY_ID = '7')}; its ten costs = {@code THE.ILCR_COST_REPORT_DETAIL} rows keyed by
  * {@code BRIDGE_REPORT_ID} + one of the fixed Schedule 7 cost items
  * ({70,71,72,73,74,75,76,79,80,81} — legacy {@code Constant.REPORT_COST_ITEMS.Schedule7_*}), with a
- * NULL {@code ILCR_REPORT_SUMMARY_ID} (list schedule). Every UPDATE/DELETE is scoped to
- * {@code (id, ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID='7')} so one mill's write can never touch
- * another's rows (IDOR guard). The five code FKs resolve to {@code THE.*_CODE} tables via the nested
+ * NULL {@code ILCR_REPORT_SUMMARY_ID} (list schedule). Every UPDATE/DELETE is scoped to {@code (id,
+ * ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID='7')} so one mill's write can never touch another's
+ * rows (IDOR guard). The five code FKs resolve to {@code THE.*_CODE} tables via the nested
  * {@code @Table} records at the foot of this interface.
  */
 public interface Schedule7aRepository extends Repository<BridgeReportEntity, Long> {
@@ -34,7 +38,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
    * The bridges for a mill/year, ordered by {@code BRIDGE_REPORT_ID} ascending (the legacy list
    * order; also the {@code rowCounter} order the service assigns 1..N).
    */
-  @Query("""
+  @Query(
+      """
       SELECT BRIDGE_REPORT_ID, LOCATION_NAME, BUILT_DATE, EXPECTED_BRIDGE_LIFE_SPAN, HEIGHT, LENGTH,
              DECK_WIDTH, DISTANCE_FROM_STORAGE, ILCR_BRIDGE_CNSTRCTN_TYPE_CODE,
              ILCR_BRIDGE_SUPERSTRUCTR_CODE, ILCR_DECK_CODE, ILCR_BRIDGE_ABUTMENT_TYPE_CODE,
@@ -52,7 +57,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
    * Filtered to the ten fixed item ids here AND re-routed by id in the service — an out-of-scope
    * item attached to a bridge must reach no field.
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.BRIDGE_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID, d.COST
         FROM THE.ILCR_COST_REPORT_DETAIL d
         JOIN THE.BRIDGE_REPORT b ON b.BRIDGE_REPORT_ID = d.BRIDGE_REPORT_ID
@@ -69,7 +75,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
    * Schedule 7A rides this track (BR-01), NOT the silviculture track (AD-9). Empty when there is no
    * report-status row.
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -77,8 +84,31 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
-  /** True iff a category-{@code '7'} bridge with this id exists under the mill/year (404-vs-409). */
-  @Query("""
+  /**
+   * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row — every WRITE path's editability gate uses this; the read path
+   * keeps the unlocked variant. Holding the row for the whole write transaction makes the
+   * editability gate binding rather than advisory: a status transition (Story 15.3's submit, which
+   * locks the same row before re-running the ten-schedule gate) cannot commit between this gate and
+   * the INSERT/UPDATE/DELETE it guards, and this write cannot commit between the transition's gate
+   * and its commit. Must run inside the write {@code @Transactional}. A mill/year with no status
+   * row locks nothing and returns empty, which the gate already answers as 409.
+   */
+  @Query(
+      """
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * True iff a category-{@code '7'} bridge with this id exists under the mill/year (404-vs-409).
+   */
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.BRIDGE_REPORT
        WHERE BRIDGE_REPORT_ID = :id
@@ -102,14 +132,15 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   /**
    * Insert one bridge (category {@code '7'}, {@code REVISION_COUNT = 0}, audit {@code ENTRY_*}/
-   * {@code UPDATE_*} set). The entered columns arrive as one {@link BridgeReportEntity} (its
-   * {@code bridgeReportId} is the PK supplied from {@link #nextBridgeReportId()} so the service can
-   * key the cost-child inserts to it); {@code millId}/{@code year}/{@code user} are the context.
-   * The bridge columns bind by SpEL accessor so the write mirrors the {@code @Table} record shape
+   * {@code UPDATE_*} set). The entered columns arrive as one {@link BridgeReportEntity} (its {@code
+   * bridgeReportId} is the PK supplied from {@link #nextBridgeReportId()} so the service can key
+   * the cost-child inserts to it); {@code millId}/{@code year}/{@code user} are the context. The
+   * bridge columns bind by SpEL accessor so the write mirrors the {@code @Table} record shape
    * rather than a flat parameter list.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.BRIDGE_REPORT
           (BRIDGE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_NAME, BUILT_DATE,
            EXPECTED_BRIDGE_LIFE_SPAN, HEIGHT, LENGTH, DECK_WIDTH, DISTANCE_FROM_STORAGE,
@@ -123,25 +154,28 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
            :#{#bridge.constructionTypeCode()}, :#{#bridge.superstructureTypeCode()},
            :#{#bridge.deckTypeCode()}, :#{#bridge.abutmentTypeCode()},
            :#{#bridge.loadRatingCode()}, :#{#bridge.comments()},
-           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertBridge(
-      @Param("bridge") BridgeReportEntity bridge, @Param("millId") long millId,
-      @Param("year") int year, @Param("user") String user);
+      @Param("bridge") BridgeReportEntity bridge,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("user") String user);
 
   /**
-   * Optimistic-lock update of one bridge: sets the entered fields, bumps {@code REVISION_COUNT}, and
-   * stamps {@code UPDATE_*} ONLY when the stored revision still matches {@code expectedRevision} and
-   * the row belongs to this mill/year and category. The entered columns arrive as one
-   * {@link BridgeReportEntity} ({@code bridgeReportId} is the row to correct), bound by SpEL
-   * accessor; {@code millId}/{@code year}/{@code expectedRevision}/{@code user} are the context and
-   * lock token.
+   * Optimistic-lock update of one bridge: sets the entered fields, bumps {@code REVISION_COUNT},
+   * and stamps {@code UPDATE_*} ONLY when the stored revision still matches {@code
+   * expectedRevision} and the row belongs to this mill/year and category. The entered columns
+   * arrive as one {@link BridgeReportEntity} ({@code bridgeReportId} is the row to correct), bound
+   * by SpEL accessor; {@code millId}/{@code year}/{@code expectedRevision}/{@code user} are the
+   * context and lock token.
    *
    * @return rows affected — {@code 1} on success; {@code 0} when the id is absent (→ 404) OR the
    *     revision is stale (→ 409). The service disambiguates via {@link #countBridge}.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.BRIDGE_REPORT
          SET LOCATION_NAME = :#{#bridge.locationName()},
              BUILT_DATE = :#{#bridge.builtDate()},
@@ -158,7 +192,7 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
              COMMENTS = :#{#bridge.comments()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BRIDGE_REPORT_ID = :#{#bridge.bridgeReportId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -166,21 +200,24 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateBridge(
-      @Param("bridge") BridgeReportEntity bridge, @Param("millId") long millId,
-      @Param("year") int year, @Param("expectedRevision") int expectedRevision,
+      @Param("bridge") BridgeReportEntity bridge,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
       @Param("user") String user);
 
   /**
    * Delete one bridge, scoped to the mill/year/category (never another mill's row). Runs LAST — the
-   * cost children go first ({@link #deleteCostsForBridge}), because delivery's FK on
-   * {@code ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} has no {@code ON DELETE CASCADE} and would
-   * reject a parent still holding children.
+   * cost children go first ({@link #deleteCostsForBridge}), because delivery's FK on {@code
+   * ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} has no {@code ON DELETE CASCADE} and would reject a
+   * parent still holding children.
    *
    * @return rows affected — {@code 0} when the id is not a category-{@code '7'} bridge under this
    *     mill/year (the service has already 404'd on that via {@link #countBridge})
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.BRIDGE_REPORT
        WHERE BRIDGE_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
@@ -196,8 +233,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   /**
    * Upsert one bridge cost row (items 70-76/79-81): update-in-place when the row exists (audit
-   * continuity — no delete/re-insert churn), else insert with a fresh sequence PK. Cost rows carry a
-   * NULL {@code ILCR_REPORT_SUMMARY_ID} (list schedule).
+   * continuity — no delete/re-insert churn), else insert with a fresh sequence PK. Cost rows carry
+   * a NULL {@code ILCR_REPORT_SUMMARY_ID} (list schedule).
    */
   default void upsertCost(long bridgeReportId, int costItemId, Integer cost, String user) {
     int updated = updateCost(bridgeReportId, costItemId, cost, user);
@@ -208,32 +245,39 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   /** Update-in-place half of {@link #upsertCost}; {@code 0} rows when the item row is absent. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE BRIDGE_REPORT_ID = :bridgeReportId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
   int updateCost(
-      @Param("bridgeReportId") long bridgeReportId, @Param("costItemId") int costItemId,
-      @Param("cost") Integer cost, @Param("user") String user);
+      @Param("bridgeReportId") long bridgeReportId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /** Insert half of {@link #upsertCost} (summary id NULL; PK from the sequence; audit cols set). */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, BRIDGE_REPORT_ID,
            ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, NULL, :bridgeReportId, :costItemId, NULL, :cost, NULL, 0,
-           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :user, SYSDATE, :user, SYSDATE)
       """)
   void insertCost(
-      @Param("id") long id, @Param("bridgeReportId") long bridgeReportId,
-      @Param("costItemId") int costItemId, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("id") long id,
+      @Param("bridgeReportId") long bridgeReportId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   // ===============================================================================================
   // Code tables (schedule8 idiom): nested @Table records + @Query, mapped to CodeDescriptionDto
@@ -246,17 +290,18 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   /**
    * The instant a reporting year's code lists are evaluated at: JANUARY 1 of that year, matching
-   * legacy {@code CoreUtil.getDate(year)} feeding {@code LookupCache.getCacheList(year)}, which kept
-   * a code only when {@code effective_date <= that date <= expiry_date}. A code retired before the
-   * reporting year, or not yet in force at its start, was not offered — and is not offered here.
+   * legacy {@code CoreUtil.getDate(year)} feeding {@code LookupCache.getCacheList(year)}, which
+   * kept a code only when {@code effective_date <= that date <= expiry_date}. A code retired before
+   * the reporting year, or not yet in force at its start, was not offered — and is not offered
+   * here.
    *
    * <p>The queries NVL both bounds because a bare comparison against NULL is false in SQL, which
    * would drop a row encoding "never expires" as a NULL {@code EXPIRY_DATE} — and dropping it would
-   * not merely hide the option, it would make {@code validateCodes} reject a value already stored on
-   * an existing bridge. Legacy could not encode that case at all: {@code LookupCache} calls
-   * {@code date.before(c.getEffective_date())} with no null check, so a NULL there would have thrown
-   * an NPE building the list. The guard therefore cannot change behaviour for any data legacy could
-   * serve; it only stops an unrepresentable row from silently breaking saves.
+   * not merely hide the option, it would make {@code validateCodes} reject a value already stored
+   * on an existing bridge. Legacy could not encode that case at all: {@code LookupCache} calls
+   * {@code date.before(c.getEffective_date())} with no null check, so a NULL there would have
+   * thrown an NPE building the list. The guard therefore cannot change behaviour for any data
+   * legacy could serve; it only stops an unrepresentable row from silently breaking saves.
    */
   private static java.time.LocalDate effectiveOn(int year) {
     return java.time.LocalDate.of(year, 1, 1);
@@ -269,17 +314,19 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
     String description();
   }
 
+  /** Construction Type Code mapping. */
   @org.springframework.data.relational.core.mapping.Table(
-      name = "ILCR_BRIDGE_CNSTRCTN_TYPE_CODE", schema = "THE")
+      name = "ILCR_BRIDGE_CNSTRCTN_TYPE_CODE",
+      schema = "THE")
   record ConstructionTypeCode(
       @org.springframework.data.annotation.Id
-      @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_CNSTRCTN_TYPE_CODE")
-      String code,
+          @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_CNSTRCTN_TYPE_CODE")
+          String code,
       @org.springframework.data.relational.core.mapping.Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_BRIDGE_CNSTRCTN_TYPE_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_CNSTRCTN_TYPE_CODE
        WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
@@ -292,17 +339,19 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
     return asOptions(findConstructionTypeCodes(effectiveOn(year)));
   }
 
+  /** Superstructure Type Code mapping. */
   @org.springframework.data.relational.core.mapping.Table(
-      name = "ILCR_BRIDGE_SUPERSTRUCTR_CODE", schema = "THE")
+      name = "ILCR_BRIDGE_SUPERSTRUCTR_CODE",
+      schema = "THE")
   record SuperstructureTypeCode(
       @org.springframework.data.annotation.Id
-      @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_SUPERSTRUCTR_CODE")
-      String code,
+          @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_SUPERSTRUCTR_CODE")
+          String code,
       @org.springframework.data.relational.core.mapping.Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_BRIDGE_SUPERSTRUCTR_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_SUPERSTRUCTR_CODE
        WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
@@ -315,15 +364,17 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
     return asOptions(findSuperstructureTypeCodes(effectiveOn(year)));
   }
 
+  /** Deck Type Code mapping. */
   @org.springframework.data.relational.core.mapping.Table(name = "ILCR_DECK_CODE", schema = "THE")
   record DeckTypeCode(
       @org.springframework.data.annotation.Id
-      @org.springframework.data.relational.core.mapping.Column("ILCR_DECK_CODE") String code,
+          @org.springframework.data.relational.core.mapping.Column("ILCR_DECK_CODE")
+          String code,
       @org.springframework.data.relational.core.mapping.Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_DECK_CODE, DESCRIPTION
         FROM THE.ILCR_DECK_CODE
        WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
@@ -336,17 +387,19 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
     return asOptions(findDeckTypeCodes(effectiveOn(year)));
   }
 
+  /** Abutment Type Code mapping. */
   @org.springframework.data.relational.core.mapping.Table(
-      name = "ILCR_BRIDGE_ABUTMENT_TYPE_CODE", schema = "THE")
+      name = "ILCR_BRIDGE_ABUTMENT_TYPE_CODE",
+      schema = "THE")
   record AbutmentTypeCode(
       @org.springframework.data.annotation.Id
-      @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_ABUTMENT_TYPE_CODE")
-      String code,
+          @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_ABUTMENT_TYPE_CODE")
+          String code,
       @org.springframework.data.relational.core.mapping.Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_BRIDGE_ABUTMENT_TYPE_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE
        WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
@@ -359,17 +412,19 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
     return asOptions(findAbutmentTypeCodes(effectiveOn(year)));
   }
 
+  /** Load Rating Code mapping. */
   @org.springframework.data.relational.core.mapping.Table(
-      name = "ILCR_BRIDGE_LOAD_RATING_CODE", schema = "THE")
+      name = "ILCR_BRIDGE_LOAD_RATING_CODE",
+      schema = "THE")
   record LoadRatingCode(
       @org.springframework.data.annotation.Id
-      @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_LOAD_RATING_CODE")
-      String code,
+          @org.springframework.data.relational.core.mapping.Column("ILCR_BRIDGE_LOAD_RATING_CODE")
+          String code,
       @org.springframework.data.relational.core.mapping.Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_BRIDGE_LOAD_RATING_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_LOAD_RATING_CODE
        WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
@@ -380,5 +435,73 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   default List<CodeDescriptionDto> loadRatingOptions(int year) {
     return asOptions(findLoadRatingCodes(effectiveOn(year)));
+  }
+
+  /**
+   * One submitted bridge from {@code THE.BRIDGE_REPORT_S_VW} — the licensee's own attributes (Story
+   * 16.2, BR-04).
+   *
+   * <p>{@code loadRatingCode} reads the view's {@code ILCR_BRIDGE_LOAD_RATING_CODE}. Legacy's own
+   * accessor for it is spelled {@code getIlcr_bridge_load_rating_span()} ({@code
+   * Schedule7aDAO.java:247-249}) and that is NOT a defect: {@code BridgeReportOv.java:74-76} maps
+   * the oddly-named field onto this column.
+   */
+  record BridgeSnapshotRow(
+      long bridgeReportId,
+      String locationName,
+      java.time.LocalDate builtDate,
+      String constructionTypeCode,
+      String superstructureTypeCode,
+      String deckTypeCode,
+      String abutmentTypeCode,
+      String loadRatingCode,
+      Integer lifeSpan,
+      BigDecimal abutmentHeight,
+      BigDecimal length,
+      BigDecimal deckWidth,
+      Integer distance,
+      String comments) {}
+
+  /** Every submitted bridge for a mill/year (category "7"). */
+  @Query(
+      value =
+          """
+      SELECT BRIDGE_REPORT_ID, LOCATION_NAME, BUILT_DATE, ILCR_BRIDGE_CNSTRCTN_TYPE_CODE,
+             ILCR_BRIDGE_SUPERSTRUCTR_CODE, ILCR_DECK_CODE, ILCR_BRIDGE_ABUTMENT_TYPE_CODE,
+             ILCR_BRIDGE_LOAD_RATING_CODE, EXPECTED_BRIDGE_LIFE_SPAN, HEIGHT, LENGTH, DECK_WIDTH,
+             DISTANCE_FROM_STORAGE, COMMENTS
+        FROM THE.BRIDGE_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = BridgeSnapshotRowMapper.class)
+  List<BridgeSnapshotRow> findBridgeSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code BRIDGE_REPORT_S_VW} row. */
+  class BridgeSnapshotRowMapper implements RowMapper<BridgeSnapshotRow> {
+    @Override
+    public BridgeSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      int lifeSpan = rs.getInt("EXPECTED_BRIDGE_LIFE_SPAN");
+      Integer expectedLifeSpan = rs.wasNull() ? null : lifeSpan;
+      int distance = rs.getInt("DISTANCE_FROM_STORAGE");
+      Integer distanceFromStorage = rs.wasNull() ? null : distance;
+      java.sql.Date built = rs.getDate("BUILT_DATE");
+      return new BridgeSnapshotRow(
+          rs.getLong("BRIDGE_REPORT_ID"),
+          rs.getString("LOCATION_NAME"),
+          built == null ? null : built.toLocalDate(),
+          rs.getString("ILCR_BRIDGE_CNSTRCTN_TYPE_CODE"),
+          rs.getString("ILCR_BRIDGE_SUPERSTRUCTR_CODE"),
+          rs.getString("ILCR_DECK_CODE"),
+          rs.getString("ILCR_BRIDGE_ABUTMENT_TYPE_CODE"),
+          rs.getString("ILCR_BRIDGE_LOAD_RATING_CODE"),
+          expectedLifeSpan,
+          rs.getBigDecimal("HEIGHT"),
+          rs.getBigDecimal("LENGTH"),
+          rs.getBigDecimal("DECK_WIDTH"),
+          distanceFromStorage,
+          rs.getString("COMMENTS"));
+    }
   }
 }

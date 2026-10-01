@@ -5,16 +5,22 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckRequest.CampEntry;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,22 +28,24 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * The Check Status condition matrix (BR-08), transcribed from
- * {@code Schedule5CheckStatus.java:13-97} + {@code Schedule5MB.checkValidatedCurrentCamp():341-438}.
+ * The Check Status condition matrix (BR-08), transcribed from {@code
+ * Schedule5CheckStatus.java:13-97} + {@code Schedule5MB.checkValidatedCurrentCamp():341-438}.
  *
- * <p>The service emits bundle KEYS with {@code null} text — the controller resolves and composes
- * (AD-8) — so every assertion here is about WHICH findings fire, in what order, and what the outcome
- * is. The byte-exact rendered text is {@link Schedule5CheckStatusCompositionTest}'s.
+ * <p>The service emits bundle KEYS with {@code null} text — the resolver resolves and composes
+ * (AD-8) — so every assertion here is about WHICH findings fire, in what order, and what the
+ * outcome is. The byte-exact rendered text is {@link Schedule5CheckStatusCompositionTest}'s.
  *
  * <p><strong>Four parity rules a tidier implementation would get wrong, each pinned below:</strong>
  * a stored {@code 0} PASSES the three numeric descriptors (pure null tests, the D2 precedent); the
  * camp-name test IS trimmed; the sub-list description test is NOT trimmed; and the all-met branch
- * emits the schedule banner ALONE with no per-camp results at all (deviation (C)) — which contradicts
- * both the epics AC and {@code UC-SCH5-001-detailed.md:151}, so legacy wins by explicit decision.
+ * emits the schedule banner ALONE with no per-camp results at all (deviation (C)) — which
+ * contradicts both the epics AC and {@code UC-SCH5-001-detailed.md:151}, so legacy wins by explicit
+ * decision.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule5Service.checkStatus — the eight conditions and the two outcomes")
@@ -46,34 +54,38 @@ class Schedule5CheckStatusServiceTest {
   private static final long MILL = 673L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule5Repository repository;
+  @Mock private Schedule5Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
 
   private Schedule5Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule5Service(repository);
+    service = new Schedule5Service(repository, originalValues, costSnapshots);
   }
 
   /** A camp that passes every descriptor condition. */
   private static CampRow complete(int campId, String name) {
-    return new CampRow(campId, name, new BigDecimal("10.00"), 40, new BigDecimal("50000"), "N",
-        null, 0);
+    return new CampRow(
+        campId, name, new BigDecimal("10.00"), 40, new BigDecimal("50000"), "N", null, 0);
   }
 
-  private static CampRow campRow(int campId, String name, BigDecimal distance, Integer size,
-      BigDecimal volume) {
+  private static CampRow campRow(
+      int campId, String name, BigDecimal distance, Integer size, BigDecimal volume) {
     return new CampRow(campId, name, distance, size, volume, "N", null, 0);
   }
 
-  private static DetailRow subRow(int detailId, int campId, int itemId, Integer cost,
-      String description) {
+  private static DetailRow subRow(
+      int detailId, int campId, int itemId, Integer cost, String description) {
     return new DetailRow(detailId, campId, itemId, null, cost, description);
   }
 
-  private static List<String> fieldsFlaggedFor(CampRow row, List<DetailRow> campRows,
-      List<DetailRow> accessRows) {
+  private static List<String> fieldsFlaggedFor(
+      CampRow row, List<DetailRow> campRows, List<DetailRow> accessRows) {
     return Schedule5Service.evaluateCamp(row, campRows, accessRows).stream()
         .map(CampCheckMessage::field)
         .toList();
@@ -110,7 +122,8 @@ class Schedule5CheckStatusServiceTest {
     @DisplayName("a stored ZERO passes all three — they are PURE null tests (the D2 precedent)")
     void zeroPassesTheNumericDescriptors() {
       // Schedule5CheckStatus.java:18-20 is `!= null ? false : true`, nothing more. A `> 0` or
-      // `!= BigDecimal.ZERO` test would flag a legitimately zero camp and tell the licensee to fill in
+      // `!= BigDecimal.ZERO` test would flag a legitimately zero camp and tell the licensee to fill
+      // in
       // a field that is already filled in.
       assertThat(fieldsFlaggedFor(campRow(8211, "Zero Camp", BigDecimal.ZERO, 0, BigDecimal.ZERO)))
           .isEmpty();
@@ -124,8 +137,8 @@ class Schedule5CheckStatusServiceTest {
       // stored data.
       assertThat(fieldsFlaggedFor(complete(8213, "   ")))
           .containsExactly(Schedule5Service.FIELD_CAMP_NAME);
-      assertThat(fieldsFlaggedFor(complete(8213, ""))).
-          containsExactly(Schedule5Service.FIELD_CAMP_NAME);
+      assertThat(fieldsFlaggedFor(complete(8213, "")))
+          .containsExactly(Schedule5Service.FIELD_CAMP_NAME);
       assertThat(fieldsFlaggedFor(complete(8213, null)))
           .containsExactly(Schedule5Service.FIELD_CAMP_NAME);
     }
@@ -133,8 +146,16 @@ class Schedule5CheckStatusServiceTest {
     @Test
     @DisplayName("isolatedCamp is NEVER tested, even though Save requires it (deviation (E))")
     void isolatedCampIsNotTested() {
-      CampRow noIndicator = new CampRow(8211, "Complete Camp", new BigDecimal("10.00"), 40,
-          new BigDecimal("50000"), null, null, 0);
+      CampRow noIndicator =
+          new CampRow(
+              8211,
+              "Complete Camp",
+              new BigDecimal("10.00"),
+              40,
+              new BigDecimal("50000"),
+              null,
+              null,
+              0);
 
       assertThat(fieldsFlaggedFor(noIndicator)).isEmpty();
     }
@@ -154,12 +175,12 @@ class Schedule5CheckStatusServiceTest {
     @Test
     @DisplayName("all four fire together, in the legacy emission order")
     void allFourSubListConditionsFireInOrder() {
-      List<DetailRow> campRows = List.of(
-          subRow(8275, 8214, 62, 300, null),      // missing description
-          subRow(8276, 8214, 62, null, "Named")); // missing cost
-      List<DetailRow> accessRows = List.of(
-          subRow(8277, 8214, 68, 400, null),
-          subRow(8278, 8214, 68, null, "Named"));
+      List<DetailRow> campRows =
+          List.of(
+              subRow(8275, 8214, 62, 300, null), // missing description
+              subRow(8276, 8214, 62, null, "Named")); // missing cost
+      List<DetailRow> accessRows =
+          List.of(subRow(8277, 8214, 68, 400, null), subRow(8278, 8214, 68, null, "Named"));
 
       assertThat(fieldsFlaggedFor(complete(8214, "Sub Page Camp"), campRows, accessRows))
           .containsExactly(
@@ -177,16 +198,18 @@ class Schedule5CheckStatusServiceTest {
       // mirror image of the camp-name rule above, which IS trimmed — the two must not be unified.
       List<DetailRow> campRows = List.of(subRow(8273, 8211, 62, 100, " "));
 
-      assertThat(fieldsFlaggedFor(complete(8211, "Space Desc Camp"), campRows, List.of())).isEmpty();
+      assertThat(fieldsFlaggedFor(complete(8211, "Space Desc Camp"), campRows, List.of()))
+          .isEmpty();
     }
 
     @Test
     @DisplayName("ONE bad row among good ones is enough — the helpers are 'any', not 'all'")
     void oneBadRowIsEnough() {
-      List<DetailRow> campRows = List.of(
-          subRow(8280, 8214, 62, 100, "Fine"),
-          subRow(8281, 8214, 62, 200, "Also fine"),
-          subRow(8282, 8214, 62, null, "No cost"));
+      List<DetailRow> campRows =
+          List.of(
+              subRow(8280, 8214, 62, 100, "Fine"),
+              subRow(8281, 8214, 62, 200, "Also fine"),
+              subRow(8282, 8214, 62, null, "No cost"));
 
       assertThat(fieldsFlaggedFor(complete(8214, "Mostly Fine Camp"), campRows, List.of()))
           .containsExactly(Schedule5Service.FIELD_OTHER_CAMP_COST);
@@ -195,12 +218,18 @@ class Schedule5CheckStatusServiceTest {
     @Test
     @DisplayName("a camp-side problem does not leak into the access-side finding, or vice versa")
     void theTwoListsAreIndependent() {
-      assertThat(fieldsFlaggedFor(complete(8214, "Camp Side Only"),
-          List.of(subRow(8283, 8214, 62, null, "Named")), List.of()))
+      assertThat(
+              fieldsFlaggedFor(
+                  complete(8214, "Camp Side Only"),
+                  List.of(subRow(8283, 8214, 62, null, "Named")),
+                  List.of()))
           .containsExactly(Schedule5Service.FIELD_OTHER_CAMP_COST);
 
-      assertThat(fieldsFlaggedFor(complete(8214, "Access Side Only"),
-          List.of(), List.of(subRow(8284, 8214, 68, null, "Named"))))
+      assertThat(
+              fieldsFlaggedFor(
+                  complete(8214, "Access Side Only"),
+                  List.of(),
+                  List.of(subRow(8284, 8214, 68, null, "Named"))))
           .containsExactly(Schedule5Service.FIELD_OTHER_ACCESS_COST);
     }
   }
@@ -219,42 +248,43 @@ class Schedule5CheckStatusServiceTest {
     void zeroCampsIsVacuouslyMet() {
       millHolds(List.of(), List.of());
 
-      Schedule5CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+      Schedule5CheckStatusResponse result = service.checkStatusStored(MILL, YEAR);
 
       // isSchedule5Valid ANDs over the camps and returns true before its loop runs
       // (Schedule5CheckStatus.java:89-97).
       assertThat(result.outcome()).isEqualTo("MET");
-      assertThat(result.messages()).extracting("key")
-          .containsExactly("scheduleRequirementsMetMsg");
+      assertThat(result.messages()).extracting("key").containsExactly("scheduleRequirementsMetMsg");
       assertThat(result.camps()).isEmpty();
     }
 
     @Test
-    @DisplayName("all camps passing -> MET, the banner ALONE, and NO per-camp results (deviation (C))")
+    @DisplayName(
+        "all camps passing -> MET, the banner ALONE, and NO per-camp results (deviation (C))")
     void allMetEmitsTheBannerAlone() {
       millHolds(List.of(complete(8209, "Complete One"), complete(8210, "Complete Two")), List.of());
 
-      Schedule5CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+      Schedule5CheckStatusResponse result = service.checkStatusStored(MILL, YEAR);
 
       assertThat(result.outcome()).isEqualTo("MET");
-      assertThat(result.messages()).extracting("key")
-          .containsExactly("scheduleRequirementsMetMsg");
+      assertThat(result.messages()).extracting("key").containsExactly("scheduleRequirementsMetMsg");
       // THE deviation: both the epics AC and UC-SCH5-001-detailed.md:151 describe an all-met PAIR —
       // the banner PLUS a per-camp campRequirementsMetMsg. Legacy's pass branch returns before the
-      // per-camp loop is ever entered (Schedule5MB.java:324-326), so there are no per-camp results at
+      // per-camp loop is ever entered (Schedule5MB.java:324-326), so there are no per-camp results
+      // at
       // all. An implementation that emitted the pair would satisfy the written AC and diverge from
       // the screen.
       assertThat(result.camps()).isEmpty();
     }
 
     @Test
-    @DisplayName("mixed -> ISSUES, no schedule banner, per-camp met messages only for passing camps")
+    @DisplayName(
+        "mixed -> ISSUES, no schedule banner, per-camp met messages only for passing camps")
     void mixedEmitsPerCampResults() {
       millHolds(
           List.of(complete(8211, "Passing Camp"), campRow(8212, "Failing Camp", null, 5, null)),
           List.of());
 
-      Schedule5CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+      Schedule5CheckStatusResponse result = service.checkStatusStored(MILL, YEAR);
 
       assertThat(result.outcome()).isEqualTo("ISSUES");
       assertThat(result.messages()).isEmpty();
@@ -271,36 +301,42 @@ class Schedule5CheckStatusServiceTest {
       CampCheckResult failing = result.camps().get(1);
       assertThat(failing.campName()).isEqualTo("Failing Camp");
       assertThat(failing.requirementsMet()).isFalse();
-      assertThat(failing.messages()).extracting("field").containsExactly(
-          Schedule5Service.FIELD_ROAD_DISTANCE, Schedule5Service.FIELD_ASSOCIATED_CAMP_VOLUME);
+      assertThat(failing.messages())
+          .extracting("field")
+          .containsExactly(
+              Schedule5Service.FIELD_ROAD_DISTANCE, Schedule5Service.FIELD_ASSOCIATED_CAMP_VOLUME);
       // Keys and machine field names only — the controller owns the text (AD-8).
       assertThat(failing.messages()).allSatisfy(m -> assertThat(m.text()).isNull());
-      assertThat(failing.messages()).extracting("key")
-          .containsOnly("missingRequiredFieldMsg");
+      assertThat(failing.messages()).extracting("key").containsOnly("missingRequiredFieldMsg");
     }
 
     @Test
     @DisplayName("camps are reported in the repository's CAMP_REPORT_ID order, not re-sorted")
     void campsKeepRepositoryOrder() {
-      millHolds(List.of(
-          campRow(8212, "First By Id", null, null, null),
-          campRow(8213, "Second By Id", null, null, null),
-          campRow(8214, "Third By Id", null, null, null)), List.of());
+      millHolds(
+          List.of(
+              campRow(8212, "First By Id", null, null, null),
+              campRow(8213, "Second By Id", null, null, null),
+              campRow(8214, "Third By Id", null, null, null)),
+          List.of());
 
-      assertThat(service.checkStatus(MILL, YEAR).camps()).extracting("campId")
+      assertThat(service.checkStatusStored(MILL, YEAR).camps())
+          .extracting("campId")
           .containsExactly(8212, 8213, 8214);
     }
 
     @Test
     @DisplayName("the twelve category cost/volume fields are never evaluated (deviation (D))")
     void categoryAmountsAreNotEvaluated() {
-      // A camp with complete descriptors and NOT ONE stored category row must still be MET. Legacy's
+      // A camp with complete descriptors and NOT ONE stored category row must still be MET.
+      // Legacy's
       // category conditions and its ~65 lines of emission are commented out in three places
-      // (Schedule5CheckStatus.java:21-34, 60-82; Schedule5MB.java:360-424), so re-enabling them is a
+      // (Schedule5CheckStatus.java:21-34, 60-82; Schedule5MB.java:360-424), so re-enabling them is
+      // a
       // behaviour change and not a bug fix.
       millHolds(List.of(complete(8209, "No Categories Camp")), List.of());
 
-      assertThat(service.checkStatus(MILL, YEAR).outcome()).isEqualTo("MET");
+      assertThat(service.checkStatusStored(MILL, YEAR).outcome()).isEqualTo("MET");
     }
 
     @Test
@@ -308,17 +344,195 @@ class Schedule5CheckStatusServiceTest {
     void mutatesNothingAndIgnoresTheTrack() {
       millHolds(List.of(complete(8209, "Complete One")), List.of());
 
-      service.checkStatus(MILL, YEAR);
+      service.checkStatusStored(MILL, YEAR);
 
       // No Draft gate: the endpoint is VIEW-gated (the 2.6 precedent, deferred-work.md:23), so a
-      // Submitted mill can still be checked. Reading the track at all would be the first step toward
+      // Submitted mill can still be checked. Reading the track at all would be the first step
+      // toward
       // gating it.
       verify(repository, never()).findTrackStatus(anyLong(), anyInt());
-      verify(repository).findCamps(MILL, YEAR);
-      verify(repository).findCostDetails(MILL, YEAR);
+      // Preserve the pre-#476 statement order. With Oracle READ COMMITTED, reversing these reads
+      // can pair camps from a newer commit with detail rows from an older one.
+      InOrder readOrder = inOrder(repository);
+      readOrder.verify(repository).findCamps(MILL, YEAR);
+      readOrder.verify(repository).findCostDetails(MILL, YEAR);
       // Nothing else at all — no insert, no update, no delete, no sequence draw.
       verifyNoMoreInteractions(repository);
       verify(repository, never()).upsertCostDetail(anyInt(), anyInt(), any(), any(), anyString());
+    }
+  }
+
+  /**
+   * The payload path (#476, closing DIV-1 / the Schedule 5 slice of #359).
+   *
+   * <p>Evaluating the screen is a sanctioned divergence from the legacy Schedule 5 screen, which
+   * judges the last SAVED record unlike legacy's other schedules; the business area ruled in
+   * September 2026 that Schedule 5 match the others. The shipped endpoint read the database and
+   * compensated by disabling the button while a camp panel was open. It now takes the panel as a
+   * body and overlays it onto the stored camps.
+   *
+   * <p>Everything here is about SOURCE, never about the rule: the eight conditions are asserted
+   * once, above, against {@code evaluateCamp}, and both paths run that same static method. A test
+   * here that re-asserted a condition would be pinning the rule twice and would drift.
+   */
+  @Nested
+  @DisplayName("the on-screen overlay - same rule, different source")
+  class ScreenOverlay {
+
+    private void millHolds(List<CampRow> camps, List<DetailRow> details) {
+      when(repository.findCamps(MILL, YEAR)).thenReturn(camps);
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(details);
+    }
+
+    private static Schedule5CheckRequest panel(
+        Integer campId, String name, BigDecimal distance, Integer size, BigDecimal volume) {
+      return new Schedule5CheckRequest(new CampEntry(campId, name, distance, size, volume));
+    }
+
+    @Test
+    @DisplayName("a descriptor CLEARED on screen is reported though the stored row still holds it")
+    void clearedOnScreenIsReported() {
+      // Stored: complete. On screen: size of camp emptied and not saved. Legacy reported it.
+      millHolds(List.of(complete(8301, "Cedar Flats Camp")), List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(
+              MILL,
+              YEAR,
+              panel(
+                  8301,
+                  "Cedar Flats Camp",
+                  new BigDecimal("10.00"),
+                  null,
+                  new BigDecimal("50000")));
+
+      assertThat(result.outcome()).isEqualTo("ISSUES");
+      assertThat(result.camps())
+          .singleElement()
+          .satisfies(
+              camp -> {
+                assertThat(camp.campId()).isEqualTo(8301);
+                assertThat(camp.messages().stream().map(CampCheckMessage::field))
+                    .containsExactly(Schedule5Service.FIELD_SIZE_OF_CAMP);
+              });
+    }
+
+    @Test
+    @DisplayName("a descriptor SUPPLIED on screen clears the stored finding")
+    void suppliedOnScreenClearsTheFinding() {
+      // Stored: size of camp missing. On screen: supplied and not saved. The false-RED direction,
+      // which is the one a reporter meets most often.
+      millHolds(
+          List.of(
+              campRow(
+                  8302,
+                  "Cedar Flats Camp",
+                  new BigDecimal("10.00"),
+                  null,
+                  new BigDecimal("50000"))),
+          List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(
+              MILL,
+              YEAR,
+              panel(
+                  8302, "Cedar Flats Camp", new BigDecimal("10.00"), 40, new BigDecimal("50000")));
+
+      assertThat(result.outcome()).isEqualTo("MET");
+    }
+
+    @Test
+    @DisplayName("an UNSAVED camp (null id) is evaluated as an ADDITIONAL camp")
+    void unsavedCampIsAppended() {
+      // It is on screen, so legacy evaluated it. Omitting it reports "requirements met" over a
+      // camp with four missing fields - the false-GREEN this whole change exists to avoid.
+      millHolds(List.of(complete(8303, "Stored Camp")), List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(MILL, YEAR, panel(null, "", null, null, null));
+
+      assertThat(result.outcome()).isEqualTo("ISSUES");
+      assertThat(result.camps()).hasSize(2);
+      assertThat(result.camps().get(0).requirementsMet()).isTrue();
+      // NULL, not 0: an on-screen-only camp has no CAMP_REPORT_ID, and a synthetic zero would
+      // read as a real persisted id to a correlating client (PR #504 review).
+      assertThat(result.camps().get(1).campId()).isNull();
+      assertThat(result.camps().get(1).messages().stream().map(CampCheckMessage::field))
+          .containsExactly(
+              Schedule5Service.FIELD_CAMP_NAME,
+              Schedule5Service.FIELD_ROAD_DISTANCE,
+              Schedule5Service.FIELD_SIZE_OF_CAMP,
+              Schedule5Service.FIELD_ASSOCIATED_CAMP_VOLUME);
+    }
+
+    @Test
+    @DisplayName("a panel whose camp no longer exists is evaluated, not silently dropped")
+    void panelForADeletedCampIsStillEvaluated() {
+      // Another session deleted it while the panel was open. Dropping it would answer about a
+      // schedule the reporter is not looking at.
+      millHolds(List.of(complete(8304, "Stored Camp")), List.of());
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(MILL, YEAR, panel(9999, "Ghost Camp", null, null, null));
+
+      assertThat(result.camps()).hasSize(2);
+      assertThat(result.camps().get(1).campName()).isEqualTo("Ghost Camp");
+    }
+
+    @Test
+    @DisplayName("the overlaid camp keeps its POSITION and its stored sub-list rows")
+    void overlayKeepsPositionAndSubListRows() {
+      // The sub-pages are a different screen, so their rows are never in the body. An overlay that
+      // replaced the candidate wholesale would lose them and the sub-list findings would vanish.
+      millHolds(
+          List.of(complete(8305, "First Camp"), complete(8306, "Second Camp")),
+          List.of(subRow(1, 8305, 62, null, "A description with no cost")));
+
+      Schedule5CheckStatusResponse result =
+          service.checkStatus(
+              MILL,
+              YEAR,
+              panel(8305, "First Camp", new BigDecimal("10.00"), 40, new BigDecimal("50000")));
+
+      assertThat(result.camps()).hasSize(2);
+      assertThat(result.camps().get(0).campId()).isEqualTo(8305);
+      assertThat(result.camps().get(0).messages().stream().map(CampCheckMessage::field))
+          .containsExactly(Schedule5Service.FIELD_OTHER_CAMP_COST);
+      assertThat(result.camps().get(1).campId()).isEqualTo(8306);
+    }
+
+    @Test
+    @DisplayName("no panel open evaluates exactly the stored camps - identical to the stored path")
+    void noPanelMatchesTheStoredPath() {
+      millHolds(
+          List.of(complete(8307, "First Camp"), campRow(8308, "Second Camp", null, null, null)),
+          List.of());
+
+      assertThat(service.checkStatus(MILL, YEAR, new Schedule5CheckRequest(null)))
+          .isEqualTo(service.checkStatusStored(MILL, YEAR));
+    }
+
+    @Test
+    @DisplayName("a null BODY is treated as no panel rather than throwing")
+    void nullBodyIsNoPanel() {
+      millHolds(List.of(complete(8309, "Only Camp")), List.of());
+
+      assertThat(service.checkStatus(MILL, YEAR, null).outcome()).isEqualTo("MET");
+    }
+
+    @Test
+    @DisplayName("the overlay MUTATES NOTHING - it is the same read-only contract")
+    void overlayMutatesNothing() {
+      millHolds(List.of(complete(8310, "Only Camp")), List.of());
+
+      service.checkStatus(
+          MILL, YEAR, panel(8310, "Only Camp", new BigDecimal("1.00"), 1, BigDecimal.ONE));
+
+      verify(repository, never()).findTrackStatus(anyLong(), anyInt());
+      verify(repository).findCamps(MILL, YEAR);
+      verify(repository).findCostDetails(MILL, YEAR);
+      verifyNoMoreInteractions(repository);
     }
   }
 }

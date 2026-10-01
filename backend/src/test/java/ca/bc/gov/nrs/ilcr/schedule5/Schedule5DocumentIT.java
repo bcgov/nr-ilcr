@@ -30,10 +30,11 @@ import org.springframework.test.context.TestPropertySource;
  *
  * <p><strong>What this class cannot see, and where it lives instead.</strong> The DETAIL query's
  * own year/category predicates are invisible from here — its decoy rows hang off camps the service
- * never looks up, so deleting those predicates changes no response — and so is its {@code ORDER BY},
- * which Oracle's insertion-order return would mask. Both are pinned in {@link Schedule5RepositoryIT}.
- * The {@code editable} permission lookup is invisible too (this class runs with security off, and
- * both shipped roles hold {@code EDIT_SCHEDULE}); {@code Schedule5ControllerTest} covers it.
+ * never looks up, so deleting those predicates changes no response — and so is its {@code ORDER
+ * BY}, which Oracle's insertion-order return would mask. Both are pinned in {@link
+ * Schedule5RepositoryIT}. The {@code editable} permission lookup is invisible too (this class runs
+ * with security off, and both shipped roles hold {@code EDIT_SCHEDULE}); {@code
+ * Schedule5ControllerTest} covers it.
  */
 @DisplayName("GET /api/v1/schedule5 — camp list (Schedule 5 read)")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -44,8 +45,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("514/2021 Draft — five camps served in CAMP_REPORT_ID order (AC7), decoys excluded")
   void draftContext_servesCampsInIdOrder() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(514)))
@@ -70,8 +75,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("camp 8401 — descriptors, all twelve categories, and the four derived totals")
   void fullyPopulatedCamp_servesEveryFigure() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // ---- descriptors, served exactly as stored ----
         .andExpect(jsonPath("$.camps[0].revisionCount", is(0)))
@@ -173,8 +182,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
     // idioms diverge here. 42.5 and 8.25 are exact binary fractions and would pass either way.
     // Note the column does NOT preserve a trailing zero — Oracle NUMBER stores 999999.90 as
     // 999999.9 — so this pins the value, not a scale.
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().string(containsString("\"roadDistanceToOperatingArea\":999999.9,")))
         .andExpect(content().string(not(containsString("999999.89"))));
@@ -183,8 +196,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("camp 8401 — duplicate item-56 row loses to the lower detail id; item 57 is dropped")
   void duplicateAndUnknownItems_doNotReachTotals() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // Detail 8428 carries 777777 for item 56 but sits ABOVE 8411; first-by-detail-id-wins
         // (deviation (f)) keeps 8411's 480000. A last-wins port fails right here.
@@ -197,8 +214,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("camp 8402 — zero detail rows: every category empty, every total NULL not 0")
   void zeroDetailCamp_servesNullTotals() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[1].campName", is("Bare Ridge Camp")))
         .andExpect(jsonPath("$.camps[1].revisionCount", is(1)))
@@ -227,8 +248,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("camp 8403 — Recoveries only: null Sub-Total makes Camp Total null, not a negative")
   void recoveriesOnlyCamp_servesNullCampTotal() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[2].campName", is("Salvage Camp")))
         .andExpect(jsonPath("$.camps[2].revisionCount", is(2)))
@@ -252,8 +277,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("camp 8404 — Recoveries exceeds Sub-Total: NEGATIVE Camp Total, never clamped")
   void recoveriesExceedingSubTotal_servesNegativeTotal() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[3].campName", is("Overrun Camp")))
         // Real data sits exactly on this bound; the legacy message says 999,999 while the validator
@@ -283,8 +312,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("camp 8405 — zero associated volume: costs still total, every $/m3 is null")
   void zeroVolumeCamp_omitsEveryCostPerVolume() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.camps[4].campName", is("Zero Volume Camp")))
         .andExpect(jsonPath("$.camps[4].associatedCampVolume", is(0)))
@@ -309,8 +342,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("515/2021 — ACT with a status row but no camps -> 200 with camps: [] (AC6)")
   void activeMillWithNoCamps_returns200Empty() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "515").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.millId", is(515)))
         .andExpect(jsonPath("$.year", is(2021)))
@@ -324,8 +361,12 @@ class Schedule5DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("517/2021 Submitted — full camp list, editable:false (AC5, S19 authority)")
   void nonDraftContext_listsCampsReadOnly() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "517").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "517")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("S")))
         // The server is the sole authority for this flag: EDIT_SCHEDULE alone is not enough.

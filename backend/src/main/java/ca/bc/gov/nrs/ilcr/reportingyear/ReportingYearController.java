@@ -14,9 +14,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Open Reporting Year endpoints (UC-RY-001). Every method is gated on the ADMIN-only
- * {@code OPEN_REPORTING_YEAR} action (AD-7, S13) so a non-admin is denied 403 server-side. Delegates
- * to {@link ReportingYearService}; resolves the verbatim SUC-001 success text here (AD-8) so message
+ * Open Reporting Year endpoints (UC-RY-001). Every method is gated on the ADMIN-only {@code
+ * OPEN_REPORTING_YEAR} action (AD-7, S13) so a non-admin is denied 403 server-side. Delegates to
+ * {@link ReportingYearService}; resolves the verbatim SUC-001 success text here (AD-8) so message
  * text never lives in Java.
  */
 @RestController
@@ -46,10 +46,14 @@ public class ReportingYearController implements ReportingYearApi {
     Integer requestedYear = request == null ? null : request.year();
     OpenReportingYearResult result = service.open(requestedYear, authentication.getName());
     // Pass the year as a String so MessageFormat renders "2025", not the number-grouped "2,025".
-    String message = messageSource.getMessage(
-        MSG_CREATED, new Object[] {String.valueOf(result.year())}, MSG_CREATED,
-        LocaleContextHolder.getLocale());
-    return ResponseEntity.ok(new OpenReportingYearResponse(
-        result.year(), result.millsInitialized(), MSG_CREATED, message));
+    String message =
+        messageSource.getMessage(
+            MSG_CREATED,
+            new Object[] {String.valueOf(result.year())},
+            MSG_CREATED,
+            LocaleContextHolder.getLocale());
+    return ResponseEntity.ok(
+        new OpenReportingYearResponse(
+            result.year(), result.millsInitialized(), MSG_CREATED, message));
   }
 }

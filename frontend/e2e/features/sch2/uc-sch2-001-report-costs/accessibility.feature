@@ -4,7 +4,10 @@
 #
 # Each render swept below is genuinely different DOM, not the same page several times:
 #   1. EDITABLE — three numeric inputs with visually-hidden labels inside table cells, the comments
-#      textarea with its character counter, and both action bars (six buttons, one of them disabled).
+#      textarea with its character counter, and both action bars: FIVE buttons, because Delete sits on
+#      the bottom bar only (legacy's asymmetry, restored by nr-ilcr #292). On a never-saved schedule
+#      Delete is disabled and carries an `aria-describedby` reason (a visually-hidden span), so the
+#      sweep also covers that association.
 #   2. READ-ONLY — no inputs at all: the value cells become plain text and the comments textarea is
 #      replaced by a heading + paragraph. A different accessible tree whose table must still be navigable.
 #   3. The CHECK-STATUS result — a warning notification that must announce itself, not just render amber.

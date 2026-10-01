@@ -1,10 +1,22 @@
+@use '@carbon/react/scss/breakpoint' as *;
 @use '@carbon/react/scss/spacing' as *;
+
+// The expanded Carbon side nav is 16rem wide and `position: fixed`. Carbon derives that from
+// `mini-units(32)`, but that function is marked `@access private`, so importing it would couple us
+// harder to Carbon's internals rather than looser. The literal stays, and
+// `__tests__/sideNavStyleContract.test.ts` fails if Carbon ever moves off 16rem.
+$side-nav-width: 16rem;
+// Carbon's own side-nav transition (@carbon/styles ui-shell/side-nav). Matched exactly so the page
+// slides with the panel instead of racing it — the SCSS tripwire test pins that the two still agree.
+// Reduced motion is handled at the foot of this file, where BOTH ours and Carbon's are zeroed.
+$side-nav-transition: 0.11s cubic-bezier(0.2, 0, 1, 0.9);
 
 // Grows to fill the #root flex column so short pages still reach the fixed footer, and reserves bottom
 // space equal to the (single-row) footer height so its content is never hidden behind the fixed bar.
 .app-content {
   flex: 1 0 auto;
   padding-block-end: $spacing-09;
+  transition: margin-inline-start $side-nav-transition;
 }
 
 // The working-context info (legacy `#subMenu` strip), now rendered inline on the right of the page
@@ -35,6 +47,7 @@
   position: fixed;
   inset-inline: 0;
   inset-block-end: 0;
+  transition: margin-inline-start $side-nav-transition;
 
   &__version {
     justify-self: start;
@@ -103,4 +116,33 @@
   position: fixed;
   right: $spacing-05;
   z-index: 9001;
+}
+
+// Side-nav inset (#316). The nav is expanded by DEFAULT at lg+, so without this its 16rem panel would
+// sit permanently on top of the left edge of every page — and, being z-index 8000 with `inset-block: 0`,
+// on top of the fixed footer too. Carbon normally supplies this offset itself, but only through sibling
+// selectors (`.cds--side-nav ~ .cds--content`); here the SideNav is a child of the Header while the
+// content is the header's sibling, so those selectors never match and the app owns the offset.
+//
+// Scoped to lg+ on purpose: below lg the nav is a modal overlay drawn over the page, and insetting the
+// content there would shove it off-screen behind the panel.
+@include breakpoint('lg') {
+  .app-content--nav-expanded,
+  .app-footer--nav-expanded {
+    margin-inline-start: $side-nav-width;
+  }
+}
+
+// Reduced motion. Carbon ships no reduced-motion guard for the side-nav panel itself, and an earlier
+// version of this file used that as the reason to leave our own transition unguarded too ("guarding
+// only ours would desync the two"). That reasoning was wrong: the app already overrides Carbon three
+// rules above, so guarding BOTH keeps them in sync — at zero duration. Without this, a
+// motion-sensitive user gets a full-width 16rem page slide on every toggle, and since the nav is now
+// open by default the toggle is the only way to reclaim space for a wide schedule table.
+@media (prefers-reduced-motion: reduce) {
+  .app-content,
+  .app-footer,
+  .cds--side-nav {
+    transition: none;
+  }
 }

@@ -14,11 +14,18 @@ type UseScheduleMutationsOptions = {
 
 type MutationOptions<T> = {
   /** Applied only when the request resolves under the still-current context (see {@code run}). */
-  readonly onSuccess: (data: T) => void
+  /**
+   * May return a promise; {@code run} then holds the in-flight lock until it settles, so a write that
+   * chains a re-GET is one locked operation (defect #292, PR #351 review). See
+   * {@code useScheduleBanners.RunOptions.onSuccess}.
+   */
+  readonly onSuccess: (data: T) => void | Promise<unknown>
   /** Shown only when the rejection carries no ProblemDetail detail of its own (AD-8); {@code null} fails silently. */
   readonly fallback: string | null
   /** Appended to the base path before the mill/year query, e.g. {@code '/records/12'} for a by-id write. */
   readonly suffix?: string
+  /** See {@code useScheduleBanners.RunOptions.stillWanted}; honoured by {@code checkStatus}. */
+  readonly stillWanted?: () => boolean
 }
 
 /**
@@ -68,9 +75,25 @@ export function useScheduleMutations<TCheckResult>({
   const remove = <T>({ onSuccess, fallback, suffix }: MutationOptions<T>) =>
     banners.run<T>(api().delete<T>(url(suffix)), { fallback, onSuccess })
 
-  /** POST the check-status endpoint (default suffix {@code '/check-status'}). */
-  const checkStatus = <T>({ onSuccess, fallback, suffix = '/check-status' }: MutationOptions<T>) =>
-    banners.run<T>(api().post<T>(url(suffix)), { fallback, onSuccess })
+  /**
+   * POST the check-status endpoint (default suffix {@code '/check-status'}).
+   *
+   * <p>{@code body} carries the ON-SCREEN values for any check-status endpoint that evaluates the
+   * screen: legacy's Check Status describes the screen rather than the saved record (issue #359).
+   * Such an endpoint REQUIRES the body (a POST without one is a 400), and the body's shape is that
+   * schedule's own {@code Schedule*CheckRequest}: every row, or only the open panel, depending on
+   * what the page shows. Omit it only for an endpoint that still judges the saved record. Schedule 5
+   * is a special case: legacy's own Schedule 5 screen judges the saved record, and it sends a body
+   * only because the business area ruled it should match the others (#476).
+   *
+   * <p>{@code stillWanted}, when given, is asked as the response lands. If it answers {@code false},
+   * the result is dropped, success or failure alike, so a check superseded by a later edit never
+   * paints a stale verdict or error.
+   */
+  const checkStatus = <T>(
+    { onSuccess, fallback, suffix = '/check-status', stillWanted }: MutationOptions<T>,
+    body?: unknown,
+  ) => banners.run<T>(api().post<T>(url(suffix), body), { fallback, onSuccess, stillWanted })
 
   return { ...banners, query, url, save, remove, checkStatus }
 }

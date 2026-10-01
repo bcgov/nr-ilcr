@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.user;
 
 import ca.bc.gov.nrs.ilcr.dto.base.Role;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import ca.bc.gov.nrs.ilcr.user.api.UserApi;
 import ca.bc.gov.nrs.ilcr.user.dto.CurrentUser;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
@@ -36,20 +37,22 @@ public class UserController implements UserApi {
   }
 
   private static CurrentUser toCurrentUser(Authentication authentication) {
-    List<String> roles = authentication.getAuthorities().stream()
-        .map(GrantedAuthority::getAuthority)
-        .map(Role::fromValue)
-        .filter(Objects::nonNull)
-        .map(Role::getRoleName)
-        .distinct()
-        .toList();
+    List<String> roles =
+        authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .map(Role::fromValue)
+            .filter(Objects::nonNull)
+            .map(Role::getRoleName)
+            .distinct()
+            .toList();
 
     if (authentication instanceof JwtAuthenticationToken jwtAuth) {
       Jwt jwt = jwtAuth.getToken();
-      String userGuid = StringUtils.firstNonBlank(
-          JwtPrincipalUtil.getIdpUserId(jwt), jwt.getSubject());
-      String displayName = StringUtils.firstNonBlank(
-          JwtPrincipalUtil.getDisplayName(jwt), JwtPrincipalUtil.getName(jwt), userGuid);
+      String userGuid =
+          StringUtils.firstNonBlank(JwtPrincipalUtil.getIdpUserId(jwt), jwt.getSubject());
+      String displayName =
+          StringUtils.firstNonBlank(
+              JwtPrincipalUtil.getDisplayName(jwt), JwtPrincipalUtil.getName(jwt), userGuid);
       return new CurrentUser(
           userGuid,
           displayName,
@@ -58,7 +61,12 @@ public class UserController implements UserApi {
           roles);
     }
 
-    // Security-off mock principal (name e.g. "dev-submitter") — no token claims to read.
-    return new CurrentUser(authentication.getName(), MOCK_DISPLAY_NAME, null, null, roles);
+    // Keep the short principal name (e.g. "dev-submitter") for legacy audit columns, but expose
+    // the mock's stand-in directory GUID through the same API field as a deployed JWT caller.
+    String userGuid =
+        authentication.getPrincipal() instanceof MockUserPrincipal mock
+            ? mock.userGuid()
+            : authentication.getName();
+    return new CurrentUser(userGuid, MOCK_DISPLAY_NAME, null, null, roles);
   }
 }

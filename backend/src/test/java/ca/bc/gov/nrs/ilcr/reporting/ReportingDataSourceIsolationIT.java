@@ -19,22 +19,23 @@ import org.springframework.test.context.TestPropertySource;
  * report renders can only exhaust that dedicated pool and never starve the {@code @Primary}
  * transactional pool serving ordinary schedule requests.
  *
- * <p>The reporting pool is sized ABOVE the primary pool here (6 &gt; the default 5) so the isolation
- * test is a real regression guard: if someone dropped the {@code @Qualifier} on {@code ReportService}
- * and it fell back to the shared primary pool of 5, saturating "the reporting pool" with 6 connections
- * would be impossible (the 6th would block to the timeout and fail) — so the test would go red.
+ * <p>The reporting pool is sized ABOVE the primary pool here (6 &gt; the default 5) so the
+ * isolation test is a real regression guard: if someone dropped the {@code @Qualifier} on {@code
+ * ReportService} and it fell back to the shared primary pool of 5, saturating "the reporting pool"
+ * with 6 connections would be impossible (the 6th would block to the timeout and fail) — so the
+ * test would go red.
  */
-@TestPropertySource(properties = {
-    "ilcr.security.enabled=false",
-    "spring.datasource.reporting.hikari.maximum-pool-size=6"
-})
+@TestPropertySource(
+    properties = {
+      "ilcr.security.enabled=false",
+      "spring.datasource.reporting.hikari.maximum-pool-size=6"
+    })
 class ReportingDataSourceIsolationIT extends AbstractOracleIT {
 
   @Autowired private DataSource primaryDataSource; // resolves to the @Primary bean
 
   @Autowired
-  @Qualifier("reportingDataSource")
-  private DataSource reportingDataSource;
+  @Qualifier("reportingDataSource") private DataSource reportingDataSource;
 
   @Test
   void reportingDataSourceIsADistinctPoolWithItsOwnName() throws Exception {
@@ -42,7 +43,8 @@ class ReportingDataSourceIsolationIT extends AbstractOracleIT {
 
     HikariDataSource reportingHikari = reportingDataSource.unwrap(HikariDataSource.class);
     assertThat(reportingHikari.getPoolName()).isEqualTo("ILCRReportingPool");
-    // The read-only flag is a config/pool HINT (not an Oracle-enforced privilege), so assert the pool
+    // The read-only flag is a config/pool HINT (not an Oracle-enforced privilege), so assert the
+    // pool
     // config rather than connection.isReadOnly() — the driver may report that inconsistently.
     assertThat(reportingHikari.isReadOnly()).isTrue();
     assertThat(reportingHikari.getMaximumPoolSize()).isGreaterThan(primaryMaxPoolSize());
@@ -56,9 +58,12 @@ class ReportingDataSourceIsolationIT extends AbstractOracleIT {
 
     List<Connection> held = new ArrayList<>();
     try {
-      // Hold EVERY connection the reporting pool can hand out (the stand-in for concurrent renders, each
-      // pinning a connection for its whole fill). Because reportingMax (6) > the primary ceiling (5),
-      // completing this loop is itself proof of a separate pool — the shared pool could never hand out 6.
+      // Hold EVERY connection the reporting pool can hand out (the stand-in for concurrent renders,
+      // each
+      // pinning a connection for its whole fill). Because reportingMax (6) > the primary ceiling
+      // (5),
+      // completing this loop is itself proof of a separate pool — the shared pool could never hand
+      // out 6.
       for (int i = 0; i < reportingMax; i++) {
         held.add(reportingDataSource.getConnection());
       }

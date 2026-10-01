@@ -26,10 +26,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  *
  * <p>The authorized cases double as the production-context pin the standalone test cannot give:
  * resolution and the missing-key 404 run against Boot's auto-configured {@code MessageSource}
- * (default basename {@code messages}, {@code useCodeAsDefaultMessage=false}). A
- * {@code use-code-as-default-message=true} misconfiguration would defeat the missing-key guard —
- * the key would echo back as text instead of throwing — while the hand-built unit-test source
- * stayed green; here it fails the 404 case.
+ * (default basename {@code messages}, {@code useCodeAsDefaultMessage=false}). A {@code
+ * use-code-as-default-message=true} misconfiguration would defeat the missing-key guard — the key
+ * would echo back as text instead of throwing — while the hand-built unit-test source stayed green;
+ * here it fails the 404 case.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/messages — authorization on VIEW_SCHEDULE")
@@ -37,11 +37,14 @@ class MessageAuthorizationIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/messages";
   private static final String COPY_KEY = "sch5.copy.msg";
+
+  /** SUC-001, added to the allowlist by the Data Extract CSV story. */
+  private static final String EXTRACT_SUCCESS_KEY = "dataExtractedSuccesfullyInfoMsg";
+
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -52,9 +55,8 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", COPY_KEY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(get(ENDPOINT).param("key", COPY_KEY).with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -62,9 +64,11 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ prefix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", COPY_KEY)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", COPY_KEY)
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -72,23 +76,51 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER -> 200 with the PRODUCTION MessageSource's resolved text")
   void submitter_resolvesThroughProductionBundle() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", COPY_KEY)
-            .param("arg", "Cedar Flats Camp")
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", COPY_KEY)
+                .param("arg", "Cedar Flats Camp")
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.key").value(COPY_KEY))
-        .andExpect(jsonPath("$.text").value(
-            "To complete copy of Camp: Cedar Flats Camp, "
-                + "provide a new Camp Name and invoke save."));
+        .andExpect(
+            jsonPath("$.text")
+                .value(
+                    "To complete copy of Camp: Cedar Flats Camp, "
+                        + "provide a new Camp Name and invoke save."));
+  }
+
+  @Test
+  @DisplayName("the Data Extract success key resolves for BOTH roles, like the others")
+  void extractSuccessKeyResolvesForBothRoles() throws Exception {
+    // Added to the allowlist by the Data Extract CSV story. The extract endpoint itself is
+    // ADMIN-only, but this key is gated on VIEW_SCHEDULE like every other entry — it is a static
+    // sentence, not admin data, and narrowing the gate per key would invent a second rule for no
+    // benefit. A submitter can fetch the sentence and has no endpoint to use it on.
+    mockMvc
+        .perform(get(ENDPOINT).param("key", EXTRACT_SUCCESS_KEY).with(canonicalSubmitter()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.text").value("Data extraction successfully."));
+
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", EXTRACT_SUCCESS_KEY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.key").value(EXTRACT_SUCCESS_KEY))
+        .andExpect(jsonPath("$.text").value("Data extraction successfully."));
   }
 
   @Test
   @DisplayName("ILCR_ADMIN, unknown key -> 404 whose detail is the bundle text, never the key")
   void admin_unknownKey404sWithBundleDetail() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", "noSuchKeyAnywhere")
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", "noSuchKeyAnywhere")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail").value("Message not found."));
   }

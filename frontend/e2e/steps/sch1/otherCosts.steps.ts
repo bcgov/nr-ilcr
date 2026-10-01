@@ -201,6 +201,29 @@ Then(
   },
 );
 
+/**
+ * DIV-3's assertion (bcgov#362): removing a row must ASK first, as legacy did with `confirmDeleteMsg`
+ * (`schedule1OtherCosts.xhtml:94-96`). A tracked red until #362 put the trash button behind the shared
+ * confirmation; it now guards against the prompt being dropped again. Schedule 3 asserts the same
+ * guarantee on the same shared hook (`sch3` DIV-5, `row-delete-confirm.feature`).
+ */
+Then('the Other Costs sub-page asks me to confirm the removal', async ({ otherCostsPage }) => {
+  await expect(
+    otherCostsPage.anyDialog,
+    'removing a sub-page row destroyed it immediately with no confirmation and no undo — legacy asked ' +
+      '"This will delete the current record. Do you want to continue?" first (defects.md DIV-3)',
+  ).toBeVisible();
+});
+
+/** The other half of DIV-3: until the prompt is confirmed, the row must still exist. */
+Then('the Other Cost {string} is still persisted', async ({ request, world }, description) => {
+  const { millId, year } = world.scheduleKey!;
+  expect(
+    (await listOtherCosts(request, millId, year)).map((r) => r.description),
+    'the row was deleted before any confirmation was given (defects.md DIV-3)',
+  ).toContain(description);
+});
+
 Then('the Other Cost {string} is not persisted', async ({ request, world }, description) => {
   const { millId, year } = world.scheduleKey!;
   await expect

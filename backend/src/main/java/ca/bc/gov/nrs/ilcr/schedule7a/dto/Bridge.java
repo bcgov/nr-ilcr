@@ -1,10 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule7a.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
- * One Schedule 7A bridge on the served document (AD-12). Attribute, measurement, and cost fields are
- * the stored values; the four total fields are SERVER-COMPUTED (BR-06) from the costs and are
+ * One Schedule 7A bridge on the served document (AD-12). Attribute, measurement, and cost fields
+ * are the stored values; the four total fields are SERVER-COMPUTED (BR-06) from the costs and are
  * read-only — never stored, never client-supplied. Jackson serializes non-null only, so an absent
  * value (a blank optional cost, a total with no contributing costs) is omitted.
  *
@@ -74,5 +76,76 @@ public record Bridge(
     Integer totalDeliver,
     Integer totalInstall,
     Integer grandTotal,
-    int revisionCount) {
+    int revisionCount,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public Bridge(
+      long bridgeReportId,
+      int rowCounter,
+      String locationName,
+      String builtDate,
+      String constructionTypeCode,
+      String superstructureTypeCode,
+      String deckTypeCode,
+      String abutmentTypeCode,
+      String loadRatingCode,
+      Integer lifeSpan,
+      BigDecimal abutmentHeight,
+      BigDecimal length,
+      BigDecimal width,
+      Integer distance,
+      Integer sitePlanCost,
+      Integer superstructureMaterialCost,
+      Integer superstructureDeliverCost,
+      Integer superstructureInstallCost,
+      Integer abutmentMaterialCost,
+      Integer abutmentDeliverCost,
+      Integer abutmentInstallCost,
+      Integer approachCost,
+      Integer afterInstallCost,
+      Integer otherCost,
+      String comments,
+      Integer totalMaterial,
+      Integer totalDeliver,
+      Integer totalInstall,
+      Integer grandTotal,
+      int revisionCount) {
+    this(
+        bridgeReportId,
+        rowCounter,
+        locationName,
+        builtDate,
+        constructionTypeCode,
+        superstructureTypeCode,
+        deckTypeCode,
+        abutmentTypeCode,
+        loadRatingCode,
+        lifeSpan,
+        abutmentHeight,
+        length,
+        width,
+        distance,
+        sitePlanCost,
+        superstructureMaterialCost,
+        superstructureDeliverCost,
+        superstructureInstallCost,
+        abutmentMaterialCost,
+        abutmentDeliverCost,
+        abutmentInstallCost,
+        approachCost,
+        afterInstallCost,
+        otherCost,
+        comments,
+        totalMaterial,
+        totalDeliver,
+        totalInstall,
+        grandTotal,
+        revisionCount,
+        null);
+  }
 }

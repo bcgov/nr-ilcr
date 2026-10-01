@@ -36,8 +36,8 @@ public interface Schedule1OtherCostsApi {
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Add one itemized row inheriting the shared volume (BR-06, S09). Range/required validation → 400;
-   * non-Draft or no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * Add one itemized row inheriting the shared volume (BR-06, S09). Range/required validation →
+   * 400; non-Draft or no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -54,13 +54,13 @@ public interface Schedule1OtherCostsApi {
 
   /**
    * Batch "Save" the whole row set (legacy {@code save()} reconcile): update rows with a known id,
-   * insert rows with none, delete existing rows absent from the request. Validation → 400; non-Draft or
-   * no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * insert rows with none, delete existing rows absent from the request. Validation → 400;
+   * non-Draft or no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
-   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity —
-   *     the persistence is identical either way; only the success message differs)
+   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity
+   *     — the persistence is identical either way; only the success message differs)
    * @param request the full row set to persist (each row validated)
    * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
    * @return 200 with the recomputed document (success {@code message})
@@ -74,8 +74,8 @@ public interface Schedule1OtherCostsApi {
       Authentication authentication);
 
   /**
-   * Update one itemized row's description/cost (S11). Same validation/gates as add; unknown
-   * {@code id} → 404.
+   * Update one itemized row's description/cost (S11). Same validation/gates as add; unknown {@code
+   * id} → 404.
    *
    * @param id the itemized row's detail id
    * @param millId the mill id (required)

@@ -12,9 +12,9 @@ import org.springframework.data.relational.core.mapping.Table;
  * <p><strong>There is no Road Group column.</strong> {@code RMG} is derived on every read from the
  * TSA/TSB or TFL tables via {@link RoadGroup10Lookup}, never stored.
  *
- * <p><strong>{@code CONSTRUCTION_DIVISION_NAME} is {@code VARCHAR2(20)}</strong> even though
- * {@code schedule10.xhtml:140} sets {@code maxlength="30"} — a real defect recorded for Story 11.2.
- * This read story is unaffected.
+ * <p><strong>{@code CONSTRUCTION_DIVISION_NAME} is {@code VARCHAR2(20)}</strong> even though {@code
+ * schedule10.xhtml:140} sets {@code maxlength="30"} — a real defect recorded for Story 11.2. This
+ * read story is unaffected.
  *
  * <p>Numeric columns are boxed: ojdbc maps Oracle {@code NUMBER} to {@code BigDecimal} and a
  * primitive would NPE on a null. {@code REPORT_YEAR} and {@code ILCR_MILL_ID} are {@code NOT NULL}
@@ -32,5 +32,4 @@ public record RoadConstructionReportEntity(
     @Column("TSB_NUMBER_CODE") String tsbNumberCode,
     @Column("TSA_NUMBER") String tsaNumber,
     @Column("TFL_NUMBER_CODE") String tflNumberCode,
-    @Column("REVISION_COUNT") Integer revisionCount) {
-}
+    @Column("REVISION_COUNT") Integer revisionCount) {}

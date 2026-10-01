@@ -61,25 +61,79 @@ body {
   max-inline-size: 100%;
 }
 
-// Consistent typography across Schedules 2/4/8 and their sub-pages (scoped to .schedule-page so it
-// does not leak to other routes): main headers — panel/section headings + Carbon table titles — at
-// 1.25rem; row + field labels — Carbon input labels, including Comments — at 0.875rem. So equivalent
-// headers (e.g. "Existing Locations" and "Edit Location") and equivalent labels (e.g. "Location Name"
-// and the edit-grid row labels) match across the schedules. Sizes are in rem (not px) so they scale
-// with the browser's font-size setting (WCAG 1.4.4); only the size is set, leaving Carbon's weight and
-// line-height intact, so a full type-style token is intentionally not used here.
-.schedule-page {
-  .schedule-2__heading,
-  .schedule-4__heading,
-  .schedule-8__heading,
-  .schedule-4__subpage-title,
-  .schedule-8__rate-heading,
-  .code-tables__heading,
-  .#{$bcgov-prefix}--data-table-header__title {
-    font-size: 1.25rem;
-  }
+// Consistent LABEL typography on `.schedule-page` routes — Schedules 2, 4, 8 and 10 and their
+// sub-pages, plus the home content, open-reporting-year and code-table screens. Row + field labels,
+// Carbon input labels included, at 0.875rem, so equivalent labels (e.g. "Location Name" and the
+// edit-grid row labels) match across the schedules. Sizes are in rem (not px) so they scale with the
+// browser's font-size setting (WCAG 1.4.4).
+//
+// Section HEADINGS used to live in this block too and no longer do — #411 Overall 11 moved them to
+// the global rule below, because scoping them here is what let the same heading render at two sizes
+// depending on its route. Labels stay scoped: unlike a heading, a label size that leaked onto the
+// routes keeping Carbon's own type would change controls this rule was never measured against.
+//
+// THIS RULE SETS ONLY THE SIZE, deliberately, leaving weight, leading and tracking to whatever
+// declared the label — for a Carbon label that is Carbon's own `label-01` include. That is why no
+// type-style token is used HERE, and it is not an argument against using one where a label is
+// declared: `.schedule-10__field-label` takes its other four properties from `label-01` precisely so
+// this rule only has to override the one property it owns. (#366 code review — the earlier wording
+// read as a house rule against type-style tokens, which Schedules 6 and 10 both contradict.)
+// Section headings — 1.25rem app-wide (#411 Overall 11). This is CSP's own section-heading token,
+// `heading-03` (nr-csp core/DetailSection/index.scss:9, its R13 section-heading mixin:25, and the
+// R06-R11 __section-heading classes), so the schedules match the app the client points at.
+//
+// GLOBAL, not scoped to `.schedule-page`, and that is the fix rather than an incidental detail. The
+// rule used to live inside that class AND name a hand-maintained list, so a heading's size depended
+// on which route it landed on and whether someone had added its class here. Carbon resets bare
+// headings to its own scale (h2 2rem / h3 1.75rem / h4 1.25rem — styles.css:189-206), so anything
+// that missed both lists silently rendered at Carbon's size for its level: nine section headings
+// stood at 1.75rem, 40% over the standard. The same "Comments" heading was 28px on Schedule 1 and
+// 20px on Schedule 2. Size now follows the heading's ROLE, so a new schedule inherits it by naming
+// its heading class here — the one thing left to remember.
+//
+// Subordinate tiers are deliberately NOT touched and are already consistent with CSP: 1rem/600 for a
+// panel or table heading (`.sub-panel__title`, `.schedule-8__subheading`, `.schedule-10__detail-
+// heading`, `.schedule-5-sub-page__panel-heading`; CSP EditableLineItemsTable/index.scss:7).
+//
+// There used to be a second sentence here naming `.schedule-10__detail-subheading` as a 0.875rem
+// tier below that. #440 deleted the class: legacy styles all seven Schedule 10 road-detail headings
+// with one `header` class, so its four sub-headings take the same 1rem as the three above them.
+.schedule-1__heading,
+.schedule-2__heading,
+.schedule-3__heading,
+.schedule-4__heading,
+.schedule-4__subpage-title,
+.schedule-5__heading,
+.schedule-5__comments-heading,
+.schedule-6__heading,
+.schedule-7a__heading,
+.schedule-7b__heading,
+.schedule-8__heading,
+.schedule-8__rate-heading,
+.schedule-9__heading,
+.schedule-10__heading,
+.schedule-11__heading,
+.code-tables__heading,
+.check-status__heading,
+.#{$bcgov-prefix}--data-table-header__title {
+  font-size: 1.25rem;
+}
 
+.schedule-page {
+
+  // A hand-rolled label — a read-only field's <span>, which has no control to hang a Carbon <label>
+  // on — is NOT `.cds--label` and so does not pick this up. It has to be listed here by name or it
+  // renders 12px beside 14px labels and reads as a different font, which is exactly what #366
+  // reported on Schedule 10's Road Group. Add new ones to this list.
   .schedule-2__comments-label,
+  .schedule-10__field-label,
+  // Schedule 10's End Haul / Overland block prints two of its labels as plain spans rather than as
+  // controls' own labels: the `Distance (km)` / `Volume (m3)` / `$/m3/km` column headings, and the
+  // `End Haul Details:` / `Overland Details:` row headings. Neither is a `.cds--label`, so both
+  // rendered 12px beside the 14px labels around them — the same 2px mismatch #366 reported on Road
+  // Group, from the same cause.
+  .schedule-10__haul-column-head,
+  .schedule-10__haul-row-head,
   .#{$bcgov-prefix}--label {
     font-size: 0.875rem;
   }
@@ -107,6 +161,127 @@ body {
 
   .code-tables__heading {
     margin-bottom: 0.5rem;
+  }
+
+  // Users administration: the two legacy panels (User Details, Associated Mills) are `SubPanel`s
+  // now (users.xhtml:19, :52), so they stack via `.sub-panel + .sub-panel` (:182) rather than a
+  // bespoke `.mill-associations__section` rule.
+
+  // The directory provider + user-id controls share a row, as do the mill picker and its Add
+  // button. Same row, but they align on OPPOSITE edges, so they are two rules rather than one.
+  .mill-associations__picker,
+  .mill-associations__add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  // TOP-aligned, which is what puts the three labels on one line. The ComboBox carries `helperText`
+  // and Carbon renders it as the LAST CHILD of the ComboBox's own wrapper
+  // (`ComboBox.js:614-619`, after the list-box), so that wrapper is one text line TALLER than the
+  // two Dropdowns beside it. Under the `flex-end` these rules used to share, the three BOTTOMS
+  // lined up and the extra height came off the top -- which is why the User ID / criterion label
+  // sat a line above Identity provider and Search by. Aligning the tops instead lines up the labels
+  // AND the inputs, because every field in the app is pinned to one 3rem height
+  // (`_overrides.scss:158-182`), and leaves the helper text hanging below where it belongs.
+  .mill-associations__picker {
+    align-items: flex-start;
+  }
+
+  // Bottom-aligned, and this is the rule that needs it: a bare Button has no label above it, so on
+  // a top alignment it would ride up level with the mill Dropdown's LABEL instead of its input.
+  .mill-associations__add {
+    align-items: flex-end;
+  }
+
+  // The not-enabled / no-match notes belong to the picker but read as a full-width line under it.
+  .mill-associations__picker-note {
+    flex-basis: 100%;
+    font-size: 0.875rem;
+  }
+
+  // Mill administration: the two legacy panels (Mill Details, Associated Licensee User) are
+  // `SubPanel`s now (mills.xhtml:28, :110), so they stack with the same rhythm as any other
+  // adjacent sub-panel pair rather than a bespoke `.mills__section` rule. Bare, like every sibling
+  // rule in this block -- this already sits inside `.schedule-page { … }` (:121), so a
+  // `.schedule-page` prefix here would double up and never match.
+  .sub-panel + .sub-panel {
+    margin-top: 2rem;
+  }
+
+  // The two entry controls, the search dialogs' criteria rows, the detail panel's three editable
+  // controls, the status/Save action bar, and the panel's Add button all read as one row of
+  // controls. Bottom-aligned so a button sits on its neighbour's baseline, not its label's.
+  .mills__entry,
+  .mills__criteria,
+  .mills__editable,
+  .mills__actions,
+  .mills__add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  // The read-only identity line: "Mill #: 670 - Cedar Mill   Status: Active", with the two labels
+  // carrying legacy's `header` emphasis.
+  .mills__identity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .mills__label {
+    font-weight: 600;
+  }
+
+  // mills.xhtml:57-95 lays the three contact controls as label-left rows inside the panel, not as
+  // a stack of label-above fields. Carbon's Dropdown root carries `cds--dropdown__wrapper
+  // cds--list-box__wrapper`, not `cds--form-item` (that class belongs to TextInput/NumberInput) --
+  // so the row layout has to target the list-box wrapper, and `display: flex` has to be declared
+  // here too rather than assumed, since the list-box wrapper is not already a flex column the way
+  // `cds--form-item` is. Declares NO control height -- the one app-wide height from
+  // _overrides.scss governs, as controlHeightContract pins.
+  .mills__editable .#{$bcgov-prefix}--list-box__wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  // The action bar sits CENTERED within its panel (legacy's `<p:column styleClass="center"
+  // colspan="7">` action row, mills.xhtml:97).
+  .mills__actions {
+    justify-content: center;
+  }
+
+  // The per-row controls in a grid's Actions cell, on BOTH administration screens. Side by side
+  // rather than stacked, and equal width: a Carbon button sizes to its own label, so `Deactivate`
+  // and `View` differ in width and drop onto separate lines as the column narrows. `flex: 1 1 0`
+  // is what makes them equal — a shared `min-width` alone would still leave the longer label
+  // wider. Written bare, NOT prefixed with `.schedule-page`: this block already IS
+  // `.schedule-page`, and prefixing would compile to a doubled selector that matches nothing.
+  // Declares NO height — the one app-wide control height from _overrides.scss governs, as
+  // controlHeightContract pins.
+  .mills__row-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.5rem;
+
+    .#{$bcgov-prefix}--btn {
+      flex: 1 1 0;
+      min-width: 7.5rem;
+    }
+  }
+
+  // #312 (Table Maintenance, screen item 1): the Code List drop-list should not span the entire
+  // screen width — cap it to a content-appropriate width, left-aligned under its heading.
+  .code-tables__selector {
+    max-width: 24rem;
   }
 
   // The Code List selector is already named by its .code-tables__heading; hide the ComboBox's own

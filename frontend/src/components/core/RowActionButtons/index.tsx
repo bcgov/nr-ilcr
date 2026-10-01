@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, TableCell } from '@carbon/react'
+import { Edit, TrashCan } from '@carbon/icons-react'
 
 type RowActionButtonsProps = {
   /** Disables both buttons (e.g. while saving or another row is being edited). */
@@ -15,10 +16,16 @@ type RowActionButtonsProps = {
  */
 const RowActionButtons: FC<RowActionButtonsProps> = ({ disabled, onEdit, onDelete }) => (
   <TableCell>
-    <Button kind="ghost" size="sm" disabled={disabled} onClick={onEdit}>
+    <Button kind="ghost" size="sm" disabled={disabled} renderIcon={Edit} onClick={onEdit}>
       Edit
     </Button>
-    <Button kind="danger--ghost" size="sm" disabled={disabled} onClick={onDelete}>
+    <Button
+      kind="danger--tertiary"
+      size="sm"
+      disabled={disabled}
+      renderIcon={TrashCan}
+      onClick={onDelete}
+    >
       Delete
     </Button>
   </TableCell>

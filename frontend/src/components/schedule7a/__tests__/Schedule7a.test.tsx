@@ -1,7 +1,16 @@
 import type { ReactNode } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -17,6 +26,8 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
 import type BridgeRequest from '@/interfaces/Schedule7aRequest'
 import type { Bridge } from '@/interfaces/Schedule7aResponse'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 
 const URL = 'http://localhost:3000/api/v1/schedule7a'
 const BRIDGES_URL = `${URL}/bridges`
@@ -188,6 +199,165 @@ async function fillAddForm(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('Schedule 7A page', () => {
+  // ---- Defect #291: the four totals track entry, on blur. ----------------------------------------
+  //
+  // The `northFork` fixture is self-consistent — 8,000 / 800 / 1,200 / 12,000 all satisfy
+  // Schedule7aService's formulas — so the first test below is a genuine mirror-vs-server comparison.
+
+  /**
+   * One of the four total values inside a container. Scoped to the `.schedule-7a__total` blocks and
+   * matched on the label EXACTLY: the cost-field labels also contain "Material"/"Deliver"/"Install",
+   * so a bare getByText matches several elements.
+   */
+  const totalIn = (container: HTMLElement, label: string): string | null | undefined => {
+    const block = [...container.querySelectorAll('.schedule-7a__total')].find(
+      (el) => el.firstElementChild?.textContent === label,
+    )
+    return block?.querySelector('.schedule-7a__total-value')?.textContent
+  }
+
+  const bridgeContainer = (bridgeReportId: number): HTMLElement =>
+    document
+      .getElementById(`bridge-${String(bridgeReportId)}-locationName`)
+      ?.closest('.cds--accordion__item') as HTMLElement
+
+  test('the mirror reproduces the served totals exactly (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    // Committing a cost WITHOUT changing it hands the row to the mirror, so these four figures now
+    // come from the client and must still equal what the server sent.
+    await user.click(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i))
+    await user.tab()
+
+    expect(totalIn(panel, 'Material')).toBe('8,000')
+    expect(totalIn(panel, 'Deliver')).toBe('800')
+    expect(totalIn(panel, 'Install')).toBe('1,200')
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('12,000')
+  })
+
+  test('typing alone moves nothing; blurring a cost recalculates the totals (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.clear(material)
+    await user.type(material, '7000')
+    expect(totalIn(panel, 'Material')).toBe('8,000') // not per keystroke
+
+    await user.tab()
+    expect(totalIn(panel, 'Material')).toBe('10,000') // 7000 + 3000 abutment
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('14,000') // 12,000 + 2,000
+    // The other two pair totals are untouched.
+    expect(totalIn(panel, 'Deliver')).toBe('800')
+    expect(totalIn(panel, 'Install')).toBe('1,200')
+  })
+
+  test('clearing both halves blanks that total rather than showing 0 (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    await user.clear(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i))
+    await user.tab()
+    await user.clear(bridgePanel(7001).getByLabelText(/Abutment.*Material/i))
+    await user.tab()
+
+    expect(totalIn(panel, 'Material')).toBe('') // null, not 0
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('4,000') // 12,000 less the 8,000 material
+  })
+
+  test('the Add panel shows totals as soon as costs are committed (#291)', async () => {
+    // It previously passed no `totals` at all, so all four read blank for the whole of entry.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^add$/i }))
+    const addPanel = document
+      .getElementById('add-locationName')
+      ?.closest('.schedule-7a__section') as HTMLElement
+    expect(totalIn(addPanel, 'Grand Total ($)')).toBe('')
+
+    await user.type(within(addPanel).getByLabelText(/Superstructure.*Material/i), '5000')
+    await user.tab()
+    expect(totalIn(addPanel, 'Material')).toBe('5,000')
+    expect(totalIn(addPanel, 'Grand Total ($)')).toBe('5,000')
+  })
+
+  test('the Save echo supersedes the row mirror — totals follow the server (#291 AC5)', async () => {
+    // The invariant the whole design rests on, and the one no test in this batch asserted: after a
+    // Save the derived cells must come from the echo, not from the pre-save client snapshot. Proven
+    // broken by the code review — `rowCommitted` was never cleared, so the input reverted to the
+    // echoed value while the total kept the stale mirror, permanently.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      // The echo re-serves the ORIGINAL bridge, as a server that rejected or normalized the entry
+      // would: the totals must snap back to 8,000 / 12,000.
+      http.put(BRIDGES_URL, () => HttpResponse.json(doc())),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.clear(material)
+    await user.type(material, '7000')
+    await user.tab()
+    expect(totalIn(panel, 'Material')).toBe('10,000') // the mirror, pre-Save
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)).toHaveValue('5,000')
+    })
+    // The field reverted to the echo; the total must have too.
+    expect(totalIn(panel, 'Material')).toBe('8,000')
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('12,000')
+  })
+
+  test('a blur that changes nothing does not hand an untouched row to the mirror (#291 AC7)', async () => {
+    // Legacy fired on `change`; a tab-through is not a change. Without this guard a stray Tab replaced
+    // the served totals with a client recomputation, bypassing the AC7 test below.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [{ ...northFork, grandTotal: 999999 }] })),
+      ),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.click(material)
+    await user.tab()
+
+    expect(totalIn(bridgeContainer(7001), 'Grand Total ($)')).toBe('999,999')
+  })
+
+  test('an untouched row keeps the served totals — no client recomputation (#291 AC7)', async () => {
+    // A stored grand total that disagrees with its own components: until the reporter commits a cost,
+    // the row must show the server's figure, not a recomputed one.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [{ ...northFork, grandTotal: 999999 }] })),
+      ),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expect(totalIn(bridgeContainer(7001), 'Grand Total ($)')).toBe('999,999')
+  })
+
   test('renders each bridge as an accordion row with legacy labels and server totals (AC1, AC2)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
@@ -571,8 +741,12 @@ describe('Schedule 7A page', () => {
 
     await savePage(user)
 
-    // Without the banner the button reads as dead: no request, no error, no way to find the row.
-    expect(await screen.findByText(/Cannot save.*Bridge report Id: 6/)).toBeInTheDocument()
+    // Without the banner the button reads as dead: no request, no error, no way to find the row. The
+    // banner names each failing field of row 6 in legacy's wording, in field order (#359 group B).
+    expect(
+      await screen.findByText('Id: 6 - Name/Location of Bridge: Value is required.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Id: 6 - Distance (km): Value is required.')).toBeInTheDocument()
     expect(called).toBe(false)
     // And the offending row is actually reachable — paged to and expanded, not merely named.
     expect(await screen.findByRole('button', { name: 'Bridge report Id: 6' })).toBeInTheDocument()
@@ -621,16 +795,16 @@ describe('Schedule 7A page', () => {
     expect(entryFor(captured, 7001)?.otherCost).toBe(1234567)
   })
 
-  test('the comments counter counts UP toward the 3500 limit', async () => {
+  test('the comments counter shows characters remaining (#312 Overall 10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7a />)
     await openBridge(user, 1)
 
-    // Carbon's counter is used-of-limit. 'Spans the north fork' is 20 characters.
-    expect(screen.getByText('20/3500')).toBeInTheDocument()
+    // Remaining, not used-of-limit (legacy wording). 'Spans the north fork' is 20 characters.
+    expect(screen.getByText('3480 characters remaining')).toBeInTheDocument()
     await user.type(field('Comments'), '!')
-    expect(screen.getByText('21/3500')).toBeInTheDocument()
+    expect(screen.getByText('3479 characters remaining')).toBeInTheDocument()
   })
 
   test('Check Status renders per-bridge failures and no schedule banner on mixed results (AC6)', async () => {
@@ -968,13 +1142,20 @@ describe('Schedule 7A page', () => {
     await user.type(field('Length (m)'), '99999')
     await savePage(user)
 
+    // Inline under the field, and in the top banner with legacy's row prefix
+    // (`validatorMessage="Id: #{obj.rowCounter} - …"`, `schedule7A.xhtml:818`) (#359 group B).
     expect(
-      await screen.findByText('Entered bridge length must be between 0.0 and 9,999.9'),
+      await screen.findByText('Id: 1 - Entered bridge length must be between 0.0 and 9,999.9'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Entered bridge length must be between 0.0 and 9,999.9'),
     ).toBeInTheDocument()
     expect(put).toBe(false)
   })
 
-  test('an inline error clears as soon as the user corrects that field (AC8)', async () => {
+  // Re-grounded 2026-09-29 (#359 group B decision): the error no longer clears on the first
+  // keystroke — like legacy's `f:ajax event="change"`, the field is re-judged when it is LEFT.
+  test('an inline error clears when the user corrects that field and leaves it (AC8)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7a />)
@@ -985,6 +1166,8 @@ describe('Schedule 7A page', () => {
     expect(await screen.findByText('Value Required')).toBeInTheDocument()
 
     await user.type(field('Length (m)'), '15.0')
+    expect(screen.getByText('Value Required')).toBeInTheDocument()
+    await user.tab()
     expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
   })
 
@@ -1037,5 +1220,993 @@ describe('Schedule 7A page', () => {
     await waitFor(() => {
       expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     })
+  })
+
+  // #332: every request carries a hardcoded fallback for a failure with NO ProblemDetail detail
+  // (a bare 500, a gateway timeout, a dropped connection). Each case fails ONE request with an empty
+  // body and asserts the exact literal, so a fallback cannot be dropped or reworded unnoticed.
+  describe('detail-less error fallbacks (#332)', () => {
+    const detailLess = () => new HttpResponse(null, { status: 500 })
+
+    test('a load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(URL, detailLess))
+      render(<Schedule7a />)
+
+      // Exact match: the panel TITLE is "Unable to load Schedule 7A" (no period); the fallback is
+      // the subtitle. The work area stays suppressed like every other load failure.
+      expect(await screen.findByText('Unable to load Schedule 7A.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+    })
+
+    test('a detail-less Add Report failure falls back to the generic save message and keeps the draft', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc({ bridges: [] }))),
+        http.post(BRIDGES_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+
+      await user.click(await screen.findByRole('button', { name: 'Add' }))
+      await fillAddForm(user)
+      await user.click(screen.getByRole('button', { name: 'Add Report' }))
+
+      expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+      expect(field('Name/Location of Bridge')).toHaveValue('South Creek Bridge')
+    })
+
+    test('a detail-less page Save failure falls back to the generic save message', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.put(BRIDGES_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+      await openBridge(user, 1)
+      await savePage(user)
+
+      expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less confirmed delete falls back to the generic delete message and keeps the row', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.delete(`${BRIDGES_URL}/7001`, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+      await openBridge(user, 1)
+
+      await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+      await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+      expect(await screen.findByText('Unable to delete bridge report.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Bridge report Id: 1' })).toBeInTheDocument()
+    })
+
+    test('a detail-less Check Status failure falls back to the generic check message', async () => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.post(CHECK_URL, detailLess),
+      )
+      const user = userEvent.setup()
+      render(<Schedule7a />)
+
+      await user.click((await screen.findAllByRole('button', { name: 'Check Status' }))[0])
+
+      expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+      // The in-flight lock releases on failure, so the reporter can retry.
+      expect(screen.getAllByRole('button', { name: 'Check Status' })[0]).toBeEnabled()
+    })
+  })
+})
+
+// Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
+// name as the label text, so a by-name lookup still finds the button AND proves the decorative icon is
+// there — a later edit that drops an icon fails here. Added for the #381 review (paulushcgcj): this
+// page's action bar and add-new trigger were still text-only after 30.3 reached the shared bars.
+describe('Schedule 7A action icons (Story 30.3 / #312 Overall 6)', () => {
+  test('Save, Check Status and the Add toggle all carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+
+    // Save + Check Status come from the shared SaveCheckActions bar, which legacy renders both above
+    // and below the list — so assert every instance.
+    for (const name of [/^save$/i, /check status/i]) {
+      for (const button of await screen.findAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+
+    const toggle = screen.getByRole('button', { name: 'Add' })
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    await user.click(toggle)
+    expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
+  })
+})
+
+// ---- Story 16.3: the ministry correction journey at Submitted ------------------------------------
+//
+// Story 16.1 shipped the role×status editability matrix: ILCR_SUBMITTER may edit only at Draft, while
+// ILCR_ADMIN may edit at Submitted and Verified and is deliberately READ-ONLY at Draft. This page
+// learns all of it from ONE server-computed boolean — `controlsDisabled = !editable || saving`
+// (index.tsx:420) — and never derives it from `trackStatus` or from the client's role (AD-9).
+//
+// Every pre-16.3 `'S'` test in this file pairs it with `editable: false` (the submitter read-only
+// case), so nothing here could tell a correct gate from a widened one and the ministry-correction
+// journey was unverified. These arms close that, and they make the acting identity LOAD-BEARING
+// rather than decorative in two separate ways:
+//
+//   1. the MSW handlers COMPUTE `editable` from the 16.1 matrix over the `X-Mock-Groups` header the
+//      request actually carried, so `renderAsAdmin` versus `renderAsSubmitter` genuinely changes what
+//      the server answers — swap the declaration on any arm and that arm fails; and
+//   2. every arm additionally asserts, in its own body, WHICH role the request carried. That second
+//      check is what catches a FORGOTTEN declaration, the defect this story exists to prevent: a
+//      missing `renderAsAdmin` does not produce a missing header, because `api-service` builds the
+//      header from `findMockUser(localStorage…)` which falls back to `MOCK_USERS[0]` — the ADMIN
+//      (api-service.ts:11-17, mockUsers.ts:38). So an admin arm that lost its declaration would
+//      otherwise still pass on the silent fallback that ran the e2e suite as the wrong role for a
+//      month (Story 16.1 completion notes).
+describe('Schedule 7A ministry correction at Submitted (Story 16.3)', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill
+  // still owns the data. Every other cell — `O`, no track at all, an unrecognised role — fails
+  // CLOSED.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes falsification trivial (flip
+  // the admin entry to ['D'] and every admin-at-Submitted arm below must fail; narrow it to ['S']
+  // and the Verified arm must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  // The role each request actually carried, captured by the handlers and asserted in the test BODY.
+  // Deliberately NOT asserted inside the resolver: an expect() that throws in an MSW resolver is
+  // reported as a failed REQUEST, so the failure is misattributed to the page's error handling
+  // instead of naming the identity as the cause.
+  let sentRole: string | null = null
+  let writeRole: string | null = null
+
+  beforeEach(() => {
+    sentRole = null
+    writeRole = null
+  })
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock
+   * user's roles onto `X-Mock-Groups` (api-service.ts:13), so this is the same signal the real mock
+   * backend gates on — not something the test asserts about itself. The throw is a belt-and-braces
+   * on a malformed harness; it is NOT the identity guard (see the header note), because the header
+   * is always sent.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /**
+   * The matrix decision for one request, mirroring `ScheduleEditability.forCaller`: the header is
+   * `roles.join(',')` (api-service.ts:13) and the server UNIONS the permitted statuses across every
+   * role the caller holds. A mock user holds exactly one role today, so the split is unreachable —
+   * but keying on the raw header would encode the wrong rule. An unrecognised role contributes
+   * nothing, so anything off the matrix fails closed.
+   */
+  const editableFor = (request: Request, trackStatus: unknown): boolean => {
+    const permitted = new Set(
+      actingRole(request)
+        .split(',')
+        .flatMap((role) => EDITABLE_STATUSES[role] ?? []),
+    )
+    return permitted.has(String(trackStatus))
+  }
+
+  /**
+   * A Submitted Schedule 7A document whose `editable` is COMPUTED from the matrix for whoever asked,
+   * overriding the `editable: true` the suite's own `doc()` builder defaults to. Used for the write
+   * echoes too, so "the page is still correctable after the save" is also role-driven.
+   */
+  const matrixDoc = (request: Request, over: Record<string, unknown> = {}) => {
+    const body = doc({ trackStatus: 'S', ...over })
+    return { ...body, editable: editableFor(request, body.trackStatus) }
+  }
+
+  /** GET that answers `editable` per the matrix for whoever is asking, recording who that was. */
+  const matrixGet = (over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => {
+      sentRole = actingRole(request)
+      return HttpResponse.json(matrixDoc(request, over))
+    })
+
+  // Cost entry via click+clear+paste, never `user.type`: Schedule 7A mounts a full 27-field editor for
+  // every visible bridge, so a per-character type is O(rows × chars) and has timed this suite out on
+  // CI. Paste is a real interaction firing one input event, so the component's own onChange and
+  // validation still run.
+  const pasteInto = async (
+    user: ReturnType<typeof userEvent.setup>,
+    input: HTMLElement,
+    value: string,
+  ) => {
+    await user.click(input)
+    await user.clear(input)
+    await user.paste(value)
+  }
+
+  /**
+   * The acting identity, asserted BOTH ways — and it takes both.
+   *
+   * The wire header alone cannot catch a FORGOTTEN declaration: `api-service` builds
+   * `X-Mock-Groups` from `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` — the
+   * ADMIN (api-service.ts:11-17, mockUsers.ts:38) — so an admin arm that lost its `renderAsAdmin`
+   * sends a header byte-identical to a declared admin's. (Verified: dropping `renderAsAdmin` from
+   * all six admin arms below left every one of them green on the header check alone.)
+   *
+   * So assert the DECLARATION too, via the harness's own `declaredRole()`: it returns the role this
+   * test seeded and `null` when nothing did, which is the only available signal separating a
+   * declaration from the silent fallback that ran the e2e suite as the wrong role for a month
+   * (Story 16.1 completion notes).
+   */
+  const expectActingAs = (role: IlcrRole) => {
+    // (1) the role was DECLARED, not inherited. `declaredRole()` reports what THIS test seeded and
+    // null when nothing did, so the storage key stays the harness's own business.
+    expect(declaredRole()).toBe(role)
+    // (2) ...and that identity is what the REQUEST carried, so it is not merely local bookkeeping:
+    // this is the same signal the mock backend itself gates on.
+    expect(sentRole).toBe(role)
+  }
+
+  /** The write surface of one bridge row plus the page-level bars, as one list. */
+  const writeControls = () => [
+    screen.getByRole('button', { name: 'Add' }),
+    bridgePanel(7001).getByRole('button', { name: 'Delete' }),
+    ...screen.getAllByRole('button', { name: 'Save' }),
+    // Legacy disabled Check Status alongside every write control outside Draft, even though the
+    // endpoint itself is read-only and permitted at any status (spec deviation 5).
+    ...screen.getAllByRole('button', { name: 'Check Status' }),
+  ]
+
+  /** Every entry field of one bridge row, spanning all four widget kinds the editor renders. */
+  const entryFields = () => [
+    bridgePanel(7001).getByLabelText('Name/Location of Bridge'),
+    bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)'),
+    bridgePanel(7001).getByLabelText('Other Costs ($)'),
+    bridgePanel(7001).getByLabelText('Length (m)'),
+    bridgePanel(7001).getByRole('combobox', { name: /New\/Used/i }),
+    bridgePanel(7001).getByRole('combobox', { name: /Load Rating/i }),
+    bridgePanel(7001).getByLabelText('Comments'),
+  ]
+
+  /** The read-only shape: the schedule still SHOWS, but nothing on it can be operated. */
+  const expectReadOnly = () => {
+    for (const control of [...entryFields(), ...writeControls()]) {
+      expect(control).toBeDisabled()
+    }
+    // A locked screen, not a suppressed one — legacy bound `disabled` and never removed a control.
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toHaveValue(
+      'North Fork Bridge',
+    )
+    // The confirm modal mounts only while a delete is pending, so there is no route past the
+    // disabled button to a DELETE.
+    expect(
+      screen.queryByText('This will delete the current record. Do you want to continue?'),
+    ).not.toBeInTheDocument()
+  }
+
+  /** The editable shape: every field and every action live for this actor at this status. */
+  const expectCorrectable = () => {
+    for (const control of [...entryFields(), ...writeControls()]) {
+      expect(control).toBeEnabled()
+    }
+  }
+
+  test('admin at Submitted corrects a bridge and saves it — SUC-001 verbatim, status unmoved', async () => {
+    let captured: SaveAllBody | null = null
+    let putCalls = 0
+    // The echo is the corrected bridge over a track that is STILL 'S'. Saving cannot move status:
+    // the backend has exactly one status writer (the year-open INSERT, ReportingYearRepository:139)
+    // and no transition endpoint at all (Epics 17-18 own that).
+    const corrected: Bridge = {
+      ...northFork,
+      sitePlanCost: 2000,
+      grandTotal: 13000,
+      revisionCount: 4,
+    }
+    server.use(
+      matrixGet(),
+      http.put(BRIDGES_URL, async ({ request }) => {
+        putCalls += 1
+        writeRole = actingRole(request)
+        captured = (await request.json()) as SaveAllBody
+        return HttpResponse.json(
+          matrixDoc(request, {
+            bridges: [corrected],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    // The whole point of 16.1's admin row: at Submitted the write surface is LIVE for this actor.
+    expectCorrectable()
+    // ...and it is live because an ADMIN asked. A forgotten `renderAsAdmin` would still have sent a
+    // header (the MOCK_USERS[0] fallback), so this is the check that names the identity.
+    expectActingAs(ILCR_ROLES.admin)
+
+    await pasteInto(user, bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)'), '2000')
+    await savePage(user)
+
+    // SUC-001 verbatim (`dataSavedSuccesfullyInfoMsg`, messages.properties:173), rendered from the
+    // API's own `message.text` and never a client literal (AD-8).
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(putCalls).toBe(1)
+    // The correction was issued AS the admin, not merely fetched as one.
+    expect(writeRole).toBe(ILCR_ROLES.admin)
+    expect(entryFor(captured, 7001)).toMatchObject({ sitePlanCost: 2000, revisionCount: 3 })
+
+    // "The save does not move status" is NOT assertable from the DOM: `trackStatus` is rendered
+    // nowhere on any schedule page (the tombstone carries the working context's mill/year, not the
+    // document's track). So it is asserted by three proxies instead:
+    //   (a) the request body's exact top-level key set — the client structurally cannot ASK for a
+    //       transition, because the only thing it sends is the bridge batch;
+    const body = captured as unknown as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(['bridges'])
+    //       nor can any per-bridge entry smuggle one in;
+    const entry = entryFor(captured, 7001) as unknown as Record<string, unknown>
+    expect(Object.keys(entry)).not.toContain('trackStatus')
+    expect(Object.keys(entry)).not.toContain('editable')
+    //   (b) MSW is strict (`onUnhandledRequest: 'error'`), so a call to any transition endpoint that
+    //       a future change introduced would fail this test rather than pass quietly; and
+    //   (c) the echo is still Submitted, and the matrix still answers editable for this actor over
+    //       it, so the page stays correctable on applying it — which doubles as the AD-9 assertion:
+    //       a page deriving read-only from `trackStatus` would have locked itself here.
+    expect(bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')).toHaveValue('2,000')
+    expectCorrectable()
+  })
+
+  // The negative arm. Same track, same screen, the SAME handler — only the acting identity differs,
+  // and the matrix answers `editable: false`, so the entire surface is dead. Without this, a widened
+  // gate letting the licensee edit a Submitted report would pass the arm above unnoticed.
+  test('submitter at Submitted is read-only — no entry, Save, Check Status or Delete', async () => {
+    // Counters rather than throwing resolvers: a throw inside an MSW resolver surfaces as a failed
+    // REQUEST (and is misattributed to the page's error handling), whereas a count asserted in the
+    // body says plainly that no write left the client. The clicks below are what make it meaningful.
+    let writes = 0
+    server.use(
+      matrixGet(),
+      http.put(BRIDGES_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+      http.delete(`${BRIDGES_URL}/7001`, () => {
+        writes += 1
+        return HttpResponse.json(doc({ bridges: [] }))
+      }),
+    )
+    renderAsSubmitter(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expectReadOnly()
+    expectActingAs(ILCR_ROLES.submitter)
+
+    // Clicking through the dead controls issues nothing: the disabled attribute is the gate, and the
+    // handlers above would have counted anything that slipped past it.
+    await savePage(user)
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    expect(writes).toBe(0)
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+  })
+
+  // The other direction of the same matrix, and the one nothing covered: 16.1 deliberately REMOVED
+  // the administrator's edit rights at Draft, because the mill still owns its Draft data. Assert that
+  // capability is gone, not merely that the administrator has rights somewhere.
+  test('admin at Draft is read-only — the capability 16.1 removed', async () => {
+    let writes = 0
+    server.use(
+      matrixGet({ trackStatus: 'D' }),
+      http.put(BRIDGES_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+      http.delete(`${BRIDGES_URL}/7001`, () => {
+        writes += 1
+        return HttpResponse.json(doc({ bridges: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expectReadOnly()
+    expectActingAs(ILCR_ROLES.admin)
+
+    await savePage(user)
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    expect(writes).toBe(0)
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  // Guards the two read-only arms above against a degenerate handler — or a broken identity helper —
+  // that simply answered `editable: false` to everything. The matrix DISCRIMINATES; it is not
+  // uniformly closed outside the admin's own row.
+  test('submitter at Draft still edits — the matrix discriminates, it is not uniformly closed', async () => {
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsSubmitter(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expectCorrectable()
+    expectActingAs(ILCR_ROLES.submitter)
+  })
+
+  // The rest of the admin row, and the cells that must fail closed. `'V'` is served NOWHERE else in
+  // this repo's frontend tests, so without this arm the backend matrix could be narrowed from
+  // {S,V} to {S} — losing the Verified correction outright — and every suite would stay green.
+  // No mutation handler is registered on purpose: MSW is strict (`onUnhandledRequest: 'error'`), so
+  // a write escaping any of these three states fails the test as an unhandled request.
+  test.each([
+    ['V', 'correctable — Verified, the second half of the admin row', true],
+    ['O', 'read-only — Open is off the matrix entirely, so it fails closed', false],
+    [null, 'read-only — no track at all (a year with no report row) fails closed', false],
+  ])('admin at trackStatus %s is %s', async (trackStatus, _expectation, correctable) => {
+    server.use(matrixGet({ trackStatus }))
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    if (correctable) {
+      expectCorrectable()
+    } else {
+      expectReadOnly()
+    }
+    expectActingAs(ILCR_ROLES.admin)
+  })
+
+  // Delete per the matrix, both paths, for THIS actor and status. The confirm itself is untouched
+  // (user ruling 2026-09-11) and asserted where it stands: Schedule 7A is one of only four pages on
+  // the SHARED `core/ConfirmDeleteModal`, so it already shows legacy's header "Confirmation" and
+  // Yes/No answers around the verbatim `confirmDeleteMsg` (messages.properties:202).
+  test('admin at Submitted deletes behind the verbatim confirm', async () => {
+    let deleteCalls = 0
+    let deleteUrl = ''
+    server.use(
+      matrixGet(),
+      http.delete(`${BRIDGES_URL}/7001`, ({ request }) => {
+        deleteCalls += 1
+        deleteUrl = request.url
+        writeRole = actingRole(request)
+        return HttpResponse.json(
+          matrixDoc(request, {
+            bridges: [],
+            message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    const modal = await deleteModal()
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    expect(
+      screen.getByText('This will delete the current record. Do you want to continue?', {
+        normalizer: verbatim,
+      }),
+    ).toBeInTheDocument()
+
+    await user.click(modal.getByRole('button', { name: 'Yes' }))
+    await waitFor(() => {
+      expect(deleteCalls).toBe(1)
+    })
+    // DEL-001 verbatim (`dataDeletedSuccesfullyInfoMsg`, messages.properties:174).
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(screen.getByText('No bridge reports have been added.')).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin)
+    expect(writeRole).toBe(ILCR_ROLES.admin)
+    // Scoped to the working context, like every other write on this page.
+    expect(deleteUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
+    expect(deleteUrl).toContain(`year=${String(DEFAULT_YEAR)}`)
+  })
+
+  test('admin at Submitted cancelling the confirm issues NO delete and leaves the bridge alone', async () => {
+    let deleteCalls = 0
+    server.use(
+      matrixGet(),
+      http.delete(`${BRIDGES_URL}/7001`, ({ request }) => {
+        deleteCalls += 1
+        return HttpResponse.json(matrixDoc(request, { bridges: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    const modal = await deleteModal()
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    await user.click(modal.getByRole('button', { name: 'No' }))
+
+    expect(deleteCalls).toBe(0)
+    expectActingAs(ILCR_ROLES.admin)
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+    // The document is untouched: the row, its values and the served totals all still stand, and no
+    // success banner was raised.
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toHaveValue(
+      'North Fork Bridge',
+    )
+    expect(bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')).toHaveValue('1,000')
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    expect(screen.queryByText('No bridge reports have been added.')).not.toBeInTheDocument()
+    // And the schedule is still correctable — cancelling a delete must not lock the page.
+    expect(bridgePanel(7001).getByRole('button', { name: 'Delete' })).toBeEnabled()
+  })
+
+  // Check Status is available to the correcting administrator and mutates nothing. Legacy gated the
+  // BUTTON on edit rights (26 of 26), so at Submitted-and-editable it is live rather than dead.
+  test('admin at Submitted can run Check Status, and it changes nothing', async () => {
+    let checkCalls = 0
+    let getCalls = 0
+    let writes = 0
+    server.use(
+      http.get(URL, ({ request }) => {
+        getCalls += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(matrixDoc(request))
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        checkCalls += 1
+        writeRole = actingRole(request)
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          // Empty on an all-pass result: the API sends the schedule-wide message alone, because
+          // legacy emitted its per-bridge lines only when the schedule as a whole failed.
+          bridgeMessages: [],
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        })
+      }),
+      // Counted, not thrown: the count is asserted in the body below, so "Check Status mutated
+      // nothing" is a real assertion rather than a request failure attributed elsewhere.
+      http.put(BRIDGES_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+      http.delete(`${BRIDGES_URL}/7001`, () => {
+        writes += 1
+        return HttpResponse.json(doc({ bridges: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const buttons = screen.getAllByRole('button', { name: 'Check Status' })
+    for (const button of buttons) {
+      expect(button).toBeEnabled()
+    }
+    const getsBefore = getCalls
+    await user.click(buttons[0])
+
+    // SUC-002 verbatim (`scheduleRequirementsMetMsg`, messages.properties:184 — no trailing period).
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    expect(checkCalls).toBe(1)
+    expectActingAs(ILCR_ROLES.admin)
+    expect(writeRole).toBe(ILCR_ROLES.admin)
+    // Exactly one POST, no write of any kind, and no re-GET: the check applies no document, so a
+    // stable GET count is the real "nothing else ran" signal (the confirmed-delete path, by
+    // contrast, re-renders from its own echo).
+    expect(writes).toBe(0)
+    expect(getCalls).toBe(getsBefore)
+    // The document is exactly as served.
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toHaveValue(
+      'North Fork Bridge',
+    )
+    expect(bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')).toHaveValue('1,000')
+    expect(bridgePanel(7001).getByLabelText('Comments')).toHaveValue('Spans the north fork')
+    // Still editable afterwards — a read-only check must not leave the page locked.
+    expectCorrectable()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B — Check Status evaluates the SCREEN, not the saved record.
+// ---------------------------------------------------------------------------------------------------
+
+// Every error banner's subtitle, in render order — the validation banner is one line per failing field.
+const errorBannerLines = () =>
+  Array.from(
+    document.querySelectorAll(
+      '.cds--inline-notification--error .cds--inline-notification__subtitle',
+    ),
+  ).map((node) => node.textContent)
+
+const checkStatusButton = () => screen.getAllByRole('button', { name: 'Check Status' })[0]
+
+const MET_RESPONSE = {
+  requirementsMet: true,
+  errors: [],
+  bridgeMessages: [],
+  requirementsMetMessage: {
+    key: 'scheduleRequirementsMetMsg',
+    text: 'All requirements for this schedule have been met',
+  },
+}
+
+// The check entry a served, untouched `northFork`-shaped bridge produces.
+const servedEntry = (locationName: string) => ({
+  locationName,
+  builtDate: '2020-06',
+  lifeSpan: 50,
+  abutmentHeight: 5,
+  length: 20,
+  width: 4,
+  distance: 12,
+  sitePlanCost: 1000,
+  superstructureMaterialCost: 5000,
+  superstructureDeliverCost: 500,
+  superstructureInstallCost: 800,
+  abutmentMaterialCost: 3000,
+  abutmentDeliverCost: 300,
+  abutmentInstallCost: 400,
+  approachCost: 700,
+  afterInstallCost: 200,
+  otherCost: 100,
+})
+
+describe('Schedule 7A Check Status evaluates the screen (#359 group B)', () => {
+  test('the body carries EVERY bridge as on screen, in order — blank → null, typed 0 stays 0, other pages included, no Add draft', async () => {
+    const bridges = Array.from({ length: 7 }, (_, index) => bridgeAt(7001 + index, index + 1))
+    let body: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ bridges }))),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    // Row 1 (page 1): a cost cleared (optional at Save, so the check still goes out) and one typed 0.
+    await user.clear(bridgePanel(7001).getByLabelText('Approach works ($)'))
+    const sitePlan = bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')
+    await user.clear(sitePlan)
+    await user.type(sitePlan, '0')
+
+    // Row 6 (page 2): an edit made on another paginator page.
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await openBridge(user, 6)
+    const distance6 = bridgePanel(7006).getByLabelText('Distance (km)')
+    await user.clear(distance6)
+    await user.type(distance6, '99')
+    await user.click(screen.getByRole('button', { name: /previous page/i }))
+
+    // An Add draft on screen is never part of the check (Add saves at once in legacy).
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(document.getElementById('add-locationName') as HTMLElement, 'Draft Bridge')
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    expect(body).toEqual({
+      bridges: [
+        { ...servedEntry('Bridge 1'), approachCost: null, sitePlanCost: 0 },
+        servedEntry('Bridge 2'),
+        servedEntry('Bridge 3'),
+        servedEntry('Bridge 4'),
+        servedEntry('Bridge 5'),
+        { ...servedEntry('Bridge 6'), distance: 99 },
+        servedEntry('Bridge 7'),
+      ],
+    })
+  })
+
+  test("Check Status is gated on Save's validator: no request, the banner names each field verbatim, inline Value Required stays", async () => {
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ bridges: [northFork, bridgeAt(7002, 2)] }))),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    await openBridge(user, 2)
+
+    // Row 1: a required width cleared, an out-of-range length. Row 2: its name cleared.
+    await user.clear(bridgePanel(7001).getByLabelText('Width (m)'))
+    const length = bridgePanel(7001).getByLabelText('Length (m)')
+    await user.clear(length)
+    await user.type(length, '99999')
+    await user.clear(bridgePanel(7002).getByLabelText('Name/Location of Bridge'))
+
+    await user.click(checkStatusButton())
+
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Id: 1 - Entered bridge length must be between 0.0 and 9,999.9',
+        'Id: 1 - Width (m): Value is required.',
+        'Id: 2 - Name/Location of Bridge: Value is required.',
+      ])
+    })
+    expect(posts).toBe(0)
+    expect(bridgePanel(7001).getByText('Value Required')).toBeInTheDocument()
+    expect(bridgePanel(7002).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('Save and Check Status show the SAME verbatim banner lines, with the legacy row label spelling', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            bridges: [
+              bridgeAt(7001, 1, {
+                builtDate: null,
+                constructionTypeCode: null,
+                lifeSpan: null,
+                abutmentHeight: null,
+                loadRatingCode: null,
+              }),
+            ],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await screen.findByRole('button', { name: 'Bridge report Id: 1' })
+    // `Abutments Ht. (m)` WITH the space: the list-row label (`schedule7A.xhtml:760`), not the Add
+    // panel's `Abutments Ht.(m)`.
+    const expected = [
+      'Id: 1 - Date: Value is required.',
+      'Id: 1 - New/Used: Value is required.',
+      'Id: 1 - Expected Life Span: Value is required.',
+      'Id: 1 - Abutments Ht. (m): Value is required.',
+      'Id: 1 - Load Rating: Value is required.',
+    ]
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(bridgePanel(7001).getAllByText('Value Required')).toHaveLength(5)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(bridgePanel(7001).getAllByText('Value Required')).toHaveLength(5)
+  })
+
+  test('editing a row after a check clears the shown verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_RESPONSE)),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    await user.click(checkStatusButton())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    await user.type(bridgePanel(7001).getByLabelText('Distance (km)'), '1')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a check in flight locks every checked editor, so no edit can outrun its verdict', async () => {
+    // The snapshot guard (`checkSnapshotVersionRef`) drops a response for superseded values; on this
+    // page the editors are ALSO disabled for the whole request (`controlsDisabled` covers `saving`),
+    // so no edit can reach the screen before the verdict does.
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json(MET_RESPONSE)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(checkStatusButton()).toBeDisabled()
+    })
+    expect(bridgePanel(7001).getByLabelText('Distance (km)')).toBeDisabled()
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toBeDisabled()
+
+    releaseCheck()
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B change log — per-field validation ON CHANGE, and the ACCUMULATING banner.
+// ---------------------------------------------------------------------------------------------------
+
+describe('Schedule 7A per-field validation on change (#359 group B change log)', () => {
+  const twoRows = () => doc({ bridges: [northFork, bridgeAt(7002, 2)] })
+
+  test('a required field changed to blank and left turns red, shows inline Value Required and adds its banner line', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(twoRows())))
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    await user.clear(bridgePanel(7001).getByLabelText('Width (m)'))
+    // Typing alone shows no banner line — the change is judged when the field is left.
+    expect(errorBannerLines()).toEqual([])
+    await user.tab()
+
+    expect(errorBannerLines()).toEqual(['Id: 1 - Width (m): Value is required.'])
+    expect(bridgePanel(7001).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('lines ACCUMULATE in page order; fixing one field on change removes only its line', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(twoRows())))
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    await openBridge(user, 2)
+
+    // Row 2's distance (a range error) first, then row 1's width and name — the banner reads in page
+    // order (row 1 before row 2; name before width), not in the order the errors happened.
+    const distance2 = bridgePanel(7002).getByLabelText('Distance (km)')
+    await user.clear(distance2)
+    await user.type(distance2, '10000')
+    await user.tab()
+    await user.clear(bridgePanel(7001).getByLabelText('Width (m)'))
+    await user.tab()
+    await user.clear(bridgePanel(7001).getByLabelText('Name/Location of Bridge'))
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Name/Location of Bridge: Value is required.',
+      'Id: 1 - Width (m): Value is required.',
+      // A row's range line carries legacy's validatorMessage prefix (schedule7A.xhtml:867).
+      'Id: 2 - Entered bridge distance must be between 0.0 and 999.99',
+    ])
+    // The inline text stays the bundle message, unprefixed.
+    expect(
+      bridgePanel(7002).getByText('Entered bridge distance must be between 0.0 and 999.99'),
+    ).toBeInTheDocument()
+
+    await user.type(bridgePanel(7001).getByLabelText('Width (m)'), '4')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([
+      'Id: 1 - Name/Location of Bridge: Value is required.',
+      'Id: 2 - Entered bridge distance must be between 0.0 and 999.99',
+    ])
+    // Its red box is gone; the name's stays.
+    expect(bridgePanel(7001).getAllByText('Value Required')).toHaveLength(1)
+  })
+
+  test('focusing and leaving a field without a change validates nothing, and untouched fields wait for Save / Check', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [bridgeAt(7001, 1, { distance: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    // The stored-blank Distance is never changed: tabbing through it judges nothing.
+    await user.click(bridgePanel(7001).getByLabelText('Distance (km)'))
+    await user.tab()
+    // A different field changed and left, and passing: still nothing about Distance.
+    await user.type(bridgePanel(7001).getByLabelText('Width (m)'), '5')
+    await user.tab()
+    expect(errorBannerLines()).toEqual([])
+    expect(bridgePanel(7001).queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('Save and Check Status REPLACE the accumulated banner with the full list', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ bridges: [bridgeAt(7001, 1, { distance: null }), bridgeAt(7002, 2)] }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 2)
+    await user.clear(bridgePanel(7002).getByLabelText('Width (m)'))
+    await user.tab()
+    expect(errorBannerLines()).toEqual(['Id: 2 - Width (m): Value is required.'])
+
+    const full = [
+      'Id: 1 - Distance (km): Value is required.',
+      'Id: 2 - Width (m): Value is required.',
+    ]
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(full)
+    })
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(full)
+    })
+  })
+
+  test('a dropdown is judged on selection: choosing a value removes its line', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [bridgeAt(7001, 1, { deckTypeCode: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await screen.findByRole('button', { name: 'Bridge report Id: 1' })
+    await savePage(user)
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 1 - Decking Type: Value is required.'])
+    })
+
+    await user.click(bridgePanel(7001).getByRole('combobox', { name: /Decking Type/i }))
+    await user.click(await bridgePanel(7001).findByRole('option', { name: 'Wood' }))
+    expect(errorBannerLines()).toEqual([])
+  })
+})
+
+describe('Schedule 7A: a red field stays red while typing (#359 group B change log)', () => {
+  test('typing into a red field keeps box and line; leaving it with a valid value clears both together', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [bridgeAt(7001, 1, { width: null })] })),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    await user.click(checkStatusButton())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Id: 1 - Width (m): Value is required.'])
+    })
+    const width = bridgePanel(7001).getByLabelText('Width (m)')
+    expect(width).toHaveAttribute('aria-invalid', 'true')
+
+    await user.type(width, '4')
+    // Still red, still inline, still in the banner — nothing is re-judged mid-typing.
+    expect(width).toHaveAttribute('aria-invalid', 'true')
+    expect(bridgePanel(7001).getByText('Value Required')).toBeInTheDocument()
+    expect(errorBannerLines()).toEqual(['Id: 1 - Width (m): Value is required.'])
+
+    await user.tab()
+    expect(width).not.toHaveAttribute('aria-invalid', 'true')
+    expect(bridgePanel(7001).queryByText('Value Required')).not.toBeInTheDocument()
+    expect(errorBannerLines()).toEqual([])
   })
 })

@@ -6,7 +6,8 @@ verified against the running app and the seeded local delivery DB on that date �
 from another UC on trust.
 
 **Headline: one pre-existing app-wide accessibility bug (re-covered as a deliberate RED), and no
-Schedule-11 bugs.** 28 of 29 scenarios pass; the single red is BUG-1 — a critical WCAG defect
+Schedule-11 bugs.** 28 of 29 tests pass (26 scenarios; re-measured 2026-08-27, and
+[`coverage.md`](coverage.md) is the authoritative count); the single red is BUG-1 — a critical WCAG defect
 in Carbon's validation-error markup that affects every schedule page and is already tracked in
 `deferred-work.md`, which explicitly asked for it to be re-covered by a red check here. Schedule 11's own
 behaviour was correct on every path exercised, including the four legacy items the requirements could not
@@ -14,9 +15,13 @@ pin down. Beyond that bug, what this log records is that **Schedule 11 was rebui
 **four** behaviours genuinely differ from the legacy Gherkin — DIV-1 through DIV-4 — and all four were
 triaged with the Schedule 11 dev on 2026-08-10:
 - **DIV-2 — closed.** Hiding the editing controls in read-only is deliberate, so nothing more is needed.
-- **DIV-1 and DIV-3** — the dev will double-check these with the BA when she gets a chance.
-- **DIV-4** — the dev will take a closer look. This is the one with real substance: a legacy capability with
-  no new-app counterpart, which needs a backend change, and Schedule 1 is missing it too.
+- **DIV-1 and DIV-3 — closed 2026-09-24 by Story 26.2** (Scho's ruling D1(b)/D4(a)): the page is legacy's
+  again — every row live, Save and Check Status above and below the table, Delete a flag until Save.
+- **DIV-4 — delivered, with one recorded exception.** This was the one with real substance: a legacy
+  capability with no new-app counterpart, needing a backend change, and Schedule 1 was missing it too.
+  Story 16.2 rebuilt it on both screens (2026-09-11). Five of Schedule 11's six indicators are reproduced;
+  Enhanced and Comments are a permanent, recorded exception because the delivery-schema snapshot view
+  exposes neither column — see the entry for the full reasoning.
 
 We haven't adjudicated any of them ourselves — each entry carries its owner and next step.
 
@@ -80,10 +85,16 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Is it a defect?** Almost certainly not — it is the shipped Story 25.2 contract. But it removes a control
     users know, so it wants an explicit product decision rather than our assumption.
   - **Priority / env:** p2 (informational) · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the dev (2026-08-10): she'll double-check the no-Save-button
-    model with the BA when she gets a chance.
-  - **Test:** covered as the app behaves — `happy-path.feature` `@S01`, `inline-edit.feature` `@S03`,
-    `delete.feature` `@S07`, `persistence.feature` `@S09`. No red.
+  - **Status:** **CLOSED 2026-09-24 — legacy model restored by Story 26.2** (ruling D1(b), D4(a), D5(a)).
+    Every row is a live input; one page-level Save, above and below the table, sends every pending edit and
+    delete in one atomic `PUT /api/v1/schedule11/locations`. Delete is now a flag until Save, as legacy's was
+    (`Schedule11MB.java:132-138`) — without legacy's premature "Data deleted successfully" (26.2 deviation (B)).
+    The per-row `PUT`/`DELETE /locations/{id}` are retired.
+  - **Test:** Vitest (`Schedule11.test.tsx`) and backend ITs (`Schedule11CorrectionIT`, `Schedule11WriteIT`).
+    ⚠️ The scenarios named here — `happy-path.feature` `@S01`, `inline-edit.feature` `@S03`,
+    `delete.feature` `@S07`, `persistence.feature` `@S09` — still script the retired per-row editor and
+    immediate delete, and need re-grounding on the new page. The API helpers they seed and clean up with
+    (`steps/sch11/schedule11Api.ts`) were moved onto the bulk save by 26.2.
 
 - **DIV-2 — When the schedule is read-only, the editing controls are removed rather than greyed out.**
   - **What's different:** Once the silviculture track leaves Draft, legacy **disabled** the six Add
@@ -114,10 +125,11 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Is it a defect?** Very unlikely — a duplicate control for convenience on a long page. Recorded only
     so the S20 assertion's wording change is traceable.
   - **Priority / env:** p3 (cosmetic) · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the Schedule 11 dev (2026-08-10): she'll double-check the
-    single Check Status button with the BA when she gets a chance. We'd previously written this off as "no
-    action expected" on our own judgement — that call is really theirs, so it stays open until they make it.
-  - **Test:** `render-states.feature` `@S20` asserts the single button is disabled. No red.
+  - **Status:** **CLOSED 2026-09-24 — legacy's two buttons restored by Story 26.2** (ruling D4(a)): Save and
+    Check Status render above and below the table. While any change is unsaved, both Check Status buttons are
+    disabled with a screen-reader reason, "Save your changes before checking status" (26.2 D7(a), deviation (C)).
+  - **Test:** Vitest (`Schedule11.test.tsx`). ⚠️ `render-states.feature` `@S20` still asserts ONE Check
+    Status button and needs re-grounding (legacy's S20 wording — "both … are disabled" — applies again).
 
 - **DIV-4 — The per-field "original value" indicators from legacy do not exist anywhere in the new app.**
   _(NEW 2026-08-10 — found by checking whether Schedule 1's DIV-5 also applies to this screen. It does.)_
@@ -148,10 +160,37 @@ location with no costs stores real NULLs (which render as blank, not "0").
     revision of this entry said it "should ride that same ticket"; there is no ticket to ride, so that
     assumption is withdrawn. It needs a triage decision of its own.
   - **Priority / env:** p2 pending triage · local seeded delivery DB.
-  - **Status:** OPEN — with the dev. Triaged with the Schedule 11 dev (2026-08-10): she'll take a closer look
-    at the missing original-value indicators when she gets a chance. Worth knowing before she does: it needs
-    a **backend** change to be fixable at all (the API exposes no prior value), and Schedule 1 is missing the
-    same thing — see its DIV-5 — so a fix probably covers both screens at once.
+  - **Status:** **DELIVERED WITH A RECORDED EXCEPTION 2026-09-11**, by Story 16.2 (GH #136) — backend
+    PRs #450/#451, frontend PR #452. The triage decision this entry was waiting for was taken: the
+    post-submission change-tracking view **does** matter, so it was rebuilt rather than dropped, and the
+    prediction above was right that it needed a backend change. `BASIC_SILVICULTURE_REPORT_S_VW` now feeds
+    an `originalValues` map onto each `SilvicultureLocation`, and the shared
+    `components/core/OriginalValueIndicator` renders from it.
+
+    **Five of legacy's six indicators are reproduced** — Location, Biogeo/Subzone/Variant, NAR, Actual
+    Cost, Planned Cost. **Two fields are a deliberate, permanent exception** (story deviation **D5**,
+    finding **F4**, and **AC7**), and this is the explicit record of it that #136 asked for:
+
+    - **Enhanced** — legacy draws the sixth indicator button (`enhancedIndicatorOV/OB/TT`, cited above),
+      but it can never fire: `BASIC_SILVICULTURE_REPORT_S_VW` does not select `ENHANCED_IND`
+      (`BasicSilvicultureReportOv.java:28-38`), and legacy's own DAO read the **current** value into
+      `enhancedIndicatorOriginalVal` (`Schedule11DAO.java:226`), which always compares equal. Omitting it
+      reproduces legacy's observable behaviour; rendering one would not.
+    - **Comments** — legacy persists `commentsOriginalVal` but declares no `isCommentsOriginalVal`
+      accessor and draws no button, so the licensee's original comment was never surfaced on screen.
+
+    **Why this cannot be closed by wiring them anyway.** `BASIC_SILVICULTURE_RPRT_AUD` does store both
+    columns, but widening the `_S_VW` view to select them is DDL on the delivery schema — outside this
+    project's sanctioned FAM-only scope. And because the backend serves **no key** for either field, an
+    indicator bound to one would take the comparison's "no original on file" branch and flag any non-empty
+    value as *added since submission* — firing on every commented row of every submitted report, and (the
+    form holding a boolean, `String(false)` being non-empty) on every row's Enhanced control regardless.
+    That would manufacture false audit evidence, which is worse than the gap it closes.
+
+    Raised twice in review of #452 and resolved against the story both times; the two omissions now carry
+    comments at the point of use in `components/schedule11/index.tsx` and four tests in
+    `Schedule11.test.tsx` pin them, so the set is not "completed" by a later reader. If the delivery-schema
+    view is ever widened, the exception lapses and both fields become ordinary wiring.
   - **The decision still needed:** whether losing the post-submission
     change-tracking view matters: if reviewers relied on it to see what a licensee altered after submitting,
     this is a real functional gap needing a backend change (the API exposes no prior value); if the audit
@@ -161,6 +200,57 @@ location with no costs stores real NULLs (which render as blank, not "0").
     (the indicator only renders once a report has left Draft). S20 covers the non-Draft render but asserts
     only that the Add panel and row actions are absent and Check Status is disabled. `not-applicable
     (E2E, current scope)` in coverage.md; revisit with the submission/review UC (Epic 26).
+    _(UPDATED 2026-09-25, Story 26.4.)_ The five indicators past Draft are now proven below E2E, at
+    **both** Submitted and Verified and for **both** roles: against Oracle's `_S_VW` views by
+    `Schedule11OriginalValuesIT` (26.2 at S; 26.4 adds mill 816 at V, including a row the ministry
+    corrected at S whose later `'A'`/`'V'` audit rows must not become the baseline) and
+    `Schedule11LateCorrectionIT` (the baseline after two late corrections at V), and on the page by
+    `Schedule11.test.tsx`'s correction block, now parameterised over S and V. The browser journey that
+    ends in a late correction at Verified is Story 26.6's; this entry stays open for that and for the
+    decision above.
+
+- **DIV-5 — Check Status judges the SAVED data and ignores unsaved on-screen edits (APP-WIDE, 11 of 12
+  schedules).**
+  - **This entry is a POINTER, on purpose.** The full analysis — what legacy did, why the rewrite cannot,
+    the app-wide sweep and the fix direction — lives in **ONE** place:
+    **`sch3/defects.md` DIV-6** (`features/sch3/uc-sch3-001-report-admin-costs/defects.md`). Do not restate it here. Two copies
+    of the same reasoning diverged inside a single session on ilcr-bmad PR #92, so this register carries only
+    what is genuinely local to Schedule 11.
+  - **What's wrong, in one line:** Check Status reports on the last saved locations and silently ignores a row
+    being edited on screen, so a location's Actual Cost can be empty in the inline editor while the schedule
+    is reported complete — or typed in and still reported missing.
+  - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
+    affected schedule. One fix turns all of these green.
+  - **Local facts (this is what belongs here):**
+    - **Scenarios:** `check-status-unsaved.feature` `@p1 @S21` (a cost removed) and `@S22` (a cost
+      supplied) — re-grounded GREEN by Story 26.2 (see Status).
+    - **Anchors:** two SEEDED, dedicated mill-years — `check-unsaved-violation` (10050/2015) and
+      `check-unsaved-fix` (10050/2016), created by
+      `real-test-data-patches/sch11/unsaved-check-anchors.sql`. Reusing `check-met` /
+      `check-missing-actual` was tried first and collides with S04/S05 under `fullyParallel`, because their
+      Givens add a location through the API.
+    - **RE-GROUNDING NOTE — THE IMPORTANT ONE HERE.** _(Historical: written 2026-08-27, before Story 26.2
+      restored the page-level Save; kept because it explains why the scenarios live on an existing row.)_
+      Schedule 11 then had **no page-level Save** (DIV-1 above): every row saved itself, so the unsaved state
+      was a row sitting in the **inline editor** with typed-but-unconfirmed values, not a dirty form. It was
+      reachable only because Check Status was not gated on it — row actions were disabled during a row edit
+      while Check Status was only `!editable || saving`, verified in source 2026-08-27. The upstream slices
+      `UC-SCH11-001-S21/S22` describe this against `addActualCost`, the **Add panel** — a NEW row, not a
+      stored requirement changed on screen, so it cannot express the rule. The slices are right about legacy
+      (which batch-saved a grid behind a page-level Save); it is the re-grounding that had to move to the
+      inline editor. Do not "correct" these scenarios back to the Add panel.
+  - **Priority / env:** p1 · local seeded DB · Chrome.
+  - **Status:** **CLOSED for Schedule 11, 2026-09-24 — by Story 26.2's ruling D7(a) (Scho), not by the
+    fix #359 proposes.** Story 26.2 rebuilt the page to legacy's model (every row live, one page-level Save)
+    and Scho ruled that Check Status keeps judging the SAVED data while BOTH Check Status buttons are disabled
+    whenever an edit or flagged delete is unsaved, with the screen-reader reason "Save your changes before
+    checking status". A verdict over unsaved work can no longer be produced on this page, so neither the
+    false-GREEN nor the false-RED is reachable. It is still a DEVIATION from legacy, which evaluated its
+    unsaved in-memory model (`Schedule11MB.java:154-176`) — recorded as Story 26.2 deviation (C).
+    **#359 stays open for the other schedules**; Schedule 3's DIV-6 remains the analysis of record.
+  - **Test:** `check-status-unsaved.feature` ×2 — now GREEN scenarios of the ruled behaviour (the change
+    greys Check Status with its reason, the Save re-enables it, the verdict then describes what was saved).
+    Their `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off with the re-grounding.
 
 ---
 
@@ -247,7 +337,8 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Status:** CLOSED — covered by Vitest (in CI). `covered (unit)` in coverage.md. SPEC-2 (no slice
     describes sorting) stays open as a BA paperwork item, independent of test coverage.
 
-- **GAP-6 — There is no role-dependent Schedule 11 behaviour to cover yet.** _(REWORDED 2026-08-10 — the
+- **GAP-6 — There is no role-dependent Schedule 11 behaviour to cover yet.** _(**STALE since Story 16.1 —
+  see the 2026-09-25 note at the end of this entry.**)_ _(REWORDED 2026-08-10 — the
   earlier wording said the 403 paths were "blocked (env)" because security is off locally, which implied we
   were failing to cover behaviour that exists. Re-checked against the code: that behaviour does not exist.
   This is the same correction Schedule 1 made to its GAP-1 on 2026-08-07; the original wording here
@@ -262,17 +353,29 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **A 403 is still reachable in principle** — by a caller holding *neither* action (an unknown/foreign
     authority). That is an authorization-framework concern, not Schedule 11 behaviour, and it is covered by
     the backend's own tests rather than owed by this suite.
-  - **On the header's mock-user selector:** it is a frontend-only display affordance and does not grant
-    roles — the backend stamps one authority per process from `ilcr.security.mock-role`. Switching it
-    changes the name on the Home card, not what you may do. (Detail in Schedule 1's GAP-1.)
-  - **Future action:** revisit when FAM auth lands **and the two `ROLE_ACTIONS` sets actually diverge**. The
-    lever would then be a CI matrix (a second run against `ilcr.security.mock-role=ILCR_ADMIN`), not a
-    per-test switch, because the authority is fixed per process.
+  - **On the header's mock-user selector — CORRECTED 2026-09-09.** This used to read "a frontend-only
+    display affordance … the backend stamps one authority per process from `ilcr.security.mock-role`".
+    False since #265: `api-service` sends the selected user's roles as `X-Mock-Groups` and
+    `MockPrincipalFilter` prefers that header, so the selector IS the acting role — which is how this
+    suite came to run as `ILCR_ADMIN` for a month. Full account in Schedule 1's GAP-1.
+  - **Future action:** the `ROLE_ACTIONS` sets are still identical, so there is still no role-driven
+    403 here. The lever is NOT a CI matrix — the authority is per request, so a per-scenario switch
+    (`seedMockUser(page, 'admin')`) is available today; the admin arm of the Story 16.1 editability
+    matrix is currently proven by the backend `*WriteAuthorizationIT` suites instead.
   - **Status:** OPEN — **`deferred`** (2026-08-10). Deferred rather than not-applicable because there is a
     named future trigger: the day the two `ROLE_ACTIONS` sets diverge, this becomes an ordinary owed test.
     "Not applicable" would wrongly imply never. (Schedule 1's equivalent GAP-1 still reads
     `not-applicable`; this is a deliberate difference in framing, not a contradiction — same facts.)
   - **Test:** none today — `deferred (no role-dependent behaviour yet)` in coverage.md.
+  - **CORRECTED 2026-09-25 (Story 26.4).** The title's premise is false: the `ROLE_ACTIONS` sets are still
+    identical, but Story 16.1 made **editability** role × status dependent (`ScheduleEditability`:
+    SUBMITTER edits at `D`, ADMIN at `S` and `V`), and Schedule 11 applies it to the silviculture track.
+    So there IS role-dependent Schedule 11 behaviour, and it is a **409**, not a 403 — which is why the
+    403 framing above never found it. It is proven below E2E: `Schedule11CorrectionIT` (admin at S, admin
+    refused at D, licensee at D), `Schedule11LateCorrectionIT` (admin at V writes; the licensee at V is
+    refused 409 on Add and Save and still gets Check Status — the page, not the API, greys that button,
+    legacy-exact), and the page arms in `Schedule11.test.tsx`. The licensee half at V also runs green in
+    this suite already (`@S20`). The admin journey through S and V is Story 26.6's, via `seedMockUser`.
 
 - **GAP-7 — Follow-up for the app team: two stale `PROVISIONAL` comments in `validation.ts`.**
   - `components/schedule11/validation.ts` marks two message strings "PROVISIONAL … the exact live-app text

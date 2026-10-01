@@ -1,0 +1,509 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 8 (Tree to Truck Costs) — JasperReports 7 template (AD-16, Epic 20.8).
+  JR7 Jackson/JAXB model. Bean-datasource fill from Schedule8Service's DTO (the 20.2 data-feed
+  decision). This is the only THREE-level print section: page (level 1, the detail band) → samples
+  (level 2, an in-band <list> over $F{samples}) → rate details (level 3, two in-band <list>s over
+  $F{additions} / $F{deductions} INSIDE each sample). Every nested collection is a
+  java.util.Collection field iterated with new JRMapCollectionDataSource($F{...}) — the same
+  Collection-of-Map mechanism Schedule 3 uses for its single nested list, extended one level deeper,
+  so no engine change: the fill is still the flat fillBean path with one section row per page.
+
+  All values arrive PRE-FORMATTED as Strings (Schedule8SectionMapper); the template does NO
+  arithmetic (percentTotal, actualHarvested, additions/deductions totals and finalRate are the
+  service's server-computed figures).
+
+  Body-vs-comments gating: p_do_print_body is a MAIN-REPORT parameter and is NOT in scope inside the
+  Samples / RateRows subDatasets, so the whole samples <list> is gated once at the band level (where
+  the parameter IS visible) rather than per cell. Inside the samples list, the additions / deductions
+  sub-blocks are gated by the per-sample displayAddRates / displayDedRates boolean FIELDS (in the
+  Samples subDataset's scope) so an empty list leaks no stray heading (AC-1). Every value arrives
+  pre-formatted ("-" for null — never a real null), so skyline-support and other optional fields
+  render a "-" placeholder like every other absent field in the section rather than collapsing.
+  LANDSCAPE (842x595) like the sibling sections.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule8" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <style name="italic" italic="true"/>
+
+  <!-- Level 3: a rate-detail row (additions or deductions) — four columns from the frozen RateRow. -->
+  <dataset name="RateRows">
+    <field name="rateItem" class="java.lang.String"/>
+    <field name="rateDesc" class="java.lang.String"/>
+    <field name="rateUnitCost" class="java.lang.String"/>
+    <field name="rateCostType" class="java.lang.String"/>
+  </dataset>
+
+  <!-- Level 2: a sample, carrying its two rate-detail collections as nested fields. -->
+  <dataset name="Samples">
+    <field name="sampleContractId" class="java.lang.String"/>
+    <field name="sampleCutBlock" class="java.lang.String"/>
+    <field name="pctGroundBase" class="java.lang.String"/>
+    <field name="pctGrapple" class="java.lang.String"/>
+    <field name="pctSkyline" class="java.lang.String"/>
+    <field name="pctHighlead" class="java.lang.String"/>
+    <field name="pctHelicopter" class="java.lang.String"/>
+    <field name="pctOther" class="java.lang.String"/>
+    <field name="pctTotal" class="java.lang.String"/>
+    <field name="slopeDistance" class="java.lang.String"/>
+    <field name="supportNumber" class="java.lang.String"/>
+    <field name="supportAvgDist" class="java.lang.String"/>
+    <field name="haulDistance" class="java.lang.String"/>
+    <field name="cycleTime" class="java.lang.String"/>
+    <field name="direction" class="java.lang.String"/>
+    <field name="destination" class="java.lang.String"/>
+    <field name="skidType" class="java.lang.String"/>
+    <field name="volConiferous" class="java.lang.String"/>
+    <field name="volDeciduous" class="java.lang.String"/>
+    <field name="volActualHarvested" class="java.lang.String"/>
+    <field name="rateOriginal" class="java.lang.String"/>
+    <field name="rateAdditions" class="java.lang.String"/>
+    <field name="rateDeductions" class="java.lang.String"/>
+    <field name="rateFinal" class="java.lang.String"/>
+    <field name="displayAddRates" class="java.lang.Boolean"/>
+    <field name="displayDedRates" class="java.lang.Boolean"/>
+    <field name="additions" class="java.util.Collection"/>
+    <field name="deductions" class="java.util.Collection"/>
+  </dataset>
+
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
+
+  <!-- Level 1: page descriptors + the nested samples collection. -->
+  <field name="pageDivision" class="java.lang.String"/>
+  <field name="pageLicense" class="java.lang.String"/>
+  <field name="pageContact" class="java.lang.String"/>
+  <field name="pagePhone" class="java.lang.String"/>
+  <field name="pageCuttingPermit" class="java.lang.String"/>
+  <field name="pageSupportCentre" class="java.lang.String"/>
+  <field name="pageRegion" class="java.lang.String"/>
+  <field name="pageBecZone" class="java.lang.String"/>
+  <field name="pageTsa" class="java.lang.String"/>
+  <field name="pageTfl" class="java.lang.String"/>
+  <field name="pageSupplyBlock" class="java.lang.String"/>
+  <field name="pageComments" class="java.lang.String"/>
+  <field name="samples" class="java.util.Collection"/>
+
+  <title height="30">
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="34">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15">
+      <text><![CDATA[Schedule 8:  Tree to Truck Costs]]></text>
+    </element>
+    <element kind="textField" x="0" y="16" width="802" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+  </pageHeader>
+
+  <detail>
+    <band height="404">
+      <!-- ============ Level 1: report-page descriptors (two-column label/value grid) ============ -->
+      <element kind="staticText" style="bold" x="0" y="0" width="802" height="15">
+        <text><![CDATA[Tree to Truck Report Page]]></text>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="18" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Division:]]></text>
+      </element>
+      <element kind="textField" x="112" y="18" width="289" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageDivision}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="410" y="18" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[License:]]></text>
+      </element>
+      <element kind="textField" x="522" y="18" width="280" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageLicense}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="34" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Contact:]]></text>
+      </element>
+      <element kind="textField" x="112" y="34" width="289" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageContact}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="410" y="34" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Phone:]]></text>
+      </element>
+      <element kind="textField" x="522" y="34" width="280" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pagePhone}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="50" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Cutting Permit:]]></text>
+      </element>
+      <element kind="textField" x="112" y="50" width="289" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageCuttingPermit}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="410" y="50" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Support Centre:]]></text>
+      </element>
+      <element kind="textField" x="522" y="50" width="280" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageSupportCentre}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="66" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Region:]]></text>
+      </element>
+      <element kind="textField" x="112" y="66" width="289" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageRegion}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="410" y="66" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Biogeoclimatic Zone:]]></text>
+      </element>
+      <element kind="textField" x="522" y="66" width="280" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageBecZone}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="82" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[TSA or TFL:]]></text>
+      </element>
+      <element kind="textField" x="112" y="82" width="289" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageTsa}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="410" y="82" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[TFL:]]></text>
+      </element>
+      <element kind="textField" x="522" y="82" width="280" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageTfl}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="98" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Supply Block:]]></text>
+      </element>
+      <element kind="textField" x="112" y="98" width="289" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageSupplyBlock}]]></expression>
+      </element>
+
+      <!-- ============ Level 2: samples (one nested-list iteration per sample) ============ -->
+      <!-- Gated ONCE here (main-report scope) — p_do_print_body is not visible inside the subDataset. -->
+      <element kind="component" positionType="Float" x="0" y="118" width="802" height="270">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <component kind="list" printOrder="Vertical">
+          <datasetRun subDataset="Samples">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{samples})]]></dataSourceExpression>
+          </datasetRun>
+          <contents height="270" width="802">
+            <element kind="line" x="0" y="2" width="802" height="1"/>
+            <element kind="staticText" style="bold" x="0" y="6" width="80" height="15">
+              <text><![CDATA[Sample:]]></text>
+            </element>
+            <element kind="textField" x="80" y="6" width="220" height="15" blankWhenNull="true">
+              <expression><![CDATA[$F{sampleContractId}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="310" y="6" width="80" height="15">
+              <text><![CDATA[Cut Block:]]></text>
+            </element>
+            <element kind="textField" x="392" y="6" width="220" height="15" blankWhenNull="true">
+              <expression><![CDATA[$F{sampleCutBlock}]]></expression>
+            </element>
+
+            <!-- Six skidding percentages + the server-computed total (the 100% rule). -->
+            <element kind="staticText" style="bold" x="0" y="26" width="802" height="14">
+              <text><![CDATA[Skidding %]]></text>
+            </element>
+            <element kind="staticText" x="0" y="40" width="110" height="14" hTextAlign="Center">
+              <text><![CDATA[Ground Base]]></text>
+            </element>
+            <element kind="staticText" x="114" y="40" width="110" height="14" hTextAlign="Center">
+              <text><![CDATA[Grapple]]></text>
+            </element>
+            <element kind="staticText" x="228" y="40" width="110" height="14" hTextAlign="Center">
+              <text><![CDATA[Skyline]]></text>
+            </element>
+            <element kind="staticText" x="342" y="40" width="110" height="14" hTextAlign="Center">
+              <text><![CDATA[Highlead]]></text>
+            </element>
+            <element kind="staticText" x="456" y="40" width="110" height="14" hTextAlign="Center">
+              <text><![CDATA[Helicopter]]></text>
+            </element>
+            <element kind="staticText" x="570" y="40" width="110" height="14" hTextAlign="Center">
+              <text><![CDATA[Other]]></text>
+            </element>
+            <element kind="staticText" style="bold" x="684" y="40" width="118" height="14" hTextAlign="Center">
+              <text><![CDATA[Total]]></text>
+            </element>
+            <element kind="textField" x="0" y="54" width="110" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctGroundBase}]]></expression>
+            </element>
+            <element kind="textField" x="114" y="54" width="110" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctGrapple}]]></expression>
+            </element>
+            <element kind="textField" x="228" y="54" width="110" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctSkyline}]]></expression>
+            </element>
+            <element kind="textField" x="342" y="54" width="110" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctHighlead}]]></expression>
+            </element>
+            <element kind="textField" x="456" y="54" width="110" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctHelicopter}]]></expression>
+            </element>
+            <element kind="textField" x="570" y="54" width="110" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctOther}]]></expression>
+            </element>
+            <element kind="textField" style="bold" x="684" y="54" width="118" height="14" hTextAlign="Center" blankWhenNull="true">
+              <expression><![CDATA[$F{pctTotal}]]></expression>
+            </element>
+
+            <!-- Skid type + skyline supports. Values are pre-formatted ("-" when absent), so these
+                 render a dash in place rather than collapsing — consistent with every other field. -->
+            <element kind="staticText" style="bold" x="0" y="72" width="80" height="14">
+              <text><![CDATA[Skid Type:]]></text>
+            </element>
+            <element kind="textField" x="82" y="72" width="200" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{skidType}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="300" y="72" width="90" height="14">
+              <text><![CDATA[Slope Distance:]]></text>
+            </element>
+            <element kind="textField" x="392" y="72" width="80" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{slopeDistance}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="490" y="72" width="90" height="14">
+              <text><![CDATA[Supports #:]]></text>
+            </element>
+            <element kind="textField" x="582" y="72" width="60" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{supportNumber}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="650" y="72" width="90" height="14">
+              <text><![CDATA[Supp Avg Dist:]]></text>
+            </element>
+            <element kind="textField" x="742" y="72" width="60" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{supportAvgDist}]]></expression>
+            </element>
+
+            <!-- Haul. -->
+            <element kind="staticText" style="bold" x="0" y="88" width="80" height="14">
+              <text><![CDATA[Distance:]]></text>
+            </element>
+            <element kind="textField" x="82" y="88" width="90" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{haulDistance}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="180" y="88" width="80" height="14">
+              <text><![CDATA[Cycle Time:]]></text>
+            </element>
+            <element kind="textField" x="262" y="88" width="90" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{cycleTime}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="360" y="88" width="80" height="14">
+              <text><![CDATA[Direction:]]></text>
+            </element>
+            <element kind="textField" x="442" y="88" width="90" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{direction}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="540" y="88" width="90" height="14">
+              <text><![CDATA[Destination:]]></text>
+            </element>
+            <element kind="textField" x="632" y="88" width="170" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{destination}]]></expression>
+            </element>
+
+            <!-- Harvested volumes (m³). -->
+            <element kind="staticText" style="bold" x="0" y="106" width="200" height="14">
+              <text><![CDATA[Harvested Volumes (m³)]]></text>
+            </element>
+            <element kind="staticText" x="200" y="106" width="90" height="14">
+              <text><![CDATA[Coniferous:]]></text>
+            </element>
+            <element kind="textField" x="292" y="106" width="80" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{volConiferous}]]></expression>
+            </element>
+            <element kind="staticText" x="380" y="106" width="90" height="14">
+              <text><![CDATA[Deciduous:]]></text>
+            </element>
+            <element kind="textField" x="472" y="106" width="80" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{volDeciduous}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="560" y="106" width="130" height="14">
+              <text><![CDATA[Actual Harvested:]]></text>
+            </element>
+            <element kind="textField" style="bold" x="692" y="106" width="110" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{volActualHarvested}]]></expression>
+            </element>
+
+            <!-- Unit costs ($/m³) — all server-computed roll-ups. -->
+            <element kind="staticText" style="bold" x="0" y="124" width="180" height="14">
+              <text><![CDATA[Unit Costs ($/m³)]]></text>
+            </element>
+            <element kind="staticText" x="180" y="124" width="80" height="14">
+              <text><![CDATA[Original:]]></text>
+            </element>
+            <element kind="textField" x="262" y="124" width="80" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{rateOriginal}]]></expression>
+            </element>
+            <element kind="staticText" x="350" y="124" width="80" height="14">
+              <text><![CDATA[Additions:]]></text>
+            </element>
+            <element kind="textField" x="432" y="124" width="70" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{rateAdditions}]]></expression>
+            </element>
+            <element kind="staticText" x="510" y="124" width="80" height="14">
+              <text><![CDATA[Deductions:]]></text>
+            </element>
+            <element kind="textField" x="592" y="124" width="70" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{rateDeductions}]]></expression>
+            </element>
+            <element kind="staticText" style="bold" x="670" y="124" width="50" height="14">
+              <text><![CDATA[Final:]]></text>
+            </element>
+            <element kind="textField" style="bold" x="722" y="124" width="80" height="14" blankWhenNull="true">
+              <expression><![CDATA[$F{rateFinal}]]></expression>
+            </element>
+
+            <!-- ===== Level 3: Additions rate details (gated when the list is empty) ===== -->
+            <element kind="staticText" style="bold" positionType="Float" x="0" y="144" width="200" height="14">
+              <printWhenExpression><![CDATA[$F{displayAddRates}]]></printWhenExpression>
+              <text><![CDATA[Additions]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="0" y="160" width="80" height="14">
+              <printWhenExpression><![CDATA[$F{displayAddRates}]]></printWhenExpression>
+              <text><![CDATA[Item]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="90" y="160" width="300" height="14">
+              <printWhenExpression><![CDATA[$F{displayAddRates}]]></printWhenExpression>
+              <text><![CDATA[Description]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="400" y="160" width="120" height="14" hTextAlign="Right">
+              <printWhenExpression><![CDATA[$F{displayAddRates}]]></printWhenExpression>
+              <text><![CDATA[Unit Cost ($/m³)]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="530" y="160" width="272" height="14">
+              <printWhenExpression><![CDATA[$F{displayAddRates}]]></printWhenExpression>
+              <text><![CDATA[Cost Type]]></text>
+            </element>
+            <element kind="component" positionType="Float" x="0" y="176" width="802" height="16">
+              <printWhenExpression><![CDATA[$F{displayAddRates}]]></printWhenExpression>
+              <component kind="list" printOrder="Vertical">
+                <datasetRun subDataset="RateRows">
+                  <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{additions})]]></dataSourceExpression>
+                </datasetRun>
+                <contents height="16" width="802">
+                  <element kind="textField" x="0" y="0" width="80" height="16" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateItem}]]></expression>
+                  </element>
+                  <element kind="textField" x="90" y="0" width="300" height="16" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateDesc}]]></expression>
+                  </element>
+                  <element kind="textField" x="400" y="0" width="120" height="16" hTextAlign="Right" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateUnitCost}]]></expression>
+                  </element>
+                  <element kind="textField" x="530" y="0" width="272" height="16" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateCostType}]]></expression>
+                  </element>
+                </contents>
+              </component>
+            </element>
+
+            <!-- ===== Level 3: Deductions rate details (gated when the list is empty) ===== -->
+            <element kind="staticText" style="bold" positionType="Float" x="0" y="196" width="200" height="14">
+              <printWhenExpression><![CDATA[$F{displayDedRates}]]></printWhenExpression>
+              <text><![CDATA[Deductions]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="0" y="212" width="80" height="14">
+              <printWhenExpression><![CDATA[$F{displayDedRates}]]></printWhenExpression>
+              <text><![CDATA[Item]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="90" y="212" width="300" height="14">
+              <printWhenExpression><![CDATA[$F{displayDedRates}]]></printWhenExpression>
+              <text><![CDATA[Description]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="400" y="212" width="120" height="14" hTextAlign="Right">
+              <printWhenExpression><![CDATA[$F{displayDedRates}]]></printWhenExpression>
+              <text><![CDATA[Unit Cost ($/m³)]]></text>
+            </element>
+            <element kind="staticText" style="bold" positionType="Float" x="530" y="212" width="272" height="14">
+              <printWhenExpression><![CDATA[$F{displayDedRates}]]></printWhenExpression>
+              <text><![CDATA[Cost Type]]></text>
+            </element>
+            <element kind="component" positionType="Float" x="0" y="228" width="802" height="16">
+              <printWhenExpression><![CDATA[$F{displayDedRates}]]></printWhenExpression>
+              <component kind="list" printOrder="Vertical">
+                <datasetRun subDataset="RateRows">
+                  <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{deductions})]]></dataSourceExpression>
+                </datasetRun>
+                <contents height="16" width="802">
+                  <element kind="textField" x="0" y="0" width="80" height="16" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateItem}]]></expression>
+                  </element>
+                  <element kind="textField" x="90" y="0" width="300" height="16" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateDesc}]]></expression>
+                  </element>
+                  <element kind="textField" x="400" y="0" width="120" height="16" hTextAlign="Right" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateUnitCost}]]></expression>
+                  </element>
+                  <element kind="textField" x="530" y="0" width="272" height="16" blankWhenNull="true">
+                    <expression><![CDATA[$F{rateCostType}]]></expression>
+                  </element>
+                </contents>
+              </component>
+            </element>
+          </contents>
+        </component>
+      </element>
+
+      <!-- Page-level Comments (comment-gated), reflows below the samples list. -->
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="392" width="90" height="12">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" positionType="Float" x="92" y="392" width="710" height="12" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{pageComments}]]></expression>
+      </element>
+    </band>
+  </detail>
+
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>

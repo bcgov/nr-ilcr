@@ -1,0 +1,43 @@
+package ca.bc.gov.nrs.ilcr.millmaintenance;
+
+import java.time.LocalDateTime;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
+/**
+ * A mill as the administration surface sees it: {@code THE.MILL} joined to its {@code
+ * THE.ILCR_MILL_STATUS_XREF} row and that row's status description (AD-3).
+ *
+ * <p>A second projection over these tables rather than a widening of {@link
+ * ca.bc.gov.nrs.ilcr.millcontext.MillStatusXref}, which carries two columns and is documented as
+ * never persisted. That record serves the mill/year context check, where the extra nine columns
+ * would be dead weight on every schedule request; this one serves an editing screen. Several
+ * projections over one table is the established shape here — the report-status view already backs
+ * three. The table is still written through exactly one repository, which is what the one-writer
+ * rule protects.
+ *
+ * <p>{@code millNumber} is a String although the column is {@code NUMBER(15)}: it is a display
+ * identifier that is never arithmetic, and the house contract carries it that way everywhere.
+ *
+ * <p>{@code updateTimestamp} is a {@link LocalDateTime} because the column is one — {@code
+ * TIMESTAMP(6)}, pinned by {@code MillMaintenanceSchemaIT}, written {@code SYSDATE} so it carries a
+ * real time of day. The display contract is day precision (see {@link
+ * ca.bc.gov.nrs.ilcr.millmaintenance.dto.AdminMill}), but the narrowing belongs at that boundary,
+ * not here: mapping a timestamp column straight into a {@code LocalDate} leaves the truncation to
+ * whichever driver-and-JVM-default-zone conversion Spring picks, which is neither visible in this
+ * file nor pinned by a test.
+ */
+@Table(schema = "THE", name = "ILCR_MILL_STATUS_XREF")
+public record AdminMillEntity(
+    @Id @Column("MILL_ID") long millId,
+    @Column("MILL_NUMBER") String millNumber,
+    @Column("MILL_NAME") String millName,
+    @Column("ILCR_MILL_STATUS_CODE") String statusCode,
+    @Column("STATUS_DESCRIPTION") String statusDescription,
+    @Column("HEAD_OFFICE_CONTACT_IND") String headOfficeContactInd,
+    @Column("HEAD_OFFICE_CONTACT_ID") Long headOfficeContactId,
+    @Column("DIVISION_CONTACT_ID") Long divisionContactId,
+    @Column("REVISION_COUNT") int revisionCount,
+    @Column("UPDATE_USERID") String updateUserid,
+    @Column("UPDATE_TIMESTAMP") LocalDateTime updateTimestamp) {}

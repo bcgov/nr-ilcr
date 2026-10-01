@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule7b.api;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import jakarta.validation.Valid;
@@ -26,8 +27,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings so a missing/blank/non-numeric
  * value resolves to the ONE verbatim legacy ERR-003 message ({@code
- * MillContextService.validateMillYearActive}, AD-4) — a typed required {@code
- * @RequestParam} cannot produce it.
+ * MillContextService.validateMillYearActive}, AD-4) — a typed required {@code @RequestParam} cannot
+ * produce it.
  */
 @RequestMapping("/api/v1/schedule7b")
 public interface Schedule7bApi {
@@ -109,9 +110,9 @@ public interface Schedule7bApi {
       Authentication authentication);
 
   /**
-   * Delete one culvert and its two cost children (S04). Draft-gated. Unknown id → 404. The success
-   * {@code message} is always SUC-002 {@code dataDeletedSuccesfullyInfoMsg}, including when that
-   * was the last culvert (legacy 7B has no empty-list message branch — see {@code
+   * Delete one culvert and its two cost children (S04). editability-gated. Unknown id → 404. The
+   * success {@code message} is always SUC-002 {@code dataDeletedSuccesfullyInfoMsg}, including when
+   * that was the last culvert (legacy 7B has no empty-list message branch — see {@code
    * Schedule7bController.deleteCulvert}). The Yes/No confirmation (ALT-001) is an in-page dialog
    * with no backend contract — a cancelled delete (S05) sends no request.
    *
@@ -129,15 +130,22 @@ public interface Schedule7bApi {
       Authentication authentication);
 
   /**
-   * Check Status for Schedule 7B (BR-07) — read-only validation, mutates nothing, NOT Draft-gated
-   * ({@code VIEW_SCHEDULE}). Applies the type-conditional matrix: span required only for {@code R}
-   * (Round), comments only for {@code O} (Others), rise never checked, and
+   * Check Status for Schedule 7B (BR-07) — read-only validation, mutates nothing, NOT
+   * editability-gated ({@code VIEW_SCHEDULE}). Applies the type-conditional matrix: span required
+   * only for {@code R} (Round), comments only for {@code O} (Others), rise never checked, and
    * length/pieces/material/install required for every culvert. Returns the schedule-wide all-met
    * message when every culvert passes — there is no per-culvert all-met message (unlike Schedule
    * 7A).
    *
+   * <p>{@code request} carries every culvert row currently ON SCREEN (#359): legacy's check read
+   * the bean's in-memory document, into which every row input wrote on change, so unsaved edits —
+   * on any paginator page — move the verdict. Rows are numbered by payload ordinal. The body is
+   * REQUIRED (an absent one is a clean 400), but its row fields are unvalidated, because reporting
+   * missing values is the check's whole job. Nothing is persisted.
+   *
    * @param millId the raw mill id param
    * @param year the raw reporting year param
+   * @param request the on-screen culvert rows the check reads
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -145,5 +153,6 @@ public interface Schedule7bApi {
   ResponseEntity<Schedule7bCheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule7bCheckRequest request,
       Authentication authentication);
 }

@@ -6,10 +6,11 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * Spring Data JDBC row shape for a Schedule 8 sample ({@code THE.TREE_TO_TRUCK_DETAIL_REPORT}, AD-3) —
- * a child of {@link TreeToTruckReportEntity} via {@code TREE_TO_TRUCK_REPORT_ID}. Derived roll-ups
- * ({@code percentTotal}, {@code actualHarvested}, {@code additionsTotal}/{@code deductionsTotal},
- * {@code finalRate}) are computed in {@code Schedule8Service} (AD-5/AD-6), never stored here.
+ * Spring Data JDBC row shape for a Schedule 8 sample ({@code THE.TREE_TO_TRUCK_DETAIL_REPORT},
+ * AD-3) — a child of {@link TreeToTruckReportEntity} via {@code TREE_TO_TRUCK_REPORT_ID}. Derived
+ * roll-ups ({@code percentTotal}, {@code actualHarvested}, {@code additionsTotal}/{@code
+ * deductionsTotal}, {@code finalRate}) are computed in {@code Schedule8Service} (AD-5/AD-6), never
+ * stored here.
  */
 @Table(name = "TREE_TO_TRUCK_DETAIL_REPORT", schema = "THE")
 public record TreeToTruckDetailReportEntity(
@@ -34,5 +35,4 @@ public record TreeToTruckDetailReportEntity(
     @Column("CONIFEROUS_VOLUME") Integer coniferousVolume,
     @Column("DECIDUOUS_VOLUME") Integer deciduousVolume,
     @Column("ORIGINAL_TREE_TO_TRUCK_RATE") BigDecimal originalRate,
-    @Column("REVISION_COUNT") Integer revisionCount) {
-}
+    @Column("REVISION_COUNT") Integer revisionCount) {}

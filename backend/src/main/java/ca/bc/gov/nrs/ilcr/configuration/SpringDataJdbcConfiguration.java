@@ -1,7 +1,14 @@
 package ca.bc.gov.nrs.ilcr.configuration;
 
-import ca.bc.gov.nrs.ilcr.assignment.MillUserProfileXrefRepository;
+import ca.bc.gov.nrs.ilcr.assignment.IlcrUserRepository;
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
+import ca.bc.gov.nrs.ilcr.checkstatus.ReportTrackTransitionRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
+import ca.bc.gov.nrs.ilcr.millinformation.MillInformationRepository;
+import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
+import ca.bc.gov.nrs.ilcr.millreportstatus.MillReportStatusRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
@@ -20,19 +27,18 @@ import org.springframework.data.jdbc.repository.config.AbstractJdbcConfiguration
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
 
 /**
- * Explicitly enables Spring Data JDBC (AD-3). This app hand-defines its datasource wiring in
- * {@link DataSourceConfiguration} rather than using Boot's defaults, so Boot's
- * {@code JdbcRepositoriesAutoConfiguration} does not activate; declaring the Spring Data JDBC
+ * Explicitly enables Spring Data JDBC (AD-3). This app hand-defines its datasource wiring in {@link
+ * DataSourceConfiguration} rather than using Boot's defaults, so Boot's {@code
+ * JdbcRepositoriesAutoConfiguration} does not activate; declaring the Spring Data JDBC
  * infrastructure here (via {@link AbstractJdbcConfiguration}: mapping context, converter, dialect,
- * aggregate template) plus {@link EnableJdbcRepositories} makes it deterministic. The Oracle dialect
- * is resolved from the live JDBC connection.
+ * aggregate template) plus {@link EnableJdbcRepositories} makes it deterministic. The Oracle
+ * dialect is resolved from the live JDBC connection.
  *
  * <p>Scoped to the repository packages so scanning only picks up the Spring Data repository
- * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link Schedule3Repository},
- * {@link Schedule4Repository}, {@link MillContextRepository}, {@link Schedule11Repository}). Gated
- * on the same
- * {@code ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are
- * unaffected.
+ * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link
+ * Schedule3Repository}, {@link Schedule4Repository}, {@link MillContextRepository}, {@link
+ * Schedule11Repository}, {@link ReportTrackTransitionRepository}). Gated on the same {@code
+ * ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are unaffected.
  */
 @Configuration
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -50,8 +56,14 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       Schedule9Repository.class,
       Schedule10Repository.class,
       Schedule11Repository.class,
+      CostDetailSnapshotRepository.class,
+      ReportSummarySnapshotRepository.class,
       MillContextRepository.class,
-      MillUserProfileXrefRepository.class
+      MillInformationRepository.class,
+      MillReportStatusRepository.class,
+      IlcrUserRepository.class,
+      MillUserXrefRepository.class,
+      MillMaintenanceRepository.class,
+      ReportTrackTransitionRepository.class
     })
-public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {
-}
+public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {}

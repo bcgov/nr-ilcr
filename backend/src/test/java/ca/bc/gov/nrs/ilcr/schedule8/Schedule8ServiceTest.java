@@ -1,32 +1,48 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for the Schedule 8 read assembly + server-side derivation (AD-5/AD-6). Mocked repository —
- * no DB, no Spring. Covers the three-level page → sample → rate assembly, the addition/deduction split
- * by cost-item subcategory (§Decision 1), the code→label resolution (§Decision 3), the computed
- * {@code percentTotal}/{@code actualHarvested}/{@code additionsTotal}/{@code deductionsTotal}/
- * {@code finalRate} + counts, the Y/N indicator booleans, editability, and the no-pages empty list.
+ * Unit test for the Schedule 8 read assembly + server-side derivation (AD-5/AD-6). Mocked
+ * repository — no DB, no Spring. Covers the three-level page → sample → rate assembly, the
+ * addition/deduction split by cost-item subcategory (§Decision 1), the code→label resolution
+ * (§Decision 3), the computed {@code percentTotal}/{@code actualHarvested}/{@code
+ * additionsTotal}/{@code deductionsTotal}/ {@code finalRate} + counts, the Y/N indicator booleans,
+ * editability, and the no-pages empty list.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule8ServiceTest {
@@ -34,15 +50,22 @@ class Schedule8ServiceTest {
   private static final long MILL = 570L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule8Repository repository;
+  @Mock private Schedule8Repository repository;
 
-  @InjectMocks
-  private Schedule8Service service;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
+  @InjectMocks private Schedule8Service service;
 
   @BeforeEach
   void stubLabelMapsAndSubcategories() {
-    lenient().when(repository.supportCentreLabels())
+    lenient()
+        .when(repository.supportCentreLabels())
         .thenReturn(Map.of("SC1", "Support Centre One"));
     lenient().when(repository.regionLabels()).thenReturn(Map.of("R1", "Region One"));
     lenient().when(repository.becZoneLabels()).thenReturn(Map.of("BZ1", "BEC Zone One"));
@@ -50,15 +73,19 @@ class Schedule8ServiceTest {
     lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of("B", "Supply Block B"));
     lenient().when(repository.tflNumberLabels()).thenReturn(Map.of("48", "Tree Farm Licence 48"));
     lenient().when(repository.skidTypeLabels()).thenReturn(Map.of("ST1", "Skid Type One"));
-    lenient().when(repository.costTypeLabels())
+    lenient()
+        .when(repository.costTypeLabels())
         .thenReturn(Map.of("CT1", "Cost Type One", "CT2", "Cost Type Two"));
     // §Decision 1: '1'/'2' = addition, '3'/'4' = deduction.
-    lenient().when(repository.costItemSubcategories())
+    lenient()
+        .when(repository.costItemSubcategories())
         .thenReturn(Map.of(82, "1", 100, "2", 101, "3", 107, "4"));
   }
 
   private static void eq(String expected, BigDecimal actual) {
-    assertEquals(0, new BigDecimal(expected).compareTo(actual),
+    assertEquals(
+        0,
+        new BigDecimal(expected).compareTo(actual),
         () -> "expected " + expected + " but was " + actual);
   }
 
@@ -70,19 +97,55 @@ class Schedule8ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
-    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
-        rate(8700, 8600, "CT1", 82, "Add A", "5.00"),
-        rate(8701, 8600, "CT2", 101, "Ded A", "2.00")));
+    when(repository.findRateRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                rate(8700, 8600, "CT1", 82, "Add A", "5.00"),
+                rate(8701, 8600, "CT2", 101, "Ded A", "2.00")));
   }
 
   private static TreeToTruckReportEntity page(int id) {
-    return new TreeToTruckReportEntity(id, "SC1", "R1", "BZ1", "TSA5", "B", "48", "CP1", "L570",
-        "North Div", "Pat Contact", "2505551212", "Seed page", 0);
+    return new TreeToTruckReportEntity(
+        id,
+        "SC1",
+        "R1",
+        "BZ1",
+        "TSA5",
+        "B",
+        "48",
+        "CP1",
+        "L570",
+        "North Div",
+        "Pat Contact",
+        "2505551212",
+        "Seed page",
+        0);
   }
 
   private static TreeToTruckDetailReportEntity sample(int id, int reportId) {
-    return new TreeToTruckDetailReportEntity(id, reportId, "C1", "CB1", 60, 40, 0, 0, 0, 0,
-        null, null, null, null, null, "N", "Y", "ST1", 700, 300, new BigDecimal("25.50"), 0);
+    return new TreeToTruckDetailReportEntity(
+        id,
+        reportId,
+        "C1",
+        "CB1",
+        60,
+        40,
+        0,
+        0,
+        0,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "N",
+        "Y",
+        "ST1",
+        700,
+        300,
+        new BigDecimal("25.50"),
+        0);
   }
 
   private static TreeToTruckRateDetailEntity rate(
@@ -94,7 +157,7 @@ class Schedule8ServiceTest {
   @Test
   void threeLevelAssembly_pageCarriesItsSampleAndSampleCount() {
     stubOnePageOneSample();
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(1, doc.pages().size());
     Page page = doc.pages().get(0);
     assertEquals(8500, page.id());
@@ -106,7 +169,8 @@ class Schedule8ServiceTest {
   @Test
   void additionsAndDeductions_splitBySubcategory() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(1, sample.additionCount());
     assertEquals(1, sample.deductionCount());
     assertEquals(82, sample.additions().get(0).costItemCode()); // subcat '1'
@@ -116,12 +180,13 @@ class Schedule8ServiceTest {
   @Test
   void computedRollups_totalsAndFinalRate() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
-    assertEquals(100, sample.percentTotal());       // 60 + 40
-    assertEquals(1000, sample.actualHarvested());    // 700 + 300
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
+    assertEquals(100, sample.percentTotal()); // 60 + 40
+    assertEquals(1000, sample.actualHarvested()); // 700 + 300
     eq("5", sample.additionsTotal());
     eq("2", sample.deductionsTotal());
-    eq("28.5", sample.finalRate());                  // 25.50 + 5.00 − 2.00
+    eq("28.5", sample.finalRate()); // 25.50 + 5.00 − 2.00
     eq("25.5", sample.originalRate());
   }
 
@@ -132,22 +197,27 @@ class Schedule8ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
-    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
-        rate(8700, 8600, "CT1", 82, "Add A", "5.00"),      // subcat '1' — addition
-        rate(8702, 8600, "CT1", 999, "Orphan", "9.99")));  // 999 not in subcategories → dropped
+    when(repository.findRateRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                rate(8700, 8600, "CT1", 82, "Add A", "5.00"), // subcat '1' — addition
+                rate(
+                    8702, 8600, "CT1", 999, "Orphan",
+                    "9.99"))); // 999 not in subcategories → dropped
 
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
 
-    assertEquals(1, sample.additionCount());   // only the classifiable addition
+    assertEquals(1, sample.additionCount()); // only the classifiable addition
     assertEquals(0, sample.deductionCount());
-    eq("5", sample.additionsTotal());          // the orphan 9.99 is NOT summed in
-    eq("30.5", sample.finalRate());            // 25.50 + 5.00 − 0
+    eq("5", sample.additionsTotal()); // the orphan 9.99 is NOT summed in
+    eq("30.5", sample.finalRate()); // 25.50 + 5.00 − 0
   }
 
   @Test
   void codeLabels_resolvedFromCodeTables() {
     stubOnePageOneSample();
-    Page page = service.getSchedule8(MILL, YEAR, true).pages().get(0);
+    Page page = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
     assertEquals("SC1", page.supportCentre());
     assertEquals("Support Centre One", page.supportCentreLabel());
     assertEquals("Region One", page.regionLabel());
@@ -160,16 +230,17 @@ class Schedule8ServiceTest {
   @Test
   void ynIndicators_mappedToBooleans() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
-    assertTrue(sample.uphillDirection());        // "Y"
-    assertFalse(sample.waterDumpDestination());  // "N"
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
+    assertTrue(sample.uphillDirection()); // "Y"
+    assertFalse(sample.waterDumpDestination()); // "N"
   }
 
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stubOnePageOneSample();
-    assertTrue(service.getSchedule8(MILL, YEAR, true).editable());
-    assertFalse(service.getSchedule8(MILL, YEAR, false).editable());
+    assertTrue(service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).editable());
+    assertFalse(service.getSchedule8(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -178,7 +249,7 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertFalse(doc.editable());
     assertEquals(1, doc.pages().size());
     assertEquals("S", doc.trackStatus());
@@ -190,7 +261,7 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.pages().isEmpty());
     assertTrue(doc.editable()); // editable per Draft track even with no pages
   }
@@ -202,31 +273,38 @@ class Schedule8ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
-    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
-        rate(8700, 8600, "CT1", 82, "Add subcat 1", "5.00"),
-        rate(8701, 8600, "CT1", 100, "Add subcat 2", "3.25"),
-        rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
-        rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
+    when(repository.findRateRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                rate(8700, 8600, "CT1", 82, "Add subcat 1", "5.00"),
+                rate(8701, 8600, "CT1", 100, "Add subcat 2", "3.25"),
+                rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
+                rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
 
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
 
     assertEquals(2, sample.additionCount());
     assertEquals(2, sample.deductionCount());
-    eq("8.25", sample.additionsTotal());   // 5.00 + 3.25  (subcats '1' + '2')
-    eq("3.75", sample.deductionsTotal());  // 2.00 + 1.75  (subcats '3' + '4')
-    eq("30", sample.finalRate());          // 25.50 + 8.25 − 3.75
+    eq("8.25", sample.additionsTotal()); // 5.00 + 3.25  (subcats '1' + '2')
+    eq("3.75", sample.deductionsTotal()); // 2.00 + 1.75  (subcats '3' + '4')
+    eq("30", sample.finalRate()); // 25.50 + 8.25 − 3.75
   }
 
   @Test
   void getOptions_partitionsCategory8CostItemsIntoAdditionsAndDeductions() {
-    // Category-8 cost items spanning all four subcategories: '1'/'2' are additions, '3'/'4' deductions
-    // (§Decision 1). getOptions must split the single query result into the two per-form lists, keying
+    // Category-8 cost items spanning all four subcategories: '1'/'2' are additions, '3'/'4'
+    // deductions
+    // (§Decision 1). getOptions must split the single query result into the two per-form lists,
+    // keying
     // each choice by String(id) + itemName and preserving the query's ITEM_NAME order.
-    when(repository.findCategory8CostItems()).thenReturn(List.of(
-        new Schedule8Repository.CostItemRow(82, "Add subcat 1", "1"),
-        new Schedule8Repository.CostItemRow(100, "Add subcat 2", "2"),
-        new Schedule8Repository.CostItemRow(101, "Ded subcat 3", "3"),
-        new Schedule8Repository.CostItemRow(107, "Ded subcat 4", "4")));
+    when(repository.findCategory8CostItems())
+        .thenReturn(
+            List.of(
+                new Schedule8Repository.CostItemRow(82, "Add subcat 1", "1"),
+                new Schedule8Repository.CostItemRow(100, "Add subcat 2", "2"),
+                new Schedule8Repository.CostItemRow(101, "Ded subcat 3", "3"),
+                new Schedule8Repository.CostItemRow(107, "Ded subcat 4", "4")));
 
     Schedule8Options options = service.getOptions();
 
@@ -255,10 +333,122 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(0, sample.additionCount());
     assertEquals(0, sample.deductionCount());
     eq("0", sample.additionsTotal());
     eq("25.5", sample.finalRate()); // originalRate only
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft the page, its sample and its rate rows each carry their own keys")
+    void beyondDraftServesAllThreeLevels() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+      when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+      when(repository.findRateRows(MILL, YEAR))
+          .thenReturn(List.of(rate(8700, 8600, "CT1", 82, "Add A", "5.00")));
+      when(repository.findPageSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.PageSnapshotRow(
+                      8500,
+                      "Div",
+                      "L1",
+                      "Contact",
+                      "222-222-2222",
+                      "CP",
+                      "SC",
+                      "R",
+                      "BEC",
+                      "07",
+                      null,
+                      null,
+                      "page note")));
+      when(repository.findSampleSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.SampleSnapshotRow(
+                      8600,
+                      "C1",
+                      "B1",
+                      60,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      new BigDecimal("1.5"),
+                      "Y",
+                      "N",
+                      "S",
+                      null,
+                      null,
+                      new BigDecimal("12.34"))));
+      when(repository.findRateSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.RateSnapshotRow(
+                      8700, 82, "Add A", new BigDecimal("4.00"), "CT1")));
+
+      Page servedPage = service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0);
+      Sample servedSample = servedPage.samples().get(0);
+
+      // Legacy draws twelve indicators on a page, nineteen on a sample and four on a rate row.
+      assertThat(servedPage.originalValues()).containsKeys("division", "license", "comments");
+      assertThat(servedSample.originalValues())
+          .containsKeys("contractId", "cutBlock", "groundBasePct", "cycleTime", "originalRate");
+      // D3: uphill and water dump come from their OWN columns, which legacy crossed.
+      assertThat(servedSample.originalValues().get("uphillDirection").tooltip())
+          .isEqualTo("Original Submission Value: Uphill");
+      assertThat(servedSample.originalValues().get("waterDumpDestination").tooltip())
+          .isEqualTo("Original Submission Value: Land Dump");
+      assertThat(servedSample.additions().get(0).originalValues())
+          .containsOnlyKeys("costItemCode", "itemDescription", "costingRate", "costTypeCode");
+    }
+
+    @Test
+    @DisplayName("a sample with nothing on file still carries every field, with legacy's label")
+    void noSnapshotCarriesEmptyOriginals() {
+      // REGRESSION GUARD. This asserted an EMPTY map until the empty-tooltip fix, and an empty map
+      // is now indistinguishable from "no field on this row has indicator wiring" — so every
+      // indicator on a sample with no 'S' snapshot silently stopped rendering. `sampleOriginals`
+      // must substitute an all-null row rather than short-circuit, so its per-field puts still run.
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+      when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+      when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
+
+      Sample servedSample =
+          service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0).samples().get(0);
+
+      assertAllNothingOnFile(servedSample.originalValues());
+      // Named explicitly: a field the operator has filled in since submission must have something
+      // for its indicator to show.
+      assertThat(servedSample.originalValues())
+          .containsEntry("contractId", nothingOnFile())
+          .containsEntry("helicopterPct", nothingOnFile());
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      stubOnePageOneSample();
+
+      Page servedPage = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
+
+      assertThat(servedPage.originalValues()).isNull();
+      assertThat(servedPage.samples().get(0).originalValues()).isNull();
+      verify(repository, never()).findPageSnapshots(anyLong(), anyInt());
+    }
   }
 }

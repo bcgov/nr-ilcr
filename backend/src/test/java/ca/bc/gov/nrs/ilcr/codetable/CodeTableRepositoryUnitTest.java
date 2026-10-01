@@ -24,8 +24,8 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 
 /**
- * Unit test for the generic repository's control flow with a mocked JDBC template (Story 24.3 / T2) —
- * the upsert branches (including the insert-race fallback) without a database. The SQL itself is
+ * Unit test for the generic repository's control flow with a mocked JDBC template (Story 24.3 / T2)
+ * — the upsert branches (including the insert-race fallback) without a database. The SQL itself is
  * exercised against real Oracle by {@link CodeTableRepositoryIT}.
  */
 @ExtendWith(MockitoExtension.class)
@@ -35,11 +35,9 @@ class CodeTableRepositoryUnitTest {
   private static final CodeTableEntry ENTRY =
       new CodeTableEntry("M3", "Cubic Metres", LocalDate.of(2020, 1, 1), null);
 
-  @Mock
-  private NamedParameterJdbcTemplate jdbc;
+  @Mock private NamedParameterJdbcTemplate jdbc;
 
-  @InjectMocks
-  private CodeTableRepository repository;
+  @InjectMocks private CodeTableRepository repository;
 
   @Test
   void upsert_updatesInPlace_whenTheRowExists() {
@@ -80,9 +78,42 @@ class CodeTableRepositoryUnitTest {
 
   @Test
   void contractual_hasNoBackingTable_andIsRejected() {
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(
+        IllegalArgumentException.class,
         () -> repository.findEntries(CodeTableRegistry.CONTRACTUAL_ITEM_CODE));
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(
+        IllegalArgumentException.class,
         () -> repository.upsert(CodeTableRegistry.CONTRACTUAL_ITEM_CODE, ENTRY));
+  }
+
+  @Test
+  void contractual_insert_allocatesIdentifierFromCostItemSequence() {
+    when(jdbc.queryForObject(anyString(), any(SqlParameterSource.class), eq(Integer.class)))
+        .thenReturn(1000);
+    when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+
+    assertEquals(
+        UpsertResult.INSERTED,
+        repository.upsertContractualItem(
+            new CodeTableEntry(
+                "", "New contractual item", LocalDate.of(2020, 1, 1), LocalDate.of(2030, 12, 31)),
+            "admin"));
+    org.mockito.Mockito.verify(jdbc)
+        .queryForObject(
+            eq("SELECT THE.ILCR_REPORT_COST_ITEM_SEQ.NEXTVAL FROM DUAL"),
+            any(SqlParameterSource.class),
+            eq(Integer.class));
+  }
+
+  @Test
+  void contractual_update_requiresAnExistingCategory9Item() {
+    when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+
+    assertEquals(
+        UpsertResult.UPDATED,
+        repository.upsertContractualItem(
+            new CodeTableEntry(
+                "108", "Renamed item", LocalDate.of(2020, 1, 1), LocalDate.of(2030, 12, 31)),
+            "admin"));
   }
 }

@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react'
-import { Button, Column, Grid, Modal } from '@carbon/react'
+import { Button, Column, Grid } from '@carbon/react'
+import { ArrowLeft, Save } from '@carbon/icons-react'
+import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -31,7 +34,8 @@ interface Props<TDoc extends EditableRowsDoc> {
 /**
  * Shared chrome for the editable cost sub-pages (Schedule 1 Other Costs, Schedule 3 Included
  * Unacceptable / Other Costs): page title, the mill-year / loading / load-error guard states, the
- * success/error notifications, the Save + Back action row, and the unsaved-changes Back modal. Pages
+ * success/error notifications, the Save + Back action row, the unsaved-changes Back modal, and the
+ * row-delete confirmation. Pages
  * supply only their own panels via {@code children}; all shared behaviour lives in
  * {@link useEditableCostRows}. Keeps the pages free of duplicated boilerplate.
  */
@@ -60,6 +64,9 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
     handleBack,
     confirmBack,
     onBack,
+    pendingRemoveKey,
+    confirmRemove,
+    cancelRemove,
   } = editor
 
   // Match the schedule pages' tombstone header: the parent schedule is the title, and the sub-page
@@ -97,7 +104,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
         notification={{ kind: 'error', title: errorTitle, subtitle: errorDetail }}
       >
         <Column sm={4} md={8} lg={16}>
-          <Button kind="secondary" size="md" onClick={onBack}>
+          <Button kind="secondary" size="md" renderIcon={ArrowLeft} onClick={onBack}>
             {backLabel}
           </Button>
         </Column>
@@ -129,28 +136,31 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
               size="md"
               // Greyed out until there is data to save (and while saving) — legacy parity.
               disabled={saving || rows.length === 0}
+              renderIcon={Save}
               onClick={handleSave}
             >
               Save
             </Button>
           )}
-          <Button kind="secondary" size="md" onClick={handleBack}>
+          <Button kind="secondary" size="md" renderIcon={ArrowLeft} onClick={handleBack}>
             {backLabel}
           </Button>
         </Column>
       </Grid>
 
       {editable && (
-        <Modal
+        <ConfirmNavigationModal
           open={confirmBackOpen}
-          modalHeading="Leave page"
-          primaryButtonText="Continue"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setConfirmBackOpen(false)}
-          onRequestSubmit={confirmBack}
+          heading="Leave page"
+          onCancel={() => setConfirmBackOpen(false)}
+          onContinue={confirmBack}
         >
-          <p>{CONFIRM_NAVIGATION}</p>
-        </Modal>
+          {CONFIRM_NAVIGATION}
+        </ConfirmNavigationModal>
+      )}
+
+      {pendingRemoveKey !== null && (
+        <ConfirmDeleteModal onCancel={cancelRemove} onConfirm={confirmRemove} />
       )}
     </div>
   )

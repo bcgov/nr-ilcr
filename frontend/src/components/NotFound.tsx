@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
+import { ArrowLeft } from '@carbon/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import PageTitle from '@/components/core/PageTitle'
 
@@ -17,7 +18,12 @@ const NotFound: FC = () => {
       </Grid>
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
-          <Button name="homeBtn" id="homeBtn" onClick={() => buttonClicked()}>
+          <Button
+            name="homeBtn"
+            id="homeBtn"
+            renderIcon={ArrowLeft}
+            onClick={() => buttonClicked()}
+          >
             Back Home
           </Button>
         </Column>

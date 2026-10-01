@@ -3,6 +3,7 @@
 // `number | null`. The totals are computed server-side from the ten costs (BR-06) and are NEVER
 // recomputed here (AD-5); a total with no contributing costs is omitted and must render blank, not 0.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
@@ -63,6 +64,9 @@ export interface Bridge {
   readonly totalInstall: number | null
   readonly grandTotal: number | null
   readonly revisionCount: number
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Check Status (BR-08) result — read-only validation, no status transition. Unlike the Schedule 11

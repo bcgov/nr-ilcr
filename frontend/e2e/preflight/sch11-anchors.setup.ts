@@ -12,6 +12,8 @@ import {
   BEC_SECONDARY,
   CANCEL_DELETE_ANCHOR,
   CHECK_MET_ANCHOR,
+  CHECK_UNSAVED_FIX_ANCHOR,
+  CHECK_UNSAVED_VIOLATION_ANCHOR,
   CHECK_MISSING_ACTUAL_ANCHOR,
   CHECK_MISSING_PLANNED_ANCHOR,
   CORRECTION_ANCHOR,
@@ -57,6 +59,11 @@ const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch11Anchor }[] = [
   { name: 'correction', anchor: CORRECTION_ANCHOR },
   { name: 'stale-edit (GAP-3)', anchor: STALE_EDIT_ANCHOR },
   { name: 'a11y', anchor: A11Y_ANCHOR },
+  // BR-12 / #359 — both are SEEDED anchors (real-test-data-patches/sch11/unsaved-check-anchors.sql), so
+  // these two checks double as the patch's own applied-ness guard: without the patch they 404 here with one
+  // clear message instead of failing inside a scenario.
+  { name: 'check-unsaved-violation (S21)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
+  { name: 'check-unsaved-fix (S22)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
 ];
 
 for (const { name, anchor } of EDITABLE_DRAFT_ANCHORS) {

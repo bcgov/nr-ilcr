@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
@@ -18,16 +19,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
+import {
+  Add,
+  ArrowLeft,
+  ArrowRight,
+  CheckmarkOutline,
+  Close,
+  Copy,
+  Edit,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -45,7 +58,6 @@ import './index.scss'
 
 // Client-only chrome (no request behind it). All success/error text comes from the API
 // message.text / ProblemDetail.detail — never hardcoded (AD-8).
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
@@ -91,6 +103,9 @@ const Schedule8: FC = () => {
   // Save/delete/check-status all run through the shared hook's guarded run() (Story 29.6): a stale
   // in-flight write can no longer repaint a newly-switched mill/year. `saving` is the single in-flight
   // lock for every write (it also gates Check Status) — Schedule 8 had no separate checking lock.
+  // Re-entrancy is not the only gate on the Check Status BUTTON, though: since Story 16.1 it is
+  // withheld when the document is not editable for the caller (the role x status matrix), as
+  // `core/ScheduleActions:69` does and as legacy did on 26 of 26 buttons.
   const {
     saving,
     message: saveMessage,
@@ -332,6 +347,11 @@ const Schedule8: FC = () => {
     if (saving) return
     // The single `saving` lock (shared with save/delete via run()) gates re-entrancy — Schedule 8 had
     // no separate checking flag, so Check Status disables alongside any in-flight write.
+    //
+    // The BUTTON is additionally gated on `editable` (Story 16.1's matrix; see the action bar below),
+    // but this HANDLER deliberately still guards `saving` alone: adding an editability guard here is
+    // a cross-page change and is recorded as deferred work, not an oversight. Nothing is at risk in
+    // the meantime — the endpoint is VIEW_SCHEDULE-gated, read-only, and mutates nothing.
     clearBanners()
     checkStatus<Schedule8CheckStatusResponse>({
       fallback: 'Unable to check status.',
@@ -363,30 +383,15 @@ const Schedule8: FC = () => {
     </div>
   )
 
-  if (contextMissing) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Mill and Reporting Year required"
-        subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-      />,
-    )
-  }
-  if (isLoading) {
-    return shell(<LoadingScreen label="Loading Schedule 8" />)
-  }
-  if (errorDetail) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Unable to load Schedule 8"
-        subtitle={errorDetail}
-      />,
-    )
+  const loadState = renderScheduleLoadState({
+    header,
+    scheduleName: 'Schedule 8',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
   if (!data) return null
 
@@ -518,6 +523,18 @@ const Schedule8: FC = () => {
     ? tsaNumbers
     : [...tsaNumbers, { code: 'TFL', description: 'TFL' }]
 
+  // Legacy rendered twelve indicators on a page (TreeToTruckReportDO.java:528-561). Every form key
+  // here already matches the served document's, so the key is the field.
+  const pageIndicator = (field: keyof PageForm, label: string) => (
+    <OriginalValueIndicator
+      originals={editId === null ? null : panelPage?.originalValues}
+      field={field}
+      current={form[field]}
+      numeric={false}
+      label={label}
+    />
+  )
+
   const textField = (
     field: keyof PageForm,
     label: string,
@@ -534,6 +551,7 @@ const Schedule8: FC = () => {
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
           <span>{shown}</span>
+          {pageIndicator(field, label)}
         </div>
       )
     }
@@ -543,18 +561,21 @@ const Schedule8: FC = () => {
           setForm((prev) => ({ ...prev, [field]: opts.format!(event.target.value) }))
       : setField(field)
     return (
-      <TextInput
-        id={`page-${field}`}
-        labelText={label}
-        maxLength={opts.maxLength}
-        disabled={opts.disabled}
-        // Format the shown value too (not just onChange), so a seeded value (e.g. a stored phone with
-        // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
-        value={opts.format ? opts.format(form[field]) : form[field]}
-        onChange={onChange}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-      />
+      <div className="schedule-8__field">
+        <TextInput
+          id={`page-${field}`}
+          labelText={label}
+          maxLength={opts.maxLength}
+          disabled={opts.disabled}
+          // Format the shown value too (not just onChange), so a seeded value (e.g. a stored phone with
+          // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
+          value={opts.format ? opts.format(form[field]) : form[field]}
+          onChange={onChange}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+        />
+        {pageIndicator(field, label)}
+      </div>
     )
   }
 
@@ -573,6 +594,7 @@ const Schedule8: FC = () => {
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
           <span>{selected?.description || current || '—'}</span>
+          {pageIndicator(field, label)}
         </div>
       )
     }
@@ -585,25 +607,28 @@ const Schedule8: FC = () => {
         ? [...items, { code: current, description: current }]
         : items
     return (
-      <CodeComboBox
-        id={`page-${field}`}
-        className={opts.className}
-        titleText={label}
-        items={itemList}
-        selectedCode={current}
-        onSelect={(code) =>
-          opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
-        }
-        disabled={opts.disabled}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-      />
+      <div className="schedule-8__field">
+        <CodeComboBox
+          id={`page-${field}`}
+          className={opts.className}
+          titleText={label}
+          items={itemList}
+          selectedCode={current}
+          onSelect={(code) =>
+            opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
+          }
+          disabled={opts.disabled}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+        />
+        {pageIndicator(field, label)}
+      </div>
     )
   }
 
   const pagesTable = (
     <TableContainer title="Page Summary">
-      <Table aria-label="Page Summary">
+      <Table>
         <TableHead>
           <TableRow>
             <TableHeader>Tree to Truck Pages</TableHeader>
@@ -616,45 +641,47 @@ const Schedule8: FC = () => {
               <TableCell colSpan={2}>No pages have been added.</TableCell>
             </TableRow>
           ) : (
-            data.pages.map((page, index) => (
-              <TableRow
-                key={page.id}
-                className={
-                  panelOpen && page.id != null && page.id === editId
-                    ? 'schedule-8__row--editing'
-                    : undefined
-                }
-              >
-                <TableCell>{pageLabel(page, index)}</TableCell>
-                <TableCell>
-                  <div className="schedule-8__row-actions">
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      onClick={() => openEditOrView(page, editable ? 'edit' : 'view')}
-                    >
-                      {editable ? 'Edit' : 'View'}
-                    </Button>
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      disabled={!editable || saving}
-                      onClick={() => openCopy(page)}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      kind="danger--ghost"
-                      size="sm"
-                      disabled={!editable || saving}
-                      onClick={() => setConfirmDelete(page)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+            data.pages.map((page, index) => {
+              // The page open in the panel cannot act on itself: its row actions grey out while it
+              // is open, as legacy's disableReport(report) did (Schedule8MB.java:135-137).
+              const isOpen = panelOpen && page.id != null && page.id === editId
+              return (
+                <TableRow key={page.id} className={isOpen ? 'schedule-8__row--editing' : undefined}>
+                  <TableCell>{pageLabel(page, index)}</TableCell>
+                  <TableCell>
+                    <div className="schedule-8__row-actions">
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={editable ? Edit : View}
+                        disabled={isOpen}
+                        onClick={() => openEditOrView(page, editable ? 'edit' : 'view')}
+                      >
+                        {editable ? 'Edit' : 'View'}
+                      </Button>
+                      <Button
+                        kind="ghost"
+                        size="sm"
+                        renderIcon={Copy}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => openCopy(page)}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        kind="danger--tertiary"
+                        size="sm"
+                        renderIcon={TrashCan}
+                        disabled={!editable || saving || isOpen}
+                        onClick={() => setConfirmDelete(page)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>
@@ -715,6 +742,8 @@ const Schedule8: FC = () => {
             size="sm"
             className="schedule-8__samples-action"
             disabled={saving}
+            // Navigational, like the other "open a level" buttons — it drills into the samples level.
+            renderIcon={ArrowRight}
             onClick={() => requestOpenSamples(editId)}
           >
             TtT Samples ({panelPage?.sampleCount ?? 0})
@@ -722,21 +751,28 @@ const Schedule8: FC = () => {
         )}
       </div>
 
+      {/* Comments is the twelfth of the page's indicators (`TreeToTruckReportDO.java:528-561`), and
+          the only one that does not come through `textField` — it renders as a CommentsTextArea,
+          so its indicator is placed here by hand rather than by that helper (PR #452 review). */}
       {readOnly ? (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">
             If you have any additional comments, please enter them here:
           </span>
           <span>{form.comments || '—'}</span>
+          {pageIndicator('comments', 'Comments')}
         </div>
       ) : (
-        <TextArea
-          id="page-comments"
-          labelText="If you have any additional comments, please enter them here:"
-          maxLength={3500}
-          value={form.comments}
-          onChange={setComments}
-        />
+        <div className="schedule-8__field">
+          <CommentsTextArea
+            id="page-comments"
+            labelText="If you have any additional comments, please enter them here:"
+            maxCount={3500}
+            value={form.comments}
+            onChange={setComments}
+          />
+          {pageIndicator('comments', 'Comments')}
+        </div>
       )}
 
       {/* Save feedback shown in the panel (next to Save) so it's visible where the user is acting —
@@ -750,11 +786,16 @@ const Schedule8: FC = () => {
 
       <div className="schedule-8__panel-actions">
         {!readOnly && (
-          <Button kind="primary" disabled={saving} onClick={handleSave}>
+          <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={saving} onClick={closePanel}>
+        <Button
+          kind="secondary"
+          disabled={saving}
+          renderIcon={readOnly ? Close : ArrowLeft}
+          onClick={closePanel}
+        >
           {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>
@@ -786,10 +827,15 @@ const Schedule8: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-8__actions">
-          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
+          <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
             Add New Page
           </Button>
-          <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={!editable || saving}
+            onClick={handleCheckStatus}
+          >
             Check Status
           </Button>
         </Column>

@@ -2,12 +2,16 @@
 // UnacceptableRow / UnacceptableRequest). Numbers are nullable; Jackson omits nulls. `annualRentsTotal`
 // is the read-only Annual Rents (Forest Act, S111) figure pulled from the item-29 Harvest.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from '@/interfaces/Schedule1Response'
 
 export interface UnacceptableRow {
   id: number
   description: string
   total: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 export interface UnacceptableDocument {

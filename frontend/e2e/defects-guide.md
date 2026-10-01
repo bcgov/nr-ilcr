@@ -6,9 +6,13 @@ folder next to its `coverage.md` (e.g. `features/<domain>/uc-<domain>-001-create
 everything open across the whole suite at once, use the scan commands under "Where the entries live"
 below.
 
-**BA/QA own triage and disposition** — deciding whether a finding is a real bug, raising the Jira ticket,
-and closing it. The test author (the skill) only records evidence and does mechanical upkeep; it never
-changes the app to match the old spec, and it never adjudicates.
+**BA/QA own triage and disposition** — deciding whether a finding is a real bug, raising the ticket, and
+closing it. The test author (the skill) only records evidence and does mechanical upkeep; it never changes
+the app to match the old spec, and it never adjudicates.
+
+> **On this project, "the ticket" is a GitHub issue on [`bcgov/nr-ilcr`](https://github.com/bcgov/nr-ilcr),
+> filed through the *Bugfix Task* template — NOT Jira.** This guide came from a reusable scaffold that
+> assumed Jira; those mentions have been corrected (2026-08-27).
 
 > **Audience note:** write every entry so a **BA/QA reader who does not know the codebase** can
 > understand it. Lead each entry with a plain-language summary; put code paths / jargon *after* it as
@@ -33,7 +37,7 @@ changes the app to match the old spec, and it never adjudicates.
 | Tag | Meaning |
 |---|---|
 | `@discovered-divergence` | A test that **deliberately stays RED** because it reproduces a divergence (see below). Filter it out of a "fresh failures only" run with `--grep-invert @discovered-divergence`. |
-| `@discovered-bug` | A test that **deliberately stays RED** because it reproduces a confirmed bug/regression awaiting a fix (has a Jira ticket). Same filter idea. |
+| `@discovered-bug` | A test that **deliberately stays RED** because it reproduces a confirmed bug/regression awaiting a fix (has a GitHub issue). Same filter idea. |
 | `@skip` | A scenario that **cannot be automated today** (e.g. blocked by single-role mock auth) — skipped, never used to hide a failure. |
 
 ## Registers (what kind of finding is this?)
@@ -42,15 +46,22 @@ Every entry sits in exactly one register. The five kinds, in plain language:
 
 | Register | Plain meaning | Compares | Fixed by |
 |---|---|---|---|
-| **Divergence** | The app behaves **differently from the (legacy-derived) spec**. Might be a real bug *or* a deliberate change — BA/QA decide. Kept as a genuinely-failing `@discovered-divergence` test when it looks like a defect. | app **vs** spec | Dev (via BA/QA → Jira) *or* update the spec if intended |
-| **Bug / Regression** | The app is **genuinely broken** (not just different from the old spec) — e.g. something that worked now fails. Almost always a ticket. Kept as a genuinely-failing `@discovered-bug` test if it can't be fixed right away. | app **vs** correct behavior | Dev (via BA/QA → Jira) |
+| **Divergence** | The app behaves **differently from the (legacy-derived) spec**. Might be a real bug *or* a deliberate change — BA/QA decide. Kept as a genuinely-failing `@discovered-divergence` test when it looks like a defect. | app **vs** spec | Dev (via BA/QA → GitHub issue) *or* update the spec if intended |
+| **Bug / Regression** | The app is **genuinely broken** (not just different from the old spec) — e.g. something that worked now fails. Almost always a ticket. Kept as a genuinely-failing `@discovered-bug` test if it can't be fixed right away. | app **vs** correct behavior | Dev (via BA/QA → GitHub issue) |
 | **Coverage gap** | **We haven't tested it yet** — skipped, deferred, or not automatable today. Not an app problem. | our tests **vs** what should be tested | Test author, later |
 | **Spec gap** | The Gherkin test-spec is **missing scenarios its own source documents list** — a paperwork mismatch, *not* an app problem. (Example: the detailed doc lists 5 required fields but the `.feature` only wrote 3.) | Gherkin **vs** its own source docs | A BA regenerates the `.feature` |
 | **Verified — not a defect** | Looked wrong at first, but we **confirmed it's correct**. Kept so nobody re-investigates it. | — | N/A |
 
-**Status flow:** Divergence & Bug/Regression: `OPEN → TRIAGED → JIRA-<key> → CLOSED` (BA/QA cut + resolve
-the ticket). Coverage gap / Spec gap: `OPEN → CLOSED` when the test is finally written / the BA
-regenerates the `.feature`. Verified-not-a-defect: permanent.
+**Status flow:** Divergence & Bug/Regression: `OPEN → TRIAGED → ticketed (bcgov/nr-ilcr#NNN) → CLOSED`
+(BA/QA cut + resolve the issue). In practice the registers here write `OPEN — confirmed and triaged by
+raising a ticket` with a separate `Ticket:` line, because triage and the fix land at different times.
+Coverage gap / Spec gap: `OPEN → CLOSED` when the test is finally written / the BA regenerates the
+`.feature`. Verified-not-a-defect: permanent.
+
+**When the fix lands, three things move together** — the `@discovered-*` tag comes off, the
+`[DISCOVERED …]` title marker comes off, and this register entry is closed with the date and the commit or
+PR. Miss the third and a green test still *reads* as an open defect; that has happened here twice
+(sch4 DIV-4, and sch1's GAP-3 in the other direction).
 
 ## Entry ids — the `BUG-` / `DIV-` / `GAP-` / `SPEC-` prefixes
 
@@ -69,7 +80,7 @@ know exactly which log and which register to open, without the surrounding sente
 **Numbers are permanent and never reused.** An entry that turns out to be wrong is kept and marked
 `RETRACTED (author error)`; one that the app has made obsolete is marked `RETIRED (obsolete)`. Both stay in
 place with their original number, because the id may already be cited in a `.feature` comment, a
-`coverage.md` row, a commit message or a Jira ticket — renumbering would silently break those. Numbering is
+`coverage.md` row, a commit message or a GitHub issue — renumbering would silently break those. Numbering is
 also per-register, so `BUG-2` and `DIV-2` are unrelated entries.
 
 Ids are **local to one use case's log**. When crossing UCs, name the path too — e.g.
@@ -116,5 +127,5 @@ template `assets/defects-entry.md` — the single source of truth for the exact 
   mechanical drift; surface `OPEN` items (and any `@discovered-divergence` / `@discovered-bug` reds) to
   BA/QA.
 - **After each run / when a UC is finished:** file new findings in that UC's `defects.md`, under the
-  correct register, leading with the plain-language summary. The author sets `JIRA-<key>`/`CLOSED`
+  correct register, leading with the plain-language summary. The author sets the ticket link / `CLOSED`
   **only** on BA/QA confirmation; otherwise leave `OPEN` and flag it.

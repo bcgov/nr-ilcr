@@ -41,5 +41,4 @@ public record CulvertReportEntity(
     @Column("LENGTH") BigDecimal length,
     @Column("CULVERT_PIECE_COUNT") Integer culvertPieceCount,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") int revisionCount) {
-}
+    @Column("REVISION_COUNT") int revisionCount) {}

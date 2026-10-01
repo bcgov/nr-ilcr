@@ -10,12 +10,13 @@ import org.springframework.stereotype.Repository;
 /**
  * Reads and writes the legacy {@code THE} tables that opening a reporting year touches (UC-RY-001).
  * Per active mill, opening a year creates: one {@code ILCR_REPORTING_PERIOD} row (the year exists →
- * selectable on Home), one {@code ILCR_MILL_REPORT_STATUS} row (both tracks → {@code validateMillYearActive}
- * passes), and one {@code ILCR_REPORT_CATEGORY} row per schedule category (Draft, reportable-detail Y —
- * the delivery DB pre-seeds these on open, verified against the DEV database). {@code ILCR_REPORT_SUMMARY}
- * is NOT created here — it appears on first schedule save. Every VALUE is a bound named parameter; the
- * full audit quartet ({@code ENTRY_/UPDATE_USERID} + timestamps) and {@code REVISION_COUNT} are stamped
- * explicitly because all are NOT NULL in delivery (AD-11).
+ * selectable on Home), one {@code ILCR_MILL_REPORT_STATUS} row (both tracks → {@code
+ * validateMillYearActive} passes), and one {@code ILCR_REPORT_CATEGORY} row per schedule category
+ * (Draft, reportable-detail Y — the delivery DB pre-seeds these on open, verified against the DEV
+ * database). {@code ILCR_REPORT_SUMMARY} is NOT created here — it appears on first schedule save.
+ * Every VALUE is a bound named parameter; the full audit quartet ({@code ENTRY_/UPDATE_USERID} +
+ * timestamps) and {@code REVISION_COUNT} are stamped explicitly because all are NOT NULL in
+ * delivery (AD-11).
  */
 @Repository
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -30,7 +31,8 @@ public class ReportingYearRepository {
   /** The highest opened reporting year, or {@code null} when none exist (first-time setup). */
   public Integer findMaxReportYear() {
     return jdbc.queryForObject(
-        "SELECT MAX(REPORT_YEAR) FROM THE.ILCR_REPORTING_PERIOD", new MapSqlParameterSource(),
+        "SELECT MAX(REPORT_YEAR) FROM THE.ILCR_REPORTING_PERIOD",
+        new MapSqlParameterSource(),
         Integer.class);
   }
 
@@ -38,23 +40,44 @@ public class ReportingYearRepository {
   public List<Integer> findOpenYears() {
     return jdbc.queryForList(
         "SELECT REPORT_YEAR FROM THE.ILCR_REPORTING_PERIOD ORDER BY REPORT_YEAR DESC",
-        new MapSqlParameterSource(), Integer.class);
+        new MapSqlParameterSource(),
+        Integer.class);
   }
 
   /**
-   * The ids of the active ({@code ACT}) mills — the whitelist that receives report-status rows for a
-   * new year (DL-22: closed mills are excluded). Mirrors {@code MillContextService.STATUS_ACTIVE}.
+   * The ids of the active ({@code ACT}) mills — the whitelist that receives report-status rows for
+   * a new year (DL-22: closed mills are excluded). Mirrors {@code
+   * MillContextService.STATUS_ACTIVE}.
    */
   public List<Long> findActiveMillIds() {
     return jdbc.queryForList(
         "SELECT ILCR_MILL_STATUS_XREF_ID FROM THE.ILCR_MILL_STATUS_XREF "
             + "WHERE ILCR_MILL_STATUS_CODE = 'ACT' ORDER BY ILCR_MILL_STATUS_XREF_ID",
-        new MapSqlParameterSource(), Long.class);
+        new MapSqlParameterSource(),
+        Long.class);
   }
 
   /**
-   * Insert the reporting period row for the new year: official start = the creation date, official end
-   * = December 31 of that year (BR-06). {@code ENTRY_/UPDATE_USERID}, both timestamps, and
+   * The active mills already enrolled in the current reporting year. This is the recurring-year
+   * query from legacy {@code ILCRMillStatusXref.NAMED_QUERIES.getActiveMills}: a mill must still be
+   * {@code ACT} and have a report-status row for the current year before it is carried forward.
+   */
+  public List<Long> findActiveMillIdsForRecurringYear(int currentYear) {
+    return jdbc.queryForList(
+        "SELECT msx.ILCR_MILL_STATUS_XREF_ID "
+            + "FROM THE.ILCR_MILL_STATUS_XREF msx "
+            + "JOIN THE.ILCR_MILL_REPORT_STATUS mrs "
+            + "ON mrs.ILCR_MILL_ID = msx.ILCR_MILL_STATUS_XREF_ID "
+            + "AND mrs.REPORT_YEAR = :currentYear "
+            + "WHERE msx.ILCR_MILL_STATUS_CODE = 'ACT' "
+            + "ORDER BY msx.ILCR_MILL_STATUS_XREF_ID",
+        new MapSqlParameterSource("currentYear", currentYear),
+        Long.class);
+  }
+
+  /**
+   * Insert the reporting period row for the new year: official start = the creation date, official
+   * end = December 31 of that year (BR-06). {@code ENTRY_/UPDATE_USERID}, both timestamps, and
    * {@code REVISION_COUNT} are all NOT NULL in delivery, so all are stamped explicitly.
    */
   public void insertReportingPeriod(int year, LocalDate start, LocalDate end, String user) {
@@ -62,12 +85,49 @@ public class ReportingYearRepository {
         "INSERT INTO THE.ILCR_REPORTING_PERIOD "
             + "(REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, REVISION_COUNT, "
             + "ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
-            + "VALUES (:year, :start, :end, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)",
+            + "VALUES (:year, :start, :end, 0, :user, SYSDATE, :user, SYSDATE)",
         new MapSqlParameterSource()
             .addValue("year", year)
             .addValue("start", start)
             .addValue("end", end)
             .addValue("user", user));
+  }
+
+  /**
+   * Whether a mill already holds a report-status row for a year. This is legacy's {@code
+   * findMillReportStatus} named query (ILCRMillReportStatus.java:28), the existence check that
+   * decides whether activating a mill has to create its current-year records (BR-07).
+   */
+  public boolean millReportStatusExists(long millId, int year) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT CASE WHEN EXISTS ("
+                + "SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS "
+                + "WHERE ILCR_MILL_ID = :millId AND REPORT_YEAR = :year) THEN 1 ELSE 0 END FROM DUAL",
+            new MapSqlParameterSource().addValue("millId", millId).addValue("year", year),
+            Boolean.class));
+  }
+
+  /**
+   * How many per-category rows a mill holds for a year. The companion to {@link
+   * #millReportStatusExists}: the status row alone does not prove the mill is enrolled, because
+   * {@code enrolMillInYear} writes the status row AND one row per schedule category as a set, and
+   * only the two counts together tell a complete set from a half-written one.
+   *
+   * <p>Legacy had no equivalent — its check stopped at the status row
+   * (ILCRMillReportStatus.java:28) — and the delivery data says why that was survivable rather than
+   * right: all 118 (mill, year) pairs carrying a status row carry exactly 11 category rows, and no
+   * category set exists without its status row (verified against the seeded delivery database,
+   * 2026-09-10). A partial set is therefore corruption, not a shape real data takes.
+   */
+  public int countMillReportCategories(long millId, int year) {
+    Integer count =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM THE.ILCR_REPORT_CATEGORY "
+                + "WHERE ILCR_MILL_ID = :millId AND REPORT_YEAR = :year",
+            new MapSqlParameterSource().addValue("millId", millId).addValue("year", year),
+            Integer.class);
+    return count == null ? 0 : count;
   }
 
   /**
@@ -77,7 +137,11 @@ public class ReportingYearRepository {
    * stamped explicitly.
    */
   public void insertMillReportStatus(
-      int year, long millId, String statusCode, String silvicultureCode, String completedInd,
+      int year,
+      long millId,
+      String statusCode,
+      String silvicultureCode,
+      String completedInd,
       String user) {
     jdbc.update(
         "INSERT INTO THE.ILCR_MILL_REPORT_STATUS "
@@ -85,7 +149,7 @@ public class ReportingYearRepository {
             + "REPORT_COMPLETED_IND, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, "
             + "UPDATE_TIMESTAMP) "
             + "VALUES (:year, :millId, :statusCode, :silvicultureCode, :completedInd, 0, :user, "
-            + "SYSTIMESTAMP, :user, SYSTIMESTAMP)",
+            + "SYSDATE, :user, SYSDATE)",
         new MapSqlParameterSource()
             .addValue("year", year)
             .addValue("millId", millId)
@@ -106,8 +170,8 @@ public class ReportingYearRepository {
             + "(REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CATEGORY_STATE_CODE, "
             + "REPORTABLE_DETAIL_IND, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, "
             + "UPDATE_TIMESTAMP) "
-            + "VALUES (:year, :millId, :categoryId, 'D', 'Y', 0, :user, SYSTIMESTAMP, :user, "
-            + "SYSTIMESTAMP)",
+            + "VALUES (:year, :millId, :categoryId, 'D', 'Y', 0, :user, SYSDATE, :user, "
+            + "SYSDATE)",
         new MapSqlParameterSource()
             .addValue("year", year)
             .addValue("millId", millId)

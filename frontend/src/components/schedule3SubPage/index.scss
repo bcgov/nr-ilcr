@@ -24,6 +24,12 @@
 // widths — pinning those too made them far too narrow. The column count varies by config (3 columns
 // on Unacceptable Costs, 5 on Other Acceptable), which a percentage handles either way.
 .schedule-3-sub__table.cds--data-table {
+  // The percentage column below needs a resolved table width to be a share OF. #411 Overall 2
+  // releases Carbon's `inline-size: 100%` app-wide so tables pack to their content, which would
+  // leave that 40% resolving against a content-derived width — circular. Restate the stretch here,
+  // as Schedules 1 and 3 already do for their own percentage geometry.
+  inline-size: 100%;
+
   th:first-child,
   td:first-child {
     inline-size: 40%;
@@ -39,9 +45,8 @@
 // page's Comments label + counter after any visit to a sub-page, until a hard refresh dropped the
 // chunk again. Bold only the label that actually wants it (see .schedule-3-sub__meta-field below).
 
-.schedule-3__section .cds--data-table thead th {
-  font-weight: 700;
-}
+// Column-header weight is now app-wide (see the data-table thead rule in _overrides.scss). Dropping
+// this copy also removes one more thing scoped to the shared `.schedule-3__section`, per the note above.
 
 .schedule-3__section {
   margin-block: 1rem;
@@ -75,21 +80,23 @@
   }
 }
 
-// Legacy "Add …" form: fields stacked vertically with the label to the LEFT of each input. Each
-// Carbon form-item becomes a two-column grid (label | input) so the Carbon label sits left without a
-// second <label> (keeps the accessible name intact for tests).
+// "Add …" form: every field on ONE horizontal row with the Add button at its end (#411,
+// screen-specific), shared by Included Unacceptable Costs and Other Acceptable Costs. It was a
+// vertical stack with each label to the LEFT of its input — a two-column grid per Carbon form-item —
+// which is what legacy did; the client asked for the single-line form instead, so the labels return
+// to Carbon's own stacked position ABOVE their inputs, matching Schedules 6, 7A, 7B and 11.
+//
+// `flex-end` rather than a baseline: a label that wraps to two lines would otherwise push its own
+// input out of line with the rest of the row. Wraps on narrow viewports, and the field COUNT varies
+// by config (three columns on Unacceptable Costs, five on Other Acceptable), so the row has to hold
+// either without being pinned to a column count. No `max-inline-size` — that cap only made sense
+// while the form was a column.
 .schedule-3-sub__add {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-inline-size: 40rem;
-}
-
-.schedule-3-sub__field.cds--form-item {
-  display: grid;
-  grid-template-columns: 8rem minmax(0, 1fr);
-  align-items: center;
-  column-gap: 1rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
 }
 
 // The panel paints --cds-layer-01, and a Carbon field defaults to the field token at that SAME layer
@@ -110,31 +117,29 @@
   font-weight: 400;
 }
 
-// Legacy labels read "Description:", "Total $:", etc. The colon is decorative (::after is not part of
-// the accessible name), so getByLabelText('Description') still resolves.
-.schedule-3-sub__field .cds--label::after {
-  content: ':';
+// Legacy's trailing "Description:" colon is dropped with the label-beside-field layout it belonged
+// to — the same call Schedule 7B recorded (schedule7b/index.scss:54-57): the colon only earned its
+// keep while the label sat inline to the LEFT, marking where the label ended and the control began.
+// Above the input it is just punctuation floating at the end of a word.
+
+// Widths come from the flex basis now, not a cap on the inner wrapper, so the fields divide the row
+// rather than each shrinking inside a full-width slot. Description takes the slack (it holds the only
+// variable-length content); the numerics hold the 11rem that fits their longest value, the basis
+// `.schedule-11__add-fields` uses for the same job.
+.schedule-3-sub__field {
+  flex: 0 0 11rem;
 }
 
-// Bound the Description input so it reads as a field (not a full-bleed bar) — legacy sized it modestly.
-.schedule-3-sub__field--wide .cds--text-input__field-outer-wrapper {
-  max-inline-size: 24rem;
+.schedule-3-sub__field--wide {
+  flex: 1 1 16rem;
 }
 
-.schedule-3-sub__field--narrow .cds--text-input__field-outer-wrapper {
-  max-inline-size: 12rem;
-}
-
-// Align the Add button under the input column (8rem label + 1rem gap).
+// Last in the row and sized to its label, so the button reads as the end of the line rather than a
+// block under it. `align-items: flex-end` on the row already sits it on the inputs' baseline, so it
+// needs no alignment of its own — the old `padding-inline-start` only existed to clear the label
+// column that no longer exists.
 .schedule-3-sub__actions {
-  padding-inline-start: 9rem;
-}
-
-// Match the Add button width to the narrow numeric fields (12rem), label centred.
-.schedule-3-sub__actions .cds--btn {
-  inline-size: 12rem;
-  max-inline-size: 12rem;
-  justify-content: center;
+  display: flex;
 }
 
 // The read-only Annual Rents (S111) field sits above the list table with its label INLINE to the left
@@ -159,7 +164,8 @@
   content: ':';
 }
 
+// The table's final figure, so the full total band (#411 Overall 5).
 .schedule-3-sub__totals td {
   font-weight: 700;
-  background: var(--cds-layer-accent-01);
+  background: var(--ilcr-band-total);
 }

@@ -11,6 +11,11 @@ type CheckStatusNotificationsProps = {
    * per-row message would be fabricating text the API never sent (AD-8).
    */
   readonly rowMessages?: readonly MessageInfo[]
+  /**
+   * Advisory lines (Schedule 1/3 `warnings[]`, e.g. the crown pre-fill notice), rendered after the
+   * errors as warnings — the same treatment the Schedule 1 page gives its document warnings.
+   */
+  readonly warnings?: readonly MessageInfo[]
   /** The schedule-wide all-met line; present only when every row passes. */
   readonly requirementsMetMessage: MessageInfo | null
   readonly requirementsMet: boolean
@@ -29,6 +34,7 @@ type CheckStatusNotificationsProps = {
 const CheckStatusNotifications: FC<CheckStatusNotificationsProps> = ({
   errors,
   rowMessages = [],
+  warnings = [],
   requirementsMetMessage,
   requirementsMet,
   keyPrefix,
@@ -42,6 +48,14 @@ const CheckStatusNotifications: FC<CheckStatusNotificationsProps> = ({
         kind="error"
         title="Action required"
         subtitle={error.text}
+      />
+    ))}
+    {warnings.map((warning, index) => (
+      <NotificationColumn
+        key={`${keyPrefix}-check-warning-${String(index)}-${warning.key}`}
+        kind="warning"
+        title="Notice"
+        subtitle={warning.text}
       />
     ))}
     {rowMessages.map((met, index) => (

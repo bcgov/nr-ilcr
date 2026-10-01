@@ -1,0 +1,21 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// Mill Information Report: the explanatory note, the year selector and the single action, spaced on
+// the same rhythm Print Schedules uses for its groups and action row.
+.mill-information-report {
+  &__note {
+    margin-block-end: $spacing-05;
+    max-width: 60rem;
+  }
+
+  &__year {
+    margin-block-end: $spacing-07;
+    max-width: 12rem;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $spacing-03;
+    margin-block-start: $spacing-03;
+  }
+}

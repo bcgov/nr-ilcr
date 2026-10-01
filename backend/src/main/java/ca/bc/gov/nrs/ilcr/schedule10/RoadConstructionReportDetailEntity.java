@@ -9,8 +9,8 @@ import org.springframework.data.relational.core.mapping.Table;
  * One Schedule 10 road-detail row — a {@code THE.ROAD_CONSTRUCTION_REPRT_DTL} row.
  *
  * <p>Shape is delivery-verified (Story 11.1 Task 1 gate (i)). Costs are NOT columns here: they are
- * keyed rows in {@code THE.ILCR_COST_REPORT_DETAIL} joined by
- * {@code ROAD_CONSTRUCTION_REPRT_DTL_ID} (BR-08), reassembled by {@link Schedule10Repository}.
+ * keyed rows in {@code THE.ILCR_COST_REPORT_DETAIL} joined by {@code
+ * ROAD_CONSTRUCTION_REPRT_DTL_ID} (BR-08), reassembled by {@link Schedule10Repository}.
  *
  * <p><strong>Three delivery columns are deliberately absent</strong> — business-directed departures
  * LD-1/LD-2/LD-3 remove ASM Code ({@code RELATIVE_SOIL_MOISTUR_RGM_CODE}), Soil Moisture Code
@@ -52,5 +52,4 @@ public record RoadConstructionReportDetailEntity(
     @Column("STABILIZING_DISTANCE_TO_SOURCE") BigDecimal stabilizingDistanceToSource,
     @Column("REL_SOIL_MOIST_RGM_CLS_CODE") String relSoilMoistRgmClsCode,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") Integer revisionCount) {
-}
+    @Column("REVISION_COUNT") Integer revisionCount) {}

@@ -1,24 +1,31 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
-import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.NestedExceptionUtils;
@@ -28,9 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Assembles the Schedule 2 aggregate document from the stored line items (cost-items 25/26), the
- * carried Schedule 1/3 cross-schedule figures, and the server-computed derived blocks
- * ({@code subtotal}, {@code netPurchased}, {@code totalCompanyLogging}, {@code totalAverage}, and
- * every {@code perUnit}). Every derived/carried value is computed here (AD-5/AD-6) — never read from
+ * carried Schedule 1/3 cross-schedule figures, and the server-computed derived blocks ({@code
+ * subtotal}, {@code netPurchased}, {@code totalCompanyLogging}, {@code totalAverage}, and every
+ * {@code perUnit}). Every derived/carried value is computed here (AD-5/AD-6) — never read from
  * storage on the Schedule 2 summary and never accepted from a client.
  *
  * <p>The mill/year context is validated by {@code MillContextService} in the controller before this
@@ -39,173 +46,232 @@ import org.springframework.transaction.annotation.Transactional;
  * (the carried Schedule 3 figures are still populated if that data exists).
  *
  * <p>Derivation is transcribed from the legacy {@code Schedule2MB} getters. Its cross-schedule
- * Schedule-3 sources are model-computed aggregates in the legacy Schedule 1/3 graph, so they are read
- * from Schedule 3's own computed document ({@link Schedule3Service#getSchedule3}) — the single source
- * of truth — NOT from ad-hoc stored-detail queries. {@code purchasedWoodOverhead.cost} (and the
- * subtotal PO&amp;P term) is the Schedule 3 <em>Subtotal Actual Costs PO&amp;P column</em>
- * ({@code getPurchasedWoodCal}/{@code getSubtotalCost}), NOT a persisted "item 135" row.
- * {@code totalCompanyLogging.cost} implements the full legacy {@code Schedule2MB.getTotalLoggingCost}:
- * {@code (sch1 subtotalLoggingCost[144] + sch3 subtotalActualCosts.crownCost)
- * + ((sch1 silvActualSpent[1] − sch3 silvAdmin.crownCost) + sch1 silvAccruedSpent[2])}. The
- * {@code subtotalLoggingCost} term is Schedule 1's COMPUTED {@code getSubtotalLoggingCost} (its
- * {@code subtotalCompanyLoggingCost} minus Forest Management Admin — NOT the stored item 144); the
- * silviculture terms are persisted items 1/2; the two Schedule-3 crown operands come from the Schedule
- * 3 document (Subtotal Actual Costs Crown column; item-37 Silviculture Admin crown).
+ * Schedule-3 sources are model-computed aggregates in the legacy Schedule 1/3 graph, so they are
+ * read from Schedule 3's own computed document ({@link Schedule3Service#getSchedule3}) — the single
+ * source of truth — NOT from ad-hoc stored-detail queries. {@code purchasedWoodOverhead.cost} (and
+ * the subtotal PO&amp;P term) is the Schedule 3 <em>Subtotal Actual Costs PO&amp;P column</em>
+ * ({@code getPurchasedWoodCal}/{@code getSubtotalCost}), NOT a persisted "item 135" row. {@code
+ * totalCompanyLogging.cost} implements the full legacy {@code Schedule2MB.getTotalLoggingCost}:
+ * {@code (sch1 subtotalLoggingCost[144] + sch3 subtotalActualCosts.crownCost) + ((sch1
+ * silvActualSpent[1] − sch3 silvAdmin.crownCost) + sch1 silvAccruedSpent[2])}. The {@code
+ * subtotalLoggingCost} term is Schedule 1's COMPUTED {@code getSubtotalLoggingCost} (its {@code
+ * subtotalCompanyLoggingCost} minus Forest Management Admin — NOT the stored item 144); the
+ * silviculture terms are persisted items 1/2; the two Schedule-3 crown operands come from the
+ * Schedule 3 document (Subtotal Actual Costs Crown column; item-37 Silviculture Admin crown).
  *
- * <p>An absent Schedule 3 (no category-{@code "3"} summary) makes {@code getSchedule3} raise
- * {@link ScheduleNotFoundException}; Schedule 2 never 404s, so it is swallowed and every carried
- * Schedule-3 figure is treated as null. Null propagation mirrors legacy {@code CoreUtil}: addition
- * returns the non-null operand when one side is null (null only when both null); subtraction returns
- * the minuend when the subtrahend is null (null when the minuend is null); division returns null when
- * either operand is null or the denominator is zero.
+ * <p>The {@code subtotalLoggingCost} term is read as a NAMED figure from {@link
+ * Schedule1CostDerivation} — the same computation Schedule 1 uses for its own item-144 display
+ * figure, which folds Forest Mgmt Admin on top. This service used to assemble the whole Schedule 1
+ * document and recover the term by inverse arithmetic ({@code subtotalCompanyLoggingCost −
+ * forestMgmtAdminCost}), which coupled these totals to Schedule 1's subtotal composition and built
+ * a second document (plus a full Schedule 3 derivation, only to subtract it back out) inside the
+ * {@code @Transactional} save and {@code checkStatus}. Resolved in bcgov/nr-ilcr#252.
+ *
+ * <p>An absent Schedule 3 (no category-{@code "3"} summary) makes {@code findSchedule3} return an
+ * empty {@link java.util.Optional}, and every carried Schedule-3 figure is treated as null. (Before
+ * defect #296 the signal was a caught {@code ScheduleNotFoundException}; Schedules 1 and 3 no
+ * longer 404 on an unsaved schedule, so the existence check moved to the {@code find*} reads. Using
+ * the never-404 {@code get*} reads here would be a bug: their subtotals seed at zero, so blank
+ * carried figures would silently become $0.) Null propagation mirrors legacy {@code CoreUtil}:
+ * addition returns the non-null operand when one side is null (null only when both null);
+ * subtraction returns the minuend when the subtrahend is null (null when the minuend is null);
+ * division returns null when either operand is null or the denominator is zero.
  */
 @Service
 @Slf4j
 public class Schedule2Service {
 
-  private static final String STATUS_DRAFT = "D";
-
   private static final int ITEM_PURCHASED_LOG_COST = 25; // cost entered
-  private static final int ITEM_LESS_LOG_SALES = 26;     // volume + cost entered
-  // Schedule 3 Silviculture Admin Costs line (category-'3' item 37, Harvest-only → crown = its cost).
+  private static final int ITEM_LESS_LOG_SALES = 26; // volume + cost entered
+  // Schedule 3 Silviculture Admin Costs line (category-'3' item 37, Harvest-only → crown = its
+  // cost).
   private static final int ITEM_SILV_ADMIN = 37;
-
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
   // Legacy field label for the ISSUES message (Schedule2MB.java:168) — the controller prefixes the
-  // resolved missingRequiredFieldMsg text with "<label>: ", matching Schedule1Service.valueRequired.
+  // resolved missingRequiredFieldMsg text with "<label>: ", matching
+  // Schedule1Service.valueRequired.
   private static final String LABEL_PURCHASED_LOG_COST = "Purchased/Private Log Costs - Cost";
 
   private final Schedule2Repository repository;
-  private final Schedule1Service schedule1Service;
+  private final Schedule1CostDerivation schedule1CostDerivation;
   private final Schedule3Service schedule3Service;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
+  private final ReportSummarySnapshotRepository summarySnapshots;
 
-  public Schedule2Service(Schedule2Repository repository, Schedule1Service schedule1Service,
-      Schedule3Service schedule3Service) {
+  /**
+   * Constructs the Schedule 2 service.
+   *
+   * @param repository the repository
+   * @param schedule1CostDerivation the narrow Schedule 1 read port for the carried no-FMA subtotal
+   *     (#252) — deliberately NOT {@code Schedule1Service}: this service needs one figure, not an
+   *     assembled document
+   * @param schedule3Service the schedule 3 service
+   */
+  public Schedule2Service(
+      Schedule2Repository repository,
+      Schedule1CostDerivation schedule1CostDerivation,
+      Schedule3Service schedule3Service,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots,
+      ReportSummarySnapshotRepository summarySnapshots) {
     this.repository = repository;
-    this.schedule1Service = schedule1Service;
+    this.schedule1CostDerivation = schedule1CostDerivation;
     this.schedule3Service = schedule3Service;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
+    this.summarySnapshots = summarySnapshots;
   }
 
   /**
    * Persist the two entered Schedule 2 line items (25/26) + comments for a mill/year and return the
    * recomputed document (S12). The mill/year context is already validated in the controller (AD-4).
-   * Enforces the server-side Draft gate (AD-9) and optimistic-lock concurrency (AR11).
+   * Enforces the server-side editability gate (AD-9) and optimistic-lock concurrency (AR11).
    *
-   * <p>The Schedule 2 divergence from Schedule 1: SAVE <em>creates the summary when none exists</em>
-   * ({@link #getOrCreateEditableSummary}) — Schedule 2 never 404s. A brand-new summary is inserted at
-   * revision 0 and then bumped to 1 by the same optimistic-lock write used for updates, so the read
-   * always sees a consistent, monotonically-increasing {@code revisionCount}. Over HTTP the client
-   * always sends {@code revisionCount} 0 for a new/unsaved schedule (never null — the DTO field is
-   * {@code @NotNull}); a new schedule's 0 matches the freshly-created summary's revision 0. The
-   * {@code null → 0} coalesce below is unreachable via HTTP and kept only as defense-in-depth for
-   * direct (non-validated) callers.
+   * <p>The Schedule 2 divergence from Schedule 1: SAVE <em>creates the summary when none
+   * exists</em> ({@link #getOrCreateEditableSummary}) — Schedule 2 never 404s. A brand-new summary
+   * is inserted at revision 0 and then bumped to 1 by the same optimistic-lock write used for
+   * updates, so the read always sees a consistent, monotonically-increasing {@code revisionCount}.
+   * Over HTTP the client always sends {@code revisionCount} 0 for a new/unsaved schedule (never
+   * null — the DTO field is {@code @NotNull}); a new schedule's 0 matches the freshly-created
+   * summary's revision 0. The {@code null → 0} coalesce below is unreachable via HTTP and kept only
+   * as defense-in-depth for direct (non-validated) callers.
    *
-   * <p>The whole method is one transaction: a persistence failure rolls back completely and surfaces
-   * as 500 ({@code scheduleNotSavedErrorMsg}).
+   * <p>The whole method is one transaction: a persistence failure rolls back completely and
+   * surfaces as 500 ({@code scheduleNotSavedErrorMsg}).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered fields + optimistic-lock token
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable} flag)
+   * @param caller the track statuses this caller may edit (for the echoed {@code editable} flag)
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document (incremented {@code revisionCount})
    */
   @Transactional
   public Schedule2Response saveSchedule2(
-      long millId, int year, Schedule2Request request, boolean callerMayEdit, String user) {
-    // null → 0 is defense-in-depth only: the DTO's @NotNull makes null unreachable over HTTP (0 is the
+      long millId, int year, Schedule2Request request, EditableStatuses caller, String user) {
+    // null → 0 is defense-in-depth only: the DTO's @NotNull makes null unreachable over HTTP (0 is
+    // the
     // new/unsaved token). Kept for direct callers that bypass bean validation.
     int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
     try {
       // Create-on-absent runs INSIDE the try so a persistence failure on the create path
       // (INSERT / sequence fetch) is translated to ScheduleNotSaved (500) exactly like the update
-      // path — never leaked as a raw DataAccessException (which the shared handler would map to 409).
-      // requireDraft's 409 still propagates: ScheduleNotEditableException is not a DataAccessException.
-      int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
+      // path — never leaked as a raw DataAccessException (which the shared handler would map to
+      // 409).
+      // The editability gate's 409 still propagates: ScheduleNotEditableException is not a
+      // DataAccessException.
+      int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), caller, user);
       int bumped = repository.bumpRevision(summaryId, expectedRevision, request.comments(), user);
       if (bumped == 0) {
         // A stale-revision conflict is a normal concurrent-edit outcome (→ 409), not an error, so
-        // this is debug-level. Guarded so the extra revision lookup only runs when debug is enabled.
+        // this is debug-level. Guarded so the extra revision lookup only runs when debug is
+        // enabled.
         // Revision counts are safe to log (AD-11 bars only cost/volume values).
         if (log.isDebugEnabled()) {
-          Integer storedRevision = repository.findSummary(millId, year)
-              .map(SummaryRow::revisionCount)
-              .orElse(null);
-          log.debug("Stale revision for mill {} year {}: expected {}, stored {}",
-              millId, year, expectedRevision, storedRevision);
+          Integer storedRevision =
+              repository.findSummary(millId, year).map(SummaryRow::revisionCount).orElse(null);
+          log.debug(
+              "Stale revision for mill {} year {}: expected {}, stored {}",
+              millId,
+              year,
+              expectedRevision,
+              storedRevision);
         }
         throw new StaleRevisionException();
       }
       // item 25 — cost only (its volume is carried from Schedule 3, never entered here).
-      repository.upsertDetail(summaryId, ITEM_PURCHASED_LOG_COST, null,
-          request.purchasedLogCostCost(), user);
+      repository.upsertDetail(
+          summaryId, ITEM_PURCHASED_LOG_COST, null, request.purchasedLogCostCost(), user);
       // item 26 — volume + cost.
-      repository.upsertDetail(summaryId, ITEM_LESS_LOG_SALES,
-          request.lessLogSalesVolume(), request.lessLogSalesCost(), user);
+      repository.upsertDetail(
+          summaryId,
+          ITEM_LESS_LOG_SALES,
+          request.lessLogSalesVolume(),
+          request.lessLogSalesCost(),
+          user);
       // Recompute-and-return INSIDE the try so a late DataAccessException on the read path is also
       // translated to ScheduleNotSaved (500) rather than leaking to the shared handler (409).
-      return getSchedule2(millId, year, callerMayEdit);
+      return assembleSchedule2(millId, year, caller);
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      // Log the DB cause (constraint name / ORA text) but NEVER the cost/volume values (AD-11) — the
+      // Log the DB cause (constraint name / ORA text) but NEVER the cost/volume values (AD-11) —
+      // the
       // most-specific cause is the SQL error, not business data, so this stays diagnosable in prod.
-      log.warn("Schedule 2 save failed for mill {} year {} [{}]: {}", millId, year,
-          ex.getClass().getSimpleName(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
+      log.warn(
+          "Schedule 2 save failed for mill {} year {} [{}]: {}",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
   }
 
   /**
-   * Delete the whole Schedule 2 (summary + items 25/26) for a mill/year. Enforces the same Draft gate
-   * as save. Idempotent: a Draft mill with no category-{@code "2"} summary is a no-op that still
-   * returns 200 (never 404). Context is already validated in the controller (AD-4).
+   * Delete the whole Schedule 2 (summary + items 25/26) for a mill/year. Enforces the same Draft
+   * gate as save. Idempotent: a Draft mill with no category-{@code "2"} summary is a no-op that
+   * still returns 200 (never 404). Context is already validated in the controller (AD-4).
+   *
+   * <p>Returns whether anything was actually removed, so the controller can tell a real delete from
+   * the idempotent no-op instead of announcing success for both (defect #292 code review). The 200
+   * is unchanged — only the message differs; the never-404 read contract and the client's
+   * delete-then-re-GET flow both depend on the status staying 200.
    *
    * @param millId the mill id
    * @param year the reporting year
+   * @return {@code true} when a summary existed and was deleted, {@code false} on the no-op
    */
   @Transactional
-  public void deleteSchedule2(long millId, int year) {
-    requireDraft(millId, year);
+  public boolean deleteSchedule2(long millId, int year, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     Optional<SummaryRow> summary = repository.findSummary(millId, year);
     if (summary.isEmpty()) {
-      return; // idempotent — nothing to remove
+      return false; // idempotent — nothing to remove, and the caller must not claim otherwise
     }
     try {
       repository.deleteSchedule(summary.get().summaryId());
+      return true;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 2 delete failed for mill {} year {} [{}]: {}", millId, year,
-          ex.getClass().getSimpleName(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
+      log.warn(
+          "Schedule 2 delete failed for mill {} year {} [{}]: {}",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
   }
 
   /**
-   * The Draft-gate guard for the create-on-absent save path: the track must be Draft (else 409), and
-   * the category-{@code "2"} summary is created when absent (returning its id) — Schedule 2 never
-   * 404s. This is the key deviation from {@code Schedule1Service.requireEditableSummary} (which 404s
-   * on a missing summary).
+   * The editability guard for the create-on-absent save path: the caller must be permitted to write
+   * at the track's current status (else 409), and the category-{@code "2"} summary is created when
+   * absent (returning its id) — Schedule 2 never 404s. This was the key deviation from {@code
+   * Schedule1Service.requireEditableSummary}; defect #296 brought Schedules 1 and 3 onto the same
+   * shape, so all three now agree.
    */
-  private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
-    requireDraft(millId, year);
-    return repository.findSummary(millId, year)
+  private int getOrCreateEditableSummary(
+      long millId, int year, String comments, EditableStatuses caller, String user) {
+    requireEditable(millId, year, caller);
+    return repository
+        .findSummary(millId, year)
         .map(SummaryRow::summaryId)
         .orElseGet(() -> repository.insertSummary(millId, year, comments, user));
   }
 
   /**
-   * The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409).
-   * Uses the {@code FOR UPDATE} locking read so concurrent first-saves for the same mill/year
-   * serialize on the report-status row — closing the create-on-absent duplicate-summary race (the
-   * real schema has no unique constraint on year+mill+category). Safe: only write paths call this,
-   * and both run inside a {@code @Transactional}.
+   * The editability gate shared by save and delete: the caller must be permitted to write at the
+   * Schedules 1–10 track's current status (else 409). Uses the {@code FOR UPDATE} locking read so
+   * concurrent first-saves for the same mill/year serialize on the report-status row — closing the
+   * create-on-absent duplicate-summary race (the real schema has no unique constraint on
+   * year+mill+category). Safe: only write paths call this, and both run inside a
+   * {@code @Transactional}.
    */
-  private void requireDraft(long millId, int year) {
+  private void requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
   }
@@ -215,124 +281,202 @@ public class Schedule2Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action (from the controller)
+   * @param caller the track statuses this caller may edit (resolved by the controller)
    * @return the aggregate document (never null; empty/editable when unsaved)
    */
   @Transactional(readOnly = true)
-  public Schedule2Response getSchedule2(long millId, int year, boolean callerMayEdit) {
-    Optional<SummaryRow> summary = repository.findSummary(millId, year);
+  public Schedule2Response getSchedule2(long millId, int year, EditableStatuses caller) {
+    return assembleSchedule2(millId, year, caller);
+  }
+
+  /**
+   * Whether a Schedule 2 summary row EXISTS for the mill/year — distinct from whether it holds any
+   * figures. {@link #getSchedule2} never 404s and serves an empty document for an unsaved pair, so
+   * a caller that must tell "saved but blank" from "never saved" (the Data Extract's combined
+   * layout renders the former as a row of dashes and omits the latter, as legacy iterated its DAO
+   * records) cannot get that from the document. The first consumer creates the minimal read.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return true when a category-2 summary row is stored
+   */
+  @Transactional(readOnly = true)
+  public boolean hasSchedule2(long millId, int year) {
+    return repository.findSummary(millId, year).isPresent();
+  }
+
+  /**
+   * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
+   * ({@link #saveSchedule2}, {@link #checkStatus}) reach it directly instead of self-invoking the
+   * annotated entry point. A {@code this} call bypasses the Spring proxy, so the annotation was
+   * never applied on those paths anyway (sonar java:S6809); the read simply joins the transaction
+   * the caller already opened, which is the behaviour those two paths always had.
+   */
+  private Schedule2Response assembleSchedule2(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = caller.allows(trackStatus);
 
-    // Stored line items 25/26 (empty when unsaved — AC6).
-    Integer purchasedLogCostAmount = null; // item 25 cost
-    BigDecimal lessLogSalesVolume = null;  // item 26 volume
-    Integer lessLogSalesCost = null;       // item 26 cost
-    String comments = null;
-    Integer revisionCount = null;
+    // Stored line items 25/26 (empty when unsaved — AC6). The summary row itself is kept so the
+    // submitted snapshot can be read against the SAME summary id (Story 16.2).
+    SummaryRow summaryRow = repository.findSummary(millId, year).orElse(null);
+    StoredItems stored = summaryRow == null ? StoredItems.EMPTY : readStoredItems(summaryRow);
 
-    if (summary.isPresent()) {
-      SummaryRow row = summary.get();
-      comments = row.comments();
-      revisionCount = row.revisionCount();
-      List<DetailRow> details = repository.findDetails(row.summaryId());
-      for (DetailRow d : details) {
-        if (d.costItemCode() == null) {
-          continue;
-        }
-        if (d.costItemCode() == ITEM_PURCHASED_LOG_COST) {
-          purchasedLogCostAmount = d.cost();
-        } else if (d.costItemCode() == ITEM_LESS_LOG_SALES) {
-          lessLogSalesVolume = d.volume();
-          lessLogSalesCost = d.cost();
-        }
-      }
-    }
+    // The licensee's submitted figures, skipped entirely at Draft where they would all be null.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode =
+        summaryRow == null || !exposeOriginals
+            ? Map.of()
+            : costSnapshots.findBySummary(summaryRow.summaryId()).stream()
+                .filter(r -> r.costItemCode() != null)
+                .collect(HashMap::new, (m, r) -> m.putIfAbsent(r.costItemCode(), r), Map::putAll);
+    ReportSummarySnapshotRepository.Snapshot summarySnapshot =
+        summaryRow == null || !exposeOriginals
+            ? null
+            : summarySnapshots.findBySummaryId(summaryRow.summaryId()).orElse(null);
+    Integer purchasedLogCostAmount = stored.purchasedLogCostAmount(); // item 25 cost
+    BigDecimal lessLogSalesVolume = stored.lessLogSalesVolume(); // item 26 volume
+    Integer lessLogSalesCost = stored.lessLogSalesCost(); // item 26 cost
+    String comments = stored.comments();
+    Integer revisionCount = stored.revisionCount();
 
-    // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of truth,
+    // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of
+    // truth,
     // matching the legacy Schedule2MB which reads the Schedule 3 model), NOT ad-hoc stored-detail
-    // queries. Absent Schedule 3 (no category-'3' summary) → getSchedule3 404s; Schedule 2 never 404s,
-    // so swallow it and treat every carried figure as null (legacy CoreUtil null-propagation).
+    // queries. Absent Schedule 3 (no category-'3' summary) → findSchedule3 returns empty, and every
+    // carried figure is treated as null (legacy CoreUtil null-propagation). Since defect #296
+    // getSchedule3 no longer 404s, so the existence signal is the Optional, not a caught exception.
     //   purchasedWoodOverhead cost / subtotal PO&P term = Sch3 Subtotal Actual Costs PO&P column
     //     (getPurchasedWoodCal / getSubtotalCost), NOT a persisted "item 135" row.
     //   PO&P + Crown timber volumes = Sch3 popTimber / crownTimber volumes (items 118 / 119).
-    Schedule3Response sch3;
-    try {
-      sch3 = schedule3Service.getSchedule3(millId, year, false);
-    } catch (ScheduleNotFoundException ex) {
-      // Expected when the mill/year has no category-'3' summary — the carried Sch3 figures drop to null.
+    // findSchedule3 (not getSchedule3) is deliberate: since defect #296 getSchedule3 never 404s and
+    // serves an EMPTY document for an absent Schedule 3, whose subtotals seed at ZERO. Reading that
+    // here would turn these carried figures from blank into $0 on Schedule 2's own screen. The
+    // existence signal that used to be ScheduleNotFoundException now lives in the Optional.
+    Schedule3Response sch3 =
+        schedule3Service.findSchedule3(millId, year, EditableStatuses.NONE).orElse(null);
+    if (sch3 == null) {
       log.debug("No Schedule 3 for mill {} year {}; carried Sch3 figures null", millId, year);
-      sch3 = null;
     }
     BigDecimal popTimberVolume = sch3 == null ? null : sch3.popTimber().volume();
     Integer popActualCost = sch3 == null ? null : longToInt(sch3.subtotalActualCosts().pop());
     BigDecimal crownVolume = sch3 == null ? null : sch3.crownTimber().volume();
 
     // Schedule 1 "Subtotal Company Logging Cost (no silviculture)" — the legacy
-    // Schedule1DO.getSubtotalLoggingCost: the computed sum of the harvest cost blocks + Subtotal Other
-    // Costs, EXCLUDING Forest Management Admin (its javadoc note). NOT the stored item 144. Schedule 1's
-    // computed subtotalCompanyLoggingCost includes FMA (Schedule1Service line: logging + fma + other),
-    // so the legacy no-FMA figure is subtotalCompanyLoggingCost − forestMgmtAdminCost. Absent Schedule 1
-    // (404) → null (term drops).
-    Schedule1Response sch1;
-    try {
-      sch1 = schedule1Service.getSchedule1(millId, year, false);
-    } catch (ScheduleNotFoundException ex) {
-      // Expected when the mill/year has no Schedule 1 summary — the carried Sch1 terms drop.
+    // Schedule1DO.getSubtotalLoggingCost: the computed sum of the harvest cost blocks + Subtotal
+    // Other
+    // Costs, EXCLUDING Forest Management Admin (its javadoc note). NOT the stored item 144.
+    // Read as a named figure from Schedule1CostDerivation (#252), which is also what Schedule 1's
+    // own
+    // assembly sums before folding Forest Mgmt Admin on top — so the two can never drift.
+    // The empty Optional is the ABSENCE signal (same reason findSchedule3 is used above, defect
+    // #296): no Schedule 1 → null, and the term drops out of the legacy null-propagating sum
+    // instead of contributing $0.
+    Optional<Long> sch1SubtotalNoFma =
+        schedule1CostDerivation.subtotalLoggingNoFmaCost(millId, year);
+    if (sch1SubtotalNoFma.isEmpty()) {
       log.debug("No Schedule 1 for mill {} year {}; carried Sch1 terms null", millId, year);
-      sch1 = null;
     }
-    Integer sch1SubtotalLoggingCost = sch1 == null ? null : subtotalLoggingNoFma(sch1);
+    // Range-safe: an out-of-int-range subtotal null-propagates (debug-logged) rather than 500ing.
+    Integer sch1SubtotalLoggingCost = longToInt(sch1SubtotalNoFma.orElse(null));
     // Schedule 1 silviculture actual/accrued $ spent (items 1/2) — the stored terms of the legacy
     // totalCompanyLogging formula (getTotalLoggingCost); these are stored CostVolumeType costs.
     Integer sch1SilvActualSpent = repository.findSch1SilvActualSpentCost(millId, year).orElse(null);
-    Integer sch1SilvAccruedSpent = repository.findSch1SilvAccruedSpentCost(millId, year).orElse(null);
+    Integer sch1SilvAccruedSpent =
+        repository.findSch1SilvAccruedSpentCost(millId, year).orElse(null);
 
-    // --- purchasedLogCost: cost = item 25; volume carried from Sch3 118 (BR-03); perUnit derived. --
-    CostBlock purchasedLogCost = new CostBlock(
-        normalizeVolume(popTimberVolume),
-        purchasedLogCostAmount,
-        perUnit(bd(purchasedLogCostAmount), popTimberVolume)); // getPurchasedLogCostCal
+    // --- purchasedLogCost: cost = item 25; volume carried from Sch3 118 (BR-03); perUnit derived.
+    // --
+    CostBlock purchasedLogCost =
+        new CostBlock(
+            normalizeVolume(popTimberVolume),
+            purchasedLogCostAmount,
+            perUnit(bd(purchasedLogCostAmount), popTimberVolume), // getPurchasedLogCostCal
+            // Cost only. Legacy set item 25's cost original and never its volume original
+            // (Schedule2DAO.java:122-123) — the volume is carried from Schedule 3, not entered here
+            // — and schedule2.xhtml renders exactly one indicator on this row to match.
+            originalValues
+                .forTrack(trackStatus)
+                .put(
+                    "cost",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_PURCHASED_LOG_COST,
+                        CostDetailSnapshotRepository.Row::cost),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
-    // --- purchasedWoodOverhead: all carried from Sch3 (vol 118, cost 135). ------------------------
-    CostBlock purchasedWoodOverhead = new CostBlock(
-        normalizeVolume(popTimberVolume),
-        popActualCost,
-        perUnit(bd(popActualCost), popTimberVolume)); // getPurchasedWoodCal
+    // --- purchasedWoodOverhead: all carried from Sch3 (vol 118, cost 135).
+    // ------------------------
+    CostBlock purchasedWoodOverhead =
+        new CostBlock(
+            normalizeVolume(popTimberVolume),
+            popActualCost,
+            perUnit(bd(popActualCost), popTimberVolume)); // getPurchasedWoodCal
 
-    // --- subtotal: cost = item25 + Sch3 135 (getSubtotalCost); volume = Sch3 118; ------------------
-    //     perUnit = subtotalCost / Sch3 118 (getSubtotalCal). --------------------------------------
+    // --- subtotal: cost = item25 + Sch3 135 (getSubtotalCost); volume = Sch3 118;
+    // ------------------
+    //     perUnit = subtotalCost / Sch3 118 (getSubtotalCal).
+    // --------------------------------------
     BigDecimal subtotalCost = add(bd(purchasedLogCostAmount), bd(popActualCost));
-    CostBlock subtotal = new CostBlock(
-        normalizeVolume(popTimberVolume),
-        toWholeDollars(subtotalCost),
-        perUnit(subtotalCost, popTimberVolume));
+    CostBlock subtotal =
+        new CostBlock(
+            normalizeVolume(popTimberVolume),
+            toWholeDollars(subtotalCost),
+            perUnit(subtotalCost, popTimberVolume));
 
-    // --- lessLogSales: item 26 volume + cost; perUnit derived. ------------------------------------
-    CostBlock lessLogSales = new CostBlock(
-        normalizeVolume(lessLogSalesVolume),
-        lessLogSalesCost,
-        perUnit(bd(lessLogSalesCost), lessLogSalesVolume));
+    // --- lessLogSales: item 26 volume + cost; perUnit derived.
+    // ------------------------------------
+    CostBlock lessLogSales =
+        new CostBlock(
+            normalizeVolume(lessLogSalesVolume),
+            lessLogSalesCost,
+            perUnit(bd(lessLogSalesCost), lessLogSalesVolume),
+            // Both, because both are entered here (Schedule2DAO.java:118-119).
+            originalValues
+                .forTrack(trackStatus)
+                .put(
+                    "volume",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_LESS_LOG_SALES,
+                        CostDetailSnapshotRepository.Row::volume),
+                    OriginalValueFormat.WHOLE)
+                .put(
+                    "cost",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_LESS_LOG_SALES,
+                        CostDetailSnapshotRepository.Row::cost),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
-    // --- netPurchased: volume = Sch3 118 - lessLogSales.volume (getNetPurchasedVolume); ------------
-    //     cost = subtotalCost - lessLogSales.cost (getNetPurchasedCost); perUnit = net/net. ---------
+    // --- netPurchased: volume = Sch3 118 - lessLogSales.volume (getNetPurchasedVolume);
+    // ------------
+    //     cost = subtotalCost - lessLogSales.cost (getNetPurchasedCost); perUnit = net/net.
+    // ---------
     BigDecimal netPurchasedVolume = subtract(popTimberVolume, lessLogSalesVolume);
     BigDecimal netPurchasedCost = subtract(subtotalCost, bd(lessLogSalesCost));
-    CostBlock netPurchased = new CostBlock(
-        normalizeVolume(netPurchasedVolume),
-        toWholeDollars(netPurchasedCost),
-        perUnit(netPurchasedCost, netPurchasedVolume));
+    CostBlock netPurchased =
+        new CostBlock(
+            normalizeVolume(netPurchasedVolume),
+            toWholeDollars(netPurchasedCost),
+            perUnit(netPurchasedCost, netPurchasedVolume));
 
-    // --- totalCompanyLogging: volume = Sch3 Crown (119); cost = legacy getTotalLoggingCost; ---------
-    //     perUnit = cost / Crown volume (getTotalLoggingCal). -----------------------------------------
+    // --- totalCompanyLogging: volume = Sch3 Crown (119); cost = legacy getTotalLoggingCost;
+    // ---------
+    //     perUnit = cost / Crown volume (getTotalLoggingCal).
+    // -----------------------------------------
     // Legacy Schedule2MB.getTotalLoggingCost():
     //   subtotalLoggingCost = sch1.subtotalLoggingCost(144) + sch3.subtotalActualCosts.crownCost
-    //   totalSilvCost       = (sch1.silvActualSpent(1) - sch3.silvAdmin.crownCost) + sch1.silvAccruedSpent(2)
+    //   totalSilvCost       = (sch1.silvActualSpent(1) - sch3.silvAdmin.crownCost) +
+    // sch1.silvAccruedSpent(2)
     //   result              = subtotalLoggingCost + totalSilvCost
-    // Both Schedule-3 crown-cost operands are now sourced from the Schedule 3 document (AD-12 resolved):
+    // Both Schedule-3 crown-cost operands are now sourced from the Schedule 3 document (AD-12
+    // resolved):
     // subtotalActualCosts.crown is the computed Crown column of the Actual Costs subtotal; the
     // silviculture-admin crown is the Crown of the item-37 line (Harvest-only → crown = its cost).
-    // Null when Schedule 3 is absent — CoreUtil null-propagation then drops the term (Sch1-only partial).
+    // Null when Schedule 3 is absent — CoreUtil null-propagation then drops the term (Sch1-only
+    // partial).
     BigDecimal sch3SubtotalActualsCrownCost =
         sch3 == null ? null : longToBd(sch3.subtotalActualCosts().crown());
     BigDecimal sch3SilvAdminCrownCost = sch3 == null ? null : bd(silvAdminCrown(sch3));
@@ -341,19 +485,23 @@ public class Schedule2Service {
     BigDecimal silvBd = subtract(bd(sch1SilvActualSpent), sch3SilvAdminCrownCost);
     BigDecimal totalSilvCost = add(silvBd, bd(sch1SilvAccruedSpent));
     BigDecimal totalLoggingCost = add(subtotalLoggingCostTerm, totalSilvCost);
-    CostBlock totalCompanyLogging = new CostBlock(
-        normalizeVolume(crownVolume),
-        toWholeDollars(totalLoggingCost),
-        perUnit(totalLoggingCost, crownVolume));
+    CostBlock totalCompanyLogging =
+        new CostBlock(
+            normalizeVolume(crownVolume),
+            toWholeDollars(totalLoggingCost),
+            perUnit(totalLoggingCost, crownVolume));
 
-    // --- totalAverage: volume = netPurchased.volume + Crown (getTotalAverageVolume); ---------------
-    //     cost = netPurchased.cost + totalLoggingCost (getTotalAverageCost); perUnit = cost/vol. ----
+    // --- totalAverage: volume = netPurchased.volume + Crown (getTotalAverageVolume);
+    // ---------------
+    //     cost = netPurchased.cost + totalLoggingCost (getTotalAverageCost); perUnit = cost/vol.
+    // ----
     BigDecimal totalAverageVolume = add(netPurchasedVolume, crownVolume);
     BigDecimal totalAverageCost = add(netPurchasedCost, totalLoggingCost);
-    CostBlock totalAverage = new CostBlock(
-        normalizeVolume(totalAverageVolume),
-        toWholeDollars(totalAverageCost),
-        perUnit(totalAverageCost, totalAverageVolume));
+    CostBlock totalAverage =
+        new CostBlock(
+            normalizeVolume(totalAverageVolume),
+            toWholeDollars(totalAverageCost),
+            perUnit(totalAverageCost, totalAverageVolume));
 
     return new Schedule2Response(
         millId,
@@ -362,6 +510,13 @@ public class Schedule2Service {
         editable,
         revisionCount,
         comments,
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "comments",
+                summarySnapshot == null ? null : summarySnapshot.comments(),
+                OriginalValueFormat.TEXT)
+            .build(),
         purchasedLogCost,
         purchasedWoodOverhead,
         subtotal,
@@ -373,30 +528,120 @@ public class Schedule2Service {
   }
 
   /**
-   * Evaluate the Schedule 2 completion requirement (BR-07) for a mill/year — read-only (AD-5), never
-   * mutates. Reuses the server-assembled document ({@link #getSchedule2}) and inspects
-   * {@code purchasedLogCost.cost} (cost-item 25): non-null &rarr; {@code MET} with one
-   * {@code scheduleRequirementsMetMsg}; null (including the unsaved-schedule state — never 404)
-   * &rarr; {@code ISSUES} with one {@code missingRequiredFieldMsg}. The mill/year context is already
-   * validated in the controller (AD-4). The returned {@link MessageInfo} carries the bundle KEY only;
-   * the controller resolves the verbatim text (AD-8), mirroring the save/delete split.
+   * One field of one submitted cost-detail row, or null when that row is not on file — the shape
+   * {@code OriginalValues.Builder.put} expects for "no original".
+   */
+  private static <T> T snapshot(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      int costItemCode,
+      java.util.function.Function<CostDetailSnapshotRepository.Row, T> field) {
+    CostDetailSnapshotRepository.Row row = byCode.get(costItemCode);
+    return row == null ? null : field.apply(row);
+  }
+
+  /**
+   * The stored half of the document, read off one category-{@code '2'} summary row: line items
+   * 25/26 plus the summary's own comments/revision. {@link #EMPTY} is the unsaved-schedule state,
+   * every component null (AC6).
+   */
+  private record StoredItems(
+      Integer purchasedLogCostAmount,
+      BigDecimal lessLogSalesVolume,
+      Integer lessLogSalesCost,
+      String comments,
+      Integer revisionCount) {
+
+    private static final StoredItems EMPTY = new StoredItems(null, null, null, null, null);
+  }
+
+  /**
+   * Pick items 25 and 26 out of one summary's detail rows. A null {@code costItemCode} row is
+   * skipped rather than matched, and any other item code is ignored — Schedule 2 stores only these
+   * two.
+   */
+  private StoredItems readStoredItems(SummaryRow row) {
+    Integer purchasedLogCostAmount = null; // item 25 cost
+    BigDecimal lessLogSalesVolume = null; // item 26 volume
+    Integer lessLogSalesCost = null; // item 26 cost
+    for (DetailRow d : repository.findDetails(row.summaryId())) {
+      if (d.costItemCode() == null) {
+        continue;
+      }
+      if (d.costItemCode() == ITEM_PURCHASED_LOG_COST) {
+        purchasedLogCostAmount = d.cost();
+      } else if (d.costItemCode() == ITEM_LESS_LOG_SALES) {
+        lessLogSalesVolume = d.volume();
+        lessLogSalesCost = d.cost();
+      }
+    }
+    return new StoredItems(
+        purchasedLogCostAmount,
+        lessLogSalesVolume,
+        lessLogSalesCost,
+        row.comments(),
+        row.revisionCount());
+  }
+
+  /**
+   * Evaluate the Schedule 2 completion requirement (BR-07) against the SCREEN — the endpoint's
+   * entry point (bcgov/nr-ilcr#359). Read-only (AD-5), never mutates, and reads nothing: the one
+   * value the rule inspects is on the page, so the body carries it and {@link #assembleSchedule2}
+   * is deliberately NOT run. Legacy's Check Status was a full postback that checked the screen
+   * ({@code schedule2.xhtml:36,173}); this restores that.
+   *
+   * <p>Named apart from {@link #checkStatusStored} on purpose: with both called {@code checkStatus}
+   * a future caller picks the wrong one by autocomplete and the failure is SILENT — either a sweep
+   * that reads a screen or an endpoint that ignores one. Schedules 5 and 6 name them apart for the
+   * same reason.
+   *
+   * @param request the on-screen item-25 cost (null inside when blank)
+   * @return the outcome + one message key (text resolved by {@link Schedule2CheckStatusResolver})
+   */
+  public Schedule2CheckStatusResponse checkStatus(Schedule2CheckRequest request) {
+    return evaluate(request.purchasedLogCostCost());
+  }
+
+  /**
+   * Is the SAVED Schedule 2 complete? The stored-data counterpart of {@link #checkStatus}, for
+   * report-level callers (Story 15.0/15.1) that have no screen to describe. Reuses the
+   * server-assembled document ({@link #getSchedule2}) and inspects {@code purchasedLogCost.cost}
+   * (cost-item 25): non-null &rarr; {@code MET} with one {@code scheduleRequirementsMetMsg}; null
+   * (including the unsaved-schedule state — never 404) &rarr; {@code ISSUES} with one {@code
+   * missingRequiredFieldMsg}. The mill/year context is already validated by the caller (AD-4).
+   *
+   * <p>The endpoint and this method can legitimately disagree — one answers "is what I'm LOOKING AT
+   * complete?", the other "is what is SAVED complete?". That is the design, not a bug.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @return the outcome + one message key (text resolved by the controller)
+   * @return the outcome + one message key (text resolved by {@link Schedule2CheckStatusResolver})
    */
   @Transactional(readOnly = true)
-  public CheckStatusResponse checkStatus(long millId, int year) {
-    // callerMayEdit is irrelevant to BR-07 (only the item-25 cost matters); pass false.
-    Schedule2Response document = getSchedule2(millId, year, false);
-    boolean met = document.purchasedLogCost().cost() != null;
-    String outcome = met ? OUTCOME_MET : OUTCOME_ISSUES;
+  public Schedule2CheckStatusResponse checkStatusStored(long millId, int year) {
+    // Editability is irrelevant to BR-07 (only the item-25 cost matters); permit nothing.
+    Schedule2Response document = assembleSchedule2(millId, year, EditableStatuses.NONE);
+    return evaluate(document.purchasedLogCost().cost());
+  }
+
+  /**
+   * The BR-07 verdict, source-agnostic: identical for an on-screen cost and a stored one. Neither
+   * {@link #checkStatus} nor {@link #checkStatusStored} may restate any part of it (AD-5). The
+   * returned {@link MessageInfo} carries the bundle KEY only (AD-8).
+   *
+   * @param purchasedLogCostCost the item-25 cost to judge; a pure null test ({@code 0} passes)
+   * @return the outcome + one message key
+   */
+  private static Schedule2CheckStatusResponse evaluate(Integer purchasedLogCostCost) {
+    boolean met = purchasedLogCostCost != null;
+    String outcome = met ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     String key = met ? MSG_REQUIREMENTS_MET : MSG_MISSING_REQUIRED;
-    // For the ISSUES message the label is carried in text as the prefix the controller prepends to the
-    // resolved bundle text ("<label>: Value Required"), mirroring legacy Schedule2MB:168 + Schedule 1
+    // For the ISSUES message the label is carried in text as the prefix the controller prepends to
+    // the
+    // resolved bundle text ("<label>: Value Required"), mirroring legacy Schedule2MB:168 + Schedule
+    // 1
     // (Schedule1Service.valueRequired). The MET message needs no label prefix.
     String labelPrefix = met ? null : LABEL_PURCHASED_LOG_COST;
-    return new CheckStatusResponse(outcome, List.of(new MessageInfo(key, labelPrefix)));
+    return new Schedule2CheckStatusResponse(outcome, List.of(new MessageInfo(key, labelPrefix)));
   }
 
   // -------------------------------------------------------------------------------------------------
@@ -414,39 +659,21 @@ public class Schedule2Service {
 
   /**
    * Null-safe {@code Long}→{@code Integer} (whole-dollar cost). An out-of-int-range value null-
-   * propagates (with a debug log) rather than throwing an {@code ArithmeticException} to the client —
-   * consistent with the rest of this service's null handling. Schedule 3 sums are {@code Long}, but a
-   * per-mill PO&amp;P actual-cost subtotal is well within {@code Integer} range in practice (legacy
-   * stored COST as an int), so the guard is theoretical.
+   * propagates (with a debug log) rather than throwing an {@code ArithmeticException} to the client
+   * — consistent with the rest of this service's null handling. Schedule 3 sums are {@code Long},
+   * but a per-mill PO&amp;P actual-cost subtotal is well within {@code Integer} range in practice
+   * (legacy stored COST as an int), so the guard is theoretical.
    */
   private static Integer longToInt(Long value) {
     if (value == null) {
       return null;
     }
     if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
-      log.debug("Schedule 2 cross-schedule cost {} is out of Integer range — treated as null", value);
+      log.debug(
+          "Schedule 2 cross-schedule cost {} is out of Integer range — treated as null", value);
       return null;
     }
     return value.intValue();
-  }
-
-  /**
-   * The legacy {@code Schedule1DO.getSubtotalLoggingCost} (Subtotal Company Logging Cost, no
-   * silviculture) — the harvest cost blocks + Subtotal Other Costs, EXCLUDING Forest Management Admin.
-   * Schedule 1's own {@code subtotalCompanyLoggingCost} includes FMA, so subtract it back out.
-   *
-   * <p>Follow-up: this inverse arithmetic couples Schedule 2's totals to Schedule 1's subtotal
-   * composition; {@code Schedule1Service} should expose the no-FMA subtotal directly. Tracked in
-   * bcgov/nr-ilcr#252 (the relationship is pinned by
-   * {@code Schedule2ServiceTest.totalCompanyLogging_usesSchedule1SubtotalMinusFma_notRawSubtotal}).
-   */
-  private static Integer subtotalLoggingNoFma(Schedule1Response sch1) {
-    Long subtotalWithFma = sch1.subtotalCompanyLoggingCost();
-    if (subtotalWithFma == null) {
-      return null;
-    }
-    long fma = sch1.forestMgmtAdminCost() == null ? 0L : sch1.forestMgmtAdminCost();
-    return longToInt(subtotalWithFma - fma); // range-safe (null-propagates on overflow, never 500)
   }
 
   /**
@@ -461,7 +688,9 @@ public class Schedule2Service {
         .orElse(null);
   }
 
-  /** {@code CoreUtil.bigDecimalAddition}: null only when both null; else the non-null operand(s). */
+  /**
+   * {@code CoreUtil.bigDecimalAddition}: null only when both null; else the non-null operand(s).
+   */
   private static BigDecimal add(BigDecimal augend, BigDecimal addend) {
     if (augend == null && addend == null) {
       return null;
@@ -504,8 +733,8 @@ public class Schedule2Service {
   }
 
   /**
-   * Round a derived cost to whole dollars (legacy COST is an Integer). Null-safe. Uses
-   * {@code intValueExact} so an out-of-int-range derived sum throws {@link ArithmeticException} rather
+   * Round a derived cost to whole dollars (legacy COST is an Integer). Null-safe. Uses {@code
+   * intValueExact} so an out-of-int-range derived sum throws {@link ArithmeticException} rather
    * than silently wrapping to a wrong financial figure.
    */
   private static Integer toWholeDollars(BigDecimal cost) {
@@ -513,8 +742,8 @@ public class Schedule2Service {
   }
 
   /**
-   * Normalize a volume so a whole value serializes as an integer ({@code 12345}, not
-   * {@code 12345.0000} or {@code 1.2345E+4}) while a fractional value keeps its decimals. Null-safe.
+   * Normalize a volume so a whole value serializes as an integer ({@code 12345}, not {@code
+   * 12345.0000} or {@code 1.2345E+4}) while a fractional value keeps its decimals. Null-safe.
    */
   private static BigDecimal normalizeVolume(BigDecimal volume) {
     if (volume == null) {

@@ -19,5 +19,4 @@ public record TransportationReportEntity(
     @Column("DISTANCE") BigDecimal distance,
     @Column("TRANSPORTATION_CYCLE_TIME") Integer transportationCycleTime,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") Integer revisionCount) {
-}
+    @Column("REVISION_COUNT") Integer revisionCount) {}

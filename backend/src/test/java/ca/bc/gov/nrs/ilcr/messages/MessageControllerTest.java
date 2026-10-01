@@ -38,6 +38,9 @@ class MessageControllerTest {
 
   private static final String COPY_KEY = "sch5.copy.msg";
 
+  /** SUC-001, added to the allowlist by the Data Extract CSV story. */
+  private static final String EXTRACT_SUCCESS_KEY = "dataExtractedSuccesfullyInfoMsg";
+
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -46,9 +49,10 @@ class MessageControllerTest {
     messageSource.setBasename("messages");
     messageSource.setDefaultEncoding("UTF-8");
     MessageSource bundle = messageSource;
-    mockMvc = MockMvcBuilders.standaloneSetup(new MessageController(bundle))
-        .setControllerAdvice(new GlobalExceptionHandler(bundle))
-        .build();
+    mockMvc =
+        MockMvcBuilders.standaloneSetup(new MessageController(bundle))
+            .setControllerAdvice(new GlobalExceptionHandler(bundle))
+            .build();
   }
 
   @Test
@@ -63,6 +67,20 @@ class MessageControllerTest {
                 .value(
                     "To complete copy of Camp: Cedar Flats Camp, "
                         + "provide a new Camp Name and invoke save."));
+  }
+
+  @Test
+  @DisplayName("resolves the Data Extract success key, misspelling and all")
+  void resolvesDataExtractSuccessKey() throws Exception {
+    // SUC-001, which legacy queued AFTER it had streamed the file and so never rendered. The key's
+    // misspelling is legacy's own and is not corrected: the bundle is keyed by it. The text is
+    // asserted verbatim because the page's only permitted client literal is a mirror of it, and a
+    // drift between the two would make that fallback silently wrong.
+    mockMvc
+        .perform(get("/api/v1/messages").param("key", EXTRACT_SUCCESS_KEY))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.key").value(EXTRACT_SUCCESS_KEY))
+        .andExpect(jsonPath("$.text").value("Data extraction successfully."));
   }
 
   @Test
@@ -92,7 +110,8 @@ class MessageControllerTest {
   }
 
   @Test
-  @DisplayName("404s a real bundle key that is NOT allowlisted — the bundle is not a public surface")
+  @DisplayName(
+      "404s a real bundle key that is NOT allowlisted — the bundle is not a public surface")
   void rejectsKeyOutsideTheAllowlist() throws Exception {
     // A genuine key (messages.properties:207) that the server composes and owns. It resolves fine
     // through MessageSource; the allowlist is the only thing standing between it and a caller.

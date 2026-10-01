@@ -23,8 +23,13 @@ public class Schedule8SampleRulesValidator
     boolean valid = true;
 
     // S15: sum of the six skidding/yarding %s must not exceed 100 (a sum < 100 is allowed at Save).
-    int sum = zero(r.groundBasePct()) + zero(r.grapplePct()) + zero(r.skylinePct())
-        + zero(r.highleadPct()) + zero(r.helicopterPct()) + zero(r.otherSkiddingPct());
+    int sum =
+        zero(r.groundBasePct())
+            + zero(r.grapplePct())
+            + zero(r.skylinePct())
+            + zero(r.highleadPct())
+            + zero(r.helicopterPct())
+            + zero(r.otherSkiddingPct());
     if (sum > 100) {
       violation(context, "{skiddingYardingEqualsCentPercent}", "groundBasePct");
       valid = false;
@@ -49,7 +54,9 @@ public class Schedule8SampleRulesValidator
     // S24: Other % ≠ 0 requires a valid skid-type selection — not blank, not "NA".
     if (isNonZero(r.otherSkiddingPct())) {
       String skidType = r.skidTypeCode();
-      if (skidType == null || skidType.isBlank() || NOT_APPLICABLE.equalsIgnoreCase(skidType.trim())) {
+      if (skidType == null
+          || skidType.isBlank()
+          || NOT_APPLICABLE.equalsIgnoreCase(skidType.trim())) {
         violation(context, "{notApplicableValidatorErrorMsg}", "skidTypeCode");
         valid = false;
       }
@@ -64,7 +71,8 @@ public class Schedule8SampleRulesValidator
 
   private static void violation(
       ConstraintValidatorContext context, String template, String property) {
-    context.buildConstraintViolationWithTemplate(template)
+    context
+        .buildConstraintViolationWithTemplate(template)
         .addPropertyNode(property)
         .addConstraintViolation();
   }

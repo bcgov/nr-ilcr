@@ -33,6 +33,11 @@ export default defineConfig({
         'src/**/*.test.tsx',
         'src/**/*.spec.tsx',
         'src/__tests__/**',
+        // Test infrastructure, not production code. Without these the setup file and the render
+        // helper are scored as source and drag the number down for code that only exists to run
+        // tests. Mirrors sonar.exclusions in .github/workflows/analysis.yml — keep the two in step.
+        'src/test-setup.ts',
+        'src/test-utils.tsx',
       ],
     },
   },

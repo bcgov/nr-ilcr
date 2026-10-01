@@ -1,24 +1,38 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
-import lombok.extern.slf4j.Slf4j;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.Role;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
-import ca.bc.gov.nrs.ilcr.millcontext.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillYearTrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.CallerIdentity;
+import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
+import ca.bc.gov.nrs.ilcr.util.LegacyDateText;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 /**
  * Single owner of mill/reporting-year validation for schedule-workflow endpoints (AD-4). Schedule
- * services call this and never re-check. Closed-mill status codes are the legacy {@code MILL_STATUS_CODES}.
+ * services call this and never re-check. Closed-mill status codes are the legacy {@code
+ * MILL_STATUS_CODES}.
  */
 @Service
 @Slf4j
@@ -26,27 +40,146 @@ public class MillContextService {
 
   private static final String STATUS_ACTIVE = "ACT";
 
-  // Reused legacy bundle key (messages.properties:37) — the same SUC-001 key Schedule 1's save uses.
+  // Reused legacy bundle key (messages.properties:37) — the same SUC-001 key Schedule 1's save
+  // uses.
   // No new key is added; the text is resolved server-side (AD-8) and never hardcoded in Java.
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
 
   private final MillContextRepository repository;
   private final MessageSource messageSource;
+  private final JwtRoleChecker roleChecker;
 
-  public MillContextService(MillContextRepository repository, MessageSource messageSource) {
+  /**
+   * Creates the mill-context service.
+   *
+   * @param repository the mill/context reads
+   * @param messageSource the bundle for server-resolved messages (AD-8)
+   * @param roleChecker resolves the caller's role for Story 5.7 mill-scope enforcement
+   */
+  public MillContextService(
+      MillContextRepository repository, MessageSource messageSource, JwtRoleChecker roleChecker) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.roleChecker = roleChecker;
   }
 
   /**
-   * The mills offered on the Home page (Story 1.1, BR-02). Unfiltered read — closed mills included,
-   * no per-user association filter (deferred to the auth story, AR4) — so no validation logic here;
-   * the {@code validate*} guards above are untouched.
+   * Per-endpoint mill-scope enforcement (Story 5.7, closing 5.5 AC1/FR3). A submitter may only
+   * reach a mill they are ACTIVELY associated to; a forged/guessed {@code millId} is rejected with
+   * 403 (audited via {@code GlobalExceptionHandler.handleAccessDenied}, Story 5.4). Called from the
+   * shared guards so every mill-scoped endpoint inherits it without a per-controller check (AD-4).
    *
-   * @return every mill, ordered by mill number ascending
+   * <ul>
+   *   <li><b>Admin</b> ({@code ILCR_ADMIN}) bypasses — tied to no mill (DL-22).
+   *   <li><b>Real submitter</b> (a FAM {@code Jwt} principal): denied unless {@code
+   *       userHasActiveAssignment(millId, idp_user_id)}; a blank GUID is denied (fail-closed).
+   *   <li><b>Mock principal</b> (security off — a non-{@code Jwt} token with no directory GUID):
+   *       the check is skipped. Recorded AC6 exemption: the mock is dev-only and the startup guard
+   *       forbids it in a deployed environment (FR1), so mill-scope enforcement is exercised by
+   *       real identities only. A production principal is always a {@code Jwt}.
+   * </ul>
+   *
+   * @param millId the mill the caller is trying to reach
+   * @throws AccessDeniedException 403 — a real submitter not actively associated to {@code millId}
    */
-  public List<MillSummary> listMills() {
-    return repository.findAllMills();
+  public void validateMillAccess(long millId) {
+    if (roleChecker.hasConcreteRole(Role.ADMIN.name())) {
+      return;
+    }
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    Object principal = (auth != null) ? auth.getPrincipal() : null;
+    if (!(principal instanceof Jwt jwt)) {
+      return; // mock/security-off (AC6 exemption) — no real directory identity to scope by
+    }
+    String userGuid = JwtPrincipalUtil.getIdpUserId(jwt);
+    if (userGuid == null
+        || userGuid.isBlank()
+        || !repository.userHasActiveAssignment(millId, userGuid)) {
+      // Mill/user only — never a token or cost data (NFR3/AD-11).
+      log.info("Mill-scope 403: submitter not associated to millId={}", millId);
+      throw new AccessDeniedException("Mill is not associated to the caller.");
+    }
+  }
+
+  /**
+   * The mills offered on the Home page, scoped to the caller (Story 5.5, UC-SEC-001/UC-SEC-003).
+   *
+   * <p>An {@code ILCR_ADMIN} is tied to no mill and sees every listable mill INCLUDING closed
+   * (DL-22, legacy admin {@code getMills()} → {@link MillContextRepository#findAllMills()}). An
+   * {@code ILCR_SUBMITTER} sees ONLY mills they are actively associated to (legacy {@code
+   * getMills(userGuid)} → {@link MillContextRepository#findMillsForUser(String)}); closed
+   * associated mills still appear (no status filter, S06). A submitter whose identity cannot be
+   * resolved — a blank {@code custom:idp_user_id}, e.g. the dev mock principal, which carries no
+   * directory GUID — sees an EMPTY list: fail-closed, never all-mills (a submitter must never see
+   * mills that aren't theirs). Replaces the Story 1.1 unfiltered read now that real identity exists
+   * (AR4).
+   *
+   * @param isAdmin whether the caller holds {@code ILCR_ADMIN}
+   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID (blank if
+   *     unavailable)
+   * @return the caller-scoped mills, ordered by mill number ascending
+   */
+  public List<MillSummary> listMills(boolean isAdmin, String userGuid) {
+    if (isAdmin) {
+      return repository.findAllMills();
+    }
+    if (userGuid == null || userGuid.isBlank()) {
+      return List.of();
+    }
+    return repository.findMillsForUser(userGuid);
+  }
+
+  /**
+   * The mills a caller's REPORTS may cover (#468) — the report-side twin of {@link #listMills}.
+   *
+   * <p>Legacy scoped the Mill Status Report to the logged-in user's associated mills ({@code
+   * MillReportStatusDAO.java:173}, a {@code Restrictions.in} over {@code getMillSelection}), and
+   * the Mill Information PDF looped over that same list. The rewrite dropped the scope while the
+   * Generate Reports area was administrator-only; restoring the area to a SUBMITTER (#468) restores
+   * the scope with it, so a licensee sees their mills in the reports exactly as they do on the Home
+   * page — never every mill.
+   *
+   * <p>Three states, kept distinct (#468 review):
+   *
+   * <ul>
+   *   <li><b>Unscoped</b> ({@code Optional.empty()}): the caller holds {@code ILCR_ADMIN}, who is
+   *       tied to no mill (DL-22).
+   *   <li><b>Scoped</b> ({@code Optional.of(ids)}): a submitter's actively associated mill ids — an
+   *       empty set when they genuinely have none, which reads as an empty table / no-mills 404.
+   *   <li><b>No identity</b>: the principal carries no directory GUID ({@link
+   *       CallerIdentity#currentUserGuid}). NOT an empty scope. A blank or missing {@code
+   *       custom:idp_user_id} — a claim-mapping regression, a token from the wrong issuer — must
+   *       not masquerade as "a user with no mills", or it would fail closed as plausible,
+   *       user-specific empty results and nobody would notice. It is refused outright: 403, audited
+   *       by the AccessDenied handler like every other scope refusal.
+   * </ul>
+   *
+   * <p>Identity comes from the same reader the Home list uses ({@link CallerIdentity}), so the two
+   * cannot drift, and the dev mock principal is scoped here as it is there. (Deliberately NOT
+   * {@link #validateMillAccess}'s non-{@code Jwt} exemption: that is a recorded dev-mode choice for
+   * direct schedule access, pinned by its own test.)
+   *
+   * @return empty when unscoped; otherwise the caller's associated mill ids (possibly none)
+   * @throws AccessDeniedException 403 — a non-admin caller whose directory identity cannot be
+   *     resolved
+   */
+  public Optional<Set<Long>> callerMillScope() {
+    if (roleChecker.hasConcreteRole(Role.ADMIN.name())) {
+      return Optional.empty();
+    }
+    String userGuid =
+        CallerIdentity.currentUserGuid()
+            .orElseThrow(
+                () -> {
+                  // Identity only — never a token (NFR3/AD-11). Distinct wording from the
+                  // not-associated 403 so the two are tellable apart in the audit log.
+                  log.warn("Mill-scope 403: caller identity could not be resolved for a report");
+                  return new AccessDeniedException("Caller identity could not be resolved.");
+                });
+    return Optional.of(
+        repository.findMillsForUser(userGuid).stream()
+            .map(MillSummary::millId)
+            .collect(Collectors.toUnmodifiableSet()));
   }
 
   /**
@@ -68,11 +201,11 @@ public class MillContextService {
    * S01/S06/S07 + S04/S05/S08 validation). This service is the single owner of the validation
    * (AR4/NFR6) — the controller only delegates.
    *
-   * <p>Semantics differ deliberately from the schedule-page guards above: a closed mill is a
-   * {@code millViewable:false} FLAG (S06), never the 409; a missing status row nulls the statuses
-   * (S07), never the 404. Raw request params arrive as Strings so that missing, blank, AND
-   * non-numeric values all resolve to the verbatim legacy required-field message — and BOTH fields
-   * report together when both are absent (S08), which a typed {@code @RequestParam} cannot do.
+   * <p>Semantics differ deliberately from the schedule-page guards above: a closed mill is a {@code
+   * millViewable:false} FLAG (S06), never the 409; a missing status row nulls the statuses (S07),
+   * never the 404. Raw request params arrive as Strings so that missing, blank, AND non-numeric
+   * values all resolve to the verbatim legacy required-field message — and BOTH fields report
+   * together when both are absent (S08), which a typed {@code @RequestParam} cannot do.
    *
    * <p>Track dates mirror legacy {@code UserSessionMB.findMillReportStatus} with one recorded
    * deviation: EACH track selects its date by its OWN status code (legacy's Schedule 11 branch
@@ -99,8 +232,12 @@ public class MillContextService {
       throw new FieldValuesRequiredException(missing);
     }
 
-    MillSummary mill = repository.findSelectableMillById(millId)
-        .orElseThrow(MillYearContextNotFoundException::new);
+    MillSummary mill =
+        repository
+            .findSelectableMillById(millId)
+            .orElseThrow(MillYearContextNotFoundException::new);
+    validateMillAccess(
+        millId); // Story 5.7: a submitter can only resolve/save context for own mill.
     if (!repository.reportingYearExists(year)) {
       throw new MillYearContextNotFoundException();
     }
@@ -110,25 +247,33 @@ public class MillContextService {
     String code1To10 = codes.map(TrackCodes::schedules1To10Code).orElse(null);
     String code11 = codes.map(TrackCodes::schedule11Code).orElse(null);
 
-    TrackStatus schedules1To10 = trackStatus(
-        code1To10, dates.map(d -> pick1To10Date(code1To10, d)).orElse(null));
-    TrackStatus schedule11 = trackStatus(
-        code11, dates.map(d -> pickSchedule11Date(code11, d)).orElse(null));
+    TrackStatus schedules1To10 =
+        trackStatus(code1To10, dates.map(d -> pick1To10Date(code1To10, d)).orElse(null));
+    TrackStatus schedule11 =
+        trackStatus(code11, dates.map(d -> pickSchedule11Date(code11, d)).orElse(null));
 
     boolean millViewable = STATUS_ACTIVE.equalsIgnoreCase(mill.millStatusCode());
     return new WorkingContext(
-        mill.millId(), mill.millNumber(), mill.millName(), year,
-        schedules1To10, schedule11, millViewable, savedMessage());
+        mill.millId(),
+        mill.millNumber(),
+        mill.millName(),
+        year,
+        schedules1To10,
+        schedule11,
+        millViewable,
+        savedMessage());
   }
 
   /**
-   * The SUC-001 confirmation carried on every 200 (Story 1.3, AC7). Resolves the reused legacy bundle
-   * key to its verbatim text via the wired {@code MessageSource} (AD-8) — mirrors how Schedule 1's
-   * controllers build their success {@code MessageInfo}. The frontend only DISPLAYS it after a Save.
+   * The SUC-001 confirmation carried on every 200 (Story 1.3, AC7). Resolves the reused legacy
+   * bundle key to its verbatim text via the wired {@code MessageSource} (AD-8) — mirrors how
+   * Schedule 1's controllers build their success {@code MessageInfo}. The frontend only DISPLAYS it
+   * after a Save.
    */
   private MessageInfo savedMessage() {
     return new MessageInfo(
-        MSG_SAVED, messageSource.getMessage(MSG_SAVED, null, MSG_SAVED, LocaleContextHolder.getLocale()));
+        MSG_SAVED,
+        messageSource.getMessage(MSG_SAVED, null, MSG_SAVED, LocaleContextHolder.getLocale()));
   }
 
   /** Null when the code is null (S07 / NULL code column); description resolved from the lookup. */
@@ -140,7 +285,9 @@ public class MillContextService {
     return new TrackStatus(code, description, stripDatePrefix(rawDate));
   }
 
-  /** Legacy 1–10 date pick: O→opened, D→draft(started), S→submit(finalized), else→verify(audited). */
+  /**
+   * Legacy 1–10 date pick: O→opened, D→draft(started), S→submit(finalized), else→verify(audited).
+   */
   private String pick1To10Date(String code, StatusDates d) {
     if (code == null) {
       return null;
@@ -169,16 +316,12 @@ public class MillContextService {
   }
 
   /**
-   * Strip the legacy 3-character sort prefix from a view date string (mirrors
-   * {@code UserSessionMB.java:374} {@code substring(3)}); blank/absent remainder → null (the
-   * frontend renders null as {@code Not Initiated}, Story 1.4).
+   * Strip the legacy 3-character sort prefix from a view date string; blank/absent remainder → null
+   * (the frontend renders null as {@code Not Initiated}, Story 1.4). Delegates to the shared rule
+   * so the Home banner and the Mill Information report can never disagree about the same date.
    */
   private String stripDatePrefix(String raw) {
-    if (raw == null || raw.length() <= 3) {
-      return null;
-    }
-    String rest = raw.substring(3);
-    return rest.isBlank() ? null : rest;
+    return LegacyDateText.stripPrefix(raw);
   }
 
   private Long parseAsLong(String value) {
@@ -207,15 +350,17 @@ public class MillContextService {
    * Validate that the given schedule is viewable for the mill/reporting-year context.
    *
    * <p>Guard order (UC-SCH1-001 S20/S21):
+   *
    * <ol>
-   *   <li>No per-year context (unknown mill or no report-status row) &rarr;
-   *       {@link ScheduleNotFoundException} (404).</li>
-   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).</li>
-   *   <li>No schedule summary for the category &rarr; {@link ScheduleNotFoundException} (404).</li>
+   *   <li>No per-year context (unknown mill or no report-status row) &rarr; {@link
+   *       ScheduleNotFoundException} (404).
+   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).
+   *   <li>No schedule summary for the category &rarr; {@link ScheduleNotFoundException} (404).
    * </ol>
-   * Returns normally when the context is viewable. Legacy mill status is {@code ACT}/{@code CLS};
-   * we whitelist {@code ACT} rather than blacklisting {@code CLS} so any unexpected status is treated
-   * as not-viewable rather than silently viewable.
+   *
+   * <p>Returns normally when the context is viewable. Legacy mill status is {@code ACT}/{@code
+   * CLS}; we whitelist {@code ACT} rather than blacklisting {@code CLS} so any unexpected status is
+   * treated as not-viewable rather than silently viewable.
    *
    * @param millId the mill id
    * @param year the reporting year
@@ -225,28 +370,33 @@ public class MillContextService {
     validateMillYearActive(millId, year);
 
     if (!repository.scheduleSummaryExists(millId, year, categoryId)) {
-      log.info("Schedule 404: no category-{} summary for millId={} year={} (guard 2)",
-          categoryId, millId, year);
+      log.info(
+          "Schedule 404: no category-{} summary for millId={} year={} (guard 2)",
+          categoryId,
+          millId,
+          year);
       throw new ScheduleNotFoundException();
     }
   }
 
   /**
-   * Validate that the mill/reporting-year context exists and the mill is active — the shared
-   * guards 1–2 of every schedule endpoint, WITHOUT requiring a schedule summary to exist. Callers
-   * that need only these guards are the ones for which zero saved data is a valid 200: document
-   * reads rendering a "not initiated" empty document, and list schedules, where legacy fires
-   * "Schedule not found." only when the {@code ILCR_MILL_REPORT_STATUS} row is absent
-   * ({@code Schedule11MB.init()} &rarr; {@code scheduleNotFound}, UC-SCH11-001 S12/S13), never on
-   * an empty list. {@link #validateScheduleViewable} layers the summary-exists guard on top.
+   * Validate that the mill/reporting-year context exists and the mill is active — the shared guards
+   * 1–2 of every schedule endpoint, WITHOUT requiring a schedule summary to exist. Callers that
+   * need only these guards are the ones for which zero saved data is a valid 200: document reads
+   * rendering a "not initiated" empty document, and list schedules, where legacy fires "Schedule
+   * not found." only when the {@code ILCR_MILL_REPORT_STATUS} row is absent ({@code
+   * Schedule11MB.init()} &rarr; {@code scheduleNotFound}, UC-SCH11-001 S12/S13), never on an empty
+   * list. {@link #validateScheduleViewable} layers the summary-exists guard on top.
    *
    * <p>Guard order:
+   *
    * <ol>
-   *   <li>No per-year context (unknown mill or no report-status row) &rarr;
-   *       {@link ScheduleNotFoundException} (404).</li>
-   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).</li>
+   *   <li>No per-year context (unknown mill or no report-status row) &rarr; {@link
+   *       ScheduleNotFoundException} (404).
+   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).
    * </ol>
-   * Returns normally when the mill/year is a known, active context.
+   *
+   * <p>Returns normally when the mill/year is a known, active context.
    *
    * @param millId the mill id
    * @param year the reporting year
@@ -254,16 +404,26 @@ public class MillContextService {
    * @throws MillClosedException 409 — mill not active ({@code ACT}) for the year (ERR-002)
    */
   public void validateMillYearActive(long millId, int year) {
-    String millStatus = repository.findMillStatusCodeForYear(millId, year)
-        .orElseThrow(() -> {
-          // Diagnostic (mill/year only — no cost/volume, AD-11): no ACT/CLS status row was found for
-          // this mill/year, i.e. the ILCR_MILL_STATUS_XREF ⋈ ILCR_MILL_REPORT_STATUS lookup was empty.
-          log.info("Schedule 404: no mill/year status row for millId={} year={} (guard 1)", millId, year);
-          return new ScheduleNotFoundException();
-        });
+    validateMillAccess(millId); // Story 5.7: submitter↔mill scope, before any per-year read.
+    String millStatus =
+        repository
+            .findMillStatusCodeForYear(millId, year)
+            .orElseThrow(
+                () -> {
+                  // Diagnostic (mill/year only — no cost/volume, AD-11): no ACT/CLS status row was
+                  // found for
+                  // this mill/year, i.e. the ILCR_MILL_STATUS_XREF ⋈ ILCR_MILL_REPORT_STATUS lookup
+                  // was empty.
+                  log.info(
+                      "Schedule 404: no mill/year status row for millId={} year={} (guard 1)",
+                      millId,
+                      year);
+                  return new ScheduleNotFoundException();
+                });
 
     if (!STATUS_ACTIVE.equalsIgnoreCase(millStatus)) {
-      log.info("Schedule 409: mill not ACT for millId={} year={} (status={})", millId, year, millStatus);
+      log.info(
+          "Schedule 409: mill not ACT for millId={} year={} (status={})", millId, year, millStatus);
       throw new MillClosedException();
     }
   }
@@ -272,9 +432,9 @@ public class MillContextService {
    * Raw-parameter overload of {@link #validateMillYearActive(long, int)} for endpoints that take
    * mill/year straight off the query string (introduced Story 25.1 AC3 / S11). Params arrive as
    * Strings so missing, blank, AND non-numeric values all resolve to the ONE verbatim legacy
-   * ERR-001 message — a typed {@code @RequestParam} cannot produce it (the
-   * {@code resolveWorkingContext} idiom; legacy shows the combined message, not per-field texts,
-   * when the schedule page lacks a session context — {@code schedule11.xhtml:11–26}).
+   * ERR-001 message — a typed {@code @RequestParam} cannot produce it (the {@code
+   * resolveWorkingContext} idiom; legacy shows the combined message, not per-field texts, when the
+   * schedule page lacks a session context — {@code schedule11.xhtml:11–26}).
    *
    * @param millIdParam the raw {@code millId} request param (may be null/blank/non-numeric)
    * @param yearParam the raw {@code year} request param (may be null/blank/non-numeric)
@@ -294,8 +454,8 @@ public class MillContextService {
   }
 
   /**
-   * A validated (mill, year) pair parsed from raw request params by
-   * {@link #validateMillYearActive(String, String)}.
+   * A validated (mill, year) pair parsed from raw request params by {@link
+   * #validateMillYearActive(String, String)}.
    *
    * @param millId the parsed mill id
    * @param year the parsed reporting year
@@ -303,17 +463,18 @@ public class MillContextService {
   public record MillYearContext(long millId, int year) {}
 
   /**
-   * The report title-block string for a mill — {@code MILL_NAME + "-" + MILL_NUMBER} (legacy
-   * {@code Schedule*Report.createReportDataSource}), the same value Schedule 9's embedded-SQL
-   * template renders, so every combined-PDF section's header block reads identically. Resolves
-   * through the existing selectable-mill read (mill/year context is already validated by the
-   * caller); returns just the id if the mill row cannot be resolved, rather than failing the render.
+   * The report title-block string for a mill — {@code MILL_NAME + "-" + MILL_NUMBER} (legacy {@code
+   * Schedule*Report.createReportDataSource}), the same value Schedule 9's embedded-SQL template
+   * renders, so every combined-PDF section's header block reads identically. Resolves through the
+   * existing selectable-mill read (mill/year context is already validated by the caller); returns
+   * just the id if the mill row cannot be resolved, rather than failing the render.
    *
    * @param millId the validated mill id
    * @return the {@code name-number} title block
    */
   public String resolveMillTitleBlock(long millId) {
-    return repository.findSelectableMillById(millId)
+    return repository
+        .findSelectableMillById(millId)
         .map(mill -> mill.millName() + "-" + mill.millNumber())
         .orElse(String.valueOf(millId));
   }
@@ -330,5 +491,103 @@ public class MillContextService {
    */
   public Optional<String> findSchedule11TrackStatusCode(long millId, int year) {
     return repository.findTrackStatusCodes(millId, year).map(TrackCodes::schedule11Code);
+  }
+
+  /**
+   * Same as {@link #findSchedule11TrackStatusCode} but holding the status row under a {@code FOR
+   * UPDATE} lock for the rest of the caller's write transaction — the Schedule 11 write-path
+   * editability gate (Story 15.3, D8). Schedule 11 has no repository of its own for the status row,
+   * so its locked read lives here, on the AD-9 owner, exactly as its unlocked one does. Read paths
+   * must keep using the unlocked variant: a reader must never take a row lock.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the silviculture track code, locked; empty when no status row exists OR its
+   *     silviculture code column is null
+   */
+  public Optional<String> findSchedule11TrackStatusCodeForUpdate(long millId, int year) {
+    return repository.findTrackStatusCodesForUpdate(millId, year).map(TrackCodes::schedule11Code);
+  }
+
+  /**
+   * BOTH tracks' status codes for a mill/year in one read (Story 15.1) — the cheap shape for a
+   * caller that has already passed {@link #validateMillYearActive(long, int)} and needs the codes
+   * without the descriptions, dates and the four-to-seven queries {@link #resolveWorkingContext}
+   * spends on them. Codes only, never a per-schedule {@code findTrackStatus}: there are already
+   * eleven of those in the schedule repositories and this is the read that stops the count.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return both codes (either may be null); empty when no {@code ILCR_MILL_REPORT_STATUS} row
+   *     exists
+   */
+  public Optional<TrackStatusCodes> findTrackStatusCodes(long millId, int year) {
+    return repository
+        .findTrackStatusCodes(millId, year)
+        .map(codes -> new TrackStatusCodes(codes.schedules1To10Code(), codes.schedule11Code()));
+  }
+
+  /**
+   * BOTH tracks' status codes for MANY mills across a year range in one read — the bulk shape for
+   * the Data Extract, whose "Data Verified" line is a verdict over every (mill, year) pair in the
+   * selection at once. Same owner, same columns as {@link #findTrackStatusCodes(long, int)}; only
+   * the fan-out differs. A pair with no status row is absent from the result.
+   *
+   * @param millIds the mills to read; an empty list reads nothing
+   * @param fromYear the first reporting year, inclusive
+   * @param toYear the last reporting year, inclusive
+   * @return the rows found, mill id then year ascending
+   */
+  public List<MillYearTrackCodes> findTrackStatusCodes(
+      List<Long> millIds, int fromYear, int toYear) {
+    if (millIds == null || millIds.isEmpty()) {
+      return List.of();
+    }
+    if (millIds.size() <= IN_LIST_LIMIT) {
+      return repository.findTrackStatusCodes(millIds, fromYear, toYear);
+    }
+    // Oracle refuses an IN list longer than 1000 expressions (ORA-01795). A select-all over a mill
+    // table that has grown past that would otherwise fail the very first read of an extract.
+    List<MillYearTrackCodes> rows = new ArrayList<>();
+    for (int from = 0; from < millIds.size(); from += IN_LIST_LIMIT) {
+      List<Long> chunk = millIds.subList(from, Math.min(from + IN_LIST_LIMIT, millIds.size()));
+      rows.addAll(repository.findTrackStatusCodes(chunk, fromYear, toYear));
+    }
+    return rows;
+  }
+
+  /** Oracle's hard limit on the expressions in one {@code IN (...)} list. */
+  private static final int IN_LIST_LIMIT = 1000;
+
+  /**
+   * BOTH tracks' status codes for a mill/year, with the status row locked ({@code FOR UPDATE})
+   * until the caller's write transaction ends (Story 15.3). This is what a status transition reads
+   * first: taking the lock BEFORE re-running the validation gate is what closes the check-then-act
+   * window between the gate and the transition, because every schedule's write gate now waits on
+   * the same row. Callers must be inside {@code @Transactional}; readers must never call this.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return both codes (either may be null), locked; empty when no {@code ILCR_MILL_REPORT_STATUS}
+   *     row exists
+   */
+  public Optional<TrackStatusCodes> lockTrackStatusCodes(long millId, int year) {
+    return repository
+        .findTrackStatusCodesForUpdate(millId, year)
+        .map(codes -> new TrackStatusCodes(codes.schedules1To10Code(), codes.schedule11Code()));
+  }
+
+  /**
+   * The display description of a report-status code ({@code Draft}, {@code Submitted}, {@code
+   * Verified}, {@code Opened}) from the shared code table, or empty for an unknown code.
+   *
+   * @param code the one-letter status code
+   * @return the description, or empty
+   */
+  public Optional<String> findStatusDescription(String code) {
+    if (code == null) {
+      return Optional.empty();
+    }
+    return repository.findStatusDescription(code);
   }
 }

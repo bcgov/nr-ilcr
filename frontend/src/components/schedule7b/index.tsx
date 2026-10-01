@@ -1,11 +1,15 @@
 import type { FC } from 'react'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid, Pagination } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, Close, TrashCan } from '@carbon/icons-react'
 import type Schedule7bResponse from '@/interfaces/Schedule7bResponse'
 import type { Culvert, Schedule7bCheckStatusResponse } from '@/interfaces/Schedule7bResponse'
 import type CulvertRequest from '@/interfaces/Schedule7bRequest'
-import type { CulvertSaveAllRequest } from '@/interfaces/Schedule7bRequest'
+import type {
+  CulvertCheckEntry,
+  CulvertSaveAllRequest,
+  Schedule7bCheckRequest,
+} from '@/interfaces/Schedule7bRequest'
 import type { CostField, CulvertErrors, CulvertFormValues, MaskedField } from './validation'
 import apiService from '@/service/api-service'
 import { useScheduleBanners } from '@/hooks/useScheduleBanners'
@@ -16,12 +20,12 @@ import { groupFixedInput, numStrFixed } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CulvertFields from './CulvertFields'
 import {
   COST_FIELDS,
   MASK_DIGITS,
+  culvertBannerLines,
   emptyCulvertForm,
   parseDecimalInput,
   roundCost,
@@ -36,10 +40,9 @@ import './index.scss'
 // trailing space) still renders verbatim when a request returns it.
 const ADD_PANEL_HEADING = 'Add a Culvert report'
 const EMPTY_LIST = 'No culvert reports have been added.'
-// Client-side gate text. The per-field messages under each input are the API's verbatim wording; this
-// only says WHICH rows are blocking, which legacy conveyed by listing every failure at the top of the
-// page in its <p:messages>.
-const SAVE_BLOCKED = 'Cannot save. Correct the required values on Culvert report Id:'
+// The client-side gate lists every failing field in the top banner, row by row, in legacy's own
+// wording (`culvertBannerLines`), as legacy's <p:messages> did — replacing the row-number summary this
+// page showed before #359 group B.
 
 const SCHEDULE7B_PATH = '/v1/schedule7b'
 const CULVERTS_PATH = `${SCHEDULE7B_PATH}/culverts`
@@ -100,6 +103,21 @@ const buildBody = (form: CulvertFormValues, revisionCount?: number): CulvertRequ
   }
 }
 
+// The Check Status entry for one culvert (#359): its CURRENT form state — typed for an edited row,
+// served for an untouched one — with a blank or unparseable field sent as null. Never `?? 0`: the
+// server's check is a null test, so a zero would turn a missing value into a pass.
+const checkEntry = (form: CulvertFormValues): CulvertCheckEntry => ({
+  culvertTypeCode: form.culvertTypeCode.trim() === '' ? null : form.culvertTypeCode,
+  spanSize: roundCost(parseDecimalInput(form.spanSize)),
+  length: parseDecimalInput(form.length),
+  culvertPieceCount: roundCost(parseDecimalInput(form.culvertPieceCount)),
+  materialCost: roundCost(parseDecimalInput(form.materialCost)),
+  installCost: roundCost(parseDecimalInput(form.installCost)),
+  // As typed, NOT trimmed: the server's comments rule is an untrimmed `isEmpty` test on both paths, so
+  // whitespace-only comments must reach it as whitespace — exactly what the stored path reads.
+  comments: form.comments === '' ? null : form.comments,
+})
+
 const Schedule7b: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
@@ -107,14 +125,34 @@ const Schedule7b: FC = () => {
     saving,
     message,
     actionError,
+    validationErrors,
     checkResult,
     setMessage,
-    setActionError,
+    setValidationErrors,
     setCheckResult,
-    clearBanners,
+    clearBanners: clearHookBanners,
     resetBanners,
     run,
   } = useScheduleBanners<Schedule7bCheckStatusResponse>(isCurrent)
+
+  // Check Status describes one exact screen snapshot (#359). Bumped synchronously whenever a checked
+  // value changes — and whenever the banners are cleared for a new action — so an older response can
+  // never repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  // A checked value changed: the shown verdict (and any check in flight) describes the old screen, and
+  // the validation banner's lines no longer describe it either — legacy re-rendered `p:messages` on
+  // every input's change, so a corrected field did not keep its line.
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+    setValidationErrors([])
+  }
+
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+  }
 
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addForm, setAddForm] = useState<CulvertFormValues>(emptyCulvertForm)
@@ -149,8 +187,10 @@ const Schedule7b: FC = () => {
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7bResponse>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule7bResponse>({
     path: SCHEDULE7B_PATH,
+    scheduleName: 'Schedule 7B',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -233,8 +273,9 @@ const Schedule7b: FC = () => {
       ...prev,
       [culvert.culvertReportId]: clearFieldError(prev[culvert.culvertReportId] ?? {}, key),
     }))
-    // A check-status result names fields by value-at-the-time; once the user edits, it is stale.
-    setCheckResult(null)
+    // A check-status result names fields by value-at-the-time; once the user edits, it is stale — and
+    // a check still in flight describes the old values, so its answer is dropped when it lands.
+    invalidateCheckResult()
   }
 
   const handleAdd = () => {
@@ -267,6 +308,50 @@ const Schedule7b: FC = () => {
     )
   }
 
+  // Every culvert's CURRENT form in document order: the typed one for an edited row, the served one
+  // for an untouched row.
+  const currentForms = (culverts: readonly Culvert[]) =>
+    culverts.map((culvert) => ({
+      culvert,
+      form: rowForms[culvert.culvertReportId] ?? formFromCulvert(culvert),
+    }))
+
+  /**
+   * Validate EVERY culvert with Save's own validator — the gate Save and Check Status share (legacy's
+   * `validateClient` blocked both). On failure the inline errors are shown, the banner lists each
+   * failing field in legacy's wording row by row, and the first offending row is brought into view:
+   * only five rows are on screen and each editor is collapsed, so without that the button would look
+   * dead. Returns every row's current form (typed, or served when untouched) in document order, or
+   * null when the gate blocks.
+   */
+  const validateAllRows = (
+    culverts: readonly Culvert[],
+  ): { culvert: Culvert; form: CulvertFormValues }[] | null => {
+    const forms = currentForms(culverts)
+    const errorsByRow: Record<number, CulvertErrors> = {}
+    const failedRows: Culvert[] = []
+    const lines: string[] = []
+    for (const { culvert, form } of forms) {
+      const errors = validateCulvert(form, culvert.rowCounter)
+      errorsByRow[culvert.culvertReportId] = errors
+      if (Object.keys(errors).length > 0) {
+        failedRows.push(culvert)
+        lines.push(...culvertBannerLines(errors, culvert.rowCounter))
+      }
+    }
+    // Replace wholesale rather than merging: a row that now passes must lose its old red text.
+    setRowErrors(errorsByRow)
+    if (failedRows.length === 0) {
+      return forms
+    }
+    setValidationErrors(lines)
+    // Bring the first offender into view and open it, so the inline errors are actually reachable.
+    const first = failedRows[0]
+    setPage(Math.floor(culverts.indexOf(first) / PAGE_SIZE) + 1)
+    setOpenIds((prev) => new Set(prev).add(first.culvertReportId))
+    return null
+  }
+
   /**
    * The page-level Save (legacy parity): persist EVERY culvert in one request, edited or not, exactly
    * as legacy's Save button did (`Schedule7bMB.save()` → `Schedule7bDAO.saveSchedule()`). It is the
@@ -284,34 +369,8 @@ const Schedule7b: FC = () => {
     clearBanners()
     // Read from `data` rather than the `culverts` binding destructured further down, which is not in
     // scope here.
-    const forms = data.culverts.map((culvert) => ({
-      culvert,
-      form: rowForms[culvert.culvertReportId] ?? formFromCulvert(culvert),
-    }))
-
-    const errorsByRow: Record<number, CulvertErrors> = {}
-    const failedRows: Culvert[] = []
-    for (const { culvert, form } of forms) {
-      const errors = validateCulvert(form, culvert.rowCounter)
-      errorsByRow[culvert.culvertReportId] = errors
-      if (Object.keys(errors).length > 0) {
-        failedRows.push(culvert)
-      }
-    }
-    // Replace wholesale rather than merging: a row that now passes must lose its old red text.
-    setRowErrors(errorsByRow)
-    if (failedRows.length > 0) {
-      // Save validates EVERY culvert, but only five are on screen and each editor is collapsed, so a
-      // failing row can be invisible — on another page, or simply unopened. Without this the button
-      // would appear dead: no request, no banner, no way to find the offending row. Legacy listed every
-      // failure in its page-level <p:messages>, so naming them here is the faithful behaviour.
-      setActionError(
-        `${SAVE_BLOCKED} ${failedRows.map((culvert) => String(culvert.rowCounter)).join(', ')}`,
-      )
-      // Bring the first offender into view and open it, so the inline errors are actually reachable.
-      const first = failedRows[0]
-      setPage(Math.floor(data.culverts.indexOf(first) / PAGE_SIZE) + 1)
-      setOpenIds((prev) => new Set(prev).add(first.culvertReportId))
+    const forms = validateAllRows(data.culverts)
+    if (forms === null) {
       return
     }
 
@@ -360,36 +419,44 @@ const Schedule7b: FC = () => {
       return
     }
     clearBanners()
+    // Gated on Save's validator over every row (#359), but only when the page is editable: a read-only
+    // page highlights nothing, so a stored value failing a client rule must not block it silently.
+    const forms = data.editable ? validateAllRows(data.culverts) : currentForms(data.culverts)
+    if (forms === null) {
+      return
+    }
+    // The body carries every culvert as it is ON SCREEN, in document order (the server numbers rows
+    // by ordinal), including rows on other paginator pages. The Add draft is never sent.
+    const body: Schedule7bCheckRequest = { culverts: forms.map(({ form }) => checkEntry(form)) }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation. Read-only (BR-07) — mutates nothing.
     run(
       apiService
         .getAxiosInstance()
-        .post<Schedule7bCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),
-      { fallback: 'Unable to check status.', onSuccess: setCheckResult },
+        .post<Schedule7bCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes values no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
     )
   }
 
   // The load-error branch covers the three context guards AND the action-key denial: ERR-003 /
   // ERR-004 / ERR-002 and the 403 all arrive as a ProblemDetail, and each renders its verbatim
   // `detail` with the work area suppressed (S11-S13, S30).
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 7B',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
   }
 
   const { editable, culverts, codeLists } = data
-  // Legacy disabled Check Status outside Draft alongside every write control, even though the endpoint
+  // Legacy disabled Check Status alongside every write control whenever the report was not
+  // editable by the caller — its rule was role×status, not Draft alone, even though the endpoint
   // itself is read-only and permitted at any status (`schedule7B.xhtml:264-265,558-559`; Story 13.1
   // recorded deviation 6 leaves the endpoint open and puts the button-disable here).
   const controlsDisabled = !editable || saving
@@ -426,15 +493,19 @@ const Schedule7b: FC = () => {
           keyPrefix="culvert"
           message={message}
           actionError={actionError}
+          validationErrors={validationErrors}
           checkResult={checkResult}
         />
 
-        {/* Write controls stay rendered and go disabled outside Draft rather than disappearing — legacy
+        {/* Write controls stay rendered and go disabled whenever the caller may not edit (the
+            role×status matrix since Story 16.1, not Draft alone) rather than disappearing — legacy
             bound `disabled` on every one of them and never removed a control, so a read-only reporter
             can still see which actions exist (STA-001, S14). */}
         <Column sm={4} md={8} lg={16} className="schedule-7b__actions">
           <Button
             kind="primary"
+            // The icon tracks the label: this one control both opens and closes the add panel.
+            renderIcon={showAddPanel ? Close : Add}
             disabled={controlsDisabled}
             // Legacy toggled the tooltip with the label: `title="Close"` / `"Add Culvert Report"`
             // (schedule7B.xhtml:56), which says what the button opens where the one-word label cannot.
@@ -465,7 +536,12 @@ const Schedule7b: FC = () => {
               onMask={maskAddField}
             />
             <div className="schedule-7b__panel-actions">
-              <Button kind="primary" disabled={controlsDisabled} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={controlsDisabled}
+                onClick={handleAdd}
+              >
                 Add Report
               </Button>
             </div>
@@ -510,6 +586,7 @@ const Schedule7b: FC = () => {
                       }
                       onChange={(key, value) => setRowField(culvert, key, value)}
                       onMask={(key) => maskRowField(culvert, key)}
+                      originals={culvert.originalValues}
                     />
                     {/* Delete is the ONLY per-row control in legacy (schedule7B.xhtml:526-540). Saving
                         is a page-level action covering every culvert at once, so a per-row Save/Cancel
@@ -517,11 +594,12 @@ const Schedule7b: FC = () => {
                     <div className="schedule-7b__panel-actions">
                       {/* Legacy labelled this button `Delete` with the icon beside it
                           (schedule7B.xhtml:527-529), and the repo's own `RowActionButtons` renders a
-                          row delete the same way — a labelled `danger--ghost` button. The 7A twin's
-                          icon-only variant is the outlier of the two, so this follows legacy and the
-                          house convention rather than its sibling page. */}
+                          row delete the same way — a labelled button, outlined `danger--tertiary`
+                          since #411 took Schedule 6's treatment app-wide. The 7A twin's icon-only
+                          variant is the outlier of the two, so this follows legacy and the house
+                          convention rather than its sibling page. */}
                       <Button
-                        kind="danger--ghost"
+                        kind="danger--tertiary"
                         size="sm"
                         renderIcon={TrashCan}
                         disabled={controlsDisabled}

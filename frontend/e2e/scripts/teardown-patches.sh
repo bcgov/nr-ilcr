@@ -74,9 +74,12 @@ for (( i=${#teardowns[@]}-1; i>=0; i-- )); do
   # argv/`ps`. `SET ECHO OFF` first so the CONNECT line is never echoed into the log (belt-and-braces
   # against a patch that flips `SET ECHO ON`). WHENEVER SQLERROR EXIT (armed before CONNECT) aborts on a
   # failed connect or any SQL error.
+  # MSYS2_ARG_CONV_EXCL='*': on Git Bash, MSYS rewrites `/nolog` into a Windows path
+  # (`C:/Program Files/Git/nolog`) and sqlplus prints its usage banner instead of connecting — see the
+  # matching note in apply-patches.sh.
   { printf 'SET ECHO OFF\nWHENEVER SQLERROR EXIT SQL.SQLCODE\nCONNECT %s\n' "$ORACLE_DSN"; \
     cat "$patch"; printf '\nEXIT\n'; } \
-    | "$SQLPLUS" -S /nolog | sed 's/^/    /'
+    | MSYS2_ARG_CONV_EXCL='*' "$SQLPLUS" -S /nolog | sed 's/^/    /'
 done
 
 echo ""

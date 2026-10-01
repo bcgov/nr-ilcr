@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 4 (Special Log Transportation Costs) — JasperReports 7 bean-datasource section.
+  The fixed category lines follow the legacy portrait form. The three legacy sub-pages are
+  represented as in-band nested lists over the location row's collections; all values are
+  pre-formatted by Schedule4SectionMapper and the template performs no arithmetic.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule4" pageWidth="595" pageHeight="842"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="555" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <style name="italic" italic="true"/>
+  <dataset name="TowingRows">
+    <field name="towingTotalDescription" class="java.lang.String"/>
+    <field name="towingTotalDist" class="java.lang.String"/>
+    <field name="towingTotalVolume" class="java.lang.String"/>
+    <field name="towingTotalCost" class="java.lang.String"/>
+    <field name="towingTotalCostVolume" class="java.lang.String"/>
+  </dataset>
+  <dataset name="TruckRehaulRows">
+    <field name="truckRehaulDescription" class="java.lang.String"/>
+    <field name="truckRehaulDist" class="java.lang.String"/>
+    <field name="truckRehaulVolume" class="java.lang.String"/>
+    <field name="truckRehaulCost" class="java.lang.String"/>
+    <field name="truckRehaulCostVolume" class="java.lang.String"/>
+  </dataset>
+  <dataset name="OtherTransportationRows">
+    <field name="otherTransportationDescription" class="java.lang.String"/>
+    <field name="otherTransportationDist" class="java.lang.String"/>
+    <field name="otherTransportationVolume" class="java.lang.String"/>
+    <field name="otherTransportationCost" class="java.lang.String"/>
+    <field name="otherTransportationCostVolume" class="java.lang.String"/>
+  </dataset>
+
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
+
+  <field name="locationName" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <field name="lakeSideDryDumpVol" class="java.lang.String"/>
+  <field name="lakeSideDryDumpCost" class="java.lang.String"/>
+  <field name="lakeSideDryDumpCostVol" class="java.lang.String"/>
+  <field name="waterDumpVol" class="java.lang.String"/>
+  <field name="waterDumpCost" class="java.lang.String"/>
+  <field name="waterDumpCostVol" class="java.lang.String"/>
+  <field name="waterBoomVol" class="java.lang.String"/>
+  <field name="waterBoomCost" class="java.lang.String"/>
+  <field name="waterBoomCostVol" class="java.lang.String"/>
+  <field name="willistonLakeDewaterOnlyVol" class="java.lang.String"/>
+  <field name="willistonLakeDewaterOnlyCost" class="java.lang.String"/>
+  <field name="willistonLakeDewaterOnlyCostVol" class="java.lang.String"/>
+  <field name="dewaterAndReloadVol" class="java.lang.String"/>
+  <field name="dewaterAndReloadCost" class="java.lang.String"/>
+  <field name="dewaterAndReloadCostVol" class="java.lang.String"/>
+  <field name="hydroDamLogTransferVol" class="java.lang.String"/>
+  <field name="hydroDamLogTransferCost" class="java.lang.String"/>
+  <field name="hydroDamLogTransferCostVol" class="java.lang.String"/>
+  <field name="truckToTruckTransferVol" class="java.lang.String"/>
+  <field name="truckToTruckTransferCost" class="java.lang.String"/>
+  <field name="truckToTruckTransferCostVol" class="java.lang.String"/>
+  <field name="truckToRailTransferVol" class="java.lang.String"/>
+  <field name="truckToRailTransferCost" class="java.lang.String"/>
+  <field name="truckToRailTransferCostVol" class="java.lang.String"/>
+  <field name="lowWaterBridgeVol" class="java.lang.String"/>
+  <field name="lowWaterBridgeCost" class="java.lang.String"/>
+  <field name="lowWaterBridgeCostVol" class="java.lang.String"/>
+  <field name="truckBargeFerryDist" class="java.lang.String"/>
+  <field name="truckBargeFerryVol" class="java.lang.String"/>
+  <field name="truckBargeFerryCost" class="java.lang.String"/>
+  <field name="truckBargeFerryCostVol" class="java.lang.String"/>
+  <field name="crewBargeFerryDist" class="java.lang.String"/>
+  <field name="crewBargeFerryVol" class="java.lang.String"/>
+  <field name="crewBargeFerryCost" class="java.lang.String"/>
+  <field name="crewBargeFerryCostVol" class="java.lang.String"/>
+  <field name="railHaulDist" class="java.lang.String"/>
+  <field name="railHaulVol" class="java.lang.String"/>
+  <field name="railHaulCost" class="java.lang.String"/>
+  <field name="railHaulCostVol" class="java.lang.String"/>
+  <field name="towingRows" class="java.util.Collection"/>
+  <field name="towingTotalTotalDist" class="java.lang.String"/>
+  <field name="towingTotalTotalVol" class="java.lang.String"/>
+  <field name="towingTotalTotalCost" class="java.lang.String"/>
+  <field name="towingTotalTotalCostVol" class="java.lang.String"/>
+  <field name="truckRehaulRows" class="java.util.Collection"/>
+  <field name="truckRehaulTotalDist" class="java.lang.String"/>
+  <field name="truckRehaulTotalVol" class="java.lang.String"/>
+  <field name="truckRehaulTotalCost" class="java.lang.String"/>
+  <field name="truckRehaulTotalCostVol" class="java.lang.String"/>
+  <field name="otherTransportationRows" class="java.util.Collection"/>
+  <field name="otherTransportationTotalDist" class="java.lang.String"/>
+  <field name="otherTransportationTotalVol" class="java.lang.String"/>
+  <field name="otherTransportationTotalCost" class="java.lang.String"/>
+  <field name="otherTransportationTotalCostVol" class="java.lang.String"/>
+
+  <title height="30">
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF"
+        mode="Transparent" bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+    <element kind="staticText" style="bold" x="0" y="0" width="555" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="555" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="30">
+    <element kind="staticText" x="0" y="0" width="370" height="15">
+      <text><![CDATA[Schedule 4:  Special Log Transportation Costs]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="370" height="15" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+    <element kind="staticText" x="370" y="0" width="185" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
+    <element kind="textField" x="370" y="15" width="185" height="15" hTextAlign="Right"
+        pattern="MMMMM dd, yyyy HH:mm:ss">
+      <expression><![CDATA[new java.util.Date()]]></expression>
+    </element>
+  </pageHeader>
+
+  <detail>
+    <band height="720">
+      <element kind="staticText" style="bold" x="0" y="0" width="105" height="16">
+        <text><![CDATA[Location Name:]]></text>
+      </element>
+      <element kind="textField" x="110" y="0" width="445" height="16" blankWhenNull="true">
+        <expression><![CDATA[$F{locationName}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" x="205" y="20" width="100" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Volume (m³)]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="320" y="20" width="100" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Cost $]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="435" y="20" width="100" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[$/m³]]></text>
+      </element>
+
+      <element kind="staticText" style="bold" x="0" y="40" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Lakeside Dry Dump:]]></text></element>
+      <element kind="textField" x="205" y="40" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{lakeSideDryDumpVol}]]></expression></element>
+      <element kind="textField" x="320" y="40" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{lakeSideDryDumpCost}]]></expression></element>
+      <element kind="textField" x="435" y="40" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{lakeSideDryDumpCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="56" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Water Dump:]]></text></element>
+      <element kind="textField" x="205" y="56" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{waterDumpVol}]]></expression></element>
+      <element kind="textField" x="320" y="56" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{waterDumpCost}]]></expression></element>
+      <element kind="textField" x="435" y="56" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{waterDumpCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="72" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Water Boom:]]></text></element>
+      <element kind="textField" x="205" y="72" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{waterBoomVol}]]></expression></element>
+      <element kind="textField" x="320" y="72" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{waterBoomCost}]]></expression></element>
+      <element kind="textField" x="435" y="72" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{waterBoomCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="88" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Williston Lake Dewater Only:]]></text></element>
+      <element kind="textField" x="205" y="88" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{willistonLakeDewaterOnlyVol}]]></expression></element>
+      <element kind="textField" x="320" y="88" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{willistonLakeDewaterOnlyCost}]]></expression></element>
+      <element kind="textField" x="435" y="88" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{willistonLakeDewaterOnlyCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="104" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Dewater And Reload:]]></text></element>
+      <element kind="textField" x="205" y="104" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{dewaterAndReloadVol}]]></expression></element>
+      <element kind="textField" x="320" y="104" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{dewaterAndReloadCost}]]></expression></element>
+      <element kind="textField" x="435" y="104" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{dewaterAndReloadCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="120" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Hydro Dam Log Transfer:]]></text></element>
+      <element kind="textField" x="205" y="120" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{hydroDamLogTransferVol}]]></expression></element>
+      <element kind="textField" x="320" y="120" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{hydroDamLogTransferCost}]]></expression></element>
+      <element kind="textField" x="435" y="120" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{hydroDamLogTransferCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="136" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Truck To Truck Transfer:]]></text></element>
+      <element kind="textField" x="205" y="136" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckToTruckTransferVol}]]></expression></element>
+      <element kind="textField" x="320" y="136" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckToTruckTransferCost}]]></expression></element>
+      <element kind="textField" x="435" y="136" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckToTruckTransferCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="152" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Truck To Rail Transfer:]]></text></element>
+      <element kind="textField" x="205" y="152" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckToRailTransferVol}]]></expression></element>
+      <element kind="textField" x="320" y="152" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckToRailTransferCost}]]></expression></element>
+      <element kind="textField" x="435" y="152" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckToRailTransferCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="168" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Low Water Bridge:]]></text></element>
+      <element kind="textField" x="205" y="168" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{lowWaterBridgeVol}]]></expression></element>
+      <element kind="textField" x="320" y="168" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{lowWaterBridgeCost}]]></expression></element>
+      <element kind="textField" x="435" y="168" width="100" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{lowWaterBridgeCostVol}]]></expression></element>
+
+      <element kind="staticText" style="bold" x="0" y="190" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Distance-based categories]]></text></element>
+      <element kind="staticText" style="bold" x="205" y="190" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Distance Km]]></text></element>
+      <element kind="staticText" style="bold" x="290" y="190" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Volume (m³)]]></text></element>
+      <element kind="staticText" style="bold" x="375" y="190" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Cost $]]></text></element>
+      <element kind="staticText" style="bold" x="460" y="190" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[$/m³]]></text></element>
+      <element kind="staticText" x="0" y="206" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Truck Barge Ferry:]]></text></element>
+      <element kind="textField" x="205" y="206" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckBargeFerryDist}]]></expression></element>
+      <element kind="textField" x="290" y="206" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckBargeFerryVol}]]></expression></element>
+      <element kind="textField" x="375" y="206" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckBargeFerryCost}]]></expression></element>
+      <element kind="textField" x="460" y="206" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckBargeFerryCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="222" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Crew Barge Ferry:]]></text></element>
+      <element kind="textField" x="205" y="222" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{crewBargeFerryDist}]]></expression></element>
+      <element kind="textField" x="290" y="222" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{crewBargeFerryVol}]]></expression></element>
+      <element kind="textField" x="375" y="222" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{crewBargeFerryCost}]]></expression></element>
+      <element kind="textField" x="460" y="222" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{crewBargeFerryCostVol}]]></expression></element>
+      <element kind="staticText" x="0" y="238" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Rail Haul:]]></text></element>
+      <element kind="textField" x="205" y="238" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{railHaulDist}]]></expression></element>
+      <element kind="textField" x="290" y="238" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{railHaulVol}]]></expression></element>
+      <element kind="textField" x="375" y="238" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{railHaulCost}]]></expression></element>
+      <element kind="textField" x="460" y="238" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{railHaulCostVol}]]></expression></element>
+
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="260" width="555" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Towing Total:]]></text></element>
+      <element kind="component" positionType="Float" x="0" y="276" width="555" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><component kind="list" printOrder="Vertical"><datasetRun subDataset="TowingRows"><dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{towingRows})]]></dataSourceExpression></datasetRun><contents height="16" width="555"><element kind="textField" style="italic" x="0" y="0" width="200" height="16"><expression><![CDATA[$F{towingTotalDescription}]]></expression></element><element kind="textField" x="205" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{towingTotalDist}]]></expression></element><element kind="textField" x="290" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{towingTotalVolume}]]></expression></element><element kind="textField" x="375" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{towingTotalCost}]]></expression></element><element kind="textField" x="460" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{towingTotalCostVolume}]]></expression></element></contents></component></element>
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="294" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Totals:]]></text></element>
+      <element kind="textField" positionType="Float" x="205" y="294" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{towingTotalTotalDist}]]></expression></element>
+      <element kind="textField" positionType="Float" x="290" y="294" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{towingTotalTotalVol}]]></expression></element>
+      <element kind="textField" positionType="Float" x="375" y="294" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{towingTotalTotalCost}]]></expression></element>
+      <element kind="textField" positionType="Float" x="460" y="294" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{towingTotalTotalCostVol}]]></expression></element>
+
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="316" width="555" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Truck Rehaul:]]></text></element>
+      <element kind="component" positionType="Float" x="0" y="332" width="555" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><component kind="list" printOrder="Vertical"><datasetRun subDataset="TruckRehaulRows"><dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{truckRehaulRows})]]></dataSourceExpression></datasetRun><contents height="16" width="555"><element kind="textField" style="italic" x="0" y="0" width="200" height="16"><expression><![CDATA[$F{truckRehaulDescription}]]></expression></element><element kind="textField" x="205" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{truckRehaulDist}]]></expression></element><element kind="textField" x="290" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{truckRehaulVolume}]]></expression></element><element kind="textField" x="375" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{truckRehaulCost}]]></expression></element><element kind="textField" x="460" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{truckRehaulCostVolume}]]></expression></element></contents></component></element>
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="350" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Totals:]]></text></element>
+      <element kind="textField" positionType="Float" x="205" y="350" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckRehaulTotalDist}]]></expression></element>
+      <element kind="textField" positionType="Float" x="290" y="350" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckRehaulTotalVol}]]></expression></element>
+      <element kind="textField" positionType="Float" x="375" y="350" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckRehaulTotalCost}]]></expression></element>
+      <element kind="textField" positionType="Float" x="460" y="350" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{truckRehaulTotalCostVol}]]></expression></element>
+
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="372" width="555" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Other Transportation:]]></text></element>
+      <element kind="component" positionType="Float" x="0" y="388" width="555" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><component kind="list" printOrder="Vertical"><datasetRun subDataset="OtherTransportationRows"><dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{otherTransportationRows})]]></dataSourceExpression></datasetRun><contents height="16" width="555"><element kind="textField" style="italic" x="0" y="0" width="200" height="16"><expression><![CDATA[$F{otherTransportationDescription}]]></expression></element><element kind="textField" x="205" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{otherTransportationDist}]]></expression></element><element kind="textField" x="290" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{otherTransportationVolume}]]></expression></element><element kind="textField" x="375" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{otherTransportationCost}]]></expression></element><element kind="textField" x="460" y="0" width="80" height="16" hTextAlign="Right"><expression><![CDATA[$F{otherTransportationCostVolume}]]></expression></element></contents></component></element>
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="406" width="200" height="16"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><text><![CDATA[Totals:]]></text></element>
+      <element kind="textField" positionType="Float" x="205" y="406" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{otherTransportationTotalDist}]]></expression></element>
+      <element kind="textField" positionType="Float" x="290" y="406" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{otherTransportationTotalVol}]]></expression></element>
+      <element kind="textField" positionType="Float" x="375" y="406" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{otherTransportationTotalCost}]]></expression></element>
+      <element kind="textField" positionType="Float" x="460" y="406" width="80" height="16" hTextAlign="Right"><printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression><expression><![CDATA[$F{otherTransportationTotalCostVol}]]></expression></element>
+
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="430" width="90" height="16"><printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression><text><![CDATA[Comments:]]></text></element>
+      <element kind="textField" positionType="Float" x="95" y="430" width="460" height="40" textAdjust="StretchHeight" blankWhenNull="true"><printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression><expression><![CDATA[$F{comments}]]></expression></element>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <element kind="textField" x="0" y="0" width="555" height="15" hTextAlign="Right">
+      <expression><![CDATA["Page: " + $V{PAGE_NUMBER} + " of " + $V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>

@@ -9,7 +9,7 @@
 -- that the V1 test-scope table lacks.
 -- RE-VERIFIED 2026-08-13 against all_constraints on THE: this column is the ONLY per-report column on
 -- ILCR_COST_REPORT_DETAIL with no FK. The other eight FK'd columns are listed in
--- R__cost_detail_bridge_culvert_fks.sql, where the same "no FK" claim for BRIDGE_REPORT_ID and
+-- R__90_cost_detail_bridge_culvert_fks.sql, where the same "no FK" claim for BRIDGE_REPORT_ID and
 -- CULVERT_REPORT_ID turned out to be false and cost a
 -- production defect. The claim is CORRECT here — leave it, and keep Schedule 11's delete order safe on
 -- schema grounds rather than assuming the pattern generalises.

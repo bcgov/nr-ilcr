@@ -4,27 +4,33 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
@@ -33,8 +39,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for {@link Schedule4Controller}: the no-summary-required context guard
- * ({@code validateMillYearActive}), service delegation, the server-derived {@code editable} flag, the
+ * Unit test for {@link Schedule4Controller}: the no-summary-required context guard ({@code
+ * validateMillYearActive}), service delegation, the server-derived {@code editable} flag, the
  * verbatim AD-8 success-message decoration, and the check-status schedule/location/issue key
  * resolution — collaborators mocked, no Spring context.
  */
@@ -44,29 +50,41 @@ class Schedule4ControllerTest {
   private static final long MILL_ID = 546L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule4Service schedule4Service;
+  @Mock private Schedule4Service schedule4Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
   private Schedule4Controller controller;
+
+  /**
+   * Built by hand rather than {@code @InjectMocks} since Story 15.0: the check-status composition
+   * moved to {@link Schedule4CheckStatusResolver}, and a MOCK resolver would make the check-status
+   * assertions below vacuous. Wiring the real one keeps them proving the actual composed bytes,
+   * through the same path the endpoint takes.
+   */
+  @BeforeEach
+  void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+    controller =
+        new Schedule4Controller(
+            millContextService,
+            schedule4Service,
+            editability,
+            messageSource,
+            new Schedule4CheckStatusResolver(schedule4Service, messageSource));
+  }
 
   @Test
   void getSchedule4_validatesContext_derivesEditFlag_returnsDocument() {
     Schedule4Response doc = mock(Schedule4Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule4Service.getSchedule4(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule4Service.getSchedule4(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
     ResponseEntity<Schedule4Response> response =
         controller.getSchedule4(MILL_ID, YEAR, authentication);
@@ -82,10 +100,12 @@ class Schedule4ControllerTest {
     Schedule4LocationRequest request = mock(Schedule4LocationRequest.class);
     Schedule4Response saved = mock(Schedule4Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule4Service.saveLocation(MILL_ID, YEAR, request, true, "dev-admin")).thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(schedule4Service.saveLocation(MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
+        .thenReturn(saved);
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully");
 
     ResponseEntity<Schedule4Response> response =
@@ -99,7 +119,7 @@ class Schedule4ControllerTest {
   @Test
   void deleteLocation_delegates_andReturnsDeletedMessage() {
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
 
     ResponseEntity<MessageResponse> response =
@@ -108,7 +128,7 @@ class Schedule4ControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
-    verify(schedule4Service).deleteLocation(MILL_ID, YEAR, 8001);
+    verify(schedule4Service).deleteLocation(MILL_ID, YEAR, 8001, CallerRights.SUBMITTER);
   }
 
   @Test
@@ -116,11 +136,13 @@ class Schedule4ControllerTest {
     Schedule4SubPageRowRequest request = mock(Schedule4SubPageRowRequest.class);
     Schedule4Response saved = mock(Schedule4Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule4Service.addSubPageRow(MILL_ID, YEAR, 8001, request, true, "dev-admin"))
+    when(schedule4Service.addSubPageRow(
+            MILL_ID, YEAR, 8001, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully");
 
     ResponseEntity<Schedule4Response> response =
@@ -135,10 +157,11 @@ class Schedule4ControllerTest {
   void deleteSubPageRow_delegates_andAppliesDeletedMessage() {
     Schedule4Response updated = mock(Schedule4Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 8001, 9001, true)).thenReturn(updated);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 8001, 9001, CallerRights.SUBMITTER))
+        .thenReturn(updated);
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
 
     ResponseEntity<Schedule4Response> response =
@@ -152,22 +175,28 @@ class Schedule4ControllerTest {
   @Test
   void checkStatus_resolvesScheduleBanner_locationMessages_andFieldIssues() {
     // ISSUES with one failing location that carries both a met-style message and a field issue, so
-    // the schedule-level, per-location, and per-issue key→text resolution branches are all exercised.
-    Schedule4CheckStatusResponse raw = new Schedule4CheckStatusResponse(
-        "ISSUES",
-        List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
-        List.of(new LocationCheckResult(
-            8001,
-            "Dump A",
-            false,
-            List.of(new MessageInfo("locationRequirementsMetMsg", null)),
-            List.of(new FieldIssue(47, new MessageInfo("missingRequiredFieldMsg", null))))));
-    when(schedule4Service.checkStatus(MILL_ID, YEAR)).thenReturn(raw);
+    // the schedule-level, per-location, and per-issue key→text resolution branches are all
+    // exercised.
+    Schedule4CheckStatusResponse raw =
+        new Schedule4CheckStatusResponse(
+            "ISSUES",
+            List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
+            List.of(
+                new LocationCheckResult(
+                    8001,
+                    "Dump A",
+                    false,
+                    List.of(new MessageInfo("locationRequirementsMetMsg", null)),
+                    List.of(
+                        new FieldIssue(47, new MessageInfo("missingRequiredFieldMsg", null))))));
+    Schedule4CheckRequest request =
+        new Schedule4CheckRequest(new Schedule4CheckRequest.LocationEntry(8001, "Dump A"));
+    when(schedule4Service.checkStatus(MILL_ID, YEAR, request)).thenReturn(raw);
     when(messageSource.getMessage(anyString(), any(), any(), any(Locale.class)))
         .thenReturn("resolved text");
 
     ResponseEntity<Schedule4CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
@@ -177,5 +206,7 @@ class Schedule4ControllerTest {
     assertEquals("resolved text", location.messages().get(0).text());
     assertEquals("resolved text", location.issues().get(0).message().text());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
+    // The SCREEN path (#359) with the very body posted — never the stored one.
+    verify(schedule4Service, never()).checkStatusStored(anyLong(), anyInt());
   }
 }

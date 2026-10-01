@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type { OtherCostsDocument } from '@/interfaces/OtherCosts'
 import { useNavigate } from '@tanstack/react-router'
@@ -13,7 +14,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, TrashCan } from '@carbon/icons-react'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
@@ -37,6 +38,9 @@ const OtherCostsPage: FC = () => {
         id: r.id,
         description: r.description,
         values: { cost: numStrGroup(r.cost) },
+        // The Licensee's submitted description and cost for this row (Story 16.2, BR-04) — the two
+        // fields legacy's row template flagged (schedule1OtherCosts.xhtml).
+        originals: r.originalValues,
       })),
     validate: (description, values) => validateOtherCost(description, values.cost),
     onBack: () => navigate({ to: '/schedule-1' }),
@@ -53,19 +57,24 @@ const OtherCostsPage: FC = () => {
     setRowDescription,
     setRowValue,
     handleAdd,
-    removeRow,
+    requestRemove,
     saving,
   } = editor
 
   // Client-side column sort, matching legacy schedule1OtherCosts.xhtml (Description / Volume / Cost
   // sortable; the derived $/m³ column is not). See useRowSort for the snapshot-on-click semantics.
-  const sort = useRowSort(rows, {
-    description: (row) => row.description,
-    // Volume is the single shared Other-Costs volume (identical on every row), so sorting by it is a
-    // no-op in practice — kept sortable for legacy parity (the legacy column carried sortBy volume).
-    volume: () => editor.data?.volume ?? null,
-    cost: (row) => toNum(row.values.cost ?? ''),
-  })
+  const sort = useRowSort(
+    rows,
+    {
+      description: (row) => row.description,
+      // Volume is the single shared Other-Costs volume (identical on every row), so sorting by it is
+      // a no-op in practice — kept sortable for legacy parity (the legacy column carried sortBy
+      // volume).
+      volume: () => editor.data?.volume ?? null,
+      cost: (row) => toNum(row.values.cost ?? ''),
+    },
+    (row) => row.key,
+  )
 
   return (
     <EditableSubPageLayout
@@ -103,6 +112,13 @@ const OtherCostsPage: FC = () => {
                     invalid={Boolean(errs.description)}
                     invalidText={errs.description}
                   />
+                  <OriginalValueIndicator
+                    originals={row.originals}
+                    field="description"
+                    current={row.description}
+                    numeric={false}
+                    label="Description"
+                  />
                 </TableCell>
                 <TableCell className="schedule-1__num">{fmtNumber(volume)}</TableCell>
                 <TableCell className="schedule-1__num schedule-1__num--input">
@@ -118,19 +134,25 @@ const OtherCostsPage: FC = () => {
                     invalid={Boolean(errs.cost)}
                     invalidText={errs.cost}
                   />
+                  <OriginalValueIndicator
+                    originals={row.originals}
+                    field="cost"
+                    current={row.values.cost ?? ''}
+                    label="Cost"
+                  />
                 </TableCell>
                 <TableCell className="schedule-1__num">
                   {fmtCurrency(perUnitOf(row.values.cost ?? ''))}
                 </TableCell>
                 <TableCell>
                   <Button
-                    kind="danger--ghost"
+                    kind="danger--tertiary"
                     size="sm"
                     hasIconOnly
                     iconDescription="Remove"
                     renderIcon={TrashCan}
                     disabled={saving}
-                    onClick={() => removeRow(row.key)}
+                    onClick={() => requestRemove(row.key)}
                   />
                 </TableCell>
               </>
@@ -138,10 +160,25 @@ const OtherCostsPage: FC = () => {
           }
           return (
             <>
-              <TableCell>{row.description}</TableCell>
+              <TableCell>
+                {row.description}
+                <OriginalValueIndicator
+                  originals={row.originals}
+                  field="description"
+                  current={row.description}
+                  numeric={false}
+                  label="Description"
+                />
+              </TableCell>
               <TableCell className="schedule-1__num">{fmtNumber(volume)}</TableCell>
               <TableCell className="schedule-1__num">
                 {fmtNumber(toNum(row.values.cost ?? ''))}
+                <OriginalValueIndicator
+                  originals={row.originals}
+                  field="cost"
+                  current={row.values.cost ?? ''}
+                  label="Cost"
+                />
               </TableCell>
               <TableCell className="schedule-1__num">
                 {fmtCurrency(perUnitOf(row.values.cost ?? ''))}
@@ -171,7 +208,7 @@ const OtherCostsPage: FC = () => {
                     />
                     <TextInput
                       id="add-volume"
-                      className="oc-add__field oc-add__field--narrow"
+                      className="oc-add__field"
                       labelText="Volume"
                       size="sm"
                       value={numStrGroup(volume)}
@@ -180,7 +217,7 @@ const OtherCostsPage: FC = () => {
                     />
                     <TextInput
                       id="add-cost"
-                      className="oc-add__field oc-add__field--narrow"
+                      className="oc-add__field"
                       labelText="Cost"
                       size="sm"
                       value={addValues.cost ?? ''}
@@ -191,7 +228,7 @@ const OtherCostsPage: FC = () => {
                     />
                     <TextInput
                       id="add-perunit"
-                      className="oc-add__field oc-add__field--narrow"
+                      className="oc-add__field"
                       labelText="$ / m³"
                       size="sm"
                       value={numStrGroup(perUnitOf(addValues.cost ?? ''))}
@@ -199,7 +236,13 @@ const OtherCostsPage: FC = () => {
                       disabled
                     />
                     <div className="oc-add__actions">
-                      <Button kind="primary" size="md" disabled={saving} onClick={handleAdd}>
+                      <Button
+                        kind="primary"
+                        size="md"
+                        disabled={saving}
+                        renderIcon={Add}
+                        onClick={handleAdd}
+                      >
                         Add
                       </Button>
                     </div>

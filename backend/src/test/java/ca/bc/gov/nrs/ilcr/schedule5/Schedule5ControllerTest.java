@@ -1,17 +1,19 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,12 +32,12 @@ import org.springframework.security.core.Authentication;
  * <p><strong>Why this cannot be an integration test.</strong> {@code SchedulePermissions} grants
  * BOTH {@code VIEW_SCHEDULE} and {@code EDIT_SCHEDULE} to BOTH shipped roles, so no JWT can produce
  * a caller who may view but not edit: once {@code @PreAuthorize} passes, the lookup always returns
- * true and the conjunction in the service degenerates to the Draft check alone.
- * {@link Schedule5DocumentIT} runs with security off, and {@link Schedule5AuthorizationIT} only
- * asserts status codes. The consequence was that replacing the controller's lookup with a literal
- * {@code true}, or misspelling the action string — which makes
- * {@code SchedulePermissions.hasPermission} return false for everyone and silently strips edit
- * rights — left the entire suite green. Mocking the collaborator is the only way to observe it.
+ * true and the conjunction in the service degenerates to the Draft check alone. {@link
+ * Schedule5DocumentIT} runs with security off, and {@link Schedule5AuthorizationIT} only asserts
+ * status codes. The consequence was that replacing the controller's lookup with a literal {@code
+ * true}, or misspelling the action string — which makes {@code SchedulePermissions.hasPermission}
+ * return false for everyone and silently strips edit rights — left the entire suite green. Mocking
+ * the collaborator is the only way to observe it.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule5Controller — the editable permission lookup (AD-9)")
@@ -46,83 +48,84 @@ class Schedule5ControllerTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule5Service schedule5Service;
+  @Mock private Schedule5Service schedule5Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
   private Schedule5Controller controller;
 
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     controller =
-        new Schedule5Controller(millContextService, schedule5Service, permissions, messageSource);
+        new Schedule5Controller(
+            millContextService,
+            schedule5Service,
+            editability,
+            messageSource,
+            new Schedule5CheckStatusResolver(schedule5Service, messageSource));
     when(millContextService.validateMillYearActive(MILL_PARAM, YEAR_PARAM))
         .thenReturn(new MillYearContext(MILL, YEAR));
   }
 
   private void serviceReturns(boolean editable) {
-    when(schedule5Service.getSchedule5(anyLong(), anyInt(), anyBoolean()))
+    when(schedule5Service.getSchedule5(anyLong(), anyInt(), any()))
         .thenReturn(new Schedule5Response(MILL, YEAR, "D", editable, List.of(), null));
   }
 
   @Test
   @DisplayName("a caller WITHOUT EDIT_SCHEDULE is passed callerMayEdit=false")
   void withoutEditPermission_passesFalse() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
     serviceReturns(false);
 
     controller.getSchedule5(MILL_PARAM, YEAR_PARAM, authentication);
 
     // The mutation this kills: `boolean callerMayEdit = true;`.
-    verify(schedule5Service).getSchedule5(MILL, YEAR, false);
+    verify(schedule5Service).getSchedule5(MILL, YEAR, CallerRights.NONE);
   }
 
   @Test
   @DisplayName("a caller WITH EDIT_SCHEDULE is passed callerMayEdit=true")
   void withEditPermission_passesTrue() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     serviceReturns(true);
 
     controller.getSchedule5(MILL_PARAM, YEAR_PARAM, authentication);
 
-    verify(schedule5Service).getSchedule5(MILL, YEAR, true);
+    verify(schedule5Service).getSchedule5(MILL, YEAR, CallerRights.SUBMITTER);
   }
 
   @Test
   @DisplayName("the action asked for is exactly EDIT_SCHEDULE, not VIEW_SCHEDULE or a typo")
   void asksForTheEditScheduleActionByName() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     serviceReturns(true);
 
     controller.getSchedule5(MILL_PARAM, YEAR_PARAM, authentication);
 
     // An unrecognized action name returns false from SchedulePermissions for every caller, which
     // would strip edit rights app-wide with no other signal.
-    verify(permissions).hasPermission(authentication, "EDIT_SCHEDULE");
+    verify(editability).forCaller(authentication);
   }
 
   @Test
   @DisplayName("the mill/year guard runs before anything else and its parsed context is used")
   void guardRunsFirstAndItsContextIsForwarded() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     serviceReturns(true);
 
     var response = controller.getSchedule5(MILL_PARAM, YEAR_PARAM, authentication);
 
     verify(millContextService).validateMillYearActive(MILL_PARAM, YEAR_PARAM);
     // The service receives the guard's PARSED longs/ints, never the raw request strings.
-    verify(schedule5Service).getSchedule5(eq(MILL), eq(YEAR), anyBoolean());
+    verify(schedule5Service).getSchedule5(eq(MILL), eq(YEAR), any());
     assertThat(response.getStatusCode().value()).isEqualTo(200);
   }
 }

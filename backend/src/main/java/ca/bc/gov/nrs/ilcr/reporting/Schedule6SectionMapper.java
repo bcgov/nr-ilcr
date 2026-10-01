@@ -9,23 +9,22 @@ import java.util.Map;
 
 /**
  * Maps the Schedule 6 read document to the section datasource: one detail row per road record, plus
- * the footer totals and the single schedule-level general comment as section parameters. The service
- * has already excluded the general-comment placeholder rows (they supplied {@code generalComments}),
- * derived {@code rmg} via the road-group lookup, and computed the BR-07 running totals — this mapper
- * only formats. The {@code roadReportEntryTimestamp} legacy field has no backend source and is
- * omitted.
+ * the footer totals and the single schedule-level general comment as section parameters. The
+ * service has already excluded the general-comment placeholder rows (they supplied {@code
+ * generalComments}), derived {@code rmg} via the road-group lookup, and computed the BR-07 running
+ * totals — this mapper only formats. The {@code roadReportEntryTimestamp} legacy field has no
+ * backend source and is omitted.
  */
 final class Schedule6SectionMapper {
 
-  private Schedule6SectionMapper() {
-  }
+  private Schedule6SectionMapper() {}
 
   static SectionData map(Schedule6Response response) {
     List<RoadRecord> records = response.roadRecords();
     if (records == null || records.isEmpty()) {
       return null;
     }
-    List<Map<String, ?>> rows = records.stream().map(Schedule6SectionMapper::toRow).toList();
+    final List<Map<String, ?>> rows = records.stream().map(Schedule6SectionMapper::toRow).toList();
 
     Map<String, Object> params = new HashMap<>();
     params.put("generalComments", SectionFormat.text(response.generalComments()));

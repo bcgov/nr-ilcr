@@ -1,24 +1,39 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
+import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
-import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecord;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest.CheckEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CodeLists;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DataAccessException;
@@ -26,19 +41,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Assembles the Schedule 6 (Road Management Costs) read document from the stored
- * {@code ROAD_MAINTENANCE_REPORT} records and their item-69 cost details, computing every derived
- * value server-side (AD-5, AD-6): the Resource Management Grouping (RMG, BR-04), the $/m&sup3;
+ * Assembles the Schedule 6 (Road Management Costs) read document from the stored {@code
+ * ROAD_MAINTENANCE_REPORT} records and their item-69 cost details, computing every derived value
+ * server-side (AD-5, AD-6): the Resource Management Grouping (RMG, BR-04), the $/m&sup3;
  * cost-per-volume (BR-04/BR-07), and the running totals (BR-07). The mill/year context is validated
  * by {@code MillContextService} in the controller before this runs (AD-4).
  *
  * <p>A valid, active mill/year with NO road records is NOT a 404 — it is the legitimate no-records
- * state and yields a 200 {@code roadRecords: []} with zero totals (mirrors the legacy
- * {@code Schedule6DAO.getSchedule}, which returned an empty document, never null, for an empty
- * result; the 404 is reserved for the missing mill/year context, Story 8.1 Task 1). A record whose
+ * state and yields a 200 {@code roadRecords: []} with zero totals (mirrors the legacy {@code
+ * Schedule6DAO.getSchedule}, which returned an empty document, never null, for an empty result; the
+ * 404 is reserved for the missing mill/year context, Story 8.1 Task 1). A record whose
  * classification (TSA/TSB/TFL) is entirely blank is a general-comment placeholder (S18): it is
- * excluded from {@code roadRecords} but its {@code COMMENTS} supplies the schedule-level
- * {@code generalComments}.
+ * excluded from {@code roadRecords} but its {@code COMMENTS} supplies the schedule-level {@code
+ * generalComments}.
  *
  * <p>Story 8.2 adds the write side (add/edit a road record, save the general comment) and Check
  * Status. Every write is one transaction gated on the Schedules 1–10 track being Draft (AD-9;
@@ -50,31 +65,41 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule6Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String AREA_TYPE_TFL = "TFL";
 
   // TSA_NUMBER VARCHAR2(2) (V31 DDL, delivery-verified) — the TSA-branch width guard in classify().
   private static final int TSA_NUMBER_MAX_LENGTH = 2;
 
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
-
-  // Check-status message keys (the service emits keys with null text; the controller resolves the
+  // Check-status message keys (the service emits keys with null text; the resolver composes the
   // verbatim composed lines — Schedule 4 idiom, AD-8).
   private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_ROAD_MET = "roadRequirementsMetMsg";
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
 
-  // The FieldIssue.field names the controller composes labels from (§ PINNED WRITE CONTRACT).
+  // The FieldIssue.field names the resolver composes labels from (§ PINNED WRITE CONTRACT).
   static final String FIELD_AREA_TYPE = "areaType";
   static final String FIELD_TFL_NUMBER = "tflNumber";
   static final String FIELD_SUPPLY_BLOCK = "supplyBlock";
   static final String FIELD_COST = "cost";
 
   private final Schedule6Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule6Service(Schedule6Repository repository) {
+  /**
+   * Constructs the Schedule 6 service.
+   *
+   * @param repository the repository
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule6Service(
+      Schedule6Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -82,26 +107,48 @@ public class Schedule6Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (from the controller)
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (from the controller)
    * @return the read document (never null; {@code roadRecords: []} when the mill/year has none)
    */
   @Transactional(readOnly = true)
-  public Schedule6Response getSchedule6(long millId, int year, boolean callerMayEdit) {
+  public Schedule6Response getSchedule6(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
    * Assemble the served document for a KNOWN track status. The write methods reuse this with the
-   * {@code D} their Draft gate just proved (same transaction) instead of re-running the
+   * {@code D} their editability gate just proved (same transaction) instead of re-running the
    * track-status query on every mutation.
    */
   private Schedule6Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
     Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule6Repository.RoadRecordSnapshotRow> recordSnapshots = new HashMap<>();
+    Map<Long, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
+    String submittedGeneralComment = null;
+    if (exposeOriginals && !rows.isEmpty()) {
+      for (Schedule6Repository.RoadRecordSnapshotRow snap :
+          repository.findRoadRecordSnapshots(millId, year)) {
+        recordSnapshots.putIfAbsent(snap.recordId(), snap);
+        // Legacy reads the general comment off the LAST row, the data model replicating it on every
+        // row, so the submitted general comment follows the same last-one-wins rule.
+        submittedGeneralComment = snap.generalComment();
+      }
+      List<Long> recordIds = rows.stream().map(row -> (long) row.recordId()).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r :
+          costSnapshots.findByRoadMaintenanceReports(recordIds)) {
+        if (r.parentId() != null) {
+          costSnapshotByRecord.putIfAbsent(r.parentId(), r);
+        }
+      }
+    }
 
     List<RoadRecord> roadRecords = new ArrayList<>();
     long totalCost = 0L;
@@ -125,8 +172,12 @@ public class Schedule6Service {
         // classification at all — contributes the comment, not a road record. A cost detail on a
         // placeholder is a data anomaly whose money would silently vanish from totals; say so.
         if (costByRecord.containsKey(row.recordId())) {
-          log.warn("Schedule 6 mill {}/{}: placeholder row {} carries an item-69 cost detail; "
-              + "excluded from records and totals", millId, year, row.recordId());
+          log.warn(
+              "Schedule 6 mill {}/{}: placeholder row {} carries an item-69 cost detail; "
+                  + "excluded from records and totals",
+              millId,
+              year,
+              row.recordId());
         }
         continue;
       }
@@ -136,17 +187,22 @@ public class Schedule6Service {
       String comments = detail == null ? null : detail.comments();
 
       boolean tfl = tsaNumber == null && tflNumberCode != null;
-      roadRecords.add(new RoadRecord(
-          row.recordId(),
-          row.revisionCount(),
-          tfl ? AREA_TYPE_TFL : tsaNumber,
-          tfl ? tflNumberCode : null,
-          tfl ? null : tsbNumberCode,
-          RoadGroupLookup.rmgFor(tsaNumber, tsbNumberCode, tflNumberCode),
-          normalizeVolume(volume),
-          cost,
-          perUnit(cost == null ? null : (long) cost, volume),
-          comments));
+      roadRecords.add(
+          new RoadRecord(
+              row.recordId(),
+              row.revisionCount(),
+              tfl ? AREA_TYPE_TFL : tsaNumber,
+              tfl ? tflNumberCode : null,
+              tfl ? null : tsbNumberCode,
+              RoadGroupLookup.rmgFor(tsaNumber, tsbNumberCode, tflNumberCode),
+              normalizeVolume(volume),
+              cost,
+              perUnit(cost == null ? null : (long) cost, volume),
+              comments,
+              roadRecordOriginals(
+                  trackStatus,
+                  recordSnapshots.get(row.recordId()),
+                  costSnapshotByRecord.get((long) row.recordId()))));
 
       if (cost != null) {
         totalCost += cost;
@@ -159,13 +215,36 @@ public class Schedule6Service {
     // generalComments now holds the LAST row's COMMENTS (legacy reads the general comment off the
     // last road-record row; the data model replicates it on every row, so any row would do).
     return new Schedule6Response(
-        millId, year, trackStatus, editable,
+        millId,
+        year,
+        trackStatus,
+        editable,
         generalComments,
+        originalValues
+            .forTrack(trackStatus)
+            .put("generalComments", submittedGeneralComment, OriginalValueFormat.TEXT)
+            .build(),
         roadRecords,
         normalizeVolume(totalVolume),
         totalCost,
         perUnit(totalCost, totalVolume),
+        codeLists(millId, year),
         null);
+  }
+
+  /**
+   * The two dropdown lists for the entry controls (deviation (A) retired). Read on every document
+   * build rather than cached: legacy read them from a process-wide {@code LookUpCaches} cache,
+   * which has no counterpart here, and the two queries are small indexed code-table scans.
+   */
+  private Schedule6CodeLists codeLists(long millId, int year) {
+    return new Schedule6CodeLists(
+        toCodeDescriptions(repository.findTsaNumbers(millId, year)),
+        toCodeDescriptions(repository.findSupplyBlocks(millId, year)));
+  }
+
+  private static List<CodeDescriptionDto> toCodeDescriptions(List<CodeRow> rows) {
+    return rows.stream().map(r -> new CodeDescriptionDto(r.code(), r.description())).toList();
   }
 
   /**
@@ -177,8 +256,12 @@ public class Schedule6Service {
     Map<Integer, CostDetailRow> costByRecord = new HashMap<>();
     for (CostDetailRow detail : repository.findCostDetails(millId, year)) {
       if (costByRecord.putIfAbsent(detail.roadMaintenanceReportId(), detail) != null) {
-        log.warn("Schedule 6 mill {}/{}: duplicate item-69 cost detail for road record {}; "
-            + "keeping first-by-id", millId, year, detail.roadMaintenanceReportId());
+        log.warn(
+            "Schedule 6 mill {}/{}: duplicate item-69 cost detail for road record {}; "
+                + "keeping first-by-id",
+            millId,
+            year,
+            detail.roadMaintenanceReportId());
       }
     }
     return costByRecord;
@@ -186,7 +269,8 @@ public class Schedule6Service {
 
   // ===============================================================================================
   // Write path (Story 8.2) — add/edit a road record, save the general comment. Each method is one
-  // transaction: a persistence failure rolls back and surfaces as 500/ERR-004. The Draft gate keys
+  // transaction: a persistence failure rolls back and surfaces as 500/ERR-004. The editability gate
+  // keys
   // on the Schedules 1-10 track (AD-9) via the existing findTrackStatus — never the silviculture
   // track. Costs/volumes/comments are NEVER logged (AD-11).
   // ===============================================================================================
@@ -197,169 +281,295 @@ public class Schedule6Service {
    * CURRENT general comment (BR-09 replication invariant), and when the only existing row is the
    * general-comment placeholder the record is written ONTO that row — its id and {@code ENTRY_*}
    * survive, mirroring {@code Schedule6DAO.java:268–278} — with its item-69 detail created by the
-   * upsert. Draft-gated (deviation (a)).
+   * upsert. editability-gated (deviation (a)).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered record fields
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document (the new record included; totals refreshed)
    */
   @Transactional
   public Schedule6Response addRecord(
-      long millId, int year, RoadRecordRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
-    Classification classification = classify(request);
+      long millId, int year, RoadRecordRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
+    Classification classification =
+        classify(request.areaType(), request.tflNumber(), request.supplyBlock());
     try {
       List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
       Integer placeholderId = lonePlaceholderId(rows);
       int recordId;
-      if (placeholderId != null && repository.claimPlaceholder(placeholderId, millId, year,
-          classification.tsaNumber(), classification.tsbNumberCode(),
-          classification.tflNumberCode(), user) == 1) {
+      if (placeholderId != null
+          && repository.claimPlaceholder(
+                  placeholderId,
+                  millId,
+                  year,
+                  classification.tsaNumber(),
+                  classification.tsbNumberCode(),
+                  classification.tflNumberCode(),
+                  user)
+              == 1) {
         recordId = placeholderId;
       } else {
         // The BR-09 replication invariant (the new row carries the current general comment) is
         // satisfied inside insertRoadReport's SQL, not from a value read here — see its javadoc:
         // reading it in Java lost a concurrent general-comments save (code review 2026-08-04).
         recordId = repository.nextRoadReportId();
-        repository.insertRoadReport(recordId, millId, year, classification.tsaNumber(),
-            classification.tsbNumberCode(), classification.tflNumberCode(), user);
+        repository.insertRoadReport(
+            recordId,
+            millId,
+            year,
+            classification.tsaNumber(),
+            classification.tsbNumberCode(),
+            classification.tflNumberCode(),
+            user);
       }
-      repository.upsertCostDetail(recordId, request.volume(), request.cost(), request.comments(),
-          user);
+      repository.upsertCostDetail(
+          recordId, request.volume(), request.cost(), request.comments(), user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 6 add failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 6 add failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Edit one existing Schedule 6 road record and return the recomputed document (S19 switch
-   * included: the BR-02 clear means switching TSA→TFL stores the TFL and NULLs both TSA columns).
-   * Optimistic-lock on the record's own {@code REVISION_COUNT} (AR11 per-record keying): a stale
-   * token → 409, an unknown/foreign/placeholder id → 404. The item-69 detail is upserted — real
-   * delivery rows have NO detail, so an edit must create it, never fail. Never touches
-   * {@code COMMENTS} (S04 independence).
+   * Save the whole Schedule 6 document in one transaction — every road record plus the general
+   * comment (legacy {@code Schedule6DAO.saveSchedule} :236-346).
+   *
+   * <p>Retires deviation (C). The per-record edit / independent-comment writes this replaced could
+   * only ever save the one row an Edit button had opened; with Task 7 making every row editable at
+   * once, legacy's atomic whole-document save is the only shape that cannot half-land across
+   * records and the comment they replicate.
+   *
+   * <p>Order matters: rows first, comment second. {@link Schedule6Repository#updateRoadReport}
+   * deliberately never touches {@code COMMENTS} (S04 independence), so the single {@link
+   * Schedule6Repository#updateAllComments} that follows is what enforces the BR-09 replication
+   * invariant across every row — including any row a concurrent {@link #addRecord} inserted, which
+   * is exactly what legacy's blanket write did.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param recordId the road record id to edit
-   * @param request the entered fields + the required {@code revisionCount} token
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param request every served record plus the general comment
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document
    */
   @Transactional
-  public Schedule6Response updateRecord(
-      long millId, int year, int recordId, RoadRecordRequest request, boolean callerMayEdit,
-      String user) {
-    requireDraft(millId, year);
-    Classification classification = classify(request);
-    // Defence in depth for the AR11 token: the controller's @Validated OnUpdate group already
-    // rejects a null revisionCount as a clean 400, but unboxing it here would NPE -> 500 if any
-    // future caller reached the service without that group. Never a coerced 409 (Story 2.1 lesson).
-    if (request.revisionCount() == null) {
-      throw new RevisionCountRequiredException();
-    }
-    try {
-      // A placeholder is not a served record (excluded from roadRecords[]), so a client can never
-      // legitimately address it — 404 before the update could convert it into a real record. The
-      // check is trim-aware (isPlaceholder), matching the read side and the SQL predicates.
-      if (isPlaceholderId(millId, year, recordId)) {
-        throw new RoadRecordNotFoundException();
-      }
-      int updated = repository.updateRoadReport(recordId, millId, year, request.revisionCount(),
-          classification.tsaNumber(), classification.tsbNumberCode(),
-          classification.tflNumberCode(), user);
-      if (updated == 0) {
-        // 0 rows = the id is absent/foreign (404) OR the revision is stale (409) — disambiguate.
-        if (repository.countRoadRecord(recordId, millId, year) == 0) {
-          throw new RoadRecordNotFoundException();
-        }
-        throw new StaleRevisionException();
-      }
-      repository.upsertCostDetail(recordId, request.volume(), request.cost(), request.comments(),
-          user);
-    } catch (DataAccessException ex) {
-      log.warn("Schedule 6 update failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
-      throw new ScheduleNotSavedException();
-    }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
-  }
-
-  /**
-   * Save the schedule-level General Comment independently of any road record (S04, BR-09). Three
-   * branches, ported from {@code Schedule6DAO.saveSchedule} :257–310: rows exist → replicate the
-   * comment onto EVERY cat-6 row; zero rows + non-blank → insert the placeholder row
-   * (classification all NULL, no item-69 detail); placeholder-only + blank → delete the
-   * placeholder. Blank clears
-   * (stored as NULL); a non-blank comment is stored RAW, untrimmed (the 8.1 legacy-faithful
-   * decision). Draft-gated; carries no revision token (deviation (c2)).
-   *
-   * @param millId the mill id (context already validated)
-   * @param year the reporting year
-   * @param request the comment text (null/blank = clear)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
-   * @param user the acting user id (audit columns)
-   * @return the recomputed aggregate document
-   */
-  @Transactional
-  public Schedule6Response saveGeneralComments(
-      long millId, int year, GeneralCommentsRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+  public Schedule6Response saveDocument(
+      long millId, int year, Schedule6SaveRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     String comments =
         StringUtils.isBlank(request.generalComments()) ? null : request.generalComments();
     try {
-      List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
-      if (rows.isEmpty()) {
+      List<RoadRecordRow> stored = repository.findRoadRecords(millId, year);
+      requireEveryServedRow(stored, request.records());
+      // Pre-fetched once, keyed by id: the per-entry loop below used to re-query findRoadRecords
+      // via isPlaceholderId on every iteration (N+1 over a list already in hand). A recordId absent
+      // from this map is unknown/foreign to this mill/year, not a placeholder — updateRoadReport's
+      // 0-rows-affected path below still disambiguates that to 404 exactly as before.
+      Map<Integer, RoadRecordRow> storedById =
+          stored.stream().collect(Collectors.toMap(RoadRecordRow::recordId, row -> row));
+
+      for (RoadRecordEntry entry : request.records()) {
+        int recordId = entry.recordId();
+        // Defence in depth for the AR11 token: Bean Validation blocks a null revisionCount today,
+        // but updateRoadReport takes a primitive int, so unboxing it here would NPE -> 500 for any
+        // future caller that bypasses validation. Never a coerced 409 (Story 2.1 lesson).
+        if (entry.revisionCount() == null) {
+          throw new RevisionCountRequiredException();
+        }
+        // A placeholder is not a served record, so a client can never legitimately address one —
+        // 404 before the update could convert it into a real record.
+        RoadRecordRow existing = storedById.get(recordId);
+        if (existing != null && isPlaceholder(existing)) {
+          throw new RoadRecordNotFoundException();
+        }
+        Classification classification =
+            classify(entry.areaType(), entry.tflNumber(), entry.supplyBlock());
+        int updated =
+            repository.updateRoadReport(
+                recordId,
+                millId,
+                year,
+                entry.revisionCount(),
+                classification.tsaNumber(),
+                classification.tsbNumberCode(),
+                classification.tflNumberCode(),
+                user);
+        if (updated == 0) {
+          // Zero rows means either absent (404) or stale (409) — disambiguate, never guess (the
+          // Story 2.1 lesson).
+          throw repository.countRoadRecord(recordId, millId, year) == 0
+              ? new RoadRecordNotFoundException()
+              : new StaleRevisionException();
+        }
+        repository.upsertCostDetail(recordId, entry.volume(), entry.cost(), entry.comments(), user);
+      }
+
+      // The BR-09 comment branches — branching on the STORED rows, not the submitted list. Those
+      // two agree on every OTHER row by requireEveryServedRow above, but they can disagree
+      // here: a lone existing PLACEHOLDER means `stored` is non-empty while `records` is
+      // legitimately empty (nothing served). Branching on `request.records().isEmpty()` collapsed
+      // that case into the zero-rows branch and INSERTED A SECOND placeholder next to the
+      // original instead of updating it in place — legacy's `onlyGeneralCommentsExist` guard
+      // (`Schedule6DAO.java:263,286`) exists specifically to keep writing onto the same row
+      // (code review 2026-08-21, C1).
+      if (stored.isEmpty()) {
         if (comments != null) {
-          repository.insertPlaceholder(repository.nextRoadReportId(), millId, year, comments,
-              user);
+          repository.insertPlaceholder(repository.nextRoadReportId(), millId, year, comments, user);
         }
         // blank + no rows = nothing stored, nothing to clear (a no-op success, like legacy).
-      } else if (comments == null && rows.stream().allMatch(Schedule6Service::isPlaceholder)) {
-        // The comment was the only thing stored — clearing it removes the placeholder row(s)
+      } else if (comments == null && stored.stream().allMatch(Schedule6Service::isPlaceholder)) {
+        // Clearing the comment when it was the only thing stored removes the placeholder row(s)
         // (legacy generalCommentRemovedLastRecord). The DELETE re-checks the placeholder shape in
-        // SQL, so it can legitimately match nothing: the row's classification may be whitespace
-        // rather than NULL (isPlaceholder trims, the SQL cannot), or a concurrent addRecord may
-        // have claimed it since the read above. Either way a silent no-op would answer 200 "Data
-        // saved successfully" while the comment survived, so fall back to clearing COMMENTS in
-        // place (code review 2026-08-04).
+        // SQL and can legitimately match nothing — whitespace rather than NULL classification, or
+        // a concurrent addRecord having claimed it since the read above. A silent no-op would
+        // answer 200 "Data saved successfully" while the comment survived, so fall back to
+        // clearing COMMENTS in place.
         int deleted = 0;
-        for (RoadRecordRow row : rows) {
+        for (RoadRecordRow row : stored) {
           deleted += repository.deletePlaceholder(row.recordId(), millId, year);
         }
-        if (deleted < rows.size()) {
+        if (deleted < stored.size()) {
           repository.updateAllComments(millId, year, null, user);
         }
       } else {
         repository.updateAllComments(millId, year, comments, user);
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 6 general-comments save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 6 document save failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * The Draft gate for every write: the Schedules 1–10 track must be {@code D} (else 409). Keys on
-   * {@code ILCR_MILL_REPORT_STATUS_CODE} via the existing {@code findTrackStatus} — never the
+   * Every served (non-placeholder) row must appear in the payload. Legacy posted its whole
+   * in-memory list, so a partial payload could not arise there; silently skipping an absent row
+   * would discard the user's data behind a success message (the same house 400 Schedules 5 and 7.4
+   * pinned for their own whole-document saves). A placeholder is excluded from this check — it is
+   * not served (excluded from {@code roadRecords[]}), so its omission is expected, not a defect;
+   * otherwise the lone-comment state would become unsavable with an empty {@code records} list.
+   */
+  private static void requireEveryServedRow(
+      List<RoadRecordRow> stored, List<RoadRecordEntry> submitted) {
+    Set<Integer> submittedIds =
+        submitted.stream().map(RoadRecordEntry::recordId).collect(Collectors.toSet());
+    boolean anyOmitted =
+        stored.stream()
+            .filter(row -> !isPlaceholder(row))
+            .anyMatch(row -> !submittedIds.contains(row.recordId()));
+    if (anyOmitted) {
+      throw new OmittedRoadRecordsException();
+    }
+  }
+
+  /**
+   * Delete one Schedule 6 road record and return the recomputed document.
+   *
+   * <p>Ported from legacy {@code Schedule6MB.remove} :208-218 → {@code Schedule6DAO.saveSchedule}
+   * :288-310. Carries NO revision token: legacy's row Delete had none, matching the
+   * general-comments precedent (deviation (c2)). editability-gated (deviation (a)).
+   *
+   * <p><strong>The BR-09 delete-side re-insert is load-bearing.</strong> The schedule-level general
+   * comment is stored replicated on every cat-6 row, so deleting the LAST road record would take
+   * the comment with it. Legacy guards exactly this case at {@code Schedule6DAO.java:297-309} by
+   * inserting a bare placeholder carrying the deleted row's comment. The row count and the comment
+   * are both read before the DELETE, because afterwards neither is recoverable.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param recordId the road record id to delete
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code editable})
+   * @param user the acting user id (audit columns on the re-inserted placeholder)
+   * @return the recomputed aggregate document
+   */
+  @Transactional
+  public Schedule6Response deleteRecord(
+      long millId, int year, int recordId, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
+    try {
+      // One read answers all three questions below (the storedById refactor already applied to
+      // saveDocument, :328-329, back-applied here): this used to call findRoadRecords twice (once
+      // inside isPlaceholderId, once again for wasOnlyRow) plus a third targeted findRoadRecord.
+      List<RoadRecordRow> stored = repository.findRoadRecords(millId, year);
+      RoadRecordRow target =
+          stored.stream()
+              .filter(row -> row.recordId() == recordId)
+              .findFirst()
+              .orElseThrow(RoadRecordNotFoundException::new);
+      // A placeholder is excluded from roadRecords[], so a client can never legitimately address
+      // one — 404 before the delete could remove the row holding the general comment. isPlaceholder
+      // stays trim-aware exactly as before (whitespace, not just NULL, counts) — a stricter null
+      // check here would misclassify a whitespace row as a real record.
+      if (isPlaceholder(target)) {
+        throw new RoadRecordNotFoundException();
+      }
+      // Read before deleting: legacy decides the re-insert from the pre-delete list size
+      // (Schedule6DAO.java:297 evaluates getRoadMaintenanceReports().size() == 1).
+      boolean wasOnlyRow = stored.size() == 1;
+      String survivingComment = target.generalComment();
+
+      repository.deleteCostDetailsFor(recordId);
+      if (repository.deleteRoadReport(recordId, millId, year) == 0) {
+        // Raced by a concurrent delete between the read above and here.
+        throw new RoadRecordNotFoundException();
+      }
+      // Empty-aware, NOT blank-aware, matching legacy's CoreUtil.isNullOrEmptyString
+      // (CoreUtil.java:166-172): a whitespace-only comment re-inserts a placeholder in legacy, so
+      // it
+      // re-inserts one here. This was previously isNotBlank — a recorded deviation justified by
+      // saveDocument normalizing blank to NULL on the save side, so a whitespace-only stored
+      // comment
+      // "should not exist in practice". It can still arrive on a pre-existing delivery row, and
+      // there the deviation silently destroyed the comment, so the deviation is retired in favour
+      // of
+      // legacy's own predicate (code review 2026-08-24).
+      //
+      // The trim-aware isPlaceholder convention this service uses elsewhere is a separate rule
+      // about
+      // the CLASSIFICATION columns, not the comment: a re-inserted row is a placeholder because its
+      // TSA/TSB/TFL are all NULL, whatever its COMMENTS holds.
+      if (wasOnlyRow && StringUtils.isNotEmpty(survivingComment)) {
+        repository.insertPlaceholder(
+            repository.nextRoadReportId(), millId, year, survivingComment, user);
+      }
+    } catch (DataAccessException ex) {
+      log.warn(
+          "Schedule 6 delete failed for mill {} year {} record {} [{}]",
+          millId,
+          year,
+          recordId,
+          ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, trackStatus, caller);
+  }
+
+  /**
+   * The editability gate for every write: the Schedules 1–10 track must be {@code D} (else 409).
+   * Keys on {@code ILCR_MILL_REPORT_STATUS_CODE} via the locked {@code findTrackStatusForUpdate}
+   * (Story 15.3, D8: the row is held so the submit transition and this write serialize) — never the
    * silviculture track (AD-9). Recorded hardening deviation (a): legacy gates in the UI only
    * ({@code Schedule6MB.java:62} TODO). Context (400/404/409-mill) is already validated by the
    * controller before this runs (AD-4).
    */
-  private void requireDraft(long millId, int year) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
@@ -370,18 +580,30 @@ public class Schedule6Service {
    * :293–309) and the DAO nulls TSA when the type is TFL ({@code Schedule6DAO.java:221–224}) — the
    * server-side clear reproduces the only UI-reachable net effect and closes the crafted-post hole
    * (deviation (b)).
+   *
+   * <p>Takes the three classification fields directly, not a {@code RoadRecordRequest}: both {@code
+   * addRecord} (unpacking a {@link RoadRecordRequest}) and {@code saveDocument} (unpacking a {@link
+   * RoadRecordEntry}) route through this ONE helper, so the classification rule can never drift
+   * between the per-row and whole-document write paths (Task 5).
    */
-  private static Classification classify(RoadRecordRequest request) {
-    if (AREA_TYPE_TFL.equals(request.areaType())) {
-      return new Classification(null, null, requireValidTfl(request.tflNumber()));
+  private static Classification classify(String areaType, String tflNumber, String supplyBlock) {
+    // Defence in depth for FLD-001, mirroring the revisionCount guard in saveDocument (:337): both
+    // write DTOs mark areaType @NotBlank and both endpoints bind them @Valid, but the TSA branch
+    // below dereferences the value (areaType.length()), so a direct service caller that bypasses
+    // Bean Validation would get an NPE -> 500 instead of the house 400 (code review 2026-08-24).
+    if (StringUtils.isBlank(areaType)) {
+      throw new AreaTypeRequiredException();
     }
-    // The DTO caps areaType at 3 for the "TFL" literal, so a 3-char NON-TFL code clears Bean
+    if (AREA_TYPE_TFL.equals(areaType)) {
+      return new Classification(null, null, requireValidTfl(tflNumber));
+    }
+    // The DTOs cap areaType at 3 for the "TFL" literal, so a 3-char NON-TFL code clears Bean
     // Validation and would hit TSA_NUMBER VARCHAR2(2) as ORA-12899 -> 500. Reject it as the house
     // 400 instead (code review 2026-08-04). Width only — deviation (f) still stores unknown codes.
-    if (request.areaType().length() > TSA_NUMBER_MAX_LENGTH) {
+    if (areaType.length() > TSA_NUMBER_MAX_LENGTH) {
       throw new InvalidClassificationCodeException();
     }
-    return new Classification(request.areaType(), request.supplyBlock(), null);
+    return new Classification(areaType, supplyBlock, null);
   }
 
   /**
@@ -398,7 +620,8 @@ public class Schedule6Service {
     // The width guard is redundant with the lookup now that no ported entry is 3 chars wide, and is
     // kept deliberately: it holds the column width for direct service callers (which bypass Bean
     // Validation) independently of what the verbatim table happens to contain.
-    if (normalized == null || normalized.length() > 2
+    if (normalized == null
+        || normalized.length() > 2
         || RoadGroupLookup.rmgFor(null, null, normalized) == null) {
       throw new InvalidTflNumberException();
     }
@@ -431,19 +654,6 @@ public class Schedule6Service {
     return null;
   }
 
-  /**
-   * True iff this record id is a general-comment placeholder for the mill/year, decided by the SAME
-   * trim-aware rule the read side uses. Deliberately NOT {@code findPlaceholderIds}, whose SQL can
-   * only test {@code IS NULL}: a whitespace-classification row is a placeholder to the read side
-   * (excluded from {@code roadRecords[]}) but invisible to that query, which would let a PUT convert
-   * a client-invisible row into a real record — exactly what the 404 guard exists to prevent (code
-   * review 2026-08-04, one predicate for both sides).
-   */
-  private boolean isPlaceholderId(long millId, int year, int recordId) {
-    return repository.findRoadRecords(millId, year).stream()
-        .anyMatch(row -> row.recordId() == recordId && isPlaceholder(row));
-  }
-
   /** A general-comment placeholder: classification entirely blank (the read-side S18 rule). */
   private static boolean isPlaceholder(RoadRecordRow row) {
     return StringUtils.trimToNull(row.tsaNumber()) == null
@@ -452,80 +662,213 @@ public class Schedule6Service {
   }
 
   /** The pre-cleared classification a write persists (BR-02: exactly one side populated). */
-  private record Classification(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
-  }
+  private record Classification(String tsaNumber, String tsbNumberCode, String tflNumberCode) {}
 
   // ===============================================================================================
   // Check Status (Story 8.2) — read-only readiness validation, ported VERBATIM from
   // Schedule6CheckStatus + Schedule6MB.checkStatus() :139-180 including the pinned quirks: the
   // missing-cost line is mislabelled "TSA or TFL (Cost $)" (:172), cost==0 is MET (null-only check,
   // D2 precedent), volume is never checked (commented out in legacy :19), and the schedule-level
-  // pass ignores the area-type flag (isScheduleValid :26-55). VIEW-gated, not Draft-gated (2.6
+  // pass ignores the area-type flag (isScheduleValid :26-55). VIEW-gated, not editability-gated
+  // (2.6
   // precedent); mutates nothing; no status transition (transitions are Epics 15-18).
   // ===============================================================================================
 
   /**
-   * Check Status for Schedule 6 (S09–S11, S20, S21). Per stored record — placeholders excluded
-   * (deviation (d): legacy flags the invisible placeholder row) — in {@code
-   * ROAD_MAINTENANCE_REPORT_ID} order with 1-based {@code rowCounter}. A passing schedule returns
-   * the single MET banner and NO per-record results at all (the legacy pass branch never enters the
-   * loop); a failing one returns each record's issues plus the per-record met banner for clean
-   * records. The service emits bundle keys with null text; the controller composes/resolves (AD-8).
+   * Check Status for Schedule 6 (S09–S11, S20, S21). A passing schedule returns the single MET
+   * banner and NO per-record results at all (the legacy pass branch never enters the loop); a
+   * failing one returns each record's issues plus the per-record met banner for clean records. The
+   * service emits bundle keys with null text; {@link Schedule6CheckStatusResolver}
+   * composes/resolves (AD-8).
+   *
+   * <p>{@code request} is the on-screen values (Task 6, {@code Schedule6MB.checkStatus} :139-140 —
+   * legacy's {@code ajax="false"} postback applied the screen to the model before evaluating, so
+   * the verdict always described the screen, never the database). The candidates below come from
+   * {@code request.records()} in payload order and evaluate exactly that, nothing else.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
+   * @param request the on-screen values to evaluate
    * @return the check-status result with key-only messages for the controller to resolve
    */
   @Transactional(readOnly = true)
-  public Schedule6CheckStatusResponse checkStatus(long millId, int year) {
-    List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
-    Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+  public Schedule6CheckStatusResponse checkStatus(
+      long millId, int year, Schedule6CheckRequest request) {
+    return evaluate(payloadCandidates(request));
+  }
 
+  /**
+   * The verdict, source-agnostic: identical for a payload row and a stored row, which is the whole
+   * point of routing both through {@link CheckCandidate}. Neither {@link #checkStatus} nor {@link
+   * #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the rows to judge, already in their contractual order
+   * @return the MET banner alone, or the per-record results
+   */
+  private Schedule6CheckStatusResponse evaluate(List<CheckCandidate> candidates) {
     List<RoadRecordCheckResult> records = new ArrayList<>();
     boolean schedulePasses = true;
-    int rowCounter = 0;
-    for (RoadRecordRow row : rows) {
-      if (isPlaceholder(row)) {
-        continue;
-      }
-      rowCounter++;
-      // Same derivation as the served document: TFL-classified iff TSA absent and TFL present.
-      String tsaNumber = StringUtils.trimToNull(row.tsaNumber());
-      String tsbNumberCode = StringUtils.trimToNull(row.tsbNumberCode());
-      String tflNumberCode = StringUtils.trimToNull(row.tflNumberCode());
-      boolean tfl = tsaNumber == null && tflNumberCode != null;
-      String areaType = tfl ? AREA_TYPE_TFL : tsaNumber;
-      CostDetailRow detail = costByRecord.get(row.recordId());
-      Integer cost = detail == null ? null : detail.cost();
-
-      List<FieldIssue> issues = evaluateRecord(areaType, tflNumberCode, tsbNumberCode, cost);
+    for (CheckCandidate candidate : candidates) {
+      List<FieldIssue> issues =
+          evaluateRecord(
+              candidate.areaType(),
+              candidate.tflNumber(),
+              candidate.supplyBlock(),
+              candidate.cost());
       // The schedule-level pass ignores the area-type flag — the legacy isScheduleValid quirk,
       // ported verbatim (unreachable in practice: FLD-001 blocks area-type-less writes).
-      schedulePasses = schedulePasses && recordPasses(areaType, tflNumberCode, tsbNumberCode, cost);
+      schedulePasses =
+          schedulePasses
+              && recordPasses(
+                  candidate.areaType(),
+                  candidate.tflNumber(),
+                  candidate.supplyBlock(),
+                  candidate.cost());
       boolean met = issues.isEmpty();
-      records.add(new RoadRecordCheckResult(
-          row.recordId(),
-          rowCounter,
-          met,
-          met ? new MessageInfo(MSG_ROAD_MET, null) : null,
-          issues));
+      records.add(
+          new RoadRecordCheckResult(
+              candidate.recordId(),
+              candidate.rowCounter(),
+              met,
+              met ? new MessageInfo(MSG_ROAD_MET, null) : null,
+              issues));
     }
 
     if (schedulePasses) {
       // Zero records (and lone-comment, via the placeholder exclusion) is a vacuous pass — the
       // legacy loop never runs. The pass branch emits ONLY the schedule banner.
       return new Schedule6CheckStatusResponse(
-          OUTCOME_MET, List.of(new MessageInfo(MSG_REQUIREMENTS_MET, null)), List.of());
+          CheckStatusOutcome.MET, List.of(new MessageInfo(MSG_REQUIREMENTS_MET, null)), List.of());
     }
-    return new Schedule6CheckStatusResponse(OUTCOME_ISSUES, List.of(), records);
+    return new Schedule6CheckStatusResponse(CheckStatusOutcome.ISSUES, List.of(), records);
   }
 
   /**
-   * One record's missing-field findings in the verbatim legacy order — type, TFL/Supply Block,
-   * cost ({@code Schedule6MB.checkStatus()} :153–173). The TFL-missing branch is ported verbatim
-   * though it is unreachable from persisted rows (legacy view-state-only — recorded in Completion
-   * Notes); the cost check is null-only, so {@code 0} is MET (D2 precedent) and volume is never
-   * checked.
+   * Is the SAVED Schedule 6 complete? The stored-data counterpart of {@link #checkStatus}, for
+   * report-level callers (Story 15.0/15.1) that have no screen to describe.
+   *
+   * <p><strong>This is a deliberate semantic divergence from the endpoint, not a duplicate of
+   * it.</strong> {@code POST /schedule6/check-status} answers "is what I'm LOOKING AT complete?";
+   * this answers "is what is SAVED complete?". The two can legitimately disagree, and the payload
+   * design is the reason: legacy Check Status was an {@code ajax="false"} full postback that
+   * applied the on-screen inputs to the model before validating ({@code Schedule6MB:139-140}), so
+   * the verdict always described the screen. An earlier DB-reading implementation of the ENDPOINT
+   * was retired (Task 8) precisely because, once every row became editable at once, it disagreed
+   * with the screen on every keystroke. Nothing about that argument applies to a report-level
+   * sweep, which has no screen.
+   *
+   * <p>The rules are not restated here: {@link #storedCandidates} maps stored rows into the same
+   * {@link CheckCandidate} shape the payload builds, and the verdict then runs through the
+   * identical {@link #evaluateRecord} and {@link #recordPasses} (AD-5).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the check-status result with key-only messages for the resolver to compose
+   */
+  @Transactional(readOnly = true)
+  public Schedule6CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedCandidates(millId, year));
+  }
+
+  /**
+   * The stored source: one candidate per SERVED road record, in the document's display order.
+   *
+   * <p>Three things here are contractual and each has cost someone time before:
+   *
+   * <ul>
+   *   <li><strong>Placeholders are excluded.</strong> A row whose classification is entirely blank
+   *       is the general-comment placeholder (S18, deviation (d)) — it is not a road record and the
+   *       screen never shows it. Without this filter a mill whose only Schedule 6 content is a
+   *       general comment would report a phantom failing row, since a placeholder has no area type,
+   *       no supply block and no cost. {@link #payloadCandidates} needs no equivalent filter only
+   *       because the screen never sends one.
+   *   <li><strong>The ordinal is the DISPLAY position</strong>, counted after that exclusion, so it
+   *       matches what {@link #buildDocument} serves and therefore the {@code "Road : N"} the user
+   *       sees. Sourcing rows in any other order shifts the message bytes.
+   *   <li><strong>Cost is carried as stored, nulls included.</strong> The check is null-only, so a
+   *       stored {@code 0} PASSES (D2 precedent — exact legacy parity). Coercing null to zero here
+   *       would turn every missing cost into a pass.
+   * </ul>
+   *
+   * <p>{@code volume} and {@code comments} are deliberately absent: only {@code areaType}, {@code
+   * tflNumber}, {@code supplyBlock} and {@code cost} drive the verdict, and legacy never checks
+   * volume either (commented out at {@code Schedule6CheckStatus:19}).
+   *
+   * <p>The TSA-vs-TFL derivation mirrors {@link #buildDocument}'s, which is the authority on what a
+   * stored classification is served AS. It is asserted equal there rather than shared as code:
+   * {@code Schedule6CheckStatusServiceTest.storedCandidatesMatchTheServedDocument} reads one
+   * fixture through both paths and fails if either side drifts — a check that catches a change in
+   * EITHER direction, which extracting a shared helper would not.
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
+    Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+
+    List<CheckCandidate> candidates = new ArrayList<>();
+    int rowCounter = 0;
+    for (RoadRecordRow row : rows) {
+      if (isPlaceholder(row)) {
+        continue;
+      }
+      rowCounter++;
+      String tsaNumber = StringUtils.trimToNull(row.tsaNumber());
+      String tflNumberCode = StringUtils.trimToNull(row.tflNumberCode());
+      boolean tfl = tsaNumber == null && tflNumberCode != null;
+      CostDetailRow detail = costByRecord.get(row.recordId());
+      candidates.add(
+          new CheckCandidate(
+              row.recordId(),
+              rowCounter,
+              tfl ? AREA_TYPE_TFL : tsaNumber,
+              tfl ? tflNumberCode : null,
+              tfl ? null : StringUtils.trimToNull(row.tsbNumberCode()),
+              detail == null ? null : detail.cost()));
+    }
+    return candidates;
+  }
+
+  /**
+   * The payload source (Task 6): one candidate per submitted row, in payload order. A payload row
+   * addresses no stored record, so it has no {@code recordId} — the 1-based ordinal is served in
+   * BOTH {@code recordId} and {@code rowCounter} (see the DTO javadoc + the Task 6 report's
+   * recordId decision: the frontend only ever uses {@code recordId} as a React list key, never to
+   * correlate a check result back to a stored row, so the ordinal is a legitimate, always-unique
+   * stand-in and keeps {@link RoadRecordCheckResult#recordId()} a non-null primitive).
+   */
+  private List<CheckCandidate> payloadCandidates(Schedule6CheckRequest request) {
+    List<CheckCandidate> candidates = new ArrayList<>();
+    int rowCounter = 0;
+    for (CheckEntry entry : request.records()) {
+      rowCounter++;
+      candidates.add(
+          new CheckCandidate(
+              rowCounter,
+              rowCounter,
+              entry.areaType(),
+              entry.tflNumber(),
+              entry.supplyBlock(),
+              entry.cost()));
+    }
+    return candidates;
+  }
+
+  /**
+   * One record's check-status inputs, source-agnostic (stored row or payload row) — the whole point
+   * of Task 6 is that {@link #evaluateRecord} and {@link #recordPasses} never need to know which.
+   */
+  private record CheckCandidate(
+      int recordId,
+      int rowCounter,
+      String areaType,
+      String tflNumber,
+      String supplyBlock,
+      Integer cost) {}
+
+  /**
+   * One record's missing-field findings in the verbatim legacy order — type, TFL/Supply Block, cost
+   * ({@code Schedule6MB.checkStatus()} :153–173). The TFL-missing branch is ported verbatim though
+   * it is unreachable from persisted rows (legacy view-state-only — recorded in Completion Notes);
+   * the cost check is null-only, so {@code 0} is MET (D2 precedent) and volume is never checked.
    */
   static List<FieldIssue> evaluateRecord(
       String areaType, String tflNumber, String supplyBlock, Integer cost) {
@@ -561,7 +904,7 @@ public class Schedule6Service {
     return StringUtils.isNotBlank(supplyBlock);
   }
 
-  /** A key-only "Value Required" finding for a field; the controller composes the verbatim line. */
+  /** A key-only "Value Required" finding for a field; the resolver composes the verbatim line. */
   private static FieldIssue valueRequired(String field) {
     return new FieldIssue(field, new MessageInfo(MSG_VALUE_REQUIRED, null));
   }
@@ -581,8 +924,8 @@ public class Schedule6Service {
   }
 
   /**
-   * Normalize a volume so a whole value serializes as an integer ({@code 1000}, not
-   * {@code 1000.0000} or {@code 1.0E+3}) while a fractional value keeps its decimals. Null-safe.
+   * Normalize a volume so a whole value serializes as an integer ({@code 1000}, not {@code
+   * 1000.0000} or {@code 1.0E+3}) while a fractional value keeps its decimals. Null-safe.
    */
   private static BigDecimal normalizeVolume(BigDecimal volume) {
     if (volume == null) {
@@ -590,5 +933,38 @@ public class Schedule6Service {
     }
     BigDecimal stripped = volume.stripTrailingZeros();
     return stripped.scale() < 0 ? stripped.setScale(0) : stripped;
+  }
+
+  /**
+   * One road record's submitted values (Story 16.2, BR-04): its three classification codes and its
+   * own comment from the report row, and the cost/volume/comment from its item-69 cost detail —
+   * exactly the eight legacy tracked ({@code RoadMaintenanceReportType.java:372-400} plus {@code
+   * CostVolumeCommentsType.java:101-109}).
+   *
+   * <p>The record's areaType/tflNumber/supplyBlock are the TSA/TFL/TSB codes under presentation
+   * names, so their originals are keyed by the presented field rather than the column, matching how
+   * the page addresses them. {@code rmg} is derived from the three and legacy left {@code
+   * rmgOriginal} unread with no accessor, so it carries none (deviation D9).
+   */
+  private Map<String, OriginalValue> roadRecordOriginals(
+      String trackStatus,
+      Schedule6Repository.RoadRecordSnapshotRow submittedRecord,
+      CostDetailSnapshotRepository.Row detail) {
+    String tsa =
+        submittedRecord == null ? null : StringUtils.trimToNull(submittedRecord.tsaNumber());
+    String tsb =
+        submittedRecord == null ? null : StringUtils.trimToNull(submittedRecord.tsbNumberCode());
+    String tfl =
+        submittedRecord == null ? null : StringUtils.trimToNull(submittedRecord.tflNumberCode());
+    boolean submittedAsTfl = tsa == null && tfl != null;
+    return originalValues
+        .forTrack(trackStatus)
+        .put(FIELD_AREA_TYPE, submittedAsTfl ? AREA_TYPE_TFL : tsa, OriginalValueFormat.TEXT)
+        .put(FIELD_TFL_NUMBER, submittedAsTfl ? tfl : null, OriginalValueFormat.TEXT)
+        .put(FIELD_SUPPLY_BLOCK, submittedAsTfl ? null : tsb, OriginalValueFormat.TEXT)
+        .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
+        .put(FIELD_COST, detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE)
+        .put("comments", detail == null ? null : detail.comments(), OriginalValueFormat.TEXT)
+        .build();
   }
 }

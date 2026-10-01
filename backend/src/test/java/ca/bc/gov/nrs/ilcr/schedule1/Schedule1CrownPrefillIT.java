@@ -17,7 +17,8 @@ import org.springframework.http.MediaType;
  * pre-fill (+ WRN-001) and BR-04 Schedule 3 admin-cost pulls, against a real Oracle dialect.
  *
  * <p>Security is OFF (no {@code @TestPropertySource}) so the mock {@code ILCR_SUBMITTER} principal
- * applies, isolating the document behavior from authz (covered by {@link Schedule1AuthorizationIT}).
+ * applies, isolating the document behavior from authz (covered by {@link
+ * Schedule1AuthorizationIT}).
  *
  * <p>Fixtures (V5 seed): mill 522/2021 has a category-1 summary with NO detail rows (all volumes
  * empty) and a category-3 Crown Timber (item 119) volume of 7777 ⇒ pre-fill fires. Mill 514/2021 is
@@ -34,16 +35,19 @@ class Schedule1CrownPrefillIT extends AbstractOracleIT {
   @Test
   @DisplayName("522/2021 first entry — crown volume pre-filled into every savable field + WRN-001")
   void firstEntry_prefillsCrownVolumeAndWarns() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "522")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "522")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))
         // BR-03 source (D1): the category-3 item-119 detail volume, NOT the summary CROWN_VOLUME.
         .andExpect(jsonPath("$.schedule3CrownVolume", is(7777)))
-        // The full legacy 13-field copy: line items 12-18 + 143 + 144 (9 rows) all carry the crown value.
+        // The full legacy 13-field copy: line items 12-18 + 143 + 144 (9 rows) all carry the crown
+        // value.
         .andExpect(jsonPath("$.lineItems", hasSize(9)))
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].volume", contains(7777)))
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 18)].volume", contains(7777)))
@@ -63,10 +67,12 @@ class Schedule1CrownPrefillIT extends AbstractOracleIT {
   @Test
   @DisplayName("514/2021 populated — no pre-fill/warning; BR-04 admin costs pulled from Schedule 3")
   void populated_noPrefill_pullsAdminCosts() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // No pre-fill (already populated) → empty warnings; existing content unchanged (AC4).
         .andExpect(jsonPath("$.warnings", hasSize(0)))

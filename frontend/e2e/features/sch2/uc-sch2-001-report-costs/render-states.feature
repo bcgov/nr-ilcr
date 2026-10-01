@@ -31,31 +31,34 @@ Feature: Schedule 2 — render states and context guards
     And the Schedule 2 rows are in legacy order
 
   # ==================================================================================================
-  # DELIBERATE RED — do not "fix" this by weakening the assertion.
+  # WAS A DELIBERATE RED (BUG-1), NOW THE REGRESSION BARRIER — do not weaken the assertion.
   #
-  # BR-08 / S06: Delete must not be offered for a schedule that has never been saved. It IS offered.
+  # BR-08 / S06: Delete must not be offered for a schedule that has never been saved. It was offered.
   #
-  # Root cause (components/schedule2/index.tsx:245):
-  #     const deletable = editable && data.revisionCount !== null
-  # Jackson is configured non_null, so an unsaved schedule's GET OMITS `revisionCount` entirely — it
-  # arrives as `undefined`, and `undefined !== null` is true, so the gate always opens. The TypeScript
-  # interface declares `revisionCount: number | null` (not optional), which is why the compiler never
-  # caught the absent case.
+  # Root cause, for the record: the gate read `data.revisionCount !== null`, but Jackson is configured
+  # non_null, so an unsaved schedule's GET OMITS `revisionCount` — it arrives as `undefined`, and
+  # `undefined !== null` is true, so the gate always opened. The TypeScript interface declared
+  # `revisionCount: number | null` (not optional), which is why the compiler never caught the absent
+  # case. Fixed in nr-ilcr #292 (loose `!= null` behind `utils/schedule.isScheduleSaved`, plus the
+  # interface typed as the wire actually sends it); the second face — Delete staying enabled after a
+  # successful delete — is fixed too and is now pinned by delete.feature.
   #
-  # This is an APP defect, not a test or spec problem, so the test stays red — the failure IS the
-  # tracking signal, and it will go green on its own when the gate is fixed. `npm run test:gate`
-  # excludes it so CI stays clean. See defects.md BUG-1, which also records the second manifestation
-  # (Delete stays enabled after a successful delete, same root cause).
+  # The `@discovered-bug` tag is REMOVED, so this scenario runs in `npm run test:gate` and guards the
+  # fix. See defects.md BUG-1 (CLOSED).
   #
   # Nothing here writes: the assertion is on the disabled state of a control, on an anchor no scenario
   # saves to.
   # ==================================================================================================
-  @discovered-bug @p1 @S06
+  @p1 @S06
   Scenario: Delete is not offered for a never-saved schedule
     Given the Schedule 2 anchor "delete-unavailable" is an unsaved editable Draft
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 2
     Then the Schedule 2 Delete action is unavailable
+    # The greyed button states why TO ASSISTIVE TECH (visually hidden — a disabled Carbon button is
+    # not focusable, so legacy's omission at least matched what AT reported; nr-ilcr #292 decision 3,
+    # narrowed to screen-reader-only by a product call once the visible text was seen on screen).
+    And the Schedule 2 delete-unavailable reason is announced
 
   # ---- S11: not editable outside Draft ----------------------------------------------------------------
 

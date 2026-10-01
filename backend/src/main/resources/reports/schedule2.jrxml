@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 2 (Purchased/Private Log Costs and Sales) — JasperReports 7 template (AD-16, Epic 20.6).
+  Authored in the JR7 Jackson/JAXB model (as schedule5.jrxml). Bean-datasource fill from
+  Schedule2Service's DTO (the 20.2 data-feed decision): Schedule 2 is a SINGLE aggregate document, so
+  the datasource carries exactly ONE row holding the seven fixed cost blocks. All values arrive
+  PRE-FORMATTED as Strings (Schedule2SectionMapper; legacy SchedulesPrinter pre-formatted to String
+  and substituted "-" for null), so the template binds String fields and never masks a number itself.
+
+  LANDSCAPE (842x595), matching the rebuilt sibling sections (5/6/7A/7B/9/11) so the combined PDF is
+  visually consistent and the wide cross-schedule labels (e.g. "Purchased / Private Wood Overhead
+  (Schedule 3, Woodlands Subtotal):") render without clipping. The cross-schedule provenance is
+  carried in the row LABELS verbatim, not in separate cells — the figures are already folded into the
+  seven blocks by Schedule2Service. p_do_print_body gates the cost table; p_do_print_comment gates the
+  Comments block.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule2" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <!-- The top-level PDF outline title for this section (BR-08), or null for no bookmark. -->
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
+  <field name="purchasedLogCostVol" class="java.lang.String"/>
+  <field name="purchasedLogCostCos" class="java.lang.String"/>
+  <field name="purchasedLogCostCal" class="java.lang.String"/>
+  <field name="purchasedWoodOverheadVol" class="java.lang.String"/>
+  <field name="purchasedWoodOverheadCos" class="java.lang.String"/>
+  <field name="purchasedWoodOverheadCal" class="java.lang.String"/>
+  <field name="subtotalVol" class="java.lang.String"/>
+  <field name="subtotalCos" class="java.lang.String"/>
+  <field name="subtotalCal" class="java.lang.String"/>
+  <field name="lessLogSalesVol" class="java.lang.String"/>
+  <field name="lessLogSalesCos" class="java.lang.String"/>
+  <field name="lessLogSalesCal" class="java.lang.String"/>
+  <field name="netPurchasedVol" class="java.lang.String"/>
+  <field name="netPurchasedCos" class="java.lang.String"/>
+  <field name="netPurchasedCal" class="java.lang.String"/>
+  <field name="totalCompanyLoggingVol" class="java.lang.String"/>
+  <field name="totalCompanyLoggingCos" class="java.lang.String"/>
+  <field name="totalCompanyLoggingCal" class="java.lang.String"/>
+  <field name="totalAverageVol" class="java.lang.String"/>
+  <field name="totalAverageCos" class="java.lang.String"/>
+  <field name="totalAverageCal" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <title height="30">
+    <!-- Bookmark anchor (see schedule5.jrxml): one top-level PDF outline entry titled by
+         bookmarkTitle, suppressed when null; prints once at the section start. -->
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="34">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15">
+      <text><![CDATA[Schedule 2:  Purchased/Private Log Costs & Sales]]></text>
+    </element>
+    <element kind="textField" x="0" y="16" width="802" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="270">
+      <!-- Column headers (body-gated). Label column is 520 wide so the long cross-schedule labels
+           render without clipping; the three value columns are right-aligned in the remaining width. -->
+      <element kind="staticText" style="bold" x="525" y="0" width="90" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Volume m³]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="620" y="0" width="90" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Cost $]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="715" y="0" width="87" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[$/m³]]></text>
+      </element>
+
+      <!-- Row 1: Purchased / Private Log Costs -->
+      <element kind="staticText" x="0" y="24" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Purchased / Private Log Costs: ]]></text>
+      </element>
+      <element kind="textField" x="525" y="24" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{purchasedLogCostVol}]]></expression>
+      </element>
+      <element kind="textField" x="620" y="24" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{purchasedLogCostCos}]]></expression>
+      </element>
+      <element kind="textField" x="715" y="24" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{purchasedLogCostCal}]]></expression>
+      </element>
+
+      <!-- Row 2: Purchased / Private Wood Overhead (Schedule 3, Woodlands Subtotal) -->
+      <element kind="staticText" x="0" y="46" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Purchased / Private Wood Overhead (Schedule 3, Woodlands Subtotal): ]]></text>
+      </element>
+      <element kind="textField" x="525" y="46" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{purchasedWoodOverheadVol}]]></expression>
+      </element>
+      <element kind="textField" x="620" y="46" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{purchasedWoodOverheadCos}]]></expression>
+      </element>
+      <element kind="textField" x="715" y="46" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{purchasedWoodOverheadCal}]]></expression>
+      </element>
+
+      <!-- Separator above Subtotal. -->
+      <element kind="line" x="525" y="66" width="277" height="1">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      </element>
+      <!-- Row 3: Subtotal -->
+      <element kind="staticText" x="0" y="68" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Subtotal: ]]></text>
+      </element>
+      <element kind="textField" x="525" y="68" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalVol}]]></expression>
+      </element>
+      <element kind="textField" x="620" y="68" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalCos}]]></expression>
+      </element>
+      <element kind="textField" x="715" y="68" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalCal}]]></expression>
+      </element>
+
+      <!-- Row 4: (less) Log Sales -->
+      <element kind="staticText" x="0" y="90" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[(less) Log Sales: ]]></text>
+      </element>
+      <element kind="textField" x="525" y="90" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{lessLogSalesVol}]]></expression>
+      </element>
+      <element kind="textField" x="620" y="90" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{lessLogSalesCos}]]></expression>
+      </element>
+      <element kind="textField" x="715" y="90" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{lessLogSalesCal}]]></expression>
+      </element>
+
+      <!-- Separator above Net Purchased. -->
+      <element kind="line" x="525" y="110" width="277" height="1">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      </element>
+      <!-- Row 5: Net Purchased / Private Log Cost -->
+      <element kind="staticText" x="0" y="112" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Net Purchased / Private Log Cost: ]]></text>
+      </element>
+      <element kind="textField" x="525" y="112" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{netPurchasedVol}]]></expression>
+      </element>
+      <element kind="textField" x="620" y="112" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{netPurchasedCos}]]></expression>
+      </element>
+      <element kind="textField" x="715" y="112" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{netPurchasedCal}]]></expression>
+      </element>
+
+      <!-- Row 6: Total Company Logging Costs (Schedule 1) -->
+      <element kind="staticText" x="0" y="134" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Company Logging Costs (Schedule 1): ]]></text>
+      </element>
+      <element kind="textField" x="525" y="134" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCompanyLoggingVol}]]></expression>
+      </element>
+      <element kind="textField" x="620" y="134" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCompanyLoggingCos}]]></expression>
+      </element>
+      <element kind="textField" x="715" y="134" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCompanyLoggingCal}]]></expression>
+      </element>
+
+      <!-- Separator above Total Average. -->
+      <element kind="line" x="525" y="154" width="277" height="1">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      </element>
+      <!-- Row 7: Total Company Logging Costs (Including total Silviculture Cost) -->
+      <element kind="staticText" style="bold" x="0" y="156" width="520" height="16" hTextAlign="Left">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Company Logging Costs (Including total Silviculture Cost): ]]></text>
+      </element>
+      <element kind="textField" style="bold" x="525" y="156" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalAverageVol}]]></expression>
+      </element>
+      <element kind="textField" style="bold" x="620" y="156" width="90" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalAverageCos}]]></expression>
+      </element>
+      <element kind="textField" style="bold" x="715" y="156" width="87" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalAverageCal}]]></expression>
+      </element>
+
+      <!-- Comments (comment-gated), stretch. -->
+      <element kind="staticText" style="bold" x="0" y="188" width="90" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" x="0" y="203" width="802" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <!-- Reused verbatim from schedule5.jrxml / schedule11.jrxml so this section's footer matches the
+         neighbouring sections in the combined PDF ("Page: X of Y") and the total is evaluated at
+         Report time (evaluationTime="Report") rather than the current page. -->
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>

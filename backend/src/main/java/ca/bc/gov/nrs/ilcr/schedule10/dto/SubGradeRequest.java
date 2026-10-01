@@ -40,47 +40,14 @@ import java.math.BigDecimal;
  * @param lessEndHaul the end-haul deduction (optional, 0–9,999,999)
  */
 public record SubGradeRequest(
-    @DecimalMin(value = "0", message = "{rangeZeroToOneHundredErrorMsg}")
-    @DecimalMax(value = "100", message = "{rangeZeroToOneHundredErrorMsg}")
-    BigDecimal length,
-
-    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}")
-    @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}")
-    BigDecimal surfaceWidth,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer actualCost,
-
-    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}")
-    Integer ttTransfer,
-
-    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}")
-    Integer otherTransfer,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer lessBridges,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer lessCulverts,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer lessLandings,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer lessOverland,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer lessOtherEng,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer lessEndHaul) {
-}
+    @DecimalMin(value = "0", message = "{rangeZeroToOneHundredErrorMsg}") @DecimalMax(value = "100", message = "{rangeZeroToOneHundredErrorMsg}") BigDecimal length,
+    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}") @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}") BigDecimal surfaceWidth,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer actualCost,
+    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}") @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}") Integer ttTransfer,
+    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}") @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}") Integer otherTransfer,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer lessBridges,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer lessCulverts,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer lessLandings,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer lessOverland,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer lessOtherEng,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer lessEndHaul) {}

@@ -1,7 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule3.api;
 
-import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import jakarta.validation.Valid;
@@ -75,14 +76,26 @@ public interface Schedule3Api {
   /**
    * Check Status (BR-11/BR-03, Story 4.2): validate whether Schedule 3 meets all requirements.
    * Read-only — no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown
-   * mill/year or no summary → 404; closed mill → 409.
+   * mill/year → 404; closed mill → 409. A mill/year with NO summary is NOT a 404 since defect #296
+   * — it is the unsaved state, and check-status reports every mandatory field missing.
+   *
+   * <p>{@code request} carries the values currently ON SCREEN (#359): legacy's Check Status was a
+   * full postback that judged the screen, not the saved record, so an unsaved edit — the Override
+   * included — must move the verdict. The Other Acceptable (124) and Included Unacceptable (38)
+   * rows are not on this screen and are read from the database. The body is REQUIRED — an absent
+   * one is a clean 400 — but its members are unvalidated, because reporting missing values is the
+   * check's whole job.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param request the on-screen values the check reads
    * @param authentication the caller
    * @return 200 with the check-status result (errors + requirements-met + success message)
    */
   @PostMapping("/check-status")
-  ResponseEntity<CheckStatusResponse> checkStatus(
-      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+  ResponseEntity<Schedule3CheckStatusResponse> checkStatus(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule3CheckRequest request,
+      Authentication authentication);
 }

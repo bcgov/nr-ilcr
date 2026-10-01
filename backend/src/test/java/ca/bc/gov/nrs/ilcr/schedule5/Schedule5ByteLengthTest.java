@@ -18,15 +18,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit test for {@code @MaxByteLength} on {@link CampRequest} — pure Jakarta Validator, no Spring and
- * no database (the Schedule 8 {@code Schedule8SampleRulesTest} idiom).
+ * Unit test for {@code @MaxByteLength} on {@link CampRequest} — pure Jakarta Validator, no Spring
+ * and no database (the Schedule 8 {@code Schedule8SampleRulesTest} idiom).
  *
- * <p><strong>Why the ACCEPTED cases live here rather than in {@code Schedule5WriteValidationIT}.</strong>
- * Every test in that IT asserts a rejection and its {@code @AfterEach} fingerprint proves nothing was
- * written; a case that must be ACCEPTED would either persist a camp (mill 670/2023 is Draft, so the
- * write would succeed) or have to be aimed at a non-Draft mill, where a 409 from the Draft gate proves
- * only that validation ran — not which bound it applied. Validating the record directly asserts the
- * constraint itself with nothing in between.
+ * <p><strong>Why the ACCEPTED cases live here rather than in {@code
+ * Schedule5WriteValidationIT}.</strong> Every test in that IT asserts a rejection and its
+ * {@code @AfterEach} fingerprint proves nothing was written; a case that must be ACCEPTED would
+ * either persist a camp (mill 670/2023 is Draft, so the write would succeed) or have to be aimed at
+ * a non-Draft mill, where a 409 from the Draft gate proves only that validation ran — not which
+ * bound it applied. Validating the record directly asserts the constraint itself with nothing in
+ * between.
  *
  * <p>The bounds under test are the delivery columns, re-verified against the seeded image on
  * 2026-08-10: {@code CAMP_REPORT.CAMP_NAME VARCHAR2(30)} and {@code COMMENTS VARCHAR2(4000)}, both
@@ -51,14 +52,14 @@ class Schedule5ByteLengthTest {
 
   /** A minimal valid request varying only the two length-capped fields. */
   private static CampRequest request(String campName, String comments) {
-    return new CampRequest(campName, null, null, null, false, comments,
-        null, null, null, null, null, null, null, null, null, null, null, null, null);
+    return new CampRequest(
+        campName, null, null, null, false, comments, null, null, null, null, null, null, null, null,
+        null, null, null, null, null);
   }
 
   private static Set<String> violatedProperties(CampRequest request) {
     Set<ConstraintViolation<CampRequest>> violations = validator.validate(request);
-    return violations.stream().map(v -> v.getPropertyPath().toString())
-        .collect(Collectors.toSet());
+    return violations.stream().map(v -> v.getPropertyPath().toString()).collect(Collectors.toSet());
   }
 
   private static int utf8Bytes(String value) {
@@ -68,20 +69,24 @@ class Schedule5ByteLengthTest {
   @Test
   @DisplayName("exactly 30 bytes of multibyte camp name is ACCEPTED — the cap is bytes, not a ban")
   void campNameAtExactlyThirtyBytesIsAccepted() {
-    // 15 two-byte characters. On the limit, not over it. Pinned so a future "just restrict to ASCII"
+    // 15 two-byte characters. On the limit, not over it. Pinned so a future "just restrict to
+    // ASCII"
     // or "measure code points" simplification of the validator fails here rather than silently
     // narrowing what a licensee may type.
     String name = "é".repeat(15);
     assertEquals(30, utf8Bytes(name));
-    assertTrue(violatedProperties(request(name, null)).isEmpty(),
+    assertTrue(
+        violatedProperties(request(name, null)).isEmpty(),
         "30 bytes is within a VARCHAR2(30 BYTE) column");
   }
 
   @Test
-  @DisplayName("31 bytes across 16 characters is REJECTED on campName, though @Size alone passes it")
+  @DisplayName(
+      "31 bytes across 16 characters is REJECTED on campName, though @Size alone passes it")
   void campNameOverThirtyBytesIsRejected() {
     // The precise gap the constraint exists to close: 16 characters satisfies @Size(max = 30), and
-    // 31 bytes does not fit the column. Before this constraint the value reached Oracle and came back
+    // 31 bytes does not fit the column. Before this constraint the value reached Oracle and came
+    // back
     // as ORA-12899 -> ScheduleNotSavedException -> 500.
     String name = "é".repeat(15) + "x";
     assertEquals(16, name.length());
@@ -92,8 +97,10 @@ class Schedule5ByteLengthTest {
   @Test
   @DisplayName("the widest single character still fits when the rest of the name leaves room")
   void fourByteCharacterCountsAsFourBytes() {
-    // A supplementary-plane emoji is ONE code point, TWO Java chars, FOUR UTF-8 bytes. Asserting the
-    // accepted and rejected sides on the same character proves the validator counts bytes rather than
+    // A supplementary-plane emoji is ONE code point, TWO Java chars, FOUR UTF-8 bytes. Asserting
+    // the
+    // accepted and rejected sides on the same character proves the validator counts bytes rather
+    // than
     // either of the two lengths Java would hand it for free.
     String fits = "C".repeat(26) + "🌲";
     String overflows = "C".repeat(27) + "🌲";
@@ -107,10 +114,12 @@ class Schedule5ByteLengthTest {
   @DisplayName("comments: the CHARACTER cap (3500) and the BYTE cap (4000) are independent bounds")
   void commentsHoldsBothCaps() {
     // 3501 ASCII characters — over the legacy screen cap, well under the column's 4000 bytes.
-    assertTrue(violatedProperties(request("Camp", "c".repeat(3501))).contains("comments"),
+    assertTrue(
+        violatedProperties(request("Camp", "c".repeat(3501))).contains("comments"),
         "the legacy 3500-character screen cap still applies to ASCII");
 
-    // 2001 two-byte characters — 2001 characters is far under the screen cap, 4002 bytes is over the
+    // 2001 two-byte characters — 2001 characters is far under the screen cap, 4002 bytes is over
+    // the
     // column. Neither bound implies the other, which is why both annotations are present.
     String multibyte = "é".repeat(2001);
     assertTrue(multibyte.length() < 3500);
@@ -132,18 +141,26 @@ class Schedule5ByteLengthTest {
   @Test
   @DisplayName("over-long ASCII trips EXACTLY ONE constraint per field, never both")
   void theTwoLengthCapsDoNotDoubleReport() {
-    // The two annotations share a message key, and GlobalExceptionHandler joins violations with "; ",
+    // The two annotations share a message key, and GlobalExceptionHandler joins violations with ";
+    // ",
     // so a value tripping both handed the licensee the same sentence twice:
     //   "Camp Name must be 30 characters or fewer.; Camp Name must be 30 characters or fewer."
     // On campName that is the COMMON case (both caps are 30 and a byte is never narrower than a
-    // character, so every over-long ASCII name trips both), which is why MaxByteLength defers to @Size
-    // via charMax. Counting violations rather than checking the property is present is the whole point.
-    assertEquals(1, validator.validate(request("C".repeat(31), null)).size(),
+    // character, so every over-long ASCII name trips both), which is why MaxByteLength defers to
+    // @Size
+    // via charMax. Counting violations rather than checking the property is present is the whole
+    // point.
+    assertEquals(
+        1,
+        validator.validate(request("C".repeat(31), null)).size(),
         "31 ASCII characters is over BOTH caps and must still report once");
 
-    // 4001 ASCII characters is the comments equivalent: over the 3500-character screen cap AND over the
+    // 4001 ASCII characters is the comments equivalent: over the 3500-character screen cap AND over
+    // the
     // 4000-byte column.
-    assertEquals(1, validator.validate(request("Camp", "c".repeat(4001))).size(),
+    assertEquals(
+        1,
+        validator.validate(request("Camp", "c".repeat(4001))).size(),
         "4001 ASCII characters is over BOTH caps and must still report once");
 
     // And the deferral must not swallow the multibyte case it exists to catch.
@@ -182,7 +199,8 @@ class Schedule5ByteLengthTest {
     String densest = "漢".repeat(30);
     assertEquals(30, densest.length());
     assertEquals(90, utf8Bytes(densest));
-    assertTrue(validator.validate(rowRequest(densest)).isEmpty(),
+    assertTrue(
+        validator.validate(rowRequest(densest)).isEmpty(),
         "the densest 30 characters is 90 bytes, well inside the 120-byte column");
 
     // And the surrogate-pair case, which is LESS dense despite using 4-byte characters: 15 of them

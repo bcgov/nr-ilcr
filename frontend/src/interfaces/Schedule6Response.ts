@@ -2,11 +2,22 @@
 // here, never re-shaped (AD-12). Jackson omits nulls (non_null), so every nullable member is typed
 // `| null` AND may simply be absent from the JSON; read them defensively. `rmg`, `costPerVolume` and
 // the three totals are DERIVED server-side (BR-04/BR-07) and are response-only — never recomputed
-// here (AD-5) and never sent back. There is deliberately no DELETE contract (UC exclusion #1).
+// here (AD-5) and never sent back.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+import type { CodeDescription } from '@/utils/codes'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
+
+// The TSA-number and Supply-Block dropdown lists, served in-document (Schedule6CodeLists.java).
+// Both are year-filtered server-side and always include any code a stored record already references.
+// There is no TFL list: TFL stays a free-text entry (schedule6.xhtml:102,290), and the synthetic
+// "TFL" sentinel is not a code-table row, so the control — not the document — adds it.
+export interface Schedule6CodeLists {
+  readonly tsaNumbers: readonly CodeDescription[]
+  readonly supplyBlocks: readonly CodeDescription[]
+}
 
 // One road-maintenance record. A record is either a Timber Supply Area (`areaType` = the TSA code,
 // `supplyBlock` = the TSB code) or a Tree Farm Licence (`areaType` = the literal "TFL", `tflNumber`
@@ -28,6 +39,9 @@ export interface RoadRecord {
   // The PER-RECORD comment: ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE), a different and
   // much narrower column than the schedule-level `generalComments` below.
   readonly comments: string | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // One missing-field finding. `field` names the request field the user must supply (`areaType`,
@@ -39,9 +53,11 @@ export interface FieldIssue {
 }
 
 // One record's Check Status result. `rowCounter` is the 1-based ordinal the user sees in the message
-// text (and the accordion title) — NOT `recordId`, which travels only for UI correlation.
-// `metMessage` is present only when this record is met AND the schedule outcome is ISSUES, and
-// Jackson may omit it entirely rather than send null (Story 8.2 deviation (i)).
+// text (and the accordion title). `recordId` carries that SAME 1-based payload ordinal, not a
+// database id — a payload row addresses no stored record, so there is no id to echo; it is a React
+// list key only, never a correlation back to a stored row. `metMessage` is present only when this
+// record is met AND the schedule outcome is ISSUES, and Jackson may omit it entirely rather than send
+// null (Story 8.2 deviation (i)).
 export interface RoadRecordCheckResult {
   readonly recordId: number
   readonly rowCounter: number
@@ -71,10 +87,14 @@ export default interface Schedule6Response {
   // Placeholder rows (a lone general-comment holder) are excluded server-side, so an empty list with
   // a non-empty general comment is the valid S18 state.
   readonly roadRecords: readonly RoadRecord[]
+  readonly codeLists: Schedule6CodeLists
   readonly totalVolume: number | null
   readonly totalCost: number | null
   // Null in the S18 lone-comment state (0/0), where totalVolume/totalCost are 0 — renders BLANK.
   readonly totalCostPerVolume: number | null
   // Write echoes only (AD-8); absent on the GET.
   readonly message?: MessageInfo | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }

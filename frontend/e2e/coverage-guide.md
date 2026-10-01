@@ -164,7 +164,7 @@ requirements (.feature + -slices.md + -technical.md)
         │  every source item →
         ▼
 coverage.md  ── points at ──►  defects.md (same UC folder)   (the actual findings)
-        │                              │  BA/QA triage → Jira
+        │                              │  BA/QA triage → GitHub issue (bcgov/nr-ilcr)
         └── feeds ──►  trace (TR)  (formal requirements→test coverage gate)
 ```
 

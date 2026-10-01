@@ -9,8 +9,7 @@ import java.math.BigDecimal;
  */
 public final class TestAmounts {
 
-  private TestAmounts() {
-  }
+  private TestAmounts() {}
 
   /** A concise {@link BigDecimal} literal for volume / distance amounts in tests. */
   public static BigDecimal bd(String value) {

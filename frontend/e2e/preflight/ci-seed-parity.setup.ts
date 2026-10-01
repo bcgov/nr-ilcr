@@ -1,0 +1,1047 @@
+import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'node:url';
+import {
+  byMillThenYear,
+  collectAnchorKeys,
+  fixtureFiles,
+  scanAnchorKeys,
+  type AnchorKey,
+} from './anchor-keys';
+import {
+  ADMIN_MILL_ANCHORS,
+  IMPORT_MILL,
+  NEW_ACCOUNT_GUID,
+  S05_LICENSEE_GUID,
+} from '../fixtures/mill/mills-test-data';
+import { USR_ANCHORS, USR_MILLS, UNKNOWN_GUID } from '../fixtures/usr/users-test-data';
+
+/**
+ * PREFLIGHT — the CI seed carries every anchor the fixtures pin.
+ *
+ * ---------------------------------------------------------------------------------------------------
+ * WHY THIS EXISTS
+ * ---------------------------------------------------------------------------------------------------
+ * The same e2e test data now lives in five places: the fixture anchor tables that DECLARE what we pin,
+ * the domain preflights that ASSERT it against a live database, the real-data extract, the local
+ * `real-test-data-patches/**.sql`, and `backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql` —
+ * the Flyway repeatable that rebuilds the anchors for CI, which has no extract image and no sqlplus
+ * step and therefore cannot apply a patch at all.
+ *
+ * A mismatch between the last two has a nasty signature: the suite passes in whichever environment you
+ * happen to be using and fails in the other, and the failure reads as a broken test rather than as
+ * missing data. It has already happened twice — the sch3 patch (17 Schedule 3 summaries and 115 detail
+ * rows) and the three BR-12 patches were never folded into the seed, so the whole sch3 domain would
+ * have failed in CI on a 404 that looks exactly like an app defect.
+ *
+ * So this runs in the `setup` project, on every local and CI run, and needs NO database: it reads the
+ * fixture files and the migration SQL off disk and compares them. Prose in a skill file or a header
+ * comment would not have caught either miss — `defects.md` VER-8 records two guards in this repo that
+ * sat dead for an unknown stretch because nothing executed them.
+ *
+ * ---------------------------------------------------------------------------------------------------
+ * ABSENCE IS SOMETIMES THE FIXTURE — why this is not a set-difference
+ * ---------------------------------------------------------------------------------------------------
+ * Four pinned anchors exist to make a GET FAIL in a specific way, and having no report-status row is
+ * precisely what produces the failure. They are absent from BOTH databases — the extract does not carry
+ * them either (verified 2026-08-28) — so parity is already satisfied; there is nothing to fix.
+ *
+ * A bare "every fixture key must be seeded" check would nonetheless report all four as missing, every
+ * run, forever. That matters for two reasons, and neither is the one an earlier version of this comment
+ * gave: four permanent false alarms train people to ignore the gate, and the obvious way to silence
+ * them is to seed the rows — which breaks the very scenarios the anchors exist for. So each is
+ * enumerated in DELIBERATELY_ABSENT below WITH its reason, and the gate checks BOTH directions: an
+ * unlisted missing key fails, and a listed key that someone HAS seeded fails too. Only the first half
+ * is something a diff could do.
+ *
+ * CORRECTION, and worth keeping so the value of the reverse check is not overstated: this used to say
+ * seeding one would "silently disable" its scenarios. It would not. Each of the four asserts a POSITIVE
+ * observable — a verbatim error message, or a banner with its status lines suppressed — so a seeded row
+ * makes them FAIL, loudly. What the reverse check actually buys is failing FAST and AT THE CAUSE: two
+ * seconds into the `setup` project, naming the anchor and the reason, instead of twelve minutes later as
+ * scenarios in two different domains complaining about a missing error banner. That is worth having. It
+ * is not the same as catching something that would otherwise pass unnoticed.
+ *
+ * ---------------------------------------------------------------------------------------------------
+ * WHAT THIS DOES NOT CATCH — read before trusting it
+ * ---------------------------------------------------------------------------------------------------
+ *  1. Whether a seeded anchor holds the right VALUES. This compares openability (a mill, an active/
+ *     closed status, a report-status row, a reporting year), not stored amounts. The per-domain
+ *     preflights do that against the live database, which is strictly better — they see what the app
+ *     actually reads. If an anchor is openable but its figures drifted, this passes and they fail.
+ *
+ *     A REAL ESCAPE OF THIS KIND, found the day after this gate was written (sch1 `defects.md` VER-1):
+ *     the delete target 25052/2016 has a Schedule 3 carrying a Crown Timber volume in the extract and
+ *     NO category-3 summary in the seed. Schedule 1 pre-fills its nine volume codes from that value
+ *     when nothing is saved (BR-09), so a `lineItems.length === 0` assertion on the deleted schedule
+ *     PASSED in CI and FAILED locally. Both databases were "openable and identical" by everything this
+ *     file checks. The class to remember: a NEIGHBOURING schedule's data on the same (mill, year) can
+ *     change the served document of the schedule under test, and the seed's parity claim covers
+ *     report-status states, not that.
+ *
+ *     A SECOND ESCAPE, same day, different mechanism: sch3's two read-only render anchors were given
+ *     report-status rows with tracks 'S' and 'V' but no category-3 summary, which is a
+ *     Submitted-and-UNSAVED schedule. Everything here passed (mill, status row, year all present) and
+ *     so did the domain preflight, because since defect #296 an unsaved schedule still answers 200 and
+ *     its track is still right — the only visible symptom was one sub-page scenario failing in CI, four
+ *     steps from the cause. Fixed in the seed, and `sch3-anchors.setup.ts` now asserts that a pinned
+ *     TRACK also implies a SAVED schedule. Generalise it: "the row exists" is weaker than "the state
+ *     the fixture means", and this file only ever checks the former.
+ *  2. Track codes. The fixtures declare an expected track ('S'/'V'/Draft) in prose and in one typed
+ *     table only, so deriving it from source needs its own allow-list. The runtime preflights assert
+ *     it. Only the PARSER's grip on the two track columns is checked here, by the probes below.
+ *  3. Anchors created at run time by a scenario's own Given. Those are the suite's business, not the
+ *     seed's.
+ *  4. The real-data extract. The seed claims parity with it; nothing here can verify that claim
+ *     without the extract. That remains a human check on re-extract.
+ */
+
+// This package is `"type": "module"`, so the CommonJS `__dirname` global is not defined — referencing
+// it throws a ReferenceError, and a failing `setup` test SKIPS every scenario in the dependent
+// `chromium` project. Same ESM-safe idiom as sch4-/sch11-anchors.setup.ts.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURES_DIR = path.join(HERE, '../fixtures');
+const DB_DIR = path.join(HERE, '../../../backend/src/test/resources/db');
+const DB_E2E_DIR = path.join(HERE, '../../../backend/src/test/resources/db-e2e');
+
+const SEED = 'backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql';
+
+const FIX_IT =
+  `Add the row to ${SEED}, following that file's own conventions — plain INSERTs with pre-claimed ids `
+  + 'against an empty schema, NOT the guarded PL/SQL the patches use — and extend its ID CLAIMS header. '
+  + 'If the anchor is meant to have NO row, list it in DELIBERATELY_ABSENT in this file with the reason.';
+
+/**
+ * Fixture domains whose anchors are MILLS, not (mill, year) cells, and so contribute no key to the
+ * schedule scan by design — each with the reason and the check that covers it instead.
+ *
+ * Enumerated, never inferred, for the same reason as DELIBERATELY_ABSENT: the "every domain contributes
+ * keys" check below exists because a renamed or restructured fixture silently reads as a domain with
+ * nothing pinned. Exempting a domain from it is only honest if something else asserts that domain's
+ * data — which is what 'every mill-administration anchor is seeded' does for `mill`. Shrink-only: an
+ * entry whose fixture directory is gone fails.
+ */
+const MILL_KEYED_DOMAINS = new Map<string, string>([
+  [
+    'mill',
+    "UC-MILL-001 works on the mill's own ILCR_MILL_STATUS_XREF row and its client-location contacts; "
+      + 'the Mills page has no reporting year anywhere on it. Its anchors are ADMIN_MILL_ANCHORS, '
+      + 'checked against the seed by the mill-administration test in this file.',
+  ],
+  [
+    'usr',
+    "UC-USR-001/002 work on a user's ILCR_USER account and ILCR_MILL_USER_XREF assignments; the "
+      + 'Users page has no reporting year anywhere on it. Its anchors are USR_ANCHORS / USR_MILLS, '
+      + 'checked against the seed by the user-administration test in this file.',
+  ],
+]);
+
+/**
+ * Pinned (mill, year) keys that must NOT have an ILCR_MILL_REPORT_STATUS row, and what each absence buys.
+ * Every entry is a live fixture; the gate fails if one stops being referenced (a dead exemption is
+ * cover for an anchor nobody is looking at).
+ */
+const DELIBERATELY_ABSENT = new Map<AnchorKey, string>([
+  [
+    '16050/2016',
+    'sch11 S13 (GET 404 "Schedule not found.") + sec S07 (Home saves, and the banner shows the mill '
+      + 'line ONLY — both track-status lines suppressed). Both read the absence directly. NOTE: an '
+      + "earlier version of this entry also credited sch1 S21, copied from #327's seed comment without "
+      + "checking. sch1's 'no-schedule' anchor is 17052/2021, which expects HTTP 200 (the #296 "
+      + 'blank-form case) and IS seeded — a different fixture entirely.',
+  ],
+  [
+    '16050/2015',
+    "sch3 'not-found' (S16) — the same 404, on sch3's own mill-year so the two domains do not share a key.",
+  ],
+  ['13/2016', 'sch2 "not-found" — 404 on a closed mill that has no row for this year.'],
+  ['25051/2018', 'sch4 "not-found" — 404. Mill 25051 IS seeded (CLS) and has a 2015 row for the 409 arm.'],
+  [
+    '23050/2024',
+    'sch6 "not-found" (S08, "Schedule not found." -> 404). CARVED, like sch5\'s below: the sch6 patch '
+      + 'opens reporting year 2024 for sixteen mills and skips this one precisely so a 404 anchor exists '
+      + "inside sch6's own minted year. Mill 23050 IS seeded (ACT) and holds rows for 2017-2023, so "
+      + 'the mill resolves and only the YEAR is missing — which is what makes the GET 404 rather than '
+      + 'fail on an unknown mill. Seeding it would delete the fixture, not fix it.',
+  ],
+  [
+    '16050/2022',
+    'sch5 "no-schedule" (S18, "No Schedule 5 Record Found for Mill/Year" -> 404). The hole is CARVED '
+      + 'rather than found: the sch5 fan-out opens 2022 for sixteen of the seventeen ACT mills and skips '
+      + 'this one precisely so a 404 anchor exists inside its own new year. Seeding it would delete the '
+      + 'fixture, not fix it. Distinct from 16050/2016 and 16050/2015 above — same mill, three different '
+      + 'years, one 404 each for sch11/sec, sch3 and sch5, so no two domains share a key.',
+  ],
+]);
+
+/**
+ * Positive controls on the SQL parser. These are not redundant with the checks below: every assertion
+ * here compares two things this file derived, so a parser that silently stopped matching would make
+ * most of them pass vacuously. Each probe pins a specific way the parse can go wrong.
+ */
+const PARSER_PROBES: { key: AnchorKey; codes: string; why: string }[] = [
+  {
+    key: '1/2016',
+    codes: 'D/D',
+    why:
+      'ILCR_MILL_REPORT_STATUS is written (REPORT_YEAR, ILCR_MILL_ID, …) — YEAR FIRST. Read mill-first '
+      + 'this row parses as 2016/1 and every anchor looks missing. Mill 1 / year 2016 cannot be '
+      + 'transposed by accident, which is why it is the probe.',
+  },
+  {
+    key: '23050/2016',
+    codes: 'S/D',
+    why: 'the two track codes DIFFER here — the only way to catch them being read in the wrong order.',
+  },
+  {
+    key: '13050/2015',
+    codes: 'D/V',
+    why: 'they differ the other way round, so a swap cannot pass both probes.',
+  },
+  { key: '12050/2016', codes: 'S/S', why: 'a non-Draft pair, so the parser is not just matching Ds.' },
+  {
+    key: '737/2021',
+    codes: 'V/D',
+    why:
+      'the GUARDED form — `(cols) SELECT 2021, 737, \'V\', \'D\', … FROM DUAL WHERE NOT EXISTS (…)`, how '
+      + 'every row in db/R__51 is written so a repeatable migration survives a checksum change. It reads '
+      + 'through a different branch of readableInsert than the four probes above, and R__51 seeds 41 rows '
+      + 'this way; without this probe, dropping that branch would leave every check here passing on a '
+      + 'gate that had gone blind to ten mills, their ACT xrefs and their report-status rows.',
+  },
+];
+
+/** Floors, not counts: a vacuity guard that does not need editing every time an anchor is added. */
+const MIN_FIXTURE_KEYS = 100;
+const MIN_SEED_STATUS_ROWS = 100;
+
+// ---------------------------------------------------------------------------------------------------
+// A very small SQL reader — enough for `INSERT INTO THE.T (cols) VALUES (vals)`, and no more
+// ---------------------------------------------------------------------------------------------------
+
+/** Line and block comments in one alternation, so a `/*` inside a `--` line cannot swallow real SQL. */
+const SQL_COMMENT = /--[^\n]*|\/\*[\s\S]*?\*\//g;
+
+/**
+ * Splits a VALUES list on top-level commas.
+ *
+ * Needed rather than a `[^)]*` match because real values contain both: `'EVANS FOR. PROD. (DIV. OF
+ * LOUISIANA PACIFIC)'` carries parentheses inside a string literal, and `DATE '2015-01-01'` carries a
+ * space-separated prefix. A depth counter that ignores anything inside quotes handles both.
+ */
+function splitValues(list: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let current = '';
+  for (const ch of list) {
+    if (quoted) {
+      quoted = ch !== "'";
+      current += ch;
+      continue;
+    }
+    if (ch === "'") {
+      quoted = true;
+      current += ch;
+    } else if (ch === '(') {
+      depth += 1;
+      current += ch;
+    } else if (ch === ')') {
+      depth -= 1;
+      current += ch;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts.map((p) => p.trim());
+}
+
+/** `'x'` -> `x`, `NULL` -> null, anything else verbatim. */
+function unwrap(value: string): string | null {
+  if (/^null$/i.test(value)) {
+    return null;
+  }
+  const quoted = value.match(/^'(.*)'$/s);
+  return quoted ? quoted[1] : value;
+}
+
+/** Index just past the `)` closing the list that opens at `from`, respecting quotes and nesting. */
+function closeParen(text: string, from: number): number {
+  let depth = 1;
+  let quoted = false;
+  let at = from;
+  while (at < text.length && depth > 0) {
+    const ch = text[at];
+    if (quoted) {
+      quoted = ch !== "'";
+    } else if (ch === "'") {
+      quoted = true;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+    }
+    at += 1;
+  }
+  return at;
+}
+
+/**
+ * Index of the `FROM` that ends a SELECT list, or -1. Ignores any `FROM` inside a string literal or a
+ * nested call, so `'... FROM ...'` and `TO_CHAR(x, 'FM00')` cannot end the list early.
+ */
+function selectListEnd(text: string): number {
+  let depth = 0;
+  let quoted = false;
+  for (let at = 0; at < text.length; at += 1) {
+    const ch = text[at];
+    if (quoted) {
+      quoted = ch !== "'";
+    } else if (ch === "'") {
+      quoted = true;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+    } else if (
+      depth === 0
+      && (ch === 'F' || ch === 'f')
+      && /^from\b/i.test(text.slice(at, at + 5))
+      && !/[A-Z0-9_]/i.test(text[at - 1] ?? ' ')
+    ) {
+      return at;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The column list and the positional value list of an INSERT this gate can zip by name, or null when
+ * the statement is a shape it cannot read.
+ *
+ * TWO FORMS QUALIFY. `(cols) VALUES (vals)` is the e2e seed's own convention. `(cols) SELECT vals FROM
+ * DUAL WHERE NOT EXISTS (<the row's own PK>)` is the guarded, re-runnable form the R__ fixture
+ * migrations use — MERGE ... WHEN NOT MATCHED semantics written long-hand so the column list stays
+ * reviewable, because Flyway re-executes a repeatable migration on every checksum change and an
+ * unguarded re-run is ORA-00001. It carries the SAME explicit column list and the SAME positional
+ * values, so reading it needs no new machinery beyond finding the `FROM DUAL` boundary — and it must be
+ * read: R__51 alone seeds 41 rows this way, including ten mills, their ACT xrefs and their report-status
+ * rows. Enumerating those as "unreadable but harmless" would have blinded the gate to a fifth of its
+ * subject, which is the opposite of what KNOWN_UNREADABLE is for.
+ *
+ * Insisting on the `WHERE NOT EXISTS` tail is what keeps a genuinely set-based statement out. V29's
+ * `SELECT 8900 + LEVEL ... FROM DUAL CONNECT BY LEVEL <= 51` also selects FROM DUAL, but generates 51
+ * rows from one statement and so has no per-row value list to zip at all; it stays in KNOWN_UNREADABLE.
+ */
+function readableInsert(rest: string): { columns: string[]; values: string[] } | null {
+  const head = rest.match(/^\s*\(([^)]*)\)\s*(VALUES\s*\(|SELECT\b)/i);
+  if (!head) {
+    return null;
+  }
+  const columns = head[1].split(',').map((c) => c.trim().toUpperCase());
+
+  if (/^VALUES/i.test(head[2])) {
+    const from = head[0].length;
+    return { columns, values: splitValues(rest.slice(from, closeParen(rest, from) - 1)) };
+  }
+
+  const tail = rest.slice(head[0].length);
+  const end = selectListEnd(tail);
+  if (end < 0 || !/^FROM\s+DUAL\s+WHERE\s+NOT\s+EXISTS\s*\(/i.test(tail.slice(end))) {
+    return null;
+  }
+  return { columns, values: splitValues(tail.slice(0, end)) };
+}
+
+/**
+ * Names the reason an INSERT cannot be zipped by column name, or null if the shape is unrecognised.
+ *
+ * Both forms are valid SQL and neither carries a positional column list this gate can pair with its
+ * values, so reading them would need a real parser. Naming them is what keeps the skip honest. Note
+ * that 'insert-select' now means a genuinely set-based SELECT: the guarded single-row form is read by
+ * readableInsert above and never reaches here.
+ */
+function unreadableForm(rest: string): 'insert-select' | 'no-column-list' | null {
+  if (/^\s*\([^)]*\)\s*SELECT\b/i.test(rest)) return 'insert-select';
+  if (/^\s*VALUES\s*\(/i.test(rest)) return 'no-column-list';
+  return null;
+}
+
+/**
+ * The statements this gate genuinely cannot read, with the reason each is harmless.
+ *
+ * Keyed `TABLE:form`. Enumerated rather than skipped so a NEW unreadable INSERT into a parsed table
+ * fails — the DELIBERATELY_ABSENT pattern applied to the parser instead of the data.
+ */
+const KNOWN_UNREADABLE = new Map<string, string>([
+  [
+    'BIOGEOCLIMATIC_CATALOGUE:insert-select',
+    'db/V29__seed_schedule11_biogeo_cap_fixtures.sql generates 51 filler rows with '
+      + "`SELECT 8900 + LEVEL … CONNECT BY LEVEL <= 51`, i.e. ids 8901-8951. This gate reads this table "
+      + "ONLY for explicit-id collisions, and the seed's biogeo claims stop at 8855, so the generated "
+      + 'band cannot collide. Re-check that if either range moves.',
+  ],
+]);
+
+/**
+ * Every INSERT into one table, as column-name -> value maps.
+ *
+ * Columns are zipped BY NAME, never by position: the seed's own statements vary their column lists
+ * (REVISION_COUNT and CROWN_VOLUME appear on some rows and not others), and a positional read of
+ * ILCR_MILL_REPORT_STATUS — whose first two columns are year then mill — is exactly the mistake this
+ * whole file exists to stop shipping.
+ */
+function parseInserts(sql: string, table: string): Record<string, string | null>[] {
+  const source = sql.replace(SQL_COMMENT, ' ');
+  const start = new RegExp(`INSERT\\s+INTO\\s+THE\\.${table}(?![A-Z0-9_])`, 'gi');
+  const rows: Record<string, string | null>[] = [];
+
+  for (const match of source.matchAll(start)) {
+    const rest = source.slice(match.index! + match[0].length);
+    const shape = readableInsert(rest);
+    if (!shape) {
+      // NOTHING IS SKIPPED SILENTLY — that used to be a bare `continue`, which is the very thing the
+      // arity check below refuses to do: an unread statement is a row this gate believes is missing,
+      // and the MIN_* floors would only notice at scale. Raised in review.
+      //
+      // Two SQL forms cannot be zipped by name and so cannot be read here at all: a set-based
+      // `INSERT INTO t (cols) SELECT …` and `INSERT INTO t VALUES (…)` with no column list. Both
+      // exist on the tree. Rather than hard-fail on long-standing SQL or wave them through, they are
+      // RECOGNISED and enumerated — see KNOWN_UNREADABLE and the test that asserts the set, the same
+      // shape as DELIBERATELY_ABSENT. Anything the classifier cannot even name still throws
+      // immediately. The guarded `SELECT … FROM DUAL WHERE NOT EXISTS` form used to land here too;
+      // it is now READ rather than excused, because those are real fixture rows (see readableInsert).
+      if (unreadableForm(rest) === null) {
+        const preview = rest.slice(0, 120).replace(/\s+/g, ' ').trim();
+        throw new Error(
+          `could not parse an INSERT INTO THE.${table}, and could not classify the form either. `
+            + `Teach parseInserts about it rather than leaving the statement unread. Saw: ${preview}…`,
+        );
+      }
+      continue;
+    }
+    const { columns, values } = shape;
+    if (values.length !== columns.length) {
+      throw new Error(
+        `could not parse an INSERT INTO THE.${table}: ${columns.length} column(s) but `
+          + `${values.length} value(s). Teach parseInserts about the statement rather than leaving it `
+          + `unread — an unparsed row is an anchor this gate believes is missing. Values: ${values.join(' | ')}`,
+      );
+    }
+    rows.push(Object.fromEntries(columns.map((c, i) => [c, unwrap(values[i])])));
+  }
+  return rows;
+}
+
+function sqlFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...sqlFiles(full));
+    } else if (entry.name.toLowerCase().endsWith('.sql')) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/** All migration SQL the e2e Flyway chain applies: `db/` (versioned + repeatable) then `db-e2e/`. */
+function readMigrations(): { base: string; e2eOnly: string; all: string } {
+  const read = (dir: string): string =>
+    sqlFiles(dir)
+      .map((f) => fs.readFileSync(f, 'utf8'))
+      .join('\n');
+  const base = read(DB_DIR);
+  const e2eOnly = read(DB_E2E_DIR);
+  return { base, e2eOnly, all: `${base}\n${e2eOnly}` };
+}
+
+const statusKeys = (sql: string): Map<AnchorKey, string> =>
+  new Map(
+    parseInserts(sql, 'ILCR_MILL_REPORT_STATUS').map((r) => [
+      `${r.ILCR_MILL_ID}/${r.REPORT_YEAR}`,
+      `${r.ILCR_MILL_REPORT_STATUS_CODE ?? '-'}/${r.MILL_SILVICULTUR_STATUS_CODE ?? '-'}`,
+    ]),
+  );
+
+// ---------------------------------------------------------------------------------------------------
+// The checks
+// ---------------------------------------------------------------------------------------------------
+
+test('seed parity: the scan sees every domain, and the SQL parser still binds', async () => {
+  // Assert the INPUTS before asserting the property — silent under-scanning is how the sibling guard
+  // passed while blind (VER-8), and it is the only failure mode this file cannot report on itself.
+  const files = fixtureFiles(FIXTURES_DIR);
+  const keys = collectAnchorKeys(FIXTURES_DIR);
+
+  expect(
+    files.length,
+    `scanned ${files.length} fixture file(s): ${files.map((f) => f.domain).join(', ')}`,
+  ).toBeGreaterThanOrEqual(6);
+  expect(
+    keys.size,
+    `the fixture scan found ${keys.size} (mill, year) keys, which is below the ${MIN_FIXTURE_KEYS} floor `
+      + '— it has stopped matching one of the three anchor shapes (see preflight/anchor-keys.ts)',
+  ).toBeGreaterThanOrEqual(MIN_FIXTURE_KEYS);
+
+  // Every domain must contribute keys. A fixture that was renamed or restructured otherwise reads as a
+  // domain with nothing pinned, which passes every check below.
+  const silent = files.filter(
+    (f) => !MILL_KEYED_DOMAINS.has(f.domain)
+      && scanAnchorKeys(fs.readFileSync(f.file, 'utf8')).length === 0,
+  );
+  expect(
+    silent.map((f) => f.domain),
+    'these domains contributed NO anchor keys — their fixture no longer declares anchors in a shape '
+      + 'anchor-keys.ts recognises, so nothing about them is being checked',
+  ).toEqual([]);
+
+  // The exemption above is shrink-only: a mill-keyed domain that no longer has a fixture is cover.
+  const scanned = new Set(files.map((f) => f.domain));
+  const deadExemptions = [...MILL_KEYED_DOMAINS.keys()].filter((d) => !scanned.has(d));
+  expect(
+    deadExemptions,
+    `MILL_KEYED_DOMAINS exempts domains with no fixture any more — delete these: ${deadExemptions.join(', ')}`,
+  ).toEqual([]);
+
+  const seeded = statusKeys(readMigrations().all);
+  expect(
+    seeded.size,
+    `parsed ${seeded.size} ILCR_MILL_REPORT_STATUS row(s), below the ${MIN_SEED_STATUS_ROWS} floor — the `
+      + 'parser has stopped matching',
+  ).toBeGreaterThanOrEqual(MIN_SEED_STATUS_ROWS);
+
+  for (const probe of PARSER_PROBES) {
+    expect(
+      seeded.get(probe.key),
+      `parser probe ${probe.key} should read ${probe.codes} — ${probe.why}`,
+    ).toBe(probe.codes);
+  }
+});
+
+test('seed parity: every pinned anchor is seeded, or listed as deliberately absent', async () => {
+  const keys = collectAnchorKeys(FIXTURES_DIR);
+  const seeded = statusKeys(readMigrations().all);
+
+  const missing = [...keys.keys()]
+    .filter((key) => !seeded.has(key) && !DELIBERATELY_ABSENT.has(key))
+    .sort(byMillThenYear)
+    .map((key) => `${key} (pinned by ${keys.get(key)!.join(', ')})`);
+
+  expect(
+    missing,
+    'these pinned anchors have NO report-status row in the migration chain, so they 404 in CI while '
+      + `passing locally against the patched extract: ${missing.join('; ')}.\n${FIX_IT}`,
+  ).toEqual([]);
+});
+
+test('seed parity: every deliberately-absent anchor really is absent, and still used', async () => {
+  const keys = collectAnchorKeys(FIXTURES_DIR);
+  const seeded = statusKeys(readMigrations().all);
+
+  // The half a set-difference cannot do. These anchors' whole purpose is the missing row; seeding one
+  // makes its scenario pass for the wrong reason instead of failing.
+  const wronglySeeded = [...DELIBERATELY_ABSENT.entries()]
+    .filter(([key]) => seeded.has(key))
+    .map(([key, why]) => `${key} is now seeded (${seeded.get(key)}) but must NOT be — ${why}`);
+
+  expect(
+    wronglySeeded,
+    'a guard anchor has been given a report-status row. Its scenario no longer proves what it was '
+      + `written to prove: ${wronglySeeded.join('; ')}`,
+  ).toEqual([]);
+
+  // And the list cannot rot: an exemption for an anchor no fixture pins any more is cover, not a rule.
+  const dead = [...DELIBERATELY_ABSENT.keys()].filter((key) => !keys.has(key));
+  expect(
+    dead,
+    `DELIBERATELY_ABSENT names anchors no fixture pins any more — delete these lines: ${dead.join(', ')}`,
+  ).toEqual([]);
+});
+
+test('seed parity: every anchor mill and reporting year exists', async () => {
+  const keys = collectAnchorKeys(FIXTURES_DIR);
+  const { all } = readMigrations();
+
+  const mills = new Set(parseInserts(all, 'MILL').map((r) => r.MILL_ID));
+  const xref = new Set(parseInserts(all, 'ILCR_MILL_STATUS_XREF').map((r) => r.ILCR_MILL_STATUS_XREF_ID));
+  const years = new Set(parseInserts(all, 'ILCR_REPORTING_PERIOD').map((r) => r.REPORT_YEAR));
+
+  const anchorMills = [...new Set([...keys.keys()].map((k) => k.split('/')[0]))];
+  const anchorYears = [...new Set([...keys.keys()].map((k) => k.split('/')[1]))];
+
+  // A mill needs BOTH rows: MILL carries the number and name the Home dropdown option text asserts,
+  // ILCR_MILL_STATUS_XREF carries ACT/CLS, which is what the 409 closed-mill guards turn on.
+  const noMill = anchorMills.filter((id) => !mills.has(id)).sort((a, b) => Number(a) - Number(b));
+  const noXref = anchorMills.filter((id) => !xref.has(id)).sort((a, b) => Number(a) - Number(b));
+  expect(
+    noMill,
+    `these anchor mills have no THE.MILL row, so their Home option text cannot render: ${noMill.join(', ')}.\n${FIX_IT}`,
+  ).toEqual([]);
+  expect(
+    noXref,
+    'these anchor mills have no THE.ILCR_MILL_STATUS_XREF row, so they have no ACT/CLS status and the '
+      + `closed-mill guards cannot resolve: ${noXref.join(', ')}.\n${FIX_IT}`,
+  ).toEqual([]);
+
+  // Home only offers the years in ILCR_REPORTING_PERIOD, so an anchor outside them is unselectable —
+  // and the scenario fails on a dropdown that has no such option, which reads as a UI defect.
+  const noYear = anchorYears.filter((y) => !years.has(y)).sort();
+  expect(
+    noYear,
+    `these anchor years have no THE.ILCR_REPORTING_PERIOD row, so Home cannot offer them: ${noYear.join(', ')}.\n${FIX_IT}`,
+  ).toEqual([]);
+});
+
+/**
+ * The tables the e2e seed inserts with EXPLICIT primary keys, and the column carrying each.
+ *
+ * A duplicate here, or a collision with an id `db/` already claims, is `ORA-00001` at `flyway:migrate`
+ * time — which takes the whole CI job down before a single test runs, with a message about a constraint
+ * rather than about the row you just added. The backend's `FlywayMigrationConventionTest` states this
+ * class as explicitly OUT of its scope ("Seed-data ID collisions (P2) … Governed only by the ID-range
+ * registry … Nothing here covers it"), and the seed's ID CLAIMS header is that registry — hand-verified.
+ * This is the machine half of it, and it matters most right after a transcription: the Schedule 3 fold-in
+ * was 133 rows of hand-allocated ids.
+ */
+const EXPLICIT_ID_COLUMNS: Record<string, string> = {
+  MILL: 'MILL_ID',
+  ILCR_MILL_STATUS_XREF: 'ILCR_MILL_STATUS_XREF_ID',
+  ILCR_REPORT_SUMMARY: 'ILCR_REPORT_SUMMARY_ID',
+  ILCR_COST_REPORT_DETAIL: 'ILCR_COST_REPORT_DETAIL_ID',
+  TRANSPORTATION_REPORT: 'TRANSPORTATION_REPORT_ID',
+  CAMP_REPORT: 'CAMP_REPORT_ID',
+  ROAD_MAINTENANCE_REPORT: 'ROAD_MAINTENANCE_REPORT_ID',
+  BASIC_SILVICULTURE_REPORT: 'BASIC_SILVICULTURE_REPORT_ID',
+  BIOGEOCLIMATIC_CATALOGUE: 'BIOGEOCLIMATIC_CATALOGUE_ID',
+  // Mill administration (2026-09-28): db/R__75 seeds its own contacts (7551-7561) for the ITs, and a
+  // reused id is ORA-00001 at migrate time exactly like every other table here.
+  CLIENT_CONTACT: 'CLIENT_CONTACT_ID',
+};
+
+test('seed parity: the seed’s explicit ids are unique, unclaimed, and parented', async () => {
+  const { base, e2eOnly } = readMigrations();
+  const problems: string[] = [];
+  let parsed = 0;
+
+  for (const [table, idColumn] of Object.entries(EXPLICIT_ID_COLUMNS)) {
+    const ids = parseInserts(e2eOnly, table)
+      .map((r) => r[idColumn])
+      .filter((v): v is string => v !== null && /^\d+$/.test(v));
+    parsed += ids.length;
+
+    // `Set.add` returns the SET, not a boolean, so the tempting `!seen.add(id)` is ALWAYS false and
+    // detects nothing. This check shipped that way for one commit-less minute and was caught only by
+    // running it against a deliberately duplicated id — which is why "prove it fails" is in the DoD.
+    const seen = new Set<string>();
+    const duplicated: string[] = [];
+    for (const id of ids) {
+      if (seen.has(id) && !duplicated.includes(id)) {
+        duplicated.push(id);
+      }
+      seen.add(id);
+    }
+    if (duplicated.length > 0) {
+      problems.push(`${table}.${idColumn} repeats ${duplicated.join(', ')} inside the e2e seed`);
+    }
+
+    const claimedByBase = new Set(parseInserts(base, table).map((r) => r[idColumn]));
+    const collisions = [...new Set(ids)].filter((id) => claimedByBase.has(id));
+    if (collisions.length > 0) {
+      problems.push(`${table}.${idColumn} reuses ${collisions.join(', ')}, already claimed in db/`);
+    }
+  }
+
+  // Parent references, which the Flyway test schema does NOT enforce for these — an orphan detail row
+  // inserts happily and then simply never appears in any response, so the scenario fails on a value
+  // that "should be there" with nothing pointing at the cause.
+  //
+  // ILCR_COST_REPORT_DETAIL carries ONE FK per report family and they are mutually exclusive: a row
+  // belongs to a summary (schedules 1/2/3), a transportation report (schedule 4), a camp
+  // (schedule 5), or a road maintenance report (schedule 6). Every family this seed uses must be
+  // listed — a MISSING family reads exactly like an orphan, which is how the sch5 read-only camp first
+  // tripped this gate (2026-09-10). If a future schedule adds another FK column, add it here in the
+  // same change or its rows will be reported as parentless.
+  const parentsByColumn: ReadonlyArray<{ column: string; ids: Set<string | null> }> = [
+    {
+      column: 'ILCR_REPORT_SUMMARY_ID',
+      ids: new Set(parseInserts(e2eOnly, 'ILCR_REPORT_SUMMARY').map((r) => r.ILCR_REPORT_SUMMARY_ID)),
+    },
+    {
+      column: 'TRANSPORTATION_REPORT_ID',
+      ids: new Set(
+        parseInserts(e2eOnly, 'TRANSPORTATION_REPORT').map((r) => r.TRANSPORTATION_REPORT_ID),
+      ),
+    },
+    {
+      column: 'CAMP_REPORT_ID',
+      ids: new Set(parseInserts(e2eOnly, 'CAMP_REPORT').map((r) => r.CAMP_REPORT_ID)),
+    },
+    {
+      // Schedule 6, added 2026-09-18 with S17's read-only fixture — the family this comment had been
+      // predicting. It is the first ROAD_MAINTENANCE_REPORT content the seed carries: every other sch6
+      // anchor is empty at rest and its scenarios create records through the app, but S17's page is
+      // non-Draft and refuses every write, so its two records have to be seeded.
+      column: 'ROAD_MAINTENANCE_REPORT_ID',
+      ids: new Set(
+        parseInserts(e2eOnly, 'ROAD_MAINTENANCE_REPORT').map((r) => r.ROAD_MAINTENANCE_REPORT_ID),
+      ),
+    },
+  ];
+  const orphans = parseInserts(e2eOnly, 'ILCR_COST_REPORT_DETAIL')
+    .filter((r) => {
+      for (const { column, ids } of parentsByColumn) {
+        const value = r[column];
+        if (value !== null && value !== undefined) {
+          return !ids.has(value);
+        }
+      }
+      return true; // no parent column named at all
+    })
+    .map((r) => `detail ${r.ILCR_COST_REPORT_DETAIL_ID}`);
+  if (orphans.length > 0) {
+    problems.push(`${orphans.length} detail row(s) have no parent in the seed: ${orphans.join(', ')}`);
+  }
+
+  expect(parsed, 'parsed no explicit ids at all — the parser is not matching').toBeGreaterThan(200);
+  expect(problems, `${SEED} would fail at flyway:migrate or seed unreachable rows:\n${problems.join('\n')}`)
+    .toEqual([]);
+});
+
+test('seed parity: every INSERT this gate cannot read is a known, harmless one', async () => {
+  // The other half of "nothing is skipped silently": parseInserts recognises two unreadable SQL forms
+  // and walks past them, so this asserts the set it walked past is exactly the enumerated one. A new
+  // INSERT…SELECT into a parsed table — the form that would make this gate under-count without saying
+  // so — fails here. Raised in review.
+  const { all } = readMigrations();
+  const source = all.replace(SQL_COMMENT, ' ');
+  const found = new Map<string, number>();
+
+  for (const table of Object.keys(EXPLICIT_ID_COLUMNS).concat([
+    'ILCR_MILL_REPORT_STATUS',
+    'ILCR_REPORTING_PERIOD',
+  ])) {
+    const start = new RegExp(`INSERT\\s+INTO\\s+THE\\.${table}(?![A-Z0-9_])`, 'gi');
+    for (const match of source.matchAll(start)) {
+      const rest = source.slice(match.index! + match[0].length);
+      // Asked of readableInsert, not of a second copy of its regex: a form taught to the parser and
+      // not to this loop would be reported here as an unenumerated skip that never actually happened.
+      if (readableInsert(rest)) continue;
+      const form = unreadableForm(rest);
+      const key = `${table}:${form ?? 'UNCLASSIFIED'}`;
+      found.set(key, (found.get(key) ?? 0) + 1);
+    }
+  }
+
+  const unexpected = [...found.keys()].filter((k) => !KNOWN_UNREADABLE.has(k)).sort();
+  expect(
+    unexpected,
+    'these INSERTs cannot be zipped by column name, so this gate would not see their rows, and they '
+      + 'are not enumerated as harmless. Either teach parseInserts the form or add it to '
+      + `KNOWN_UNREADABLE with the reason it cannot matter: ${unexpected.join(', ')}`,
+  ).toEqual([]);
+
+  // Shrink-only, like DELIBERATELY_ABSENT: an allowance for a statement that no longer exists is cover.
+  const dead = [...KNOWN_UNREADABLE.keys()].filter((k) => !found.has(k)).sort();
+  expect(
+    dead,
+    `KNOWN_UNREADABLE allows forms that are no longer on the tree — delete these: ${dead.join(', ')}`,
+  ).toEqual([]);
+});
+
+test('seed parity: every mill-administration anchor is seeded with its location, contacts and panel', async () => {
+  // The mill-keyed half of the gate (MILL_KEYED_DOMAINS). A mills scenario leans on four things the
+  // schedule anchors never need, and each is a row this seed must carry or the scenario fails ONLY in
+  // CI: the mill's client location on THE.MILL (the BR-09 join that populates both contact dropdowns),
+  // the CLIENT_LOCATION row itself, one CLIENT_CONTACT per pinned option — same id, same location, same
+  // name, because the scenario asserts the option LABELS — and the xref row's at-rest indicator and
+  // contact ids, which the scenario checks before it edits and the cleanup restores. The audit stamp
+  // is required non-null because the scenario asserts the "Last Edited by" line against it.
+  expect(ADMIN_MILL_ANCHORS.length, 'the mill fixture declares no anchors').toBeGreaterThan(0);
+
+  const { all } = readMigrations();
+  const mills = new Map(parseInserts(all, 'MILL').map((r) => [r.MILL_ID, r]));
+  const xrefs = new Map(
+    parseInserts(all, 'ILCR_MILL_STATUS_XREF').map((r) => [r.ILCR_MILL_STATUS_XREF_ID, r]),
+  );
+  const locations = new Set(
+    parseInserts(all, 'CLIENT_LOCATION').map((r) => `${r.CLIENT_NUMBER}/${r.CLIENT_LOCN_CODE}`),
+  );
+  const contacts = parseInserts(all, 'CLIENT_CONTACT');
+
+  const problems: string[] = [];
+  for (const anchor of ADMIN_MILL_ANCHORS) {
+    const at = `mill ${anchor.millId} (${anchor.millNumber} - ${anchor.millName})`;
+    const location = `${anchor.clientNumber}/${anchor.clientLocnCode}`;
+
+    const mill = mills.get(String(anchor.millId));
+    if (!mill) {
+      problems.push(`${at}: no THE.MILL row`);
+    } else {
+      if (mill.MILL_NUMBER !== anchor.millNumber || mill.MILL_NAME !== anchor.millName) {
+        problems.push(`${at}: THE.MILL reads ${mill.MILL_NUMBER} - ${mill.MILL_NAME}`);
+      }
+      if (`${mill.CLIENT_NUMBER}/${mill.CLIENT_LOCN_CODE}` !== location) {
+        problems.push(
+          `${at}: THE.MILL client location is ${mill.CLIENT_NUMBER}/${mill.CLIENT_LOCN_CODE}, expected `
+            + `${location} — without it the mill is offered no contact at all`,
+        );
+      }
+    }
+    if (!locations.has(location)) {
+      problems.push(`${at}: no THE.CLIENT_LOCATION row for ${location}`);
+    }
+
+    // Exactly the pinned set on that location — an extra contact is an extra dropdown option, which
+    // the scenario's BR-09 assertion would report as a defect.
+    const seeded = contacts
+      .filter((c) => `${c.CLIENT_NUMBER}/${c.CLIENT_LOCN_CODE}` === location)
+      .map((c) => `${c.CLIENT_CONTACT_ID}:${c.CONTACT_NAME}`)
+      .sort();
+    const pinned = anchor.contacts.map((c) => `${c.clientContactId}:${c.contactName}`).sort();
+    if (JSON.stringify(seeded) !== JSON.stringify(pinned)) {
+      problems.push(
+        `${at}: contacts on ${location} are [${seeded.join(', ')}], expected [${pinned.join(', ')}]`,
+      );
+    }
+
+    const xref = xrefs.get(String(anchor.millId));
+    if (!xref) {
+      problems.push(`${at}: no THE.ILCR_MILL_STATUS_XREF row`);
+    } else {
+      const served = {
+        status: xref.ILCR_MILL_STATUS_CODE,
+        headOfficeContactInd: xref.HEAD_OFFICE_CONTACT_IND ?? null,
+        headOfficeContactId: xref.HEAD_OFFICE_CONTACT_ID ?? null,
+        divisionContactId: xref.DIVISION_CONTACT_ID ?? null,
+      };
+      const expected = {
+        status: anchor.statusCode,
+        headOfficeContactInd: anchor.atRest.headOfficeContactInd,
+        headOfficeContactId: anchor.atRest.headOfficeContactId?.toString() ?? null,
+        divisionContactId: anchor.atRest.divisionContactId?.toString() ?? null,
+      };
+      if (JSON.stringify(served) !== JSON.stringify(expected)) {
+        problems.push(
+          `${at}: xref row is ${JSON.stringify(served)}, expected ${JSON.stringify(expected)}`,
+        );
+      }
+      if (!xref.UPDATE_USERID) {
+        problems.push(
+          `${at}: xref row has no UPDATE_USERID, so the page's "Last Edited by" line is empty`,
+        );
+      }
+    }
+  }
+
+  // The STATUS anchors (S03 / S04 / S12) lean on three more things, each CI-only if missing:
+  //  - a COMPLETE report set for the seed's current year (its highest ILCR_REPORTING_PERIOD) — the
+  //    status row AND all eleven category rows, because `activate` counts both and answers 409 PARTIAL
+  //    on a status row alone, and would ENROL (unremovable rows) on neither;
+  //  - exactly the pinned ACTIVE assignments, each with its ILCR_USER row;
+  //  - an xref ENTRY_USERID other than 'E2E_SEED', which the mock-submitter association INSERT at the
+  //    end of the seed keys on — it would hand every such mill an active user, and S03 would 409.
+  const statusAnchors = ADMIN_MILL_ANCHORS.filter((a) => a.status);
+  if (statusAnchors.length > 0) {
+    const currentYear = Math.max(
+      ...parseInserts(all, 'ILCR_REPORTING_PERIOD').map((r) => Number(r.REPORT_YEAR)),
+    );
+    const reportStatus = new Set(
+      parseInserts(all, 'ILCR_MILL_REPORT_STATUS').map((r) => `${r.ILCR_MILL_ID}/${r.REPORT_YEAR}`),
+    );
+    const categories = parseInserts(all, 'ILCR_REPORT_CATEGORY');
+    const assignments = parseInserts(all, 'ILCR_MILL_USER_XREF');
+    const users = new Set(parseInserts(all, 'ILCR_USER').map((r) => r.USER_GUID));
+
+    for (const anchor of statusAnchors) {
+      const at = `status anchor ${anchor.millId} (${anchor.millNumber} - ${anchor.millName})`;
+      const pinnedActive = [...anchor.status!.activeUserGuids];
+      // The record STATE is the fixture: complete (status row + 11 categories) for every status anchor
+      // but GAP-6's two, which are pinned as none and partial (the status row alone).
+      const records = anchor.currentYearRecords ?? 'complete';
+      const hasStatus = reportStatus.has(`${anchor.millId}/${currentYear}`);
+      const cats = new Set(
+        categories
+          .filter(
+            (c) => c.ILCR_MILL_ID === String(anchor.millId) && c.REPORT_YEAR === String(currentYear),
+          )
+          .map((c) => c.ILCR_CATEGORY_ID),
+      );
+      const expected = { complete: [true, 11], partial: [true, 0], none: [false, 0] }[records];
+      if (hasStatus !== expected[0] || cats.size !== expected[1]) {
+        problems.push(
+          `${at}: pinned as ${records} for ${currentYear}, but the seed has `
+            + `${hasStatus ? 'a' : 'no'} ILCR_MILL_REPORT_STATUS row and ${cats.size} of 11 `
+            + 'ILCR_REPORT_CATEGORY rows — activate branches on exactly this',
+        );
+      }
+      const active = assignments
+        .filter((u) => u.ILCR_MILL_ID === String(anchor.millId) && u.ACTIVE_DATE && !u.INACTIVE_DATE)
+        .map((u) => u.USER_GUID!)
+        .sort();
+      if (JSON.stringify(active) !== JSON.stringify(pinnedActive)) {
+        problems.push(
+          `${at}: active assignments are [${active.join(', ')}], expected [${pinnedActive.join(', ')}]`,
+        );
+      }
+      const pinnedEnded = [...anchor.status!.endedUserGuids];
+      const ended = assignments
+        .filter((u) => u.ILCR_MILL_ID === String(anchor.millId) && u.INACTIVE_DATE)
+        .map((u) => u.USER_GUID!)
+        .sort();
+      if (JSON.stringify(ended) !== JSON.stringify(pinnedEnded)) {
+        problems.push(
+          `${at}: ended assignments are [${ended.join(', ')}], expected [${pinnedEnded.join(', ')}]`,
+        );
+      }
+      for (const guid of [...pinnedActive, ...pinnedEnded]) {
+        if (!users.has(guid)) problems.push(`${at}: no ILCR_USER row for ${guid}`);
+      }
+      if (xrefs.get(String(anchor.millId))?.ENTRY_USERID === 'E2E_SEED') {
+        problems.push(
+          `${at}: its xref row is ENTRY_USERID 'E2E_SEED', so the seed's closing association INSERT `
+            + 'gives it an active mock-submitter assignment',
+        );
+      }
+    }
+
+    // S05 adds a user whose ACCOUNT must already exist (so the add writes one association row, which
+    // is all its cleanup deletes) and who must be associated with NOTHING.
+    if (!users.has(S05_LICENSEE_GUID)) problems.push(`S05: no ILCR_USER row for ${S05_LICENSEE_GUID}`);
+    const s05Pairs = assignments.filter((u) => u.USER_GUID === S05_LICENSEE_GUID);
+    if (s05Pairs.length > 0) {
+      problems.push(`S05: ${S05_LICENSEE_GUID} is already associated with mill(s) ${s05Pairs.map((u) => u.ILCR_MILL_ID).join(', ')}`);
+    }
+    // GAP-7 is the opposite: its user must have NO account, or the add never provisions one.
+    if (users.has(NEW_ACCOUNT_GUID)) {
+      problems.push(`GAP-7: ${NEW_ACCOUNT_GUID} has an ILCR_USER row, so the add would not provision it`);
+    }
+    if (assignments.some((u) => u.USER_GUID === NEW_ACCOUNT_GUID)) {
+      problems.push(`GAP-7: ${NEW_ACCOUNT_GUID} is already associated with a mill`);
+    }
+  }
+
+  // The import mill is the one anchor defined by what it LACKS: a THE.MILL row, and no ILCR tracking at
+  // all. Seeding its xref would make it unimportable, and S02/S14 would find nothing to import.
+  const importAt = `import mill ${IMPORT_MILL.millId} (${IMPORT_MILL.millNumber} - ${IMPORT_MILL.millName})`;
+  const importMill = mills.get(String(IMPORT_MILL.millId));
+  if (!importMill) {
+    problems.push(`${importAt}: no THE.MILL row`);
+  } else if (importMill.MILL_NUMBER !== IMPORT_MILL.millNumber || importMill.MILL_NAME !== IMPORT_MILL.millName) {
+    problems.push(`${importAt}: THE.MILL reads ${importMill.MILL_NUMBER} - ${importMill.MILL_NAME}`);
+  }
+  if (xrefs.has(String(IMPORT_MILL.millId))) {
+    problems.push(`${importAt}: has an ILCR_MILL_STATUS_XREF row, so it is tracked and cannot be imported`);
+  }
+
+  expect(
+    problems,
+    `${SEED} does not carry the mill-administration anchors fixtures/mill/mills-test-data.ts pins:\n`
+      + `${problems.join('\n')}\n${FIX_IT}`,
+  ).toEqual([]);
+});
+
+test('seed parity: every user-administration anchor is seeded, at rest, as the fixture pins it', async () => {
+  // The users-keyed half of the gate (MILL_KEYED_DOMAINS 'usr'). Every Users-page scenario leans on
+  // rows the schedule anchors never need, each CI-only if missing or wrong:
+  //  - each mill's THE.MILL row, an ACT xref and a current-year report-status row — without that row
+  //    GET /v1/mills does not list the mill, and the Add-mill dropdown has no option to pick;
+  //  - each user's ILCR_USER row with its pinned ACTIVE_IND (the account actions assert it), and NO
+  //    row for the first-time-import users, or activate/add would never provision one;
+  //  - exactly the pinned assignments, ACTIVE as ACTIVE_DATE set + INACTIVE_DATE null, ENDED as
+  //    INACTIVE_DATE set + ACTIVE_DATE NULL — the Users page reads a row with both dates as Active;
+  //  - an xref ENTRY_USERID other than 'E2E_SEED', which the mock-submitter association INSERT keys on.
+  const { all } = readMigrations();
+  const mills = new Map(parseInserts(all, 'MILL').map((r) => [r.MILL_ID, r]));
+  const xrefs = new Map(
+    parseInserts(all, 'ILCR_MILL_STATUS_XREF').map((r) => [r.ILCR_MILL_STATUS_XREF_ID, r]),
+  );
+  const currentYear = Math.max(
+    ...parseInserts(all, 'ILCR_REPORTING_PERIOD').map((r) => Number(r.REPORT_YEAR)),
+  );
+  const reportStatus = new Set(
+    parseInserts(all, 'ILCR_MILL_REPORT_STATUS').map((r) => `${r.ILCR_MILL_ID}/${r.REPORT_YEAR}`),
+  );
+  const users = new Map(parseInserts(all, 'ILCR_USER').map((r) => [r.USER_GUID, r]));
+  const assignments = parseInserts(all, 'ILCR_MILL_USER_XREF');
+
+  const problems: string[] = [];
+  for (const m of USR_MILLS) {
+    const at = `usr mill ${m.millId} (${m.millNumber} - ${m.millName})`;
+    const mill = mills.get(String(m.millId));
+    if (!mill) problems.push(`${at}: no THE.MILL row`);
+    else if (mill.MILL_NUMBER !== m.millNumber || mill.MILL_NAME !== m.millName) {
+      problems.push(`${at}: THE.MILL reads ${mill.MILL_NUMBER} - ${mill.MILL_NAME}`);
+    }
+    const xref = xrefs.get(String(m.millId));
+    if (!xref) problems.push(`${at}: no THE.ILCR_MILL_STATUS_XREF row`);
+    else {
+      if (xref.ILCR_MILL_STATUS_CODE !== 'ACT') problems.push(`${at}: xref status is ${xref.ILCR_MILL_STATUS_CODE}, expected ACT`);
+      if (xref.ENTRY_USERID === 'E2E_SEED') {
+        problems.push(`${at}: xref ENTRY_USERID 'E2E_SEED' hands it an active mock-submitter assignment`);
+      }
+    }
+    if (!reportStatus.has(`${m.millId}/${currentYear}`)) {
+      problems.push(`${at}: no ${currentYear} ILCR_MILL_REPORT_STATUS row, so GET /v1/mills does not list it`);
+    }
+  }
+
+  for (const a of Object.values(USR_ANCHORS)) {
+    const at = `usr user "${a.key}" (${a.userGuid})`;
+    const account = users.get(a.userGuid);
+    if (a.account === null) {
+      if (account) problems.push(`${at}: has an ILCR_USER row, so the first-time import never provisions it`);
+    } else if (!account) {
+      problems.push(`${at}: no ILCR_USER row`);
+    } else if (account.ACTIVE_IND !== a.account) {
+      problems.push(`${at}: ACTIVE_IND is ${account.ACTIVE_IND}, expected ${a.account}`);
+    }
+    const rows = assignments.filter((x) => x.USER_GUID === a.userGuid);
+    const shape = (x: Record<string, string | null>) =>
+      x.INACTIVE_DATE ? (x.ACTIVE_DATE ? 'BOTH' : 'ENDED') : x.ACTIVE_DATE ? 'ACTIVE' : 'NEITHER';
+    const served = rows.map((x) => `${x.ILCR_MILL_ID}:${shape(x)}`).sort();
+    const pinned = [
+      ...a.active.map((id) => `${id}:ACTIVE`),
+      ...a.ended.map((id) => `${id}:ENDED`),
+    ].sort();
+    if (JSON.stringify(served) !== JSON.stringify(pinned)) {
+      problems.push(`${at}: assignments are [${served.join(', ')}], expected [${pinned.join(', ')}]`);
+    }
+  }
+  if (users.has(UNKNOWN_GUID)) problems.push(`the unresolvable carried user ${UNKNOWN_GUID} has an ILCR_USER row`);
+
+  expect(
+    problems,
+    `${SEED} does not carry the user-administration anchors fixtures/usr/users-test-data.ts pins:\n`
+      + `${problems.join('\n')}\n${FIX_IT}`,
+  ).toEqual([]);
+});
+
+test('seed parity: the e2e-only seed carries no anchor no fixture pins', async ({}, testInfo) => {
+  // ADVISORY, not a failure. An unreferenced row is harmless headroom, and the sec domain leans on the
+  // Home lists these rows populate. But a row left behind by a retired anchor is also how the seed
+  // grows a state nobody can explain, so it is surfaced rather than ignored.
+  const keys = collectAnchorKeys(FIXTURES_DIR);
+  // The mill-keyed status anchors' report rows are pinned by the mill-administration check, not a key.
+  const millKeyed = new Set([
+    ...ADMIN_MILL_ANCHORS.map((a) => String(a.millId)),
+    ...USR_MILLS.map((m) => String(m.millId)),
+  ]);
+  const orphans = [...statusKeys(readMigrations().e2eOnly).keys()]
+    .filter((key) => !keys.has(key) && !millKeyed.has(key.split('/')[0]))
+    .sort(byMillThenYear);
+
+  if (orphans.length > 0) {
+    const msg =
+      `[preflight] ${SEED} seeds report-status rows for ${orphans.length} (mill, year) pair(s) that no `
+      + `fixture pins: ${orphans.join(', ')}. Headroom is fine; a retired anchor's leftovers are not.`;
+    console.warn(msg);
+    testInfo.annotations.push({ type: 'warning', description: msg });
+  }
+});

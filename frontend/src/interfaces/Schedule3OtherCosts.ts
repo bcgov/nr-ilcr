@@ -2,6 +2,7 @@
 // OtherAcceptableRow / OtherAcceptableRequest). Numbers are nullable; Jackson omits nulls. Crown and
 // the subtotal are server-computed (read-only) — never recompute client-side.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo, ThreeColumnTotal } from '@/interfaces/Schedule3Response'
 
 export interface OtherAcceptableRow {
@@ -10,6 +11,9 @@ export interface OtherAcceptableRow {
   total: number | null
   pop: number | null
   crown: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 export interface OtherAcceptableDocument {

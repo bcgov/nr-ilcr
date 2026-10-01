@@ -6,6 +6,24 @@
     margin-block-end: $spacing-07;
   }
 
+  // "Schedules" and "Print options" (#411 Overall 12). Carbon's FormGroup renders its legendText as
+  // `<legend class="cds--label">`, which is 0.75rem — and this page is not a `.schedule-page` route,
+  // so it never picked up the 0.875rem label size those routes set. That left these two the SMALLEST
+  // text on the screen at 12px, below even the 14px checkbox labels they introduce.
+  //
+  // 1rem/600, the panel-and-group heading tier (`.sub-panel__title`, `.schedule-8__subheading`).
+  // These two legends are the page's only section dividers — its one heading is the tombstone title —
+  // so they are sized as group headings rather than as field labels. Deliberately BELOW the 1.25rem
+  // section-heading tier: a fieldset legend over a checkbox list reads heavy at that size.
+  //
+  // The checkbox labels beneath need nothing: Carbon gives `.cds--checkbox-label` body-compact-01
+  // (0.875rem) already, so they match the field labels on every other page.
+  &__group > legend.cds--label {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-block-end: $spacing-03;
+  }
+
   // Generate + Clear sit on one row with a small gap.
   &__actions {
     display: flex;

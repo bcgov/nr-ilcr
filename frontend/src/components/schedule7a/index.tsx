@@ -1,10 +1,11 @@
 import type { FC } from 'react'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid, Pagination } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, Close, TrashCan } from '@carbon/icons-react'
 import type Schedule7aResponse from '@/interfaces/Schedule7aResponse'
 import type { Bridge, Schedule7aCheckStatusResponse } from '@/interfaces/Schedule7aResponse'
 import type BridgeRequest from '@/interfaces/Schedule7aRequest'
+import type { BridgeCheckEntry, Schedule7aCheckRequest } from '@/interfaces/Schedule7aRequest'
 import type { BridgeErrors, BridgeFormValues, CostField } from './validation'
 import apiService from '@/service/api-service'
 import { useScheduleBanners } from '@/hooks/useScheduleBanners'
@@ -15,16 +16,26 @@ import { groupInput, numStr, numStrGroup } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import BridgeFields from './BridgeFields'
 import {
+  BRIDGE_FIELD_ORDER,
+  CODE_FIELDS,
   COST_FIELDS,
+  bridgeFieldBannerLine,
   emptyBridgeForm,
   parseDecimalInput,
   roundCost,
   validateBridge,
 } from './validation'
+import { deriveBridgeTotals } from './derived'
+import {
+  rowBannerEntries,
+  rowFieldRank,
+  setBannerEntry,
+  type BannerEntry,
+} from '@/utils/legacyValidationBanner'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success and
@@ -34,10 +45,9 @@ import './index.scss'
 // verbatim when a request returns it.
 const ADD_PANEL_HEADING = 'Add a Bridge report'
 const EMPTY_LIST = 'No bridge reports have been added.'
-// Client-side gate text. The per-field messages under each input are the API's verbatim wording;
-// this only says WHICH rows are blocking, which legacy conveyed by listing every failure at the top
-// of the page.
-const SAVE_BLOCKED = 'Cannot save. Correct the required values on Bridge report Id:'
+// The client-side gate lists every failing field in the top banner, row by row, in legacy's own
+// wording (`bridgeBannerLines`), as legacy's <p:messages> did — replacing the row-number summary this
+// page showed before #359 group B.
 
 const SCHEDULE7A_PATH = '/v1/schedule7a'
 const BRIDGES_PATH = `${SCHEDULE7A_PATH}/bridges`
@@ -108,6 +118,26 @@ const buildBody = (form: BridgeFormValues, revisionCount?: number): BridgeReques
   }
 }
 
+// The Check Status entry for one bridge (#359): its CURRENT form state — typed for an edited row,
+// served for an untouched one — with a blank or unparseable field sent as null. Never `?? 0`: the
+// server's check is a null test, so a zero would turn a missing value into a pass. Whole-number wire
+// fields are rounded the way `buildBody` rounds them.
+const checkEntry = (form: BridgeFormValues): BridgeCheckEntry => {
+  const costs = Object.fromEntries(
+    COST_FIELDS.map((field) => [field, roundCost(parseDecimalInput(form[field]))]),
+  ) as Record<CostField, number | null>
+  return {
+    locationName: form.locationName.trim() === '' ? null : form.locationName.trim(),
+    builtDate: form.builtDate.trim() === '' ? null : form.builtDate.trim(),
+    lifeSpan: roundCost(parseDecimalInput(form.lifeSpan)),
+    abutmentHeight: parseDecimalInput(form.abutmentHeight),
+    length: parseDecimalInput(form.length),
+    width: parseDecimalInput(form.width),
+    distance: roundCost(parseDecimalInput(form.distance)),
+    ...costs,
+  }
+}
+
 const Schedule7a: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
@@ -117,22 +147,67 @@ const Schedule7a: FC = () => {
     actionError,
     checkResult,
     setMessage,
-    setActionError,
     setCheckResult,
-    clearBanners,
+    clearBanners: clearHookBanners,
     resetBanners,
     run,
   } = useScheduleBanners<Schedule7aCheckStatusResponse>(isCurrent)
 
+  // Check Status describes one exact screen snapshot (#359). Bumped synchronously whenever a checked
+  // value changes — and whenever the banners are cleared for a new action — so an older response can
+  // never repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  // A checked value changed: the shown verdict (and any check in flight) describes the old screen.
+  // The validation banner is NOT wiped here: on this page it accumulates per field (see
+  // `commitRowField`), so only the changed field's own line is recomputed, on its change.
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  // The validation banner, one keyed line per failing field in page order (#359 group B change log).
+  // Save and Check Status REPLACE it with the full list; a field's change adds or removes only its own
+  // line — a deliberate deviation from legacy, which replaced the banner on every change (BA ruling).
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  // Which row fields the user has changed since they were last committed ("change and leave"): a
+  // focus-and-leave with no change validates nothing, as legacy's `f:ajax event="change"` did not fire.
+  const changedFieldsRef = useRef<Set<string>>(new Set())
+
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+    setBannerEntries([])
+  }
+
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addForm, setAddForm] = useState<BridgeFormValues>(emptyBridgeForm)
   const [addErrors, setAddErrors] = useState<BridgeErrors>({})
+  // The blur-committed cost values the totals mirror reads. Legacy refreshed `totalCostMat` /
+  // `totalCostIns` / the grand total on each cost field's own `change` handler, so the totals settle
+  // when focus leaves rather than per keystroke (defect #291).
+  const [addCommitted, setAddCommitted] = useState<BridgeFormValues>(emptyBridgeForm)
 
   // Every row's editor is live at once (legacy parity), so form and error state are keyed by bridge.
   // An absent entry means "untouched": the row renders straight from the served bridge. Only edited
   // rows are held here, so a freshly applied document implicitly resets every one of them.
   const [rowForms, setRowForms] = useState<Record<number, BridgeFormValues>>({})
   const [rowErrors, setRowErrors] = useState<Record<number, BridgeErrors>>({})
+  const [rowCommitted, setRowCommitted] = useState<Record<number, BridgeFormValues>>({})
+
+  /**
+   * Advance a totals baseline only from an entry the Save could carry (ruled 2026-08-21): a value the
+   * page reports invalid, or one the strict wire parser rejects, holds the previous figures.
+   */
+  const commitBridge = (form: BridgeFormValues, apply: (next: BridgeFormValues) => void): void => {
+    const errors = validateBridge(form)
+    const bad = COST_FIELDS.some(
+      (field) => errors[field] !== undefined || isUnusableStrictEntry(form[field]),
+    )
+    if (!bad) {
+      apply(form)
+    }
+  }
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   // Set only when Save needs to reveal a failing row; Carbon re-syncs an AccordionItem when its
@@ -144,18 +219,24 @@ const Schedule7a: FC = () => {
   // cannot strand an open panel, a stale banner, or a page number past the end of the new list.
   const resetTransient = useCallback(() => {
     resetBanners()
+    setBannerEntries([])
+    changedFieldsRef.current.clear()
     setShowAddPanel(false)
     setAddForm(emptyBridgeForm())
+    setAddCommitted(emptyBridgeForm())
     setAddErrors({})
     setRowForms({})
+    setRowCommitted({})
     setRowErrors({})
     setConfirmDeleteId(null)
     setExpandedId(null)
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7aResponse>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule7aResponse>({
     path: SCHEDULE7A_PATH,
+    scheduleName: 'Schedule 7A',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -172,6 +253,7 @@ const Schedule7a: FC = () => {
   // where nothing the user typed into an existing row is at stake.
   const applyDocument = (doc: Schedule7aResponse, savedId?: number) => {
     setData(doc)
+    changedFieldsRef.current.clear()
     // Deleting the last bridge of a page leaves `page` past the end of the new list. Clamp it as the
     // document arrives — every mutation response funnels through here — rather than during render,
     // where setting state is a re-entrant update React can warn about, or in an effect, which costs
@@ -191,21 +273,39 @@ const Schedule7a: FC = () => {
 
   // Re-group a money field after the user leaves it ("12000" → "12,000"). A no-op when already
   // grouped, so it cannot loop through a re-render.
+  /**
+   * Re-group a money field on blur and commit it to the mirror's baseline (#291).
+   *
+   * Computed OUTSIDE the state updater (code review 2026-08-21): dispatching `setAddCommitted` from
+   * inside `setAddForm`'s updater made the updater impure — React invokes it during render, may
+   * double-invoke it under StrictMode, and may run it on a render it then discards — and it fired even
+   * on the `return prev` bail-out path. The commit is gated the same way every other page's is.
+   */
   const groupAddField = (key: CostField) => {
-    setAddForm((prev) => {
-      const grouped = groupInput(prev[key])
-      return grouped === prev[key] ? prev : { ...prev, [key]: grouped }
-    })
+    const grouped = groupInput(addForm[key])
+    const next = grouped === addForm[key] ? addForm : { ...addForm, [key]: grouped }
+    setAddForm(next)
+    commitBridge(next, setAddCommitted)
   }
 
   const groupRowField = (bridge: Bridge, key: CostField) => {
-    setRowForms((prev) => {
-      const current = prev[bridge.bridgeReportId] ?? formFromBridge(bridge)
-      const grouped = groupInput(current[key])
-      if (grouped === current[key]) {
-        return prev
-      }
-      return { ...prev, [bridge.bridgeReportId]: { ...current, [key]: grouped } }
+    const untouched = !(bridge.bridgeReportId in rowForms)
+    const current = rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge)
+    const grouped = groupInput(current[key])
+    const changed = grouped !== current[key]
+    // A blur that changed nothing on a row the reporter never edited must NOT hand that row to the
+    // mirror: legacy fired on `change`, and a tab-through is not a change. Without this a stray Tab
+    // silently replaced the served totals with a client recomputation — bypassing this page's own AC7
+    // test (code review 2026-08-21).
+    if (untouched && !changed) {
+      return
+    }
+    const next = changed ? { ...current, [key]: grouped } : current
+    if (changed) {
+      setRowForms((prev) => ({ ...prev, [bridge.bridgeReportId]: next }))
+    }
+    commitBridge(next, (committed) => {
+      setRowCommitted((prev) => ({ ...prev, [bridge.bridgeReportId]: committed }))
     })
   }
 
@@ -214,9 +314,51 @@ const Schedule7a: FC = () => {
     setAddErrors((prev) => clearFieldError(prev, key))
   }
 
+  /**
+   * Validate ONE row field on its change (#359 group B change log): legacy's `f:ajax event="change"`
+   * ran that field's own validators and re-rendered the banner. The field turns red with its inline
+   * text and its legacy line joins the banner — or, passing, loses both. Only this field is judged;
+   * every other field waits for its own change, or for Save / Check Status. A text field commits on
+   * leaving it after a change (`onCommit`); a dropdown on selection, with its new value (`form`).
+   */
+  const commitRowField = (bridge: Bridge, key: keyof BridgeFormValues, form?: BridgeFormValues) => {
+    const id = bridge.bridgeReportId
+    const changedKey = `${String(id)}:${key}`
+    if (form === undefined && !changedFieldsRef.current.has(changedKey)) {
+      return
+    }
+    changedFieldsRef.current.delete(changedKey)
+    if (!data) {
+      return
+    }
+    const message = validateBridge(form ?? rowForms[id] ?? formFromBridge(bridge))[key]
+    setRowErrors((prev) => {
+      const row = prev[id] ?? {}
+      return {
+        ...prev,
+        [id]: message === undefined ? clearFieldError(row, key) : { ...row, [key]: message },
+      }
+    })
+    const rank = rowFieldRank(data.bridges.indexOf(bridge), BRIDGE_FIELD_ORDER.indexOf(key))
+    setBannerEntries((prev) =>
+      setBannerEntry(
+        prev,
+        changedKey,
+        message === undefined
+          ? null
+          : { key: changedKey, rank, line: bridgeFieldBannerLine(key, message, bridge.rowCounter) },
+      ),
+    )
+  }
+
   // The first edit to an untouched row seeds its form from the served bridge, so the other 26 fields
   // survive the change instead of collapsing to blanks.
   const setRowField = (bridge: Bridge, key: keyof BridgeFormValues, value: string) => {
+    const next = {
+      ...(rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge)),
+      [key]: value,
+    }
+    changedFieldsRef.current.add(`${String(bridge.bridgeReportId)}:${key}`)
     setRowForms((prev) => ({
       ...prev,
       [bridge.bridgeReportId]: {
@@ -224,12 +366,16 @@ const Schedule7a: FC = () => {
         [key]: value,
       },
     }))
-    setRowErrors((prev) => ({
-      ...prev,
-      [bridge.bridgeReportId]: clearFieldError(prev[bridge.bridgeReportId] ?? {}, key),
-    }))
-    // A check-status result names fields by value-at-the-time; once the user edits, it is stale.
-    setCheckResult(null)
+    // The red box and its inline text are NOT cleared while typing: like legacy (and Schedule 4) the
+    // field is re-judged only when it is left after a change, or a select on selection
+    // (`commitRowField`), and the box and its banner line update together then.
+    // A check-status result names fields by value-at-the-time; once the user edits, it is stale — and
+    // a check still in flight describes the old values, so its answer is dropped when it lands.
+    invalidateCheckResult()
+    // A dropdown's selection IS its change: validate it now, with the value just chosen.
+    if ((CODE_FIELDS as readonly string[]).includes(key)) {
+      commitRowField(bridge, key, next)
+    }
   }
 
   const handleAdd = () => {
@@ -254,10 +400,60 @@ const Schedule7a: FC = () => {
           applyDocument(doc)
           // Inputs clear only on success (add-is-save).
           setAddForm(emptyBridgeForm())
+          setAddCommitted(emptyBridgeForm())
           setShowAddPanel(false)
         },
       },
     )
+  }
+
+  // Every bridge's CURRENT form in document order: the typed one for an edited row, the served one
+  // for an untouched row.
+  const currentForms = (bridges: readonly Bridge[]) =>
+    bridges.map((bridge) => ({
+      bridge,
+      form: rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge),
+    }))
+
+  /**
+   * Validate EVERY bridge with Save's own validator — the gate Save and Check Status share (legacy's
+   * `validateClient` blocked both). On failure the inline errors are shown, the banner lists each
+   * failing field in legacy's wording row by row, and the first offending row is brought into view:
+   * only five rows are on screen and each editor is collapsed, so without that the button would look
+   * dead. Returns every row's current form in document order, or null when the gate blocks.
+   */
+  const validateAllRows = (
+    bridges: readonly Bridge[],
+  ): { bridge: Bridge; form: BridgeFormValues }[] | null => {
+    const forms = currentForms(bridges)
+    const errorsByRow: Record<number, BridgeErrors> = {}
+    const failedRows: Bridge[] = []
+    const validated = forms.map(({ bridge, form }) => {
+      const errors = validateBridge(form)
+      errorsByRow[bridge.bridgeReportId] = errors
+      if (Object.keys(errors).length > 0) {
+        failedRows.push(bridge)
+      }
+      return { row: bridge, key: bridge.bridgeReportId, errors }
+    })
+    // Replace wholesale rather than merging: a row that now passes must lose its old red text.
+    setRowErrors(errorsByRow)
+    // Everything has now been validated, so no field is waiting on its own change any more.
+    changedFieldsRef.current.clear()
+    if (failedRows.length === 0) {
+      return forms
+    }
+    // Save / Check Status REPLACE the banner with the full list, row by row, field by field.
+    setBannerEntries(
+      rowBannerEntries(validated, BRIDGE_FIELD_ORDER, (bridge, _index, field, message) =>
+        bridgeFieldBannerLine(field, message, bridge.rowCounter),
+      ),
+    )
+    // Bring the first offender into view and open it, so the inline errors are actually reachable.
+    const first = failedRows[0]
+    setPage(Math.floor(bridges.indexOf(first) / PAGE_SIZE) + 1)
+    setExpandedId(first.bridgeReportId)
+    return null
   }
 
   /**
@@ -277,34 +473,8 @@ const Schedule7a: FC = () => {
     clearBanners()
     // Read from `data` rather than the `bridges` binding destructured further down, which is not in
     // scope here.
-    const forms = data.bridges.map((bridge) => ({
-      bridge,
-      form: rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge),
-    }))
-
-    const errorsByRow: Record<number, BridgeErrors> = {}
-    const failedRows: Bridge[] = []
-    for (const { bridge, form } of forms) {
-      const errors = validateBridge(form)
-      errorsByRow[bridge.bridgeReportId] = errors
-      if (Object.keys(errors).length > 0) {
-        failedRows.push(bridge)
-      }
-    }
-    // Replace wholesale rather than merging: a row that now passes must lose its old red text.
-    setRowErrors(errorsByRow)
-    if (failedRows.length > 0) {
-      // Save validates EVERY bridge, but only five are on screen and each editor is collapsed, so a
-      // failing row can be invisible — on another page, or simply unopened. Without this the button
-      // would appear dead: no request, no banner, no way to find the offending row. Legacy listed
-      // every failure in its page-level <p:messages>, so naming them here is the faithful behaviour.
-      setActionError(
-        `${SAVE_BLOCKED} ${failedRows.map((bridge) => String(bridge.rowCounter)).join(', ')}`,
-      )
-      // Bring the first offender into view and open it, so the inline errors are actually reachable.
-      const first = failedRows[0]
-      setPage(Math.floor((data.bridges.indexOf(first) ?? 0) / PAGE_SIZE) + 1)
-      setExpandedId(first.bridgeReportId)
+    const forms = validateAllRows(data.bridges)
+    if (forms === null) {
       return
     }
 
@@ -321,6 +491,7 @@ const Schedule7a: FC = () => {
         // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
         // them all to "untouched" and re-derives them from the echoed document.
         setRowForms({})
+        setRowCommitted({})
         setRowErrors({})
       },
     })
@@ -346,33 +517,41 @@ const Schedule7a: FC = () => {
       return
     }
     clearBanners()
+    // Gated on Save's validator over every row (#359), but only when the page is editable: a read-only
+    // page highlights nothing, so a stored value failing a client rule must not block it silently.
+    const forms = data.editable ? validateAllRows(data.bridges) : currentForms(data.bridges)
+    if (forms === null) {
+      return
+    }
+    // The body carries every bridge as it is ON SCREEN, in document order (the server numbers rows by
+    // ordinal), including rows on other paginator pages. The Add draft is never sent.
+    const body: Schedule7aCheckRequest = { bridges: forms.map(({ form }) => checkEntry(form)) }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation. Read-only (BR-08) — mutates nothing.
     run(
       apiService
         .getAxiosInstance()
-        .post<Schedule7aCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),
-      { fallback: 'Unable to check status.', onSuccess: setCheckResult },
+        .post<Schedule7aCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes values no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
     )
   }
 
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 7A',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
   }
 
   const { editable, bridges, codeLists } = data
-  // Legacy disabled Check Status outside Draft alongside every write control, even though the
+  // Legacy disabled Check Status alongside every write control whenever the report was not
+  // editable by the caller — its rule was role×status, not Draft alone, even though the
   // endpoint itself is read-only and permitted at any status.
   const controlsDisabled = !editable || saving
 
@@ -406,22 +585,27 @@ const Schedule7a: FC = () => {
           keyPrefix="bridge"
           message={message}
           actionError={actionError}
+          validationErrors={bannerEntries.map((entry) => entry.line)}
           checkResult={checkResult}
           rowMessages={checkResult?.bridgeMessages}
         />
 
-        {/* Write controls stay rendered and go disabled outside Draft rather than disappearing —
+        {/* Write controls stay rendered and go disabled whenever the caller may not edit (the
+            role×status matrix since Story 16.1, not Draft alone) rather than disappearing —
             legacy bound `disabled` on all 32 of them and never removed a control, so a read-only
             reporter can still see which actions exist. */}
         <Column sm={4} md={8} lg={16} className="schedule-7a__actions">
           <Button
             kind="primary"
+            // The icon tracks the label: this one control both opens and closes the add panel.
+            renderIcon={showAddPanel ? Close : Add}
             disabled={controlsDisabled}
             onClick={() => {
               clearBanners()
               // Closing discards the draft, so reopening starts clean rather than restoring
               // half-typed values and the red errors from a previous failed submit.
               setAddForm(emptyBridgeForm())
+              setAddCommitted(emptyBridgeForm())
               setAddErrors({})
               setShowAddPanel((open) => !open)
             }}
@@ -438,12 +622,20 @@ const Schedule7a: FC = () => {
               form={addForm}
               errors={addErrors}
               codeLists={codeLists}
+              // Previously omitted, so all four totals read blank while a new bridge was entered —
+              // the same "blank, not stale" shape as Schedule 4's copy mode (#291).
+              totals={deriveBridgeTotals(addCommitted)}
               disabled={controlsDisabled}
               onChange={setAddField}
               onGroup={groupAddField}
             />
             <div className="schedule-7a__panel-actions">
-              <Button kind="primary" disabled={controlsDisabled} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={controlsDisabled}
+                onClick={handleAdd}
+              >
                 Add Report
               </Button>
             </div>
@@ -470,16 +662,22 @@ const Schedule7a: FC = () => {
                       errors={rowErrors[bridge.bridgeReportId] ?? {}}
                       codeLists={codeLists}
                       disabled={controlsDisabled}
-                      totals={bridge}
+                      totals={
+                        bridge.bridgeReportId in rowCommitted
+                          ? deriveBridgeTotals(rowCommitted[bridge.bridgeReportId])
+                          : bridge
+                      }
                       onChange={(key, value) => setRowField(bridge, key, value)}
                       onGroup={(key) => groupRowField(bridge, key)}
+                      onCommit={(key) => commitRowField(bridge, key)}
+                      originals={bridge.originalValues}
                     />
                     {/* Delete is the ONLY per-row control in legacy (schedule7A.xhtml:1237).
                         Saving is a page-level action covering every bridge at once, so a per-row
                         Save/Cancel pair would offer a granularity the schedule does not have. */}
                     <div className="schedule-7a__panel-actions">
                       <Button
-                        kind="danger--ghost"
+                        kind="danger--tertiary"
                         size="sm"
                         renderIcon={TrashCan}
                         disabled={controlsDisabled}

@@ -8,7 +8,13 @@
 .sub-panel__title {
   margin: 0;
   padding: 0.75rem 1rem;
-  font-size: 0.875rem;
+  // 1rem, the panel/table-heading tier (#411 Overall 11). CSP sizes the heading above an editable
+  // line-items table — which is exactly what "Add Other Cost" and "Other Cost List" are — at 1rem/600
+  // (nr-csp EditableLineItemsTable/index.scss:7); it reserves 0.875rem for the tier BELOW a panel
+  // heading (Invoice/index.scss:121). At the old 0.875rem this title read smaller than the body text
+  // inside the panel it names. It stays below the 1.25rem section headings, as the grey bar and bold
+  // weight already carry most of its emphasis.
+  font-size: 1rem;
   font-weight: 700;
   background: var(--cds-layer-accent-01);
   border-block-end: 1px solid var(--cds-border-subtle);
@@ -18,7 +24,5 @@
   padding: 1rem;
 }
 
-// Bold table column headers (matches the legacy bold headers).
-.sub-panel .cds--data-table thead th {
-  font-weight: 700;
-}
+// Bold table column headers (matches the legacy bold headers) is now app-wide — see the data-table
+// thead rule in _overrides.scss, which this rule's text became.

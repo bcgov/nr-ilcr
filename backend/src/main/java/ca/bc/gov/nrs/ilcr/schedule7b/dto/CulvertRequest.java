@@ -47,41 +47,25 @@ import java.math.BigDecimal;
  * @param revisionCount the optimistic-lock token echoed from the served row (required on UPDATE)
  */
 public record CulvertRequest(
-    @NotBlank(message = "{missingRequiredFieldMsg}")
-    String culvertTypeCode,
-
-    @Min(value = 0, message = "{culvertSpanValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{culvertSpanValidatorErrorMsg}")
-    Integer spanSize,
-
-    @Min(value = 0, message = "{culvertRiseValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{culvertRiseValidatorErrorMsg}")
-    Integer riseSize,
+    @NotBlank(message = "{missingRequiredFieldMsg}") String culvertTypeCode,
+    @Min(value = 0, message = "{culvertSpanValidatorErrorMsg}") @Max(value = 9999999, message = "{culvertSpanValidatorErrorMsg}") Integer spanSize,
+    @Min(value = 0, message = "{culvertRiseValidatorErrorMsg}") @Max(value = 9999999, message = "{culvertRiseValidatorErrorMsg}") Integer riseSize,
 
     // Range ONLY — deliberately no @Digits. Bean Validation's @Digits reads BigDecimal.scale(), so
     // `12.50` (numerically one decimal, scale 2) violated `fraction = 1` and was rejected with a
     // RANGE message for a value squarely inside the range, while the identical `12.5` passed. Any
     // client that formats to two decimals could not save a culvert at all. Legacy applied
-    // f:validateDoubleRange (range only, schedule7B.xhtml:378-379) and pinned the scale in its display
-    // converter instead — `f:convertNumber pattern="###,##0.0"` (messages.properties:206), one decimal
-    // — so it never wrote more. The column is NUMBER(8,2) in delivery and so would ACCEPT two decimals;
+    // f:validateDoubleRange (range only, schedule7B.xhtml:378-379) and pinned the scale in its
+    // display
+    // converter instead — `f:convertNumber pattern="###,##0.0"` (messages.properties:206), one
+    // decimal
+    // — so it never wrote more. The column is NUMBER(8,2) in delivery and so would ACCEPT two
+    // decimals;
     // scale 1 is legacy's converter, not a column limit. Schedule7bService normalizes on write.
-    @DecimalMin(value = "0.0", message = "{culvertLengthValidatorErrorMsg}")
-    @DecimalMax(value = "999999.9", message = "{culvertLengthValidatorErrorMsg}")
-    BigDecimal length,
-
-    @NotNull(message = "{missingRequiredFieldMsg}")
-    @Min(value = 1, message = "{culvertPieceCountValidatorErrorMsg}")
-    @Max(value = 9999, message = "{culvertPieceCountValidatorErrorMsg}")
-    Integer culvertPieceCount,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer materialCost,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer installCost,
+    @DecimalMin(value = "0.0", message = "{culvertLengthValidatorErrorMsg}") @DecimalMax(value = "999999.9", message = "{culvertLengthValidatorErrorMsg}") BigDecimal length,
+    @NotNull(message = "{missingRequiredFieldMsg}") @Min(value = 1, message = "{culvertPieceCountValidatorErrorMsg}") @Max(value = 9999, message = "{culvertPieceCountValidatorErrorMsg}") Integer culvertPieceCount,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer materialCost,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer installCost,
 
     // Two units, both enforced. 3,500 CHARACTERS is the legacy screen's own maxlength
     // (schedule7B.xhtml:221,490); 4,000 BYTES is the column's real width. @Size alone let 3,500
@@ -89,15 +73,11 @@ public record CulvertRequest(
     // ORA-12899 and the service's blanket DataAccessException catch could only surface it as an
     // opaque 500 "Schedule could not be saved." — on an ordinary save, with a page-level Save
     // rolling the whole batch back and nothing pointing at the comment.
-    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
-    @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
-    String comments,
+    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}") @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
+        String comments,
 
     // @Min(0) as well as @NotNull: a never-issued token like -1 matches no row, so without the
     // floor it reached the optimistic-lock UPDATE, missed, and surfaced as a 409 "someone else
     // changed this row" for what is simply a malformed body — the phantom conflict OnUpdate exists
     // to prevent.
-    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}")
-    @Min(value = 0, message = "{revisionCountRequiredErrorMsg}")
-    Integer revisionCount) {
-}
+    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}") @Min(value = 0, message = "{revisionCountRequiredErrorMsg}") Integer revisionCount) {}

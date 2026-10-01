@@ -23,18 +23,23 @@ const extractors = {
   cost: (r: EditRow) => (r.values.cost === '' ? null : Number(r.values.cost)),
 }
 
-const keysOf = (rows: EditRow[]) => rows.map((r) => r.key)
+// `readonly`, matching the hook's own contract: sortedRows may be the caller's array, so the hook
+// hands it back read-only rather than inviting an in-place sort of a component's props.
+const keysOf = (rows: readonly EditRow[]) => rows.map((r) => r.key)
+
+// A row's stable identity, now an explicit hook argument (the hook is generic over the row type).
+const identity = (r: EditRow) => r.key
 
 describe('useRowSort', () => {
   test('unsorted until a header is clicked (no default sort)', () => {
-    const { result } = renderHook(() => useRowSort(seed, extractors))
+    const { result } = renderHook(() => useRowSort(seed, extractors, identity))
     expect(keysOf(result.current.sortedRows)).toEqual([1, 2, 3])
     expect(result.current.activeKey).toBeNull()
     expect(result.current.directionFor('cost')).toBe('NONE')
   })
 
   test('cycles NONE → ASC → DESC → NONE on repeated clicks, blanks last', () => {
-    const { result } = renderHook(() => useRowSort(seed, extractors))
+    const { result } = renderHook(() => useRowSort(seed, extractors, identity))
 
     act(() => result.current.toggleSort('cost'))
     // ASC by cost: 10, 30, then blank last.
@@ -53,13 +58,13 @@ describe('useRowSort', () => {
   })
 
   test('sorts descriptions alphabetically', () => {
-    const { result } = renderHook(() => useRowSort(seed, extractors))
+    const { result } = renderHook(() => useRowSort(seed, extractors, identity))
     act(() => result.current.toggleSort('description'))
     expect(keysOf(result.current.sortedRows)).toEqual([2, 1, 3]) // Apple, Banana, Cherry
   })
 
   test('order is snapshotted: editing a cell does not re-sort the row mid-edit', () => {
-    const { result, rerender } = renderHook(({ rows }) => useRowSort(rows, extractors), {
+    const { result, rerender } = renderHook(({ rows }) => useRowSort(rows, extractors, identity), {
       initialProps: { rows: seed },
     })
     act(() => result.current.toggleSort('cost'))
@@ -72,7 +77,7 @@ describe('useRowSort', () => {
   })
 
   test('rows added after a sort append at the end; removed rows drop out', () => {
-    const { result, rerender } = renderHook(({ rows }) => useRowSort(rows, extractors), {
+    const { result, rerender } = renderHook(({ rows }) => useRowSort(rows, extractors, identity), {
       initialProps: { rows: seed },
     })
     act(() => result.current.toggleSort('cost'))
@@ -90,7 +95,7 @@ describe('useRowSort', () => {
   // Callers build the extractor map dynamically (see Schedule3SubPage), so a header marked sortable
   // can drift out of sync with it. That must degrade to an inert header, never a TypeError.
   test('a header with no extractor is inert: no throw, no sort state', () => {
-    const { result } = renderHook(() => useRowSort(seed, extractors))
+    const { result } = renderHook(() => useRowSort(seed, extractors, identity))
 
     expect(() => act(() => result.current.toggleSort('crown'))).not.toThrow()
     expect(keysOf(result.current.sortedRows)).toEqual([1, 2, 3])

@@ -24,13 +24,12 @@ import org.springframework.test.context.TestPropertySource;
  *
  * <p><strong>The cost bound is per PAGE, not per control</strong> (deviation (A)). Every cost input
  * on the Other Camp sub-page carries {@code costSize="7"} ({@code schedule5CampExpenses.xhtml:45}
- * add-form, {@code :79} grid) → &plusmn;9,999,999; neither Other Access input carries one
- * ({@code schedule5AccessExpenses.xhtml:36-38}, {@code :71-76}) → &plusmn;99,999,999. The committed
- * AC and all three UC documents record this incorrectly; the legacy source is what this suite
- * follows.
+ * add-form, {@code :79} grid) → &plusmn;9,999,999; neither Other Access input carries one ({@code
+ * schedule5AccessExpenses.xhtml:36-38}, {@code :71-76}) → &plusmn;99,999,999. The committed AC and
+ * all three UC documents record this incorrectly; the legacy source is what this suite follows.
  *
- * <p><strong>Nothing here mutates.</strong> Every method targets camp 8708 / year 2023, whose single
- * seeded row (cost 9999999, description {@code 'Boundary Row'}) is the nothing-persisted
+ * <p><strong>Nothing here mutates.</strong> Every method targets camp 8708 / year 2023, whose
+ * single seeded row (cost 9999999, description {@code 'Boundary Row'}) is the nothing-persisted
  * fingerprint — except the two ACCEPTANCE cases, which target their own camp because they must
  * commit to prove acceptance.
  */
@@ -51,8 +50,7 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
 
   private final ObjectMapper mapper = new ObjectMapper();
 
-  @Autowired
-  private DataSource dataSource;
+  @Autowired private DataSource dataSource;
 
   private JdbcTemplate jdbc() {
     return new JdbcTemplate(dataSource);
@@ -61,25 +59,38 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
   private static String row(String description, String cost) {
     return "{\"rows\":[{\"rowId\":null,\"description\":"
         + (description == null ? "null" : "\"" + description + "\"")
-        + ",\"cost\":" + cost + "}]}";
+        + ",\"cost\":"
+        + cost
+        + "}]}";
   }
 
   private org.springframework.test.web.servlet.ResultActions save(String path, String body)
       throws Exception {
-    return mockMvc.perform(put(path).with(csrf())
-        .param("millId", String.valueOf(MILL)).param("year", String.valueOf(YEAR))
-        .contentType(MediaType.APPLICATION_JSON).content(body));
+    return mockMvc.perform(
+        put(path)
+            .with(csrf())
+            .param("millId", String.valueOf(MILL))
+            .param("year", String.valueOf(YEAR))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body));
   }
 
   /** Camp 8708 still holds exactly its seeded row — the nothing-persisted proof. */
   private void assertNothingPersisted() {
-    assertThat(jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL "
-            + "WHERE CAMP_REPORT_ID = 8708 AND ILCR_REPORT_COST_ITEM_ID IN (62, 68)",
-        Integer.class)).isEqualTo(1);
-    assertThat(jdbc().queryForObject(
-        "SELECT ITEM_DESCRIPTION FROM THE.ILCR_COST_REPORT_DETAIL "
-            + "WHERE ILCR_COST_REPORT_DETAIL_ID = 8742", String.class)).isEqualTo("Boundary Row");
+    assertThat(
+            jdbc()
+                .queryForObject(
+                    "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL "
+                        + "WHERE CAMP_REPORT_ID = 8708 AND ILCR_REPORT_COST_ITEM_ID IN (62, 68)",
+                    Integer.class))
+        .isEqualTo(1);
+    assertThat(
+            jdbc()
+                .queryForObject(
+                    "SELECT ITEM_DESCRIPTION FROM THE.ILCR_COST_REPORT_DETAIL "
+                        + "WHERE ILCR_COST_REPORT_DETAIL_ID = 8742",
+                    String.class))
+        .isEqualTo("Boundary Row");
   }
 
   @Nested
@@ -90,11 +101,16 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
     @DisplayName("CAMP: 9,999,999 and -9,999,999 are accepted")
     void campBoundsAccepted() throws Exception {
       // Targets its own camp/year: acceptance must COMMIT, so it cannot use the fingerprint camp.
-      mockMvc.perform(put("/api/v1/schedule5/camps/8717/other-camp-expenses").with(csrf())
-              .param("millId", String.valueOf(MILL)).param("year", "2027")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content("{\"rows\":[{\"rowId\":null,\"description\":\"Max\",\"cost\":9999999},"
-                  + "{\"rowId\":null,\"description\":\"Min\",\"cost\":-9999999}]}"))
+      mockMvc
+          .perform(
+              put("/api/v1/schedule5/camps/8717/other-camp-expenses")
+                  .with(csrf())
+                  .param("millId", String.valueOf(MILL))
+                  .param("year", "2027")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      "{\"rows\":[{\"rowId\":null,\"description\":\"Max\",\"cost\":9999999},"
+                          + "{\"rowId\":null,\"description\":\"Min\",\"cost\":-9999999}]}"))
           .andExpect(status().isOk());
     }
 
@@ -134,10 +150,15 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
     void accessAcceptsCampOverMax() throws Exception {
       // The sharp case: the same value the camp page rejects is legal on the access page. This is
       // the assertion that would fail if someone "tidied up" the two bounds into one.
-      mockMvc.perform(put("/api/v1/schedule5/camps/8717/other-access-expenses").with(csrf())
-              .param("millId", String.valueOf(MILL)).param("year", "2027")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content("{\"rows\":[{\"rowId\":null,\"description\":\"Wide\",\"cost\":10000000}]}"))
+      mockMvc
+          .perform(
+              put("/api/v1/schedule5/camps/8717/other-access-expenses")
+                  .with(csrf())
+                  .param("millId", String.valueOf(MILL))
+                  .param("year", "2027")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      "{\"rows\":[{\"rowId\":null,\"description\":\"Wide\",\"cost\":10000000}]}"))
           .andExpect(status().isOk());
     }
 
@@ -171,11 +192,17 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
     @Test
     @DisplayName("30 characters is accepted")
     void thirtyCharsAccepted() throws Exception {
-      mockMvc.perform(put("/api/v1/schedule5/camps/8717/other-camp-expenses").with(csrf())
-              .param("millId", String.valueOf(MILL)).param("year", "2027")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content("{\"rows\":[{\"rowId\":null,\"description\":\"" + repeat('A', 30)
-                  + "\",\"cost\":1}]}"))
+      mockMvc
+          .perform(
+              put("/api/v1/schedule5/camps/8717/other-camp-expenses")
+                  .with(csrf())
+                  .param("millId", String.valueOf(MILL))
+                  .param("year", "2027")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      "{\"rows\":[{\"rowId\":null,\"description\":\""
+                          + repeat('A', 30)
+                          + "\",\"cost\":1}]}"))
           .andExpect(status().isOk());
     }
 
@@ -199,11 +226,17 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
       // production, which is exactly the gap the widening closes.
       String fourByteChar = "🚀"; // U+1F680 — 4 UTF-8 bytes, but TWO Java chars
       String description = fourByteChar.repeat(15); // 30 Java chars, 60 bytes
-      mockMvc.perform(put("/api/v1/schedule5/camps/8717/other-camp-expenses").with(csrf())
-              .param("millId", String.valueOf(MILL)).param("year", "2027")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content("{\"rows\":[{\"rowId\":null,\"description\":\"" + description
-                  + "\",\"cost\":1}]}"))
+      mockMvc
+          .perform(
+              put("/api/v1/schedule5/camps/8717/other-camp-expenses")
+                  .with(csrf())
+                  .param("millId", String.valueOf(MILL))
+                  .param("year", "2027")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      "{\"rows\":[{\"rowId\":null,\"description\":\""
+                          + description
+                          + "\",\"cost\":1}]}"))
           .andExpect(status().isOk());
     }
   }
@@ -218,16 +251,14 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
       // A typoed key, a truncated payload or a serializer bug produces {} — before the review
       // patch (@NotNull on rows, 2026-08-12) that body validated cleanly and CLEARED the list.
       // The intentional clear is always spelled "rows": [].
-      save(CAMP_ROWS, "{}")
-          .andExpect(status().isBadRequest());
+      save(CAMP_ROWS, "{}").andExpect(status().isBadRequest());
       assertNothingPersisted();
     }
 
     @Test
     @DisplayName("a null rows field is 400 for the same reason")
     void nullRowsFieldRejected() throws Exception {
-      save(CAMP_ROWS, "{\"rows\":null}")
-          .andExpect(status().isBadRequest());
+      save(CAMP_ROWS, "{\"rows\":null}").andExpect(status().isBadRequest());
       assertNothingPersisted();
     }
 
@@ -236,8 +267,7 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
     void nullRowElementRejected() throws Exception {
       // Jackson deserializes {"rows":[null]} into a list containing null, and @Valid cascades skip
       // null elements — without the element-level @NotNull the first dereference NPEs into a 500.
-      save(CAMP_ROWS, "{\"rows\":[null]}")
-          .andExpect(status().isBadRequest());
+      save(CAMP_ROWS, "{\"rows\":[null]}").andExpect(status().isBadRequest());
       assertNothingPersisted();
     }
   }
@@ -251,19 +281,29 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
     void blankDescriptionsAccepted() throws Exception {
       // A @NotBlank here would make legacy-stored rows un-re-saveable AND make four already-shipped
       // Check Status conditions unreachable. Nothing server-side has ever checked this field.
-      mockMvc.perform(put("/api/v1/schedule5/camps/8717/other-camp-expenses").with(csrf())
-              .param("millId", String.valueOf(MILL)).param("year", "2027")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content("{\"rows\":[{\"rowId\":null,\"description\":null,\"cost\":1},"
-                  + "{\"rowId\":null,\"description\":\"\",\"cost\":2},"
-                  + "{\"rowId\":null,\"description\":\" \",\"cost\":3}]}"))
+      mockMvc
+          .perform(
+              put("/api/v1/schedule5/camps/8717/other-camp-expenses")
+                  .with(csrf())
+                  .param("millId", String.valueOf(MILL))
+                  .param("year", "2027")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      "{\"rows\":[{\"rowId\":null,\"description\":null,\"cost\":1},"
+                          + "{\"rowId\":null,\"description\":\"\",\"cost\":2},"
+                          + "{\"rowId\":null,\"description\":\" \",\"cost\":3}]}"))
           .andExpect(status().isOk());
 
-      String body = mockMvc.perform(
-              get("/api/v1/schedule5/camps/8717/other-camp-expenses")
-                  .param("millId", String.valueOf(MILL)).param("year", "2027"))
-          .andExpect(status().isOk())
-          .andReturn().getResponse().getContentAsString();
+      String body =
+          mockMvc
+              .perform(
+                  get("/api/v1/schedule5/camps/8717/other-camp-expenses")
+                      .param("millId", String.valueOf(MILL))
+                      .param("year", "2027"))
+              .andExpect(status().isOk())
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
       JsonNode doc = mapper.readTree(body);
       assertThat(doc.get("rows")).hasSize(3);
       // The single-space row keeps its space — it is NOT trimmed away, which is what makes the

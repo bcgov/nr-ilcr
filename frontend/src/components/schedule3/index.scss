@@ -32,11 +32,8 @@
   table-layout: fixed;
   inline-size: 100%;
 
-  // Bold column-header text (Carbon defaults to semibold).
-  thead th,
-  thead .cds--table-header-label {
-    font-weight: 700;
-  }
+  // Column-header weight is now app-wide (see the data-table thead rule in _overrides.scss); this
+  // table's local copy was one of the four that let the other schedules go unbolded.
 
   th:first-child,
   td:first-child {
@@ -80,7 +77,28 @@
 // The Subtotal Other Costs / Included Unacceptable Costs labels are ghost link-buttons in the label
 // column; strip the ghost button's default inline padding so they line up flush with the plain-text
 // row labels above/below them.
+//
+// Both rows are `schedule-3__subtotal-row`s, so these labels sit on the subtotal band, where Carbon's
+// ghost blue (#0f62fe) measures 4.39:1 — under WCAG 2.1 AA. Take the darker on-band link (see the
+// token's note in _overrides.scss); the two-class selector outranks Carbon's `.cds--btn--ghost`,
+// which sets this colour only on its base rule and leaves it alone on hover.
 .schedule-3__link.cds--btn {
   padding-inline: 0;
   min-block-size: auto;
+  color: var(--ilcr-band-link);
+}
+
+// Calculated summary bands (#411 Overall 5). The four derived rows are Subtotal Other Costs,
+// Subtotal (Actual Costs), Included Unacceptable Costs and Total Costs; the cost LINES above them and
+// the Override dropdown below carry no band, being entered rather than calculated.
+.schedule-3__subtotal-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-subtotal);
+}
+
+// Total Costs is the schedule's final figure — note it is not the final ROW, since the Override
+// dropdown sits beneath it.
+.schedule-3__total-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-total);
 }

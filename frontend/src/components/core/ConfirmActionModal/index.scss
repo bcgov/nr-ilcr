@@ -1,0 +1,21 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// The same footer treatment as ConfirmNavigationModal (#312 Overall 11), so every confirm dialog in
+// the app reads alike: Carbon's ComposedModal footer stretches each button to 50% width at a fixed
+// 64px height. Instead the footer's height is AUTO (its padding grows the box rather than clipping
+// the left button), and the buttons size to their content and to the standard 48px button height,
+// right-aligned with a gap.
+.confirm-action-modal .cds--modal-footer {
+  block-size: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-04;
+  padding: $spacing-05;
+}
+
+.confirm-action-modal .cds--modal-footer .cds--btn {
+  flex: 0 1 auto;
+  block-size: var(--cds-layout-size-height-local);
+  min-block-size: var(--cds-layout-size-height-local);
+  max-inline-size: none;
+}

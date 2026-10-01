@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
@@ -16,15 +18,26 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
  * Unit test for the mill/year guard decisions (AD-4). Mocked repository — no DB, no Spring. Covers
@@ -36,45 +49,208 @@ class MillContextServiceTest {
   private static final int YEAR = 2021;
   private static final String CATEGORY = "1";
 
-  @Mock
-  private MillContextRepository repository;
+  @Mock private MillContextRepository repository;
 
   // Story 1.3 (AC7): the service resolves the SUC-001 text via MessageSource for the 200 message.
-  // Unstubbed here except where a success test asserts the message; unused-mock is fine under strict
+  // Unstubbed here except where a success test asserts the message; unused-mock is fine under
+  // strict
   // Mockito (only unused STUBS fail). @InjectMocks wires it through the two-arg constructor.
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private MillContextService service;
+  // Story 5.7: the shared guards now call validateMillAccess, which checks the caller's role.
+  @Mock private JwtRoleChecker roleChecker;
+
+  @InjectMocks private MillContextService service;
+
+  @BeforeEach
+  void bypassMillScopeAsAdmin() {
+    // The mill/year guard tests below exercise the status/summary decision table, not Story 5.7
+    // mill-scope; default the caller to ADMIN so validateMillAccess bypasses. Lenient: the
+    // listMills
+    // tests (which pass isAdmin explicitly) never consult the role checker. Mill-scope enforcement
+    // itself is proven end-to-end in MillScopeEnforcementIT.
+    lenient().when(roleChecker.hasConcreteRole(anyString())).thenReturn(true);
+  }
+
+  @AfterEach
+  void clearSecurityContext() {
+    SecurityContextHolder.clearContext();
+  }
+
+  private void authenticateJwtWithGuid(String guid) {
+    Jwt jwt =
+        Jwt.withTokenValue("t").header("alg", "none").claim("custom:idp_user_id", guid).build();
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(new JwtAuthenticationToken(jwt));
+    SecurityContextHolder.setContext(ctx);
+  }
+
+  @Test
+  void validateMillAccess_admin_bypasses_withoutTouchingTheXref() {
+    // roleChecker→true (admin) from @BeforeEach: returns before any repository read (strict Mockito
+    // proves userHasActiveAssignment is never called — no stub for it here).
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_submitterAssociated_isAllowed() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("SUBGUID");
+    when(repository.userHasActiveAssignment(514L, "SUBGUID")).thenReturn(true);
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_submitterNotAssociated_isDenied() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("SUBGUID");
+    when(repository.userHasActiveAssignment(514L, "SUBGUID")).thenReturn(false);
+    assertThrows(AccessDeniedException.class, () -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_submitterBlankGuid_isDenied_failClosed() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("   "); // no resolvable custom:idp_user_id
+    // Strict Mockito proves the xref is never consulted — blank guid is denied before the query.
+    assertThrows(AccessDeniedException.class, () -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_identifiedMockPrincipal_isStillExempt_byChoiceNotForLackOfIdentity() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    // THE SHAPE THE APP ACTUALLY PRESENTS with security off, and why this test was rewritten
+    // (bcgov/nr-ilcr#385). The AC6 exemption used to be justified as "a non-Jwt principal
+    // carries no directory GUID" — nothing to scope by. That is no longer true:
+    // MockPrincipalFilter presents a MockUserPrincipal carrying a stand-in GUID, and
+    // `listMills` DOES scope by it. So the exemption is now a deliberate dev-mode CHOICE,
+    // not a consequence: with security off the list is scoped and direct access is not.
+    //
+    // Retiring it is tracked separately, sequenced with running the suite security-ON,
+    // where this branch never fires because every caller presents a Jwt. Until then this
+    // test pins the asymmetry as a decision on record rather than a surprise — if you make
+    // the gates agree, THIS test should fail and tell you why. Strict Mockito also proves
+    // no xref read.
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken(
+            new MockUserPrincipal("dev-submitter", "MOCKGUIDAAAABBBBCCCCDDDD00000001"),
+            "N/A",
+            List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_anyOtherNonJwtPrincipal_isExempt() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    // The generic branch: the guard keys on "not a Jwt", so ANY non-Jwt principal is exempt,
+    // not just the dev mock above. Kept separate because the risk differs — this one has no
+    // identity at all, so scoping it is impossible rather than merely declined.
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken("some-other-principal", "N/A", List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  // ---- callerMillScope (#468): the report-side twin of listMills.
+
+  @Test
+  void callerMillScope_admin_isUnscoped_withoutTouchingTheXref() {
+    // roleChecker→true (admin) from @BeforeEach: no repository read (strict Mockito proves it).
+    assertTrue(service.callerMillScope().isEmpty());
+  }
+
+  @Test
+  void callerMillScope_submitter_isTheirAssociatedMillIds() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("GUID-1");
+    when(repository.findMillsForUser("GUID-1"))
+        .thenReturn(
+            List.of(
+                new MillSummary(514L, "5140", "A", "ACT"),
+                new MillSummary(730L, "7300", "B", "CLS")));
+
+    assertEquals(Optional.of(Set.of(514L, 730L)), service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_submitterWithNoMills_isAnEmptyScope_notUnscoped() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("GUID-2");
+    when(repository.findMillsForUser("GUID-2")).thenReturn(List.of());
+
+    // Optional.of(empty set), NOT Optional.empty(): "nothing" must never read as "everything".
+    assertEquals(Optional.of(Set.of()), service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_submitterBlankGuid_isRefused_notAnEmptyScope() {
+    // #468 review: "no identity" must not read as "a user with no mills". A blank claim is a
+    // token/claim-mapping problem and surfaces as an audited 403, never as an empty table.
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("");
+    assertThrows(AccessDeniedException.class, () -> service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_principalWithoutIdentity_isRefused() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken("some-other-principal", "N/A", List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertThrows(AccessDeniedException.class, () -> service.callerMillScope());
+  }
+
+  @Test
+  void callerMillScope_mockPrincipal_isScopedByItsStandInGuid_likeTheHomeList() {
+    // Deliberately NOT validateMillAccess's non-Jwt exemption: the reports follow listMills, which
+    // scopes the dev mock submitter by the GUID MockPrincipalFilter gives it.
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken(
+            new MockUserPrincipal("dev-submitter", "MOCKGUIDAAAABBBBCCCCDDDD00000001"),
+            "N/A",
+            List.of()));
+    SecurityContextHolder.setContext(ctx);
+    when(repository.findMillsForUser("MOCKGUIDAAAABBBBCCCCDDDD00000001"))
+        .thenReturn(List.of(new MillSummary(514L, "5140", "A", "ACT")));
+
+    assertEquals(Optional.of(Set.of(514L)), service.callerMillScope());
+  }
 
   @Test
   void unknownContext_throwsScheduleNotFound() {
     when(repository.findMillStatusCodeForYear(999999L, YEAR)).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.validateScheduleViewable(999999L, YEAR, CATEGORY));
   }
 
   @Test
   void millClosedForYear_throwsMillClosed() {
     when(repository.findMillStatusCodeForYear(516L, YEAR)).thenReturn(Optional.of("CLS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateScheduleViewable(516L, YEAR, CATEGORY));
+    assertThrows(
+        MillClosedException.class, () -> service.validateScheduleViewable(516L, YEAR, CATEGORY));
   }
 
   @Test
   void unexpectedNonActiveStatus_throwsMillClosed() {
     // Legacy has only ACT/CLS, but the guard whitelists ACT: any other status is not viewable.
     when(repository.findMillStatusCodeForYear(518L, YEAR)).thenReturn(Optional.of("SUS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateScheduleViewable(518L, YEAR, CATEGORY));
+    assertThrows(
+        MillClosedException.class, () -> service.validateScheduleViewable(518L, YEAR, CATEGORY));
   }
 
   @Test
   void activeButNoSummary_throwsScheduleNotFound() {
     when(repository.findMillStatusCodeForYear(515L, YEAR)).thenReturn(Optional.of("ACT"));
     when(repository.scheduleSummaryExists(515L, YEAR, CATEGORY)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.validateScheduleViewable(515L, YEAR, CATEGORY));
   }
 
@@ -83,6 +259,31 @@ class MillContextServiceTest {
     when(repository.findMillStatusCodeForYear(514L, YEAR)).thenReturn(Optional.of("ACT"));
     when(repository.scheduleSummaryExists(514L, YEAR, CATEGORY)).thenReturn(true);
     assertDoesNotThrow(() -> service.validateScheduleViewable(514L, YEAR, CATEGORY));
+  }
+
+  // ---- listMills (Story 5.5): caller-scoped Home mill list ----
+
+  @Test
+  void listMills_admin_returnsAllMills_ignoringGuid() {
+    // Admin is tied to no mill: all listable mills incl. closed (findAllMills), guid irrelevant.
+    when(repository.findAllMills()).thenReturn(List.of(MILL_514, MILL_516));
+    assertEquals(List.of(MILL_514, MILL_516), service.listMills(true, "any-guid-ignored"));
+  }
+
+  @Test
+  void listMills_submitter_returnsOnlyActivelyAssociatedMills_closedIncluded() {
+    // Submitter sees only their active associations — here a single CLOSED mill (S06: still shown).
+    when(repository.findMillsForUser("GUID-1")).thenReturn(List.of(MILL_516));
+    assertEquals(List.of(MILL_516), service.listMills(false, "GUID-1"));
+  }
+
+  @Test
+  void listMills_submitterBlankOrNullGuid_returnsEmpty_failClosed() {
+    // No resolvable identity (e.g. the dev mock principal, no custom:idp_user_id): EMPTY, never
+    // all.
+    // Strict Mockito proves no repository read happens (no findAllMills / findMillsForUser stub).
+    assertTrue(service.listMills(false, "   ").isEmpty());
+    assertTrue(service.listMills(false, null).isEmpty());
   }
 
   // ---- resolveWorkingContext (Story 1.2): Home semantics, distinct from the guards above ----
@@ -97,32 +298,34 @@ class MillContextServiceTest {
 
   @Test
   void resolve_missingBoth_throwsWithBothLabelsInScreenOrder() {
-    FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-        () -> service.resolveWorkingContext(null, "  "));
+    FieldValuesRequiredException ex =
+        assertThrows(
+            FieldValuesRequiredException.class, () -> service.resolveWorkingContext(null, "  "));
     // S08: BOTH fields reported together, Mill first (home.xhtml screen order).
     assertEquals(List.of("Mill", "Reporting Year"), ex.getFieldLabels());
   }
 
   @Test
   void resolve_nonNumericMill_reportsMillRequired() {
-    FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-        () -> service.resolveWorkingContext("abc", "2021"));
+    FieldValuesRequiredException ex =
+        assertThrows(
+            FieldValuesRequiredException.class, () -> service.resolveWorkingContext("abc", "2021"));
     assertEquals(List.of("Mill"), ex.getFieldLabels());
   }
 
   @Test
   void resolve_unknownMill_throwsNotFound() {
     when(repository.findSelectableMillById(999L)).thenReturn(Optional.empty());
-    assertThrows(MillYearContextNotFoundException.class,
-        () -> service.resolveWorkingContext("999", "2021"));
+    assertThrows(
+        MillYearContextNotFoundException.class, () -> service.resolveWorkingContext("999", "2021"));
   }
 
   @Test
   void resolve_unopenedYear_throwsNotFound() {
     when(repository.findSelectableMillById(514L)).thenReturn(Optional.of(MILL_514));
     when(repository.reportingYearExists(2019)).thenReturn(false);
-    assertThrows(MillYearContextNotFoundException.class,
-        () -> service.resolveWorkingContext("514", "2019"));
+    assertThrows(
+        MillYearContextNotFoundException.class, () -> service.resolveWorkingContext("514", "2019"));
   }
 
   @Test
@@ -130,9 +333,12 @@ class MillContextServiceTest {
     stubSelectable(MILL_514, 2020);
     when(repository.findTrackStatusCodes(514L, 2020)).thenReturn(Optional.empty());
     when(repository.findStatusDates(514L, 2020)).thenReturn(Optional.empty());
-    // AC7: the success path resolves the reused SUC-001 key to its verbatim text (server-side, AD-8).
+    // AC7: the success path resolves the reused SUC-001 key to its verbatim text (server-side,
+    // AD-8).
     when(messageSource.getMessage(
-            eq("dataSavedSuccesfullyInfoMsg"), isNull(), eq("dataSavedSuccesfullyInfoMsg"),
+            eq("dataSavedSuccesfullyInfoMsg"),
+            isNull(),
+            eq("dataSavedSuccesfullyInfoMsg"),
             any(Locale.class)))
         .thenReturn("Data saved successfully");
 
@@ -143,7 +349,8 @@ class MillContextServiceTest {
     assertTrue(ctx.millViewable());
     assertEquals(514L, ctx.millId());
     assertEquals(2020, ctx.reportYear());
-    // Every 200 carries the SUC-001 message (key + resolved text); the frontend displays it on Save.
+    // Every 200 carries the SUC-001 message (key + resolved text); the frontend displays it on
+    // Save.
     assertEquals("dataSavedSuccesfullyInfoMsg", ctx.message().key());
     assertEquals("Data saved successfully", ctx.message().text());
   }
@@ -172,16 +379,24 @@ class MillContextServiceTest {
     // branch; the deviation pins each track to its OWN code.
     when(repository.findTrackStatusCodes(514L, 2020))
         .thenReturn(Optional.of(new TrackCodes("S", "D")));
-    when(repository.findStatusDates(514L, 2020)).thenReturn(Optional.of(new StatusDates(
-        "00 2020-01-01", "01 2020-02-02", "02 2020-11-30", "03 2020-12-31",
-        "01 2020-08-01", "02 2020-09-09", "03 2020-10-10")));
+    when(repository.findStatusDates(514L, 2020))
+        .thenReturn(
+            Optional.of(
+                new StatusDates(
+                    "00 2020-01-01",
+                    "01 2020-02-02",
+                    "02 2020-11-30",
+                    "03 2020-12-31",
+                    "01 2020-08-01",
+                    "02 2020-09-09",
+                    "03 2020-10-10")));
     when(repository.findStatusDescription("S")).thenReturn(Optional.of("Submitted"));
     when(repository.findStatusDescription("D")).thenReturn(Optional.of("Draft"));
 
     WorkingContext ctx = service.resolveWorkingContext("514", "2020");
 
     assertEquals("2020-11-30", ctx.schedules1To10Status().date()); // S -> submit, prefix stripped
-    assertEquals("2020-08-01", ctx.schedule11Status().date());     // D -> SILVI draft
+    assertEquals("2020-08-01", ctx.schedule11Status().date()); // D -> SILVI draft
   }
 
   @Test
@@ -225,8 +440,8 @@ class MillContextServiceTest {
         .thenReturn(Optional.of(new TrackCodes("O", "V")));
     // 'O' -> open1To10 = "---" (legacy empty sentinel: substring(3) -> "" -> Not Initiated);
     // 'V'/else -> verifySilvi = "   " (blank remainder).
-    when(repository.findStatusDates(514L, 2021)).thenReturn(Optional.of(new StatusDates(
-        "---", null, null, null, null, null, "      ")));
+    when(repository.findStatusDates(514L, 2021))
+        .thenReturn(Optional.of(new StatusDates("---", null, null, null, null, null, "      ")));
     when(repository.findStatusDescription("O")).thenReturn(Optional.of("Opened"));
     when(repository.findStatusDescription("V")).thenReturn(Optional.of("Verified"));
 
@@ -247,23 +462,21 @@ class MillContextServiceTest {
   @Test
   void millYearActive_noStatusRow_throwsScheduleNotFound() {
     when(repository.findMillStatusCodeForYear(999999L, YEAR)).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotFoundException.class,
-        () -> service.validateMillYearActive(999999L, YEAR));
+    assertThrows(
+        ScheduleNotFoundException.class, () -> service.validateMillYearActive(999999L, YEAR));
   }
 
   @Test
   void millYearActive_millClosedForYear_throwsMillClosed() {
     when(repository.findMillStatusCodeForYear(516L, YEAR)).thenReturn(Optional.of("CLS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateMillYearActive(516L, YEAR));
+    assertThrows(MillClosedException.class, () -> service.validateMillYearActive(516L, YEAR));
   }
 
   @Test
   void millYearActive_unexpectedNonActiveStatus_throwsMillClosed() {
     // Same ACT whitelist as validateScheduleViewable: any unexpected status is not viewable.
     when(repository.findMillStatusCodeForYear(518L, YEAR)).thenReturn(Optional.of("SUS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateMillYearActive(518L, YEAR));
+    assertThrows(MillClosedException.class, () -> service.validateMillYearActive(518L, YEAR));
   }
 
   @Test
@@ -279,33 +492,101 @@ class MillContextServiceTest {
 
   @Test
   void millYearActive_missingMillId_throwsMillYearNotSelected() {
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive(null, "2021"));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive(null, "2021"));
   }
 
   @Test
   void millYearActive_blankYear_throwsMillYearNotSelected() {
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive("514", "   "));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive("514", "   "));
   }
 
   @Test
   void millYearActive_nonNumericMillId_throwsMillYearNotSelected() {
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive("abc", "2021"));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive("abc", "2021"));
   }
 
   @Test
   void millYearActive_bothMissing_throwsMillYearNotSelected() {
     // Legacy shows ONE combined message (schedule11.xhtml guard), not per-field texts — unlike
     // resolveWorkingContext's S08 per-field list.
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive(null, null));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive(null, null));
   }
 
   @Test
   void millYearActive_validStrings_delegateToTypedGuard() {
     when(repository.findMillStatusCodeForYear(514L, YEAR)).thenReturn(Optional.of("ACT"));
     assertDoesNotThrow(() -> service.validateMillYearActive("514", "2021"));
+  }
+
+  // --- Story 15.1: the cheap both-tracks read for the Check Status sweep ---
+
+  @Test
+  void findTrackStatusCodes_mapsBothCodesFromTheOneRow() {
+    when(repository.findTrackStatusCodes(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", "S")));
+
+    var codes = service.findTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertEquals("S", codes.schedule11Code());
+  }
+
+  @Test
+  void findTrackStatusCodes_nullSilvicultureCode_isCarriedNotThrown() {
+    // Legacy NPE'd on a null MILL_SILVICULTUR_STATUS_CODE; Story 1.2 tolerates it and so does this.
+    when(repository.findTrackStatusCodes(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", null)));
+
+    var codes = service.findTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertNull(codes.schedule11Code());
+  }
+
+  @Test
+  void findTrackStatusCodes_noStatusRow_isEmpty() {
+    when(repository.findTrackStatusCodes(514L, YEAR)).thenReturn(Optional.empty());
+
+    assertTrue(service.findTrackStatusCodes(514L, YEAR).isEmpty());
+  }
+
+  // --- Story 15.3: the locked reads a status transition and the Schedule 11 write gate take ---
+
+  @Test
+  void lockTrackStatusCodes_mapsBothCodesFromTheLockedRow() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", "S")));
+
+    var codes = service.lockTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertEquals("S", codes.schedule11Code());
+  }
+
+  @Test
+  void lockTrackStatusCodes_noStatusRow_isEmpty() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR)).thenReturn(Optional.empty());
+
+    assertTrue(service.lockTrackStatusCodes(514L, YEAR).isEmpty());
+  }
+
+  @Test
+  void findSchedule11TrackStatusCodeForUpdate_readsTheSilvicultureColumnOnly() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("S", "D")));
+
+    assertEquals("D", service.findSchedule11TrackStatusCodeForUpdate(514L, YEAR).orElseThrow());
+  }
+
+  @Test
+  void findSchedule11TrackStatusCodeForUpdate_nullSilvicultureCode_isEmpty() {
+    when(repository.findTrackStatusCodesForUpdate(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", null)));
+
+    assertTrue(service.findSchedule11TrackStatusCodeForUpdate(514L, YEAR).isEmpty());
   }
 }

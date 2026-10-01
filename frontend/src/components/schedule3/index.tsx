@@ -1,9 +1,12 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule3Response from '@/interfaces/Schedule3Response'
 import type { CostLine, ThreeColumnTotal } from '@/interfaces/Schedule3Response'
 import type Schedule3Request from '@/interfaces/Schedule3Request'
+import type { Schedule3CheckRequest } from '@/interfaces/Schedule3Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -19,27 +22,37 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { ALL_LINE_CODES, HARVEST_POP_LINE_CODES } from '@/interfaces/Schedule3Request'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { isScheduleSaved } from '@/utils/schedule'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
+import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { validateSchedule3 } from './validation'
+import { deriveSchedule3, enteredFromForm } from './derived'
 import './index.scss'
 
 // Client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so the
 // verbatim text lives here. SUC/WRN/FLD strings come from the API `message`/`warnings`/`detail`
 // (AD-8) — never hardcoded. Shared strings reuse Schedule 1's exact wording.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_S111 = 'Annual Rent (Forest Act, S111) is recorded as an Unacceptable Cost.'
+// ALT-002 / ALT-003: both sub-pages require a saved parent, and legacy wrote a SEPARATE alert per
+// link rather than one shared message — `schedule3.xhtml:267` on the Subtotal Other Costs link and
+// `:293` on the Included Unacceptable Costs one. Both legacy-verbatim, and the inconsistency between
+// them is the contract, not a typo to tidy: ALT-003 capitalises "Unacceptable" and names a different
+// page. Only ALT-002 is shared with Schedule 1 (`schedule1.xhtml:497`, its single such link). Routing
+// both links through ALT-002 was defect #373. (ALT-001 is the S111 alert above — not this pair.)
+const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
+const ALT_SAVE_BEFORE_UNACCEPTABLE =
+  'The schedule has to be saved before opening Unacceptable costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const COMMENTS_MAX = 3500
@@ -47,6 +60,18 @@ const COMMENTS_MAX = 3500
 // Story 4.4 sub-page routes (links + counts render here; the pages themselves are Story 4.4).
 const ROUTE_OTHER_ACCEPTABLE = '/schedule-3/other-acceptable-costs'
 const ROUTE_UNACCEPTABLE = '/schedule-3/included-unacceptable-costs'
+
+// The save-first message is keyed by route through an EXHAUSTIVE map rather than selected by a
+// `route === ROUTE_UNACCEPTABLE ? … : …` ternary. The ternary reads identically today but makes
+// ALT-002 the CATCH-ALL, which is the exact shape of defect #373: a third sub-page, or either route
+// constant re-valued, would silently inherit the Other Costs wording and nothing would fail. With a
+// `Record<SubPageRoute, string>` and `openSubPage` narrowed to `SubPageRoute`, an unmapped or
+// mistyped route is a COMPILE error instead of a wrong message on screen.
+type SubPageRoute = typeof ROUTE_OTHER_ACCEPTABLE | typeof ROUTE_UNACCEPTABLE
+const ALT_SAVE_BEFORE: Record<SubPageRoute, string> = {
+  [ROUTE_OTHER_ACCEPTABLE]: ALT_SAVE_BEFORE_OTHER_COSTS,
+  [ROUTE_UNACCEPTABLE]: ALT_SAVE_BEFORE_UNACCEPTABLE,
+}
 
 const CODE_ANNUAL_RENTS = 29
 // Fixed-line labels — verbatim legacy schedule3.xhtml outputLabels (frontend-owned, like Schedule 1).
@@ -103,8 +128,32 @@ function buildRequest(doc: Schedule3Response, form: FieldValues): Schedule3Reque
   }
 }
 
+// The Check Status body (#359): every checked value as it is ON SCREEN — `form`, the keystroke state,
+// not the blur-committed snapshot, because that is what legacy's full postback submitted. The
+// Override travels too: on screen it drives BOTH Harvest≥PO&P rules, the fixed-line one and the
+// Other Acceptable subtotal one. `toNum` returns null for a blank field and that null is carried
+// through deliberately: the server's check is a pure null test (a stored `0` passes), so a `?? 0`
+// here would turn a missing value into a pass. The item-124/38 sub-page rows are not on this screen
+// and are not sent.
+function buildCheckRequest(form: FieldValues): Schedule3CheckRequest {
+  return {
+    overrideHarvestTotalPop: form['overrideHarvestTotalPop'] ?? 'N',
+    lineItems: ALL_LINE_CODES.map((code) => ({
+      costItemCode: code,
+      harvest: toNum(form[`harvest-${code}`] ?? ''),
+      pop: HARVEST_POP.has(code) ? toNum(form[`pop-${code}`] ?? '') : null,
+    })),
+    popTimberVolume: toNum(form['popTimberVolume'] ?? ''),
+    crownTimberVolume: toNum(form['crownTimberVolume'] ?? ''),
+  }
+}
+
 const mapLoadErrorDetail = (detail: string | undefined): string =>
   detail || 'Unable to load Schedule 3.'
+
+const PAGE_HEADER = (
+  <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
+)
 
 const Schedule3: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
@@ -130,12 +179,29 @@ const Schedule3: FC = () => {
 
   const [saveWarnings, setSaveWarnings] = useState<string[]>([])
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
-  // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
+  // The sub-page whose open the save-first gate REFUSED (null = modal closed). A route rather than a
+  // boolean because legacy's wording names the link that was clicked (ALT-002 vs ALT-003, defect
+  // #373) — one source of truth, so no stale message can outlive the click that raised it.
+  const [blockedRoute, setBlockedRoute] = useState<SubPageRoute | null>(null)
+  // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed). Deliberately
+  // distinct from `blockedRoute` above — that one means "the gate refused", this one "a discard is
+  // pending" — and neither handler ever writes the other.
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever a
+  // checked field changes, so an older response cannot repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule3Response>({
       path: '/v1/schedule3',
+      scheduleName: 'Schedule 3',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -148,6 +214,21 @@ const Schedule3: FC = () => {
         setSaveWarnings([])
       },
     })
+
+  // The blur-committed snapshot the derived mirror reads (defect #291): `form` tracks every keystroke
+  // because it drives the inputs, `committed` advances only when a field loses focus. Re-seeds
+  // whenever `data` is replaced (load / Save echo / Delete reset).
+  const { committed, commit } = useCommittedValues(form, data)
+
+  // Every input on this page but the comments is a checked field — the Override included — so an
+  // edit to any of them makes a shown Check Status verdict stale.
+  const setCheckedField = (fieldKey: string) => {
+    const set = setField(fieldKey)
+    return (event: Parameters<typeof set>[0]) => {
+      invalidateCheckResult()
+      set(event)
+    }
+  }
 
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
@@ -188,7 +269,13 @@ const Schedule3: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-validate here, not just on the button's `disabled`: a disabled attribute is presentation,
+    // and any other route into this handler (a mis-wired bar, a programmatic open, the modal's
+    // submit) would otherwise fire a DELETE for a schedule that does not exist. Until defect #296
+    // the server made that harmless — it 404'd — but the DELETE is idempotent now and answers 200,
+    // so a stray call would show "Data deleted successfully" for a record that never existed.
+    // Schedule 2 has had this gate since #292; Schedules 1/3 relied on the 404 that is gone.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
@@ -196,8 +283,9 @@ const Schedule3: FC = () => {
     setSaveWarnings([])
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 3.',
-      // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place (no
-      // re-fetch) and show SUC-002 from the API message. This per-page empty-state lives at the call
+      // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
+      // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, which lands
+      // on the same state without the extra round trip. This per-page empty-state lives at the call
       // site (Story 29.6): single-doc Schedules 1/3 reset in place; list pages re-seed from a reload.
       onSuccess: (resp) => {
         const empty: ThreeColumnTotal = { harvest: null, pop: null, crown: null }
@@ -205,7 +293,13 @@ const Schedule3: FC = () => {
           prev
             ? {
                 ...prev,
-                editable: false,
+                // The summary is gone, so the record is unsaved — but it is NOT uneditable. This
+                // pinned `editable: false` when a re-GET would have 404'd and create-on-open was not
+                // supported; defect #296 made both false. The server serves a 200 empty EDITABLE
+                // document for this state and accepts a PUT that re-creates it, so freezing the form
+                // would strand the Licensee on a read-only blank page and force a browser reload to
+                // re-enter data (legacy AF1 expects immediate re-entry). `editable` is left as the
+                // server last reported it; dropping `revisionCount` is what closes the Delete gate.
                 revisionCount: null,
                 overrideHarvestTotalPop: 'N',
                 comments: null,
@@ -232,15 +326,45 @@ const Schedule3: FC = () => {
     if (!data || saving) {
       return
     }
+    // Legacy Check Status is validateClient="true": invalid entered values block the action with the
+    // same FLD-* messages Save uses. Without this gate `toNum` would send `12x` as null and the
+    // verdict would misreport a typo as "Value Required" (#359).
+    // Gated on `editable`, exactly as `fieldErrors` is: a read-only page highlights nothing, so a stored
+    // value failing the client range check must not block the check silently.
+    if (data.editable && Object.keys(validateSchedule3(form)).length > 0) {
+      setSaveMessage(null)
+      setSaveWarnings([])
+      setCheckResult(null)
+      setSaveError('Please correct the highlighted fields before checking status.')
+      return
+    }
     clearBanners() // don't leave a stale Save success banner beside a new check result
     setSaveWarnings([])
-    checkStatus<CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // The body carries the screen (#359); nothing is persisted (AD-5).
+    checkStatus<CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setCheckResult(result)
+          }
+        },
+      },
+      buildCheckRequest(form),
+    )
   }
 
-  const openSubPage = (route: string) => {
+  const openSubPage = (route: SubPageRoute) => {
+    // Both sub-pages require a SAVED Schedule 3: their controllers still call
+    // validateScheduleViewable (deliberately kept — #296 D1), so opening one from a never-saved
+    // schedule would 404. Schedule 3 never had this gate, because before defect #296 the parent
+    // page itself 404'd when unsaved and the case could not arise. It can now.
+    if (!data || !isScheduleSaved(data)) {
+      // Store WHICH link was refused, so the modal can carry that link's own legacy wording.
+      setBlockedRoute(route)
+      return
+    }
     // Navigating away from an editable schedule discards unsaved edits — confirm via a Carbon Modal
     // (legacy confirmNavigationMsg) instead of a native browser dialog. A read-only schedule has
     // nothing to lose, so open directly.
@@ -261,41 +385,7 @@ const Schedule3: FC = () => {
     navigate({ to: route })
   }
 
-  const header = (
-    <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
-  )
-
-  if (contextMissing) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={header}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 3" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={header}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 3', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -305,14 +395,41 @@ const Schedule3: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule3(form) : {}
 
+  // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
+  // read-only cells track data entry the way legacy did. Null whenever the document is NOT editable
+  // for this caller — since Story 16.1 that is the role×status matrix, not Draft alone, so an
+  // administrator correcting at Submitted or Verified DOES get the mirror — or in view mode, where
+  // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
+  const derived = editable ? deriveSchedule3(data, enteredFromForm(committed)) : null
+
   // A value cell: an editable TextInput when writable and the schedule is editable, else read-only
   // text. `onBlur` lets the Annual Rents Harvest field raise the S111 alert (legacy onchange).
+  // Legacy paired each entered cell with an indicator (Schedule3DAO.java:147-321). The derived
+  // total rows and the crown column carry none: nothing stores them.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: number | null | undefined,
+    typed?: string,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={field}
+        current={typed ?? current}
+        label={label}
+      />
+    )
+
   const numberCell = (
     fieldKey: string,
     label: string,
     writable: boolean,
     current: number | null | undefined,
     onBlur?: () => void,
+    originals?: OriginalValues | null,
+    originalField?: string,
   ) =>
     editable && writable ? (
       // --input: the value lives inside a TextInput, which supplies its own inline padding. The
@@ -324,23 +441,37 @@ const Schedule3: FC = () => {
           hideLabel
           size="sm"
           value={form[fieldKey] ?? ''}
-          onChange={setField(fieldKey)}
-          // Re-group the value AND run the caller's own blur hook (the Annual Rents S111 alert).
+          onChange={setCheckedField(fieldKey)}
+          // Re-group the value, commit it to the derived mirror's baseline (#291), AND run the
+          // caller's own blur hook (the Annual Rents S111 alert). The GROUPED string is passed
+          // explicitly so `committed` and `form` hold the same text, and an invalid field holds its
+          // previous committed value rather than driving the cascade (code review 2026-08-21).
           onBlur={() => {
             groupField(fieldKey)
+            commit(fieldKey, {
+              value: groupInput(form[fieldKey] ?? ''),
+              invalid: Boolean(fieldErrors[fieldKey]),
+            })
             onBlur?.()
           }}
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
+        {indicator(originals, originalField, label, current, form[fieldKey])}
       </TableCell>
     ) : (
-      <TableCell className="schedule-3__num">{fmtNumber(current)}</TableCell>
+      <TableCell className="schedule-3__num">
+        {fmtNumber(current)}
+        {indicator(originals, originalField, label, current)}
+      </TableCell>
     )
 
   const lineRow = (line: CostLine) => {
     const code = line.costItemCode
     const label = LINE_LABELS[code] ?? `Cost item ${code}`
+    // The crown column, and Scaling (33)'s read-only PO&P, come from the mirror while editable so they
+    // track entry; from the document otherwise (#291).
+    const shown = derived ? derived.lines[code] : line
     const showPop = HARVEST_POP.has(code)
     const harvestBlur = code === CODE_ANNUAL_RENTS ? () => window.alert(ALT_S111) : undefined
     // Annual Rents (29) and Silviculture Admin (37) have NO PO&P (legacy renders the field hidden);
@@ -349,21 +480,40 @@ const Schedule3: FC = () => {
     const popCell = POP_HIDDEN.has(code) ? (
       <TableCell className="schedule-3__num">—</TableCell>
     ) : (
-      numberCell(`pop-${code}`, `${label} PO&P`, showPop, line.pop)
+      numberCell(
+        `pop-${code}`,
+        `${label} PO&P`,
+        showPop,
+        shown.pop,
+        undefined,
+        line.originalValues,
+        'pop',
+      )
     )
     return (
       <TableRow key={code}>
         <TableCell>{label}</TableCell>
-        {numberCell(`harvest-${code}`, `${label} Harvest`, true, line.harvest, harvestBlur)}
+        {numberCell(
+          `harvest-${code}`,
+          `${label} Harvest`,
+          true,
+          line.harvest,
+          harvestBlur,
+          line.originalValues,
+          'harvest',
+        )}
         {popCell}
-        <TableCell className="schedule-3__num">{fmtNumber(line.crown)}</TableCell>
+        <TableCell className="schedule-3__num">{fmtNumber(shown.crown)}</TableCell>
       </TableRow>
     )
   }
 
-  // A read-only derived three-column total row.
-  const totalRow = (key: string, label: string, total: ThreeColumnTotal) => (
-    <TableRow key={key}>
+  // A read-only derived three-column total row. `isTotal` marks the schedule's FINAL figure (Total
+  // Costs), which takes the darker band; the intermediate subtotals take the lighter one (#411
+  // Overall 5). Note the final figure is not the final ROW — the Override dropdown sits below it and
+  // is an input, so it carries no band at all.
+  const totalRow = (key: string, label: string, total: ThreeColumnTotal, isTotal = false) => (
+    <TableRow key={key} className={isTotal ? 'schedule-3__total-row' : 'schedule-3__subtotal-row'}>
       <TableCell>{label}</TableCell>
       <TableCell className="schedule-3__num">{fmtNumber(total.harvest)}</TableCell>
       <TableCell className="schedule-3__num">{fmtNumber(total.pop)}</TableCell>
@@ -379,11 +529,12 @@ const Schedule3: FC = () => {
     key: string,
     label: string,
     count: number,
-    route: string,
+    route: SubPageRoute,
     total: ThreeColumnTotal,
     popHidden = false,
   ) => (
-    <TableRow key={key}>
+    // Derived like `totalRow`, and always an intermediate subtotal, so always the lighter band.
+    <TableRow key={key} className="schedule-3__subtotal-row">
       <TableCell>
         <Button
           kind="ghost"
@@ -403,12 +554,25 @@ const Schedule3: FC = () => {
   const timberRow = (
     label: string,
     fieldKey: string | null,
-    block: { volume: number | null; cost: number | null; perUnit: number | null },
+    block: {
+      volume: number | null
+      cost: number | null
+      perUnit: number | null
+      originalValues?: OriginalValues | null
+    },
   ) => (
     <TableRow key={label}>
       <TableCell>{label}</TableCell>
       {fieldKey !== null ? (
-        numberCell(fieldKey, `${label} Harvest Volume`, true, block.volume)
+        numberCell(
+          fieldKey,
+          `${label} Harvest Volume`,
+          true,
+          block.volume,
+          undefined,
+          block.originalValues,
+          'volume',
+        )
       ) : (
         <TableCell className="schedule-3__num">{fmtNumber(block.volume)}</TableCell>
       )}
@@ -421,6 +585,12 @@ const Schedule3: FC = () => {
   // Save + Check Status + Delete below it (schedule3.xhtml:37-38 vs :420-426), the same shape as
   // Schedule 1. Deleting the whole schedule is the one destructive action on this page, and legacy
   // kept it off the bar a reporter meets first.
+  // Delete is additionally gated on a persisted record, as legacy gated it on isScheduleOpen() as
+  // well as on edit rights. That gate is now LOAD-BEARING, not belt-and-braces: this page used to be
+  // protected incidentally because the GET 404'd when unsaved, and defect #296 removed exactly that
+  // — an unsaved schedule now renders a full editable form, so `isScheduleSaved` is the only thing
+  // standing between a never-saved schedule and a Delete button. The absent-vs-null subtlety lives
+  // in `isScheduleSaved`.
   const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-3__actions"
@@ -430,12 +600,13 @@ const Schedule3: FC = () => {
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}
       showDelete={showDelete}
+      scheduleSaved={isScheduleSaved(data)}
     />
   )
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {/* Advisory warnings from a mutation echo (BR-09 crown push). Verbatim text (AD-8). */}
         {saveWarnings.map((w) => (
@@ -495,16 +666,25 @@ const Schedule3: FC = () => {
                   ROUTE_OTHER_ACCEPTABLE,
                   data.subtotalOtherCosts,
                 )}
-                {totalRow('subtotalActual', 'Subtotal (Actual Costs)', data.subtotalActualCosts)}
+                {totalRow(
+                  'subtotalActual',
+                  'Subtotal (Actual Costs)',
+                  derived ? derived.subtotalActualCosts : data.subtotalActualCosts,
+                )}
                 {subPageRow(
                   'inclUnacceptable',
                   'Included Unacceptable Costs',
-                  data.unacceptableCount,
+                  derived ? derived.unacceptableCount : data.unacceptableCount,
                   ROUTE_UNACCEPTABLE,
-                  data.includedUnacceptableCosts,
+                  derived ? derived.includedUnacceptableCosts : data.includedUnacceptableCosts,
                   true, // PO&P is a legacy inputHidden — render blank (—), not the backend's 0
                 )}
-                {totalRow('totalCosts', 'Total Costs', data.totalCosts)}
+                {totalRow(
+                  'totalCosts',
+                  'Total Costs',
+                  derived ? derived.totalCosts : data.totalCosts,
+                  true,
+                )}
                 {/* Legacy: the Override dropdown is the last row of this table (in the Harvest column). */}
                 <TableRow key="overrideHarvestTotalPop">
                   <TableCell>Override Harvest ⁄ Total PO&P $</TableCell>
@@ -515,7 +695,7 @@ const Schedule3: FC = () => {
                       hideLabel
                       size="sm"
                       value={form['overrideHarvestTotalPop'] ?? 'N'}
-                      onChange={setField('overrideHarvestTotalPop')}
+                      onChange={setCheckedField('overrideHarvestTotalPop')}
                       disabled={!editable}
                     >
                       <SelectItem value="N" text="No" />
@@ -532,10 +712,7 @@ const Schedule3: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
           <TableContainer title="Total Overhead and Cost Per Unit Calculation">
-            <Table
-              aria-label="Total Overhead and Cost Per Unit Calculation"
-              className="schedule-3__cost-table"
-            >
+            <Table className="schedule-3__cost-table">
               <TableHead>
                 <TableRow>
                   <TableHeader aria-label="Cost item" />
@@ -545,13 +722,21 @@ const Schedule3: FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
+                {/* The live mirror supplies the figures while editing (#291) but carries no
+                    originals, so the served block's map is spread back on. */}
+                {timberRow('Privately Owned & Purchased (PO&P) Timber', 'popTimberVolume', {
+                  ...(derived ? derived.popTimber : data.popTimber),
+                  originalValues: data.popTimber.originalValues,
+                })}
+                {timberRow('Crown Timber', 'crownTimberVolume', {
+                  ...(derived ? derived.crownTimber : data.crownTimber),
+                  originalValues: data.crownTimber.originalValues,
+                })}
                 {timberRow(
-                  'Privately Owned & Purchased (PO&P) Timber',
-                  'popTimberVolume',
-                  data.popTimber,
+                  'Total Overhead',
+                  null,
+                  derived ? derived.totalOverhead : data.totalOverhead,
                 )}
-                {timberRow('Crown Timber', 'crownTimberVolume', data.crownTimber)}
-                {timberRow('Total Overhead', null, data.totalOverhead)}
               </TableBody>
             </Table>
           </TableContainer>
@@ -559,10 +744,9 @@ const Schedule3: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
           {editable ? (
-            <TextArea
+            <CommentsTextArea
               id="comments"
               labelText="If you have any additional comments, please enter them here:"
-              enableCounter
               maxCount={COMMENTS_MAX}
               value={form['comments'] ?? ''}
               onChange={setField('comments')}
@@ -573,6 +757,13 @@ const Schedule3: FC = () => {
               <p className="schedule-3__comments">{data.comments ?? '—'}</p>
             </>
           )}
+          <OriginalValueIndicator
+            originals={data.originalValues}
+            field="comments"
+            current={editable ? (form['comments'] ?? '') : data.comments}
+            numeric={false}
+            label="Comments"
+          />
         </Column>
 
         {actionBar(true)}
@@ -594,15 +785,25 @@ const Schedule3: FC = () => {
 
       {/* Discard-unsaved-edits confirm before leaving an editable schedule for a sub-page. */}
       {editable && (
-        <Modal
+        <ConfirmNavigationModal
           open={pendingRoute !== null}
-          modalHeading="Leave Schedule 3"
-          primaryButtonText="Continue"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setPendingRoute(null)}
-          onRequestSubmit={confirmLeave}
+          heading="Leave Schedule 3"
+          onCancel={() => setPendingRoute(null)}
+          onContinue={confirmLeave}
         >
-          <p>{CONFIRM_NAVIGATION}</p>
+          {CONFIRM_NAVIGATION}
+        </ConfirmNavigationModal>
+      )}
+      {/* The save-first gate. Legacy raised a per-link alert, so the message is looked up by the
+          route that was refused rather than shared between both links (defect #373). */}
+      {blockedRoute !== null && (
+        <Modal
+          open
+          passiveModal
+          modalHeading="Save required"
+          onRequestClose={() => setBlockedRoute(null)}
+        >
+          <p>{ALT_SAVE_BEFORE[blockedRoute]}</p>
         </Modal>
       )}
     </div>

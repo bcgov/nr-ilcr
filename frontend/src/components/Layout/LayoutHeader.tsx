@@ -8,7 +8,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import useLayout from '@/context/layout/useLayout'
 import LayoutSideNav from './LayoutSideNav'
 
-const APP_NAME = 'Interior Logging Cost Reports (ILCR)'
+const APP_NAME = 'Interior Logging Cost Report (ILCR)'
 
 const LayoutHeader: FC = () => {
   const { isSideNavExpanded, toggleSideNav } = useLayout()

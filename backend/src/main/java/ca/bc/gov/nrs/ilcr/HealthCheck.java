@@ -4,12 +4,18 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.time.Duration;
 
+/** Simple application health check utility. */
 public final class HealthCheck {
   private static final int HEALTHY = 0;
   private static final int UNHEALTHY = 1;
 
   private HealthCheck() {}
 
+  /**
+   * Main entry point for the health check.
+   *
+   * @param args command line arguments
+   */
   public static void main(String[] args) {
     try {
       int port = Integer.parseInt(System.getenv().getOrDefault("SERVER_PORT", "8080"));

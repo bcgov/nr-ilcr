@@ -80,6 +80,9 @@
   line-height: 1.29;
   display: flex;
   align-items: center;
-  min-height: 2rem;
+  // Reserve the height of the control it stands in for, so a blank value holds the row's alignment.
+  // 3rem is the app-wide field/button height (styles/_overrides.scss; #411 Overall 1) — the former
+  // 2rem tracked a `size="sm"` box that the global override never actually produced.
+  min-height: 3rem;
   padding-inline-start: 1rem;
 }

@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 3 (Forest Management Administration Costs) — JasperReports 7 template (AD-16, Epic 20.7).
+  JR7 Jackson/JAXB model. Bean-datasource fill from Schedule3Service's DTO + the two itemization
+  sub-documents (the 20.2 data-feed decision). Three-column ledger (Harvest Total $ | PO&P $ | Crown
+  $) rendered as ONE section row that carries THREE nested collections the list components iterate —
+  the eleven fixed admin lines, the Other Acceptable itemization, and the Other Unacceptable
+  itemization — plus fixed total rows and the timber block. All values arrive PRE-FORMATTED as
+  Strings (Schedule3SectionMapper); the template does no arithmetic.
+
+  LANDSCAPE (842x595) like the sibling sections. The variable-length itemization lists push the rows
+  below them down via positionType="Float"; the reserved list-element height is one row and the
+  overflow reflows the following floats. Only THREE total lines print (no "Subtotal Actual Costs" —
+  Story 20.7 §1). Included Unacceptable shows Harvest + Crown only. p_do_print_body gates the body;
+  p_do_print_comment gates the Comments block.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule3" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <style name="italic" italic="true"/>
+  <dataset name="AdminLines">
+    <field name="adminLabel" class="java.lang.String"/>
+    <field name="adminHarvest" class="java.lang.String"/>
+    <field name="adminPop" class="java.lang.String"/>
+    <field name="adminCrown" class="java.lang.String"/>
+  </dataset>
+  <dataset name="AcceptableRows">
+    <field name="acceptableDesc" class="java.lang.String"/>
+    <field name="acceptableTotal" class="java.lang.String"/>
+    <field name="acceptablePop" class="java.lang.String"/>
+    <field name="acceptableCrown" class="java.lang.String"/>
+  </dataset>
+  <dataset name="UnacceptableRows">
+    <field name="unacceptableDesc" class="java.lang.String"/>
+    <field name="unacceptableTotal" class="java.lang.String"/>
+    <field name="unacceptablePop" class="java.lang.String"/>
+    <field name="unacceptableCrown" class="java.lang.String"/>
+  </dataset>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
+  <field name="adminLines" class="java.util.Collection"/>
+  <field name="acceptableRows" class="java.util.Collection"/>
+  <field name="unacceptableRows" class="java.util.Collection"/>
+  <field name="subtotalOtherCostsHarvest" class="java.lang.String"/>
+  <field name="subtotalOtherCostsPop" class="java.lang.String"/>
+  <field name="subtotalOtherCostsCrown" class="java.lang.String"/>
+  <field name="includedUnacceptableHarvest" class="java.lang.String"/>
+  <field name="includedUnacceptableCrown" class="java.lang.String"/>
+  <field name="totalCostHarvest" class="java.lang.String"/>
+  <field name="totalCostPop" class="java.lang.String"/>
+  <field name="totalCostCrown" class="java.lang.String"/>
+  <field name="popTimberVol" class="java.lang.String"/>
+  <field name="popTimberCost" class="java.lang.String"/>
+  <field name="popTimberCostVol" class="java.lang.String"/>
+  <field name="crownTimberVol" class="java.lang.String"/>
+  <field name="crownTimberCost" class="java.lang.String"/>
+  <field name="crownTimberCostVol" class="java.lang.String"/>
+  <field name="totalOverheadVol" class="java.lang.String"/>
+  <field name="totalOverheadCost" class="java.lang.String"/>
+  <field name="totalOverheadCostVol" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <title height="30">
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="34">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15">
+      <text><![CDATA[Schedule 3:  Forest Management Administration Costs]]></text>
+    </element>
+    <element kind="textField" x="0" y="16" width="802" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+  </pageHeader>
+  <detail>
+    <!--
+      Band height MUST stay <= the first-page content budget so the ledger renders on page 1 (its
+      title band carries the BR-08 bookmark anchor; an overflowing band pushes it to a blank page 2).
+      On the 595pt-high landscape page: 595 - 30 - 30 margins - 30 title - 34 pageHeader - 15
+      pageFooter = 456pt available. The band's own content ends at y=454 (the comments field at
+      y=439 + 15), so 454 both fits the budget and holds every element; longer itemizations still
+      reflow and split via positionType="Float".
+    -->
+    <band height="454">
+      <!-- Column headers. -->
+      <element kind="staticText" style="bold" x="305" y="0" width="155" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Harvest Total $]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="465" y="0" width="155" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[PO&P $]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="625" y="0" width="177" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Crown $]]></text>
+      </element>
+
+      <!-- The eleven fixed admin lines (nested list; 11 rows reserved at 16px each). -->
+      <element kind="component" x="0" y="18" width="802" height="176">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <component kind="list" printOrder="Vertical">
+          <datasetRun subDataset="AdminLines">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{adminLines})]]></dataSourceExpression>
+          </datasetRun>
+          <contents height="16">
+            <element kind="textField" x="0" y="0" width="300" height="16" blankWhenNull="true">
+              <expression><![CDATA[$F{adminLabel}]]></expression>
+            </element>
+            <element kind="textField" x="305" y="0" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{adminHarvest}]]></expression>
+            </element>
+            <element kind="textField" x="465" y="0" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{adminPop}]]></expression>
+            </element>
+            <element kind="textField" x="625" y="0" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{adminCrown}]]></expression>
+            </element>
+          </contents>
+        </component>
+      </element>
+
+      <!-- Subtotal Other Costs. -->
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="196" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Subtotal Other Costs: ]]></text>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="305" y="196" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalOtherCostsHarvest}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="465" y="196" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalOtherCostsPop}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="625" y="196" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalOtherCostsCrown}]]></expression>
+      </element>
+
+      <!-- Other Acceptable Costs itemization. -->
+      <element kind="staticText" style="italic" positionType="Float" x="0" y="216" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Other Acceptable Costs:]]></text>
+      </element>
+      <element kind="component" positionType="Float" x="0" y="234" width="802" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <component kind="list" printOrder="Vertical">
+          <datasetRun subDataset="AcceptableRows">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{acceptableRows})]]></dataSourceExpression>
+          </datasetRun>
+          <contents height="16">
+            <element kind="textField" style="italic" x="0" y="0" width="300" height="16" blankWhenNull="true">
+              <expression><![CDATA[$F{acceptableDesc}]]></expression>
+            </element>
+            <element kind="textField" x="305" y="0" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{acceptableTotal}]]></expression>
+            </element>
+            <element kind="textField" x="465" y="0" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{acceptablePop}]]></expression>
+            </element>
+            <element kind="textField" x="625" y="0" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{acceptableCrown}]]></expression>
+            </element>
+          </contents>
+        </component>
+      </element>
+
+      <!-- Included Unacceptable Costs (Harvest + Crown only). -->
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="252" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Included Unacceptable Costs: ]]></text>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="305" y="252" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{includedUnacceptableHarvest}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="625" y="252" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{includedUnacceptableCrown}]]></expression>
+      </element>
+
+      <!-- Other Unacceptable Costs itemization (Annual Rents S111 prepended by the mapper). -->
+      <element kind="staticText" style="italic" positionType="Float" x="0" y="272" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Other Unacceptable Costs:]]></text>
+      </element>
+      <element kind="component" positionType="Float" x="0" y="290" width="802" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <component kind="list" printOrder="Vertical">
+          <datasetRun subDataset="UnacceptableRows">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{unacceptableRows})]]></dataSourceExpression>
+          </datasetRun>
+          <contents height="16">
+            <element kind="textField" style="italic" x="0" y="0" width="300" height="16" blankWhenNull="true">
+              <expression><![CDATA[$F{unacceptableDesc}]]></expression>
+            </element>
+            <element kind="textField" x="305" y="0" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{unacceptableTotal}]]></expression>
+            </element>
+            <element kind="textField" x="465" y="0" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{unacceptablePop}]]></expression>
+            </element>
+            <element kind="textField" x="625" y="0" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{unacceptableCrown}]]></expression>
+            </element>
+          </contents>
+        </component>
+      </element>
+
+      <!-- Total Cost. -->
+      <element kind="line" positionType="Float" x="305" y="308" width="497" height="1">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      </element>
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="310" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Cost: ]]></text>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="305" y="310" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCostHarvest}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="465" y="310" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCostPop}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="625" y="310" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCostCrown}]]></expression>
+      </element>
+
+      <!-- Total Overhead and Cost Per Unit Calculation block. -->
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="334" width="400" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Overhead and Cost Per Unit Calculation]]></text>
+      </element>
+      <element kind="staticText" style="bold" positionType="Float" x="305" y="352" width="155" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Harvest Volume (m³)]]></text>
+      </element>
+      <element kind="staticText" style="bold" positionType="Float" x="465" y="352" width="155" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Cost $]]></text>
+      </element>
+      <element kind="staticText" style="bold" positionType="Float" x="625" y="352" width="177" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Cost Per Unit ($/m³)]]></text>
+      </element>
+
+      <element kind="staticText" positionType="Float" x="0" y="370" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Privately Owned & Purchased (PO&P) Timber: ]]></text>
+      </element>
+      <element kind="textField" positionType="Float" x="305" y="370" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{popTimberVol}]]></expression>
+      </element>
+      <element kind="textField" positionType="Float" x="465" y="370" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{popTimberCost}]]></expression>
+      </element>
+      <element kind="textField" positionType="Float" x="625" y="370" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{popTimberCostVol}]]></expression>
+      </element>
+
+      <element kind="staticText" positionType="Float" x="0" y="386" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Crown Timber: ]]></text>
+      </element>
+      <element kind="textField" positionType="Float" x="305" y="386" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{crownTimberVol}]]></expression>
+      </element>
+      <element kind="textField" positionType="Float" x="465" y="386" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{crownTimberCost}]]></expression>
+      </element>
+      <element kind="textField" positionType="Float" x="625" y="386" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{crownTimberCostVol}]]></expression>
+      </element>
+
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="402" width="300" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Overhead: ]]></text>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="305" y="402" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalOverheadVol}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="465" y="402" width="155" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalOverheadCost}]]></expression>
+      </element>
+      <element kind="textField" style="bold" positionType="Float" x="625" y="402" width="177" height="16" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalOverheadCostVol}]]></expression>
+      </element>
+
+      <!-- Comments (comment-gated), stretch. -->
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="424" width="90" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" positionType="Float" x="0" y="439" width="802" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>

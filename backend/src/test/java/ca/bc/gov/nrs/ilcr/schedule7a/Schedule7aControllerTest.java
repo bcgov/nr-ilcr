@@ -1,6 +1,11 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -10,10 +15,13 @@ import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,27 +43,67 @@ import org.springframework.security.core.Authentication;
 @DisplayName("Schedule7aController — delegation, editability, success-message echo")
 class Schedule7aControllerTest {
 
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
+
   @Mock private MillContextService millContextService;
   @Mock private Schedule7aService schedule7aService;
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
   @Mock private MessageSource messageSource;
   @Mock private Authentication authentication;
   @InjectMocks private Schedule7aController controller;
 
   private static Schedule7aResponse doc(List<Bridge> bridges) {
-    return new Schedule7aResponse(514L, 2021, "D", true, bridges,
-        new BridgeCodeLists(List.of(), List.of(), List.of(), List.of(), List.of()), null);
+    return new Schedule7aResponse(
+        514L,
+        2021,
+        "D",
+        true,
+        bridges,
+        new BridgeCodeLists(List.of(), List.of(), List.of(), List.of(), List.of()),
+        null);
   }
 
   private static Bridge oneBridge() {
-    return new Bridge(1L, 1, "North Fork", "2020-06", "N", "STL", "WD", "CONC", "L100",
-        null, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null, null, null, null, null, null, 0);
+    return new Bridge(
+        1L,
+        1,
+        "North Fork",
+        "2020-06",
+        "N",
+        "STL",
+        "WD",
+        "CONC",
+        "L100",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0);
   }
 
   private static BridgeRequest anyRequest() {
-    return new BridgeRequest(null, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null, null, null, null, null, null, null, null, null, null);
+    return new BridgeRequest(
+        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+        null, null, null, null, null, null, null, null, null);
   }
 
   @Test
@@ -63,9 +111,9 @@ class Schedule7aControllerTest {
   void get_delegatesAndResolvesEditability() {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514L, 2021));
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     Schedule7aResponse served = doc(List.of());
-    when(schedule7aService.getSchedule7a(514L, 2021, true)).thenReturn(served);
+    when(schedule7aService.getSchedule7a(514L, 2021, CallerRights.SUBMITTER)).thenReturn(served);
 
     ResponseEntity<Schedule7aResponse> result =
         controller.getSchedule7a("514", "2021", authentication);
@@ -81,7 +129,7 @@ class Schedule7aControllerTest {
         .thenReturn(new MillYearContext(514L, 2021));
     when(authentication.getName()).thenReturn("submitter");
     BridgeRequest request = anyRequest();
-    when(schedule7aService.addBridge(514L, 2021, request, true, "submitter"))
+    when(schedule7aService.addBridge(514L, 2021, request, CallerRights.SUBMITTER, "submitter"))
         .thenReturn(doc(List.of()));
 
     ResponseEntity<Schedule7aResponse> result =
@@ -97,7 +145,8 @@ class Schedule7aControllerTest {
         .thenReturn(new MillYearContext(514L, 2021));
     when(authentication.getName()).thenReturn("submitter");
     BridgeRequest request = anyRequest();
-    when(schedule7aService.updateBridge(514L, 2021, 7601L, request, true, "submitter"))
+    when(schedule7aService.updateBridge(
+            514L, 2021, 7601L, request, CallerRights.SUBMITTER, "submitter"))
         .thenReturn(doc(List.of()));
 
     ResponseEntity<Schedule7aResponse> result =
@@ -112,10 +161,12 @@ class Schedule7aControllerTest {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514L, 2021));
     when(authentication.getName()).thenReturn("submitter");
-    BridgeSaveAllRequest request = new BridgeSaveAllRequest(
-        List.of(new BridgeSaveAllRequest.Item(7601L, anyRequest()),
-            new BridgeSaveAllRequest.Item(7602L, anyRequest())));
-    when(schedule7aService.saveAllBridges(514L, 2021, request, true, "submitter"))
+    BridgeSaveAllRequest request =
+        new BridgeSaveAllRequest(
+            List.of(
+                new BridgeSaveAllRequest.Item(7601L, anyRequest()),
+                new BridgeSaveAllRequest.Item(7602L, anyRequest())));
+    when(schedule7aService.saveAllBridges(514L, 2021, request, CallerRights.SUBMITTER, "submitter"))
         .thenReturn(doc(List.of(oneBridge())));
 
     ResponseEntity<Schedule7aResponse> result =
@@ -130,12 +181,13 @@ class Schedule7aControllerTest {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514L, 2021));
 
-    when(schedule7aService.deleteBridge(514L, 2021, 7601L, true)).thenReturn(doc(List.of()));
+    when(schedule7aService.deleteBridge(514L, 2021, 7601L, CallerRights.SUBMITTER))
+        .thenReturn(doc(List.of()));
     ResponseEntity<Schedule7aResponse> emptied =
         controller.deleteBridge(7601L, "514", "2021", authentication);
     assertThat(emptied.getBody().message().key()).isEqualTo("anyDataToSaveInfoMsg");
 
-    when(schedule7aService.deleteBridge(514L, 2021, 7602L, true))
+    when(schedule7aService.deleteBridge(514L, 2021, 7602L, CallerRights.SUBMITTER))
         .thenReturn(doc(List.of(oneBridge())));
     ResponseEntity<Schedule7aResponse> remaining =
         controller.deleteBridge(7602L, "514", "2021", authentication);
@@ -149,12 +201,15 @@ class Schedule7aControllerTest {
         .thenReturn(new MillYearContext(514L, 2021));
     Schedule7aCheckStatusResponse readiness =
         new Schedule7aCheckStatusResponse(true, List.of(), List.of(), null);
-    when(schedule7aService.checkStatus(514L, 2021)).thenReturn(readiness);
+    Schedule7aCheckRequest request = new Schedule7aCheckRequest(List.of());
+    when(schedule7aService.checkStatus(514L, 2021, request)).thenReturn(readiness);
 
     ResponseEntity<Schedule7aCheckStatusResponse> result =
-        controller.checkStatus("514", "2021", authentication);
+        controller.checkStatus("514", "2021", request, authentication);
 
+    // The SCREEN path (#359) with the very body posted — never the stored one.
     assertThat(result.getBody()).isSameAs(readiness);
-    verify(schedule7aService).checkStatus(514L, 2021);
+    verify(schedule7aService).checkStatus(514L, 2021, request);
+    verify(schedule7aService, never()).checkStatusStored(anyLong(), anyInt());
   }
 }

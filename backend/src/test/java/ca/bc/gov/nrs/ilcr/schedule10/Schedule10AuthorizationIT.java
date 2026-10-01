@@ -18,8 +18,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Acceptance test for authorization on {@code VIEW_SCHEDULE} (AD-7) for Schedule 10. Security ON, so
- * this drives the real {@code oauth2ResourceServer} chain and {@code @PreAuthorize}.
+ * Acceptance test for authorization on {@code VIEW_SCHEDULE} (AD-7) for Schedule 10. Security ON,
+ * so this drives the real {@code oauth2ResourceServer} chain and {@code @PreAuthorize}.
  *
  * <p>Authorities derive through the production {@link CognitoGroupsJwtAuthenticationConverter}
  * rather than {@code jwt().authorities(...)} directly — Spring's test {@code jwt()} derives
@@ -37,8 +37,7 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -49,9 +48,12 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL).param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -59,9 +61,12 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL).param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -69,9 +74,12 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER -> 200, and editable:true on a Draft track")
   void submitter_returns200AndEditable() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL).param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.editable", is(true)));
   }
@@ -79,30 +87,38 @@ class Schedule10AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_ADMIN -> 200")
   void admin_returns200() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL).param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isOk());
   }
 
   @Test
   @DisplayName("editable is server-authoritative — a non-Draft track is false for any caller")
-  void nonDraftTrackIsNotEditableForAnyCaller() throws Exception {
+  void nonDraftTrackEditabilityFollowsTheRole() throws Exception {
     // Mill 716 sits on track 'S'. Both production groups hold EDIT_SCHEDULE, so this proves the
     // flag follows the track status and not merely the caller's permissions (AD-9).
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "716").param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "716")
+                .param("year", SEEDED_YEAR)
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.editable", is(false)));
 
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "716").param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "716")
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isOk())
-        // Legacy would grant an admin edit at 'S', but no shipped schedule implements that path —
-        // it belongs to the AD-9/AR14 remediation (Story 11.1 deviation (g)). Pinned so the gap is
-        // visible rather than silently assumed.
-        .andExpect(jsonPath("$.editable", is(false)));
+        // An administrator DOES edit at 'S' — the ministry correction path. Legacy granted it on
+        // the same cell, and the shared editability component now implements the full matrix.
+        .andExpect(jsonPath("$.editable", is(true)));
   }
 }

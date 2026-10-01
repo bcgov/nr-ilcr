@@ -21,12 +21,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for {@link Schedule3CostDerivation} — the Schedule-3 values Schedule 1 pulls (BR-03 crown
- * volume, BR-04 Forest Mgmt Admin = Subtotal Actual Costs crown, BR-04 Less Silviculture Admin =
- * item-37 crown). The Subtotal Actual Costs is DERIVED from the fixed lines (never a persisted row),
- * so the {@code fullDocument()} line set below MUST yield the same subtotal Schedule 3 computes for the
- * same data — cross-checked against {@code Schedule3ServiceTest}/{@code Schedule3DocumentIT} (harvest
- * 900000 / PO&amp;P 300000 -> crown 600000 on the shared 514/2021 fixture). Mocked repository.
+ * Unit test for {@link Schedule3CostDerivation} — the Schedule-3 values Schedule 1 pulls (BR-03
+ * crown volume, BR-04 Forest Mgmt Admin = Subtotal Actual Costs crown, BR-04 Less Silviculture
+ * Admin = item-37 crown). The Subtotal Actual Costs is DERIVED from the fixed lines (never a
+ * persisted row), so the {@code fullDocument()} line set below MUST yield the same subtotal
+ * Schedule 3 computes for the same data — cross-checked against {@code Schedule3ServiceTest}/{@code
+ * Schedule3DocumentIT} (harvest 900000 / PO&amp;P 300000 -> crown 600000 on the shared 514/2021
+ * fixture). Mocked repository.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule3CostDerivationTest {
@@ -34,11 +35,9 @@ class Schedule3CostDerivationTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule3Repository repository;
+  @Mock private Schedule3Repository repository;
 
-  @InjectMocks
-  private Schedule3CostDerivation derivation;
+  @InjectMocks private Schedule3CostDerivation derivation;
 
   private static DetailRow cost(int code, Integer amount) {
     return new DetailRow(code, null, amount, null, null);
@@ -61,23 +60,23 @@ class Schedule3CostDerivationTest {
     rows.add(cost(125, 40000));
     rows.add(cost(28, 50000));
     rows.add(cost(126, 20000));
-    rows.add(cost(29, 30000));       // Annual Rents — Harvest-only
+    rows.add(cost(29, 30000)); // Annual Rents — Harvest-only
     rows.add(cost(30, 285000));
     rows.add(cost(128, 155000));
     rows.add(cost(31, 40000));
     rows.add(cost(129, 10000));
     rows.add(cost(32, 25000));
     rows.add(cost(130, 5000));
-    rows.add(cost(33, 60000));       // Scaling — PO&P derived (0.5 * 60000 = 30000)
+    rows.add(cost(33, 60000)); // Scaling — PO&P derived (0.5 * 60000 = 30000)
     rows.add(cost(34, 35000));
     rows.add(cost(132, 15000));
     rows.add(cost(35, 45000));
     rows.add(cost(133, 5000));
     rows.add(cost(36, 80000));
     rows.add(cost(134, 20000));
-    rows.add(cost(37, 150000));      // Silviculture Admin — Harvest-only
-    rows.add(volume(118, "54321"));  // PO&P Timber volume
-    rows.add(volume(119, "54321"));  // Crown Timber volume
+    rows.add(cost(37, 150000)); // Silviculture Admin — Harvest-only
+    rows.add(volume(118, "54321")); // PO&P Timber volume
+    rows.add(volume(119, "54321")); // Crown Timber volume
     return rows;
   }
 
@@ -115,7 +114,8 @@ class Schedule3CostDerivationTest {
   @Test
   void resolvePop_nullPopCodeSpec_forcesZeroWhenHarvestPresentElseNull() {
     // Harvest-only lines (Annual Rents 29 / Silviculture Admin 37) carry a null popCode: resolvePop
-    // must force PO&P to 0 when a Harvest is present (so crown = harvest) and stay null when it isn't —
+    // must force PO&P to 0 when a Harvest is present (so crown = harvest) and stay null when it
+    // isn't —
     // never dereferencing the absent PO&P item. Volumes are irrelevant on this path (scaling-only).
     LineSpec harvestOnly = new LineSpec(29, null, true);
     assertEquals(0, Schedule3Constants.resolvePop(harvestOnly, 30000, Map.of(), null, null));
@@ -125,10 +125,10 @@ class Schedule3CostDerivationTest {
   @Test
   void otherAcceptableGroups_foldIntoSubtotalActual() {
     // Item-124: a TOT row adds to harvest, its PO&P peer to pop; crown picks up the difference.
-    List<DetailRow> rows = new ArrayList<>(List.of(
-        cost(27, 100000), cost(125, 40000)));                     // crown 60000
-    rows.add(new DetailRow(124, null, 20000, "desc", "SCH3_2_TOT_GRP1"));  // harvest += 20000
-    rows.add(new DetailRow(124, null, 5000, "desc", "SCH3_2_POP_GRP1"));   // pop += 5000
+    List<DetailRow> rows =
+        new ArrayList<>(List.of(cost(27, 100000), cost(125, 40000))); // crown 60000
+    rows.add(new DetailRow(124, null, 20000, "desc", "SCH3_2_TOT_GRP1")); // harvest += 20000
+    rows.add(new DetailRow(124, null, 5000, "desc", "SCH3_2_POP_GRP1")); // pop += 5000
     stubDetails(rows);
     Schedule1Sources sources = derivation.schedule1Sources(MILL, YEAR);
     // harvest 120000 − pop 45000 = 75000.

@@ -21,9 +21,9 @@ import org.springframework.test.context.TestPropertySource;
  * Acceptance test — field validation on the Schedule 10 write path.
  *
  * <p>Every rejection asserts the VERBATIM legacy text, because the whole point of the exercise is
- * that the client renders exactly what the legacy screen did. The 400 body is a plain
- * {@code ProblemDetail} with a single {@code detail} string — there is no per-field array — which is
- * why each distinguishable field carries its own bundle key.
+ * that the client renders exactly what the legacy screen did. The 400 body is a plain {@code
+ * ProblemDetail} with a single {@code detail} string — there is no per-field array — which is why
+ * each distinguishable field carries its own bundle key.
  *
  * <p>Every test also asserts that nothing was created: a rejection that persisted a partial row
  * would otherwise pass on the status code alone.
@@ -36,13 +36,13 @@ class Schedule10ValidationIT extends AbstractOracleIT {
   private static final String MILL = "717";
   private static final String YEAR = "2024";
 
-  @Autowired
-  private JdbcTemplate jdbc;
+  @Autowired private JdbcTemplate jdbc;
 
   private int pageCount() {
     return jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ROAD_CONSTRUCTION_REPRT WHERE ILCR_MILL_ID = 717"
-            + " AND REPORT_YEAR = 2024", Integer.class);
+            + " AND REPORT_YEAR = 2024",
+        Integer.class);
   }
 
   /**
@@ -50,20 +50,27 @@ class Schedule10ValidationIT extends AbstractOracleIT {
    *
    * <p>The page counter above watches mill 717 / year 2024, which is the right context for the page
    * tests and the WRONG one for every road-detail test in this class — and it counts pages, so it
-   * could not observe a persisted detail row even in the right year. Code review 2026-08-18 found the
-   * class javadoc promising "every test also asserts that nothing was created" while three
+   * could not observe a persisted detail row even in the right year. Code review 2026-08-18 found
+   * the class javadoc promising "every test also asserts that nothing was created" while three
    * road-detail tests asserted nothing at all.
    */
   private int detailCount() {
     return jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ROAD_CONSTRUCTION_REPRT_DTL"
-            + " WHERE ROAD_CONSTRUCTION_REPRT_ID = 8956", Integer.class);
+            + " WHERE ROAD_CONSTRUCTION_REPRT_ID = 8956",
+        Integer.class);
   }
 
   private void expectPageRejected(String json, String expectedText) throws Exception {
     int before = pageCount();
-    mockMvc.perform(post(PAGES).param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).with(csrf()).content(json))
+    mockMvc
+        .perform(
+            post(PAGES)
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .with(csrf())
+                .content(json))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", containsString(expectedText)));
@@ -73,8 +80,14 @@ class Schedule10ValidationIT extends AbstractOracleIT {
   /** Posts an invalid road detail to page 8956 and asserts the text AND that no row was created. */
   private void expectDetailRejected(String json, String expectedText) throws Exception {
     int before = detailCount();
-    mockMvc.perform(post(PAGES + "/8956/road-details").param("millId", MILL).param("year", "2019")
-            .contentType(MediaType.APPLICATION_JSON).with(csrf()).content(json))
+    mockMvc
+        .perform(
+            post(PAGES + "/8956/road-details")
+                .param("millId", MILL)
+                .param("year", "2019")
+                .contentType(MediaType.APPLICATION_JSON)
+                .with(csrf())
+                .content(json))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", containsString(expectedText)));
@@ -84,10 +97,12 @@ class Schedule10ValidationIT extends AbstractOracleIT {
   @Test
   @DisplayName("a missing Region is rejected with legacy's own wording")
   void missingRegionIsRejected() throws Exception {
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"tsaOrTfl":"01","supplyBlock":"01A","divisionName":"No Region",
          "constructionPeriod":"2021-06"}
-        """, "Region is required.");
+        """,
+        "Region is required.");
   }
 
   @Test
@@ -95,39 +110,47 @@ class Schedule10ValidationIT extends AbstractOracleIT {
   void missingTsaOrTflUsesScheduleTenWording() throws Exception {
     // Schedule 6's key reads "TSA or TFL: Value is required." — reusing it here would ship the
     // wrong bytes with nothing to catch it.
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"forestRegionCode":"RNI","supplyBlock":"01A","divisionName":"No Location",
          "constructionPeriod":"2021-06"}
-        """, "TSA or TFL is required.");
+        """,
+        "TSA or TFL is required.");
   }
 
   @Test
   @DisplayName("a Period Surveyed in the wrong format is rejected")
   void badPeriodFormatIsRejected() throws Exception {
     // Legacy accepts "2024-1" and stores it, then throws when re-rendering it. The API refuses it.
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"forestRegionCode":"RNI","tsaOrTfl":"01","supplyBlock":"01A","divisionName":"Bad Period",
          "constructionPeriod":"2024-1"}
-        """, "The date is not valid. Enter date in format: YYYY-MM.");
+        """,
+        "The date is not valid. Enter date in format: YYYY-MM.");
   }
 
   @Test
   @DisplayName("a division name longer than the column is a 400, not an opaque 500")
   void overlongDivisionIsRejected() throws Exception {
     // The column is VARCHAR2(20) while the legacy screen allows 30, so legacy raises ORA-12899.
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"forestRegionCode":"RNI","tsaOrTfl":"01","supplyBlock":"01A",
          "divisionName":"012345678901234567890123456789","constructionPeriod":"2021-06"}
-        """, "Division must be 20 characters or fewer.");
+        """,
+        "Division must be 20 characters or fewer.");
   }
 
   @Test
   @DisplayName("a TFL the reference table does not hold is rejected with the validator's message")
   void invalidTflIsRejected() throws Exception {
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"forestRegionCode":"RNI","tsaOrTfl":"TFL","tflNumberCode":"99",
          "divisionName":"Bad TFL","constructionPeriod":"2021-06"}
-        """, "Entered TFL number is not valid for Interior Regions.");
+        """,
+        "Entered TFL number is not valid for Interior Regions.");
   }
 
   @Test
@@ -135,10 +158,12 @@ class Schedule10ValidationIT extends AbstractOracleIT {
   void unknownRegionCodeIsRejected() throws Exception {
     // Legacy silently stored NULL on a cache miss; the column carries an enabled FK here, so an
     // unknown code would otherwise surface as an opaque 500.
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"forestRegionCode":"ZZZ","tsaOrTfl":"01","supplyBlock":"01A","divisionName":"Bad Region",
          "constructionPeriod":"2021-06"}
-        """, "A valid value must be selected from the list.");
+        """,
+        "A valid value must be selected from the list.");
   }
 
   @Test
@@ -147,55 +172,76 @@ class Schedule10ValidationIT extends AbstractOracleIT {
     int pagesBefore = pageCount();
 
     // A non-negative cost below zero uses the 0-based message.
-    mockMvc.perform(post(PAGES + "/8956/road-details").param("millId", MILL).param("year", "2019")
-            .contentType(MediaType.APPLICATION_JSON).with(csrf())
-            .content("""
+    mockMvc
+        .perform(
+            post(PAGES + "/8956/road-details")
+                .param("millId", MILL)
+                .param("year", "2019")
+                .contentType(MediaType.APPLICATION_JSON)
+                .with(csrf())
+                .content(
+                    """
                 {"roadName":"Bad Cost","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
                  "relSoilMoistRgmClsCode":"1","subGrade":{"actualCost":-1},
                  "stabilizing":{"ballastMethodCode":"N"}}
                 """))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.detail",
-            containsString("Entered cost must be between 0 and 9,999,999.")));
+        .andExpect(
+            jsonPath("$.detail", containsString("Entered cost must be between 0 and 9,999,999.")));
 
     // A transfer outside the symmetric band uses the other message.
-    mockMvc.perform(post(PAGES + "/8956/road-details").param("millId", MILL).param("year", "2019")
-            .contentType(MediaType.APPLICATION_JSON).with(csrf())
-            .content("""
+    mockMvc
+        .perform(
+            post(PAGES + "/8956/road-details")
+                .param("millId", MILL)
+                .param("year", "2019")
+                .contentType(MediaType.APPLICATION_JSON)
+                .with(csrf())
+                .content(
+                    """
                 {"roadName":"Bad Transfer","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
                  "relSoilMoistRgmClsCode":"1","subGrade":{"ttTransfer":-10000000},
                  "stabilizing":{"ballastMethodCode":"N"}}
                 """))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.detail",
-            containsString("Entered cost must be between -9,999,999 and 9,999,999.")));
+        .andExpect(
+            jsonPath(
+                "$.detail",
+                containsString("Entered cost must be between -9,999,999 and 9,999,999.")));
 
     assertThat(pageCount()).isEqualTo(pagesBefore);
   }
 
   @Test
-  @DisplayName("a road detail omitting the stabilizing block cannot bypass the required ballast method")
+  @DisplayName(
+      "a road detail omitting the stabilizing block cannot bypass the required ballast method")
   void omittedStabilizingBlockIsRejected() throws Exception {
     // Bean Validation skips a null nested object, so without @NotNull the required ballast method
     // inside it would never be evaluated.
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"No Stabilizing","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1"}
-        """, "Ballast Method Code: Value is required.");
+        """,
+        "Ballast Method Code: Value is required.");
   }
 
   @Test
   @DisplayName("the two verbatim required literals legacy hardcodes in schedule10.xhtml")
   void requiredRoadDetailLiteralsAreVerbatim() throws Exception {
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"N"}}
-        """, "Road Name is required.");
+        """,
+        "Road Name is required.");
 
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"No RSMR","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "stabilizing":{"ballastMethodCode":"N"}}
-        """, "RSMR Class is required.");
+        """,
+        "RSMR Class is required.");
   }
 
   @Test
@@ -205,35 +251,50 @@ class Schedule10ValidationIT extends AbstractOracleIT {
     // javax.faces.* key, so JSF fills {0} from each component's label attribute; wiring that
     // parameterised key to a Bean Validation annotation shipped "{0}: Value is required." to the
     // reporter, because Bean Validation has no positional arguments (code review 2026-08-18).
-    // Asserting the resolved bytes is the only assertion that can catch it — the standalone-validator
+    // Asserting the resolved bytes is the only assertion that can catch it — the
+    // standalone-validator
     // unit test asserts key templates by design and never resolves them.
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"No Road Type","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"N"}}
-        """, "Road Type: Value is required.");
+        """,
+        "Road Type: Value is required.");
 
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"No BEC","roadLifetimeCode":"P",
          "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"N"}}
-        """, "BEC Zone: Value is required.");
+        """,
+        "BEC Zone: Value is required.");
 
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"No Ballast","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","stabilizing":{}}
-        """, "Ballast Method Code: Value is required.");
+        """,
+        "Ballast Method Code: Value is required.");
 
     // Conditionally required: only ballast method "C" demands a material type. This previously
     // answered "A valid value must be selected from the list." — a pick-from-a-list message for a
     // missing-required condition.
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Crushed No Material","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"C"}}
-        """, "Material Code Type: Value is required.");
+        """,
+        "Material Code Type: Value is required.");
 
     // And none of the four leaks the raw placeholder.
-    mockMvc.perform(post(PAGES + "/8956/road-details").param("millId", MILL).param("year", "2019")
-            .contentType(MediaType.APPLICATION_JSON).with(csrf())
-            .content("""
+    mockMvc
+        .perform(
+            post(PAGES + "/8956/road-details")
+                .param("millId", MILL)
+                .param("year", "2019")
+                .contentType(MediaType.APPLICATION_JSON)
+                .with(csrf())
+                .content(
+                    """
                 {"roadName":"No Road Type","becbiogeoCatalogueId":8801,
                  "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"N"}}
                 """))
@@ -248,31 +309,39 @@ class Schedule10ValidationIT extends AbstractOracleIT {
     // in exactly one place — CheckStatus.java:196, with an args array. Wired to Bean Validation it
     // rendered "Entered value must be between {0} and {1}." for fourteen distinguishable fields.
     // Each band now carries its own resolved text, matching what Check Status emits for that field.
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Over Length","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","subGrade":{"length":101},
          "stabilizing":{"ballastMethodCode":"N"}}
-        """, "Entered value must be between 0 and 100.");
+        """,
+        "Entered value must be between 0 and 100.");
 
     // The other side of the sub-grade/stabilizing length asymmetry, with its own real bounds.
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Over Stab Length","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1",
          "stabilizing":{"ballastMethodCode":"C","ballastMaterialCode":"GR","length":1000}}
-        """, "Entered value must be between 0 and 999.999.");
+        """,
+        "Entered value must be between 0 and 999.999.");
 
     // Percentages use legacy's OWN keys rather than a Schedule 10 invention.
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Bad Slope","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","sideSlopePct":101,
          "stabilizing":{"ballastMethodCode":"N"}}
-        """, "Side slope (%): percentage must be between 0 and 100.");
+        """,
+        "Side slope (%): percentage must be between 0 and 100.");
 
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Bad Material Pct","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","materialComposition":{"solidRockPct":101},
          "stabilizing":{"ballastMethodCode":"N"}}
-        """, "Entered percentage must be between 0 and 100.");
+        """,
+        "Entered percentage must be between 0 and 100.");
   }
 
   @Test
@@ -281,17 +350,21 @@ class Schedule10ValidationIT extends AbstractOracleIT {
     // The handler picks a converter message from the target JAVA TYPE, so every Integer field
     // answered "Entered cost is invalid." — telling a reporter their COST was wrong when they
     // mistyped a percentage (code review 2026-08-18).
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Bad Slope Type","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","sideSlopePct":"abc",
          "stabilizing":{"ballastMethodCode":"N"}}
-        """, "Side slope (%): percentage is invalid.");
+        """,
+        "Side slope (%): percentage is invalid.");
 
-    expectDetailRejected("""
+    expectDetailRejected(
+        """
         {"roadName":"Bad Volume Type","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
          "relSoilMoistRgmClsCode":"1","endHaulVolume":"abc",
          "stabilizing":{"ballastMethodCode":"N"}}
-        """, "Entered volume entry is invalid.");
+        """,
+        "Entered volume entry is invalid.");
   }
 
   @Test
@@ -299,9 +372,11 @@ class Schedule10ValidationIT extends AbstractOracleIT {
   void impossibleMonthIsRejected() throws Exception {
     // Legacy stores the raw string, so "2024-99" persists there and flows into every page label.
     // This extends the strict-pattern deviation already recorded for this field.
-    expectPageRejected("""
+    expectPageRejected(
+        """
         {"forestRegionCode":"RNI","tsaOrTfl":"01","supplyBlock":"01A","divisionName":"Bad Month",
          "constructionPeriod":"2024-99"}
-        """, "The date is not valid. Enter date in format: YYYY-MM.");
+        """,
+        "The date is not valid. Enter date in format: YYYY-MM.");
   }
 }

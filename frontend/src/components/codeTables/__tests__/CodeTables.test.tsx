@@ -8,10 +8,18 @@ import type { CodeTableEntry } from '@/interfaces/CodeTable'
 
 const BASE = 'http://localhost:3000/api/v1/code-tables'
 const UNIT_ENTRIES = `${BASE}/UNIT_CODE/entries`
+const CONTRACTUAL_ENTRIES = `${BASE}/CONTRACTUAL_ITEM_CODE/entries`
 
 const TABLES = [
   { key: 'UNIT_CODE', label: 'Unit Codes', codeMaxLength: 10, descriptionMaxLength: 120 },
   { key: 'SKID_TYPE_CODE', label: 'Skid Type Codes', codeMaxLength: 3, descriptionMaxLength: 120 },
+  {
+    key: 'CONTRACTUAL_ITEM_CODE',
+    label: 'Contractual Item Codes',
+    codeMaxLength: 10,
+    descriptionMaxLength: 120,
+    contractual: true,
+  },
 ]
 
 const SEED: CodeTableEntry[] = [
@@ -239,5 +247,101 @@ describe('Table Maintenance (Story 24.3)', () => {
     await selectUnitCodes()
     // M3 never expires (expiryDate null) → em dash.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('contractual items use description-only add with required dates and no edit action', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(BASE, () => HttpResponse.json(TABLES)),
+      http.get(CONTRACTUAL_ENTRIES, () =>
+        HttpResponse.json([
+          {
+            code: '108',
+            description: 'Existing contractual item',
+            effectiveDate: '2020-01-01',
+            expiryDate: '2030-12-31',
+          },
+        ]),
+      ),
+      http.put(CONTRACTUAL_ENTRIES, async ({ request }) => {
+        put(await request.json())
+        return HttpResponse.json({
+          outcome: 'INSERTED',
+          messageKey: 'dataSavedSuccesfullyInfoMsg',
+          message: 'Data saved successfully',
+          entries: [],
+        })
+      }),
+    )
+    render(<CodeTables />)
+
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Code List' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Contractual Item Codes' }))
+    expect(await screen.findByText('Existing contractual item')).toBeInTheDocument()
+    expect(screen.getByLabelText('Code')).toBeDisabled()
+    expect(screen.getByLabelText('Description')).toHaveAttribute('maxlength', '120')
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'New contractual item')
+    fireEvent.change(screen.getByLabelText('Effective Date'), { target: { value: '2020-01-01' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(await screen.findByText('Expiry Date: Value is required.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Expiry Date'), { target: { value: '2030-12-31' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(put).toHaveBeenCalledWith({
+      code: '',
+      description: 'New contractual item',
+      effectiveDate: '2020-01-01',
+      expiryDate: '2030-12-31',
+    })
+  })
+
+  // #332: every request site falls back to a hardcoded message when the failure carries no
+  // ProblemDetail.detail. An empty-bodied 500 is the detail-less shape.
+  describe('detail-less error fallbacks (#332)', () => {
+    test('a table-list load failure carrying no detail falls back to the generic load message', async () => {
+      server.use(http.get(BASE, () => new HttpResponse(null, { status: 500 })))
+      render(<CodeTables />)
+
+      expect(await screen.findByText('Unable to load the code tables.')).toBeInTheDocument()
+    })
+
+    test('an entries load failure carrying no detail falls back to the generic entries message', async () => {
+      server.use(
+        http.get(BASE, () => HttpResponse.json(TABLES)),
+        http.get(UNIT_ENTRIES, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<CodeTables />)
+      await userEvent.click(await screen.findByRole('combobox', { name: 'Code List' }))
+      await userEvent.click(await screen.findByRole('option', { name: 'Unit Codes' }))
+
+      expect(await screen.findByText('Unable to load entries.')).toBeInTheDocument()
+      // The grid stays empty apart from the add row — no stale rows from a previous table.
+      expect(screen.queryByText('M3')).not.toBeInTheDocument()
+    })
+
+    test('a detail-less save failure falls back to the generic save message and keeps the draft', async () => {
+      server.use(
+        ...listHandlers(),
+        http.put(UNIT_ENTRIES, () => new HttpResponse(null, { status: 500 })),
+      )
+      render(<CodeTables />)
+      await selectUnitCodes()
+
+      await userEvent.type(screen.getByLabelText('Code'), 'ZZ')
+      await userEvent.type(screen.getByLabelText('Description'), 'Zed')
+      fireEvent.change(screen.getByLabelText('Effective Date'), { target: { value: '2020-01-01' } })
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      expect(await screen.findByText('The entry could not be saved.')).toBeInTheDocument()
+      // The draft is retained for a retry and the action is re-enabled; nothing reads as saved.
+      expect(screen.getByLabelText('Code')).toHaveValue('ZZ')
+      expect(screen.getByLabelText('Description')).toHaveValue('Zed')
+      expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument()
+    })
   })
 })

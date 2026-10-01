@@ -7,5 +7,4 @@ package ca.bc.gov.nrs.ilcr.millcontext.dto;
  *
  * @param reportYear the reporting year ({@code THE.ILCR_REPORTING_PERIOD.REPORT_YEAR})
  */
-public record ReportingYear(int reportYear) {
-}
+public record ReportingYear(int reportYear) {}

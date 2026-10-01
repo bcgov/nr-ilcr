@@ -1,7 +1,6 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   OPEN_WITH_STATUS,
-  DEFAULT_CONTEXT,
   millOptionText,
   bannerMillLine,
   expectedStatusLines,
@@ -28,16 +27,17 @@ Then('the mill and reporting-year option lists are populated', async ({ homePage
   await homePage.assertOptionListsPopulated(millOptionText(OPEN_WITH_STATUS), OPEN_WITH_STATUS.year);
 });
 
-Then('the working context is pre-selected on landing', async ({ homePage }) => {
-  // Re-grounding proof: the mount default (millYearDefaults.ts 13050/2017) is present in both list
-  // endpoints, so Home pre-selects both dropdowns and Carbon offers no clear-to-placeholder control —
-  // this is exactly why the empty-dropdown slices S04/S05/S08 are not UI-reproducible (see defects.md).
-  await expect(homePage.millDropdown).toContainText(millOptionText(DEFAULT_CONTEXT));
-  await expect(homePage.millDropdown).not.toContainText(PLACEHOLDER.mill);
-  await expect(homePage.yearDropdown).toContainText(String(DEFAULT_CONTEXT.year));
-  await expect(homePage.yearDropdown).not.toContainText(PLACEHOLDER.year);
-  // The banner is populated on landing (before any Save), keyed on that default context.
-  await expect(homePage.bannerLine(bannerMillLine(DEFAULT_CONTEXT))).toBeVisible();
+Then('no working context is selected on landing', async ({ homePage }) => {
+  // A first-ever visit has NO working context: both Carbon Dropdowns sit on their placeholder `label`
+  // and the user is asked to choose. Until MillYearProvider dropped its 13050/2017 mount default
+  // (commit e37649b), a context always existed, so Home reflected it and these placeholders were
+  // unreachable — this step asserted the pre-selection instead. Local storage is empty in a fresh
+  // Playwright browser context, so every scenario lands in the no-context state.
+  await expect(homePage.millDropdown).toContainText(PLACEHOLDER.mill);
+  await expect(homePage.yearDropdown).toContainText(PLACEHOLDER.year);
+  // AC5: a null context renders NO banner at all (ContextBanner.tsx returns null) — the banner is the
+  // read-back of a chosen context, so on landing there is nothing to read back.
+  await expect(homePage.banner).toHaveCount(0);
 });
 
 When('I select the working context {string}', async ({ homePage }, key) => {

@@ -1,9 +1,18 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC, ReactNode } from 'react'
 import { TextInput } from '@carbon/react'
 import type { CodeDescription, Schedule10CodeLists } from '@/interfaces/Schedule10Response'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import type { PageErrors, PageFormValues } from './validation'
-import { DIVISION_MAX, TFL_MAX, TFL_SENTINEL, isTflLocated, supplyBlocksFor } from './validation'
+import {
+  DIVISION_MAX,
+  TFL_MAX,
+  TFL_SENTINEL,
+  describe,
+  isTflLocated,
+  supplyBlocksFor,
+} from './validation'
 
 type PageFieldsProps = {
   readonly idPrefix: string
@@ -15,6 +24,11 @@ type PageFieldsProps = {
   readonly roadGroup: string | null
   readonly readOnly: boolean
   readonly onChange: (key: keyof PageFormValues, value: string) => void
+  /**
+   * The Licensee's submitted values for this page (Story 16.2, BR-04) — undefined on the Add panel,
+   * null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 /**
@@ -33,7 +47,7 @@ const ReadOnlyField: FC<{
   readonly className?: string
 }> = ({ label, value, className }) => (
   <Field className={className}>
-    <span className="schedule-10__field-label">{label}</span>
+    <span className="schedule-10__field-label">{label}:</span>
     <span className="schedule-10__field-value">{value === '' ? '—' : value}</span>
   </Field>
 )
@@ -54,7 +68,24 @@ const PageFields: FC<PageFieldsProps> = ({
   roadGroup,
   readOnly,
   onChange,
+  originals,
 }) => {
+  // Legacy rendered six indicators on a construction page (RoadConstructionReportType.java:342-420).
+  // Road Group is derived from the three classification codes and legacy left rmgOriginal with no
+  // accessor, so it gets none.
+  //
+  // Two form fields carry a different name from the served document: `tsaOrTfl` holds the TSA number
+  // (or the TFL sentinel) and `supplyBlock` holds the TSB code. Mapped explicitly so a rename fails
+  // loudly rather than dropping an indicator.
+  const indicator = (field: string, label: string, current: string, numeric = false) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={current}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const tflLocated = isTflLocated(form.tsaOrTfl)
   const id = (name: string) => `${idPrefix}-${name}`
 
@@ -65,9 +96,6 @@ const PageFields: FC<PageFieldsProps> = ({
     { code: TFL_SENTINEL, description: TFL_SENTINEL },
   ]
   const blockOptions = supplyBlocksFor(codeLists.supplyBlocks, form.tsaOrTfl, form.supplyBlock)
-
-  const describe = (options: readonly CodeDescription[], code: string): string =>
-    options.find((option) => option.code === code)?.description ?? code
 
   if (readOnly) {
     return (
@@ -94,7 +122,7 @@ const PageFields: FC<PageFieldsProps> = ({
       <Field>
         <TextInput
           id={id('division')}
-          labelText="Division"
+          labelText="Division:"
           maxLength={DIVISION_MAX}
           autoComplete="off"
           value={form.divisionName}
@@ -103,12 +131,13 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.divisionName ?? ''}
           onChange={(event) => onChange('divisionName', event.target.value)}
         />
+        {indicator('divisionName', 'Division', form.divisionName)}
       </Field>
 
       <Field>
         <TextInput
           id={id('period')}
-          labelText="Period Surveyed"
+          labelText="Period Surveyed:"
           placeholder="YYYY-MM"
           autoComplete="off"
           value={form.constructionPeriod}
@@ -117,12 +146,13 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.constructionPeriod ?? ''}
           onChange={(event) => onChange('constructionPeriod', event.target.value)}
         />
+        {indicator('constructionPeriod', 'Period Surveyed', form.constructionPeriod)}
       </Field>
 
       <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('region')}
-          titleText="Region"
+          titleText="Region:"
           items={[...codeLists.forestRegions]}
           selectedCode={form.forestRegionCode}
           disabled={disabled}
@@ -130,12 +160,13 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.forestRegionCode}
           onSelect={(code) => onChange('forestRegionCode', code)}
         />
+        {indicator('forestRegionCode', 'Region', form.forestRegionCode)}
       </Field>
 
       <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('tsa-or-tfl')}
-          titleText="TSA or TFL"
+          titleText="TSA or TFL:"
           items={tsaOptions}
           selectedCode={form.tsaOrTfl}
           disabled={disabled}
@@ -143,12 +174,13 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.tsaOrTfl}
           onSelect={(code) => onChange('tsaOrTfl', code)}
         />
+        {indicator('tsaNumber', 'TSA or TFL', form.tsaOrTfl)}
       </Field>
 
       <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('supply-block')}
-          titleText="Supply Block"
+          titleText="Supply Block:"
           items={blockOptions}
           selectedCode={form.supplyBlock}
           disabled={disabled || tflLocated}
@@ -156,12 +188,13 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.supplyBlock}
           onSelect={(code) => onChange('supplyBlock', code)}
         />
+        {indicator('tsbNumberCode', 'Supply Block', form.supplyBlock)}
       </Field>
 
       <Field className="schedule-10__field--narrow">
         <TextInput
           id={id('tfl')}
-          labelText="TFL"
+          labelText="TFL:"
           maxLength={TFL_MAX}
           autoComplete="off"
           value={form.tflNumberCode}
@@ -170,6 +203,7 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.tflNumberCode ?? ''}
           onChange={(event) => onChange('tflNumberCode', event.target.value)}
         />
+        {indicator('tflNumberCode', 'TFL', form.tflNumberCode)}
       </Field>
 
       <ReadOnlyField

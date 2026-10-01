@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule6.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 6 road-maintenance record (AD-12). A record is classified either as a Timber Supply
@@ -10,11 +12,11 @@ import java.math.BigDecimal;
  * BR-02, mutually exclusive.
  *
  * <p>{@code rmg} (Resource Management Grouping) and {@code costPerVolume} ($/m&sup3;) are DERIVED
- * server-side (BR-04/BR-07) and read-only — never accepted from a client on write (8.2).
- * {@code revisionCount} is this row's own optimistic-lock token (each road record is independently
+ * server-side (BR-04/BR-07) and read-only — never accepted from a client on write (8.2). {@code
+ * revisionCount} is this row's own optimistic-lock token (each road record is independently
  * editable; there is no schedule-level summary row — the AR11 keying delta recorded in Story 8.1).
- * {@code costPerVolume} is null when volume is zero/absent (no divide-by-zero); Jackson
- * {@code non_null} omits every null field.
+ * {@code costPerVolume} is null when volume is zero/absent (no divide-by-zero); Jackson {@code
+ * non_null} omits every null field.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record RoadRecord(
@@ -27,5 +29,36 @@ public record RoadRecord(
     BigDecimal volume,
     Integer cost,
     BigDecimal costPerVolume,
-    String comments) {
+    String comments,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public RoadRecord(
+      int recordId,
+      Integer revisionCount,
+      String areaType,
+      String tflNumber,
+      String supplyBlock,
+      String rmg,
+      BigDecimal volume,
+      Integer cost,
+      BigDecimal costPerVolume,
+      String comments) {
+    this(
+        recordId,
+        revisionCount,
+        areaType,
+        tflNumber,
+        supplyBlock,
+        rmg,
+        volume,
+        cost,
+        costPerVolume,
+        comments,
+        null);
+  }
 }

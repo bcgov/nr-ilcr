@@ -8,6 +8,8 @@ import {
   CANCEL_DELETE_ANCHOR,
   CHECK_MET_ANCHOR,
   CHECK_MISSING_ANCHOR,
+  CHECK_UNSAVED_FIX_ANCHOR,
+  CHECK_UNSAVED_VIOLATION_ANCHOR,
   CLIENT,
   DELETE_ANCHOR,
   DELETE_UNAVAILABLE_ANCHOR,
@@ -62,6 +64,9 @@ const ANCHORS: Record<string, Sch2Anchor> = {
   'cancel-delete': CANCEL_DELETE_ANCHOR,
   'saved-incomplete': SAVED_INCOMPLETE_ANCHOR,
   a11y: A11Y_ANCHOR,
+  // BR-12 / #359 — seeded by real-test-data-patches/sch2/unsaved-check-anchors.sql.
+  'check-unsaved-violation': CHECK_UNSAVED_VIOLATION_ANCHOR,
+  'check-unsaved-fix': CHECK_UNSAVED_FIX_ANCHOR,
 };
 
 const namedAnchor = (name: string): Sch2Anchor => {
@@ -404,6 +409,22 @@ Then('the Schedule 2 Delete action is unavailable', async ({ schedule2Page }) =>
 
 Then('the Schedule 2 Delete action is available', async ({ schedule2Page }) => {
   await expect(schedule2Page.deleteButton).toBeEnabled();
+  // The converse of the reason below: when Delete IS available there is nothing to explain, so the
+  // element must be absent from the DOM entirely (not merely hidden — it is always hidden now).
+  await expect(schedule2Page.deleteUnavailableHint).toHaveCount(0);
+});
+
+Then('the Schedule 2 delete-unavailable reason is announced', async ({ schedule2Page }) => {
+  // nr-ilcr #292 decision 3: greying Delete rather than omitting it (legacy's `rendered`) costs a
+  // screen-reader user the control entirely, because a disabled Carbon button is not focusable. The
+  // app pays that cost with a programmatically-associated reason that is VISUALLY HIDDEN — it shipped
+  // visible for one commit and read as clutter beside an already-greyed control (product call
+  // 2026-08-24). So: attached and wired, deliberately NOT `toBeVisible()`. Both halves are asserted,
+  // because losing either one undoes the decision in a different direction.
+  await expect(schedule2Page.deleteUnavailableHint).toBeAttached();
+  await expect(schedule2Page.deleteUnavailableHint).toHaveClass(/cds--visually-hidden/);
+  const hintId = await schedule2Page.deleteUnavailableHint.getAttribute('id');
+  await expect(schedule2Page.deleteButton).toHaveAttribute('aria-describedby', hintId ?? '');
 });
 
 Then('the Schedule 2 fields are read-only', async ({ schedule2Page }) => {

@@ -25,16 +25,45 @@ class Schedule8ValidatorsTest {
     return mock(ConstraintValidatorContext.class, RETURNS_DEEP_STUBS);
   }
 
-  // ---- Schedule8SampleRulesValidator (S15 / S23 / S24) -------------------------------------------
+  // ---- Schedule8SampleRulesValidator (S15 / S23 / S24)
+  // -------------------------------------------
 
   private final Schedule8SampleRulesValidator sampleRules = new Schedule8SampleRulesValidator();
 
-  private static Schedule8SampleRequest sample(Integer ground, Integer grapple, Integer skyline,
-      Integer highlead, Integer helicopter, Integer other, BigDecimal distance, BigDecimal cycle,
-      Boolean uphill, Boolean waterDump, String skidType) {
-    return new Schedule8SampleRequest(null, null, "C", null, ground, grapple, skyline, highlead,
-        helicopter, other, null, null, null, cycle, distance, uphill, waterDump, skidType, null,
-        null, null);
+  private static Schedule8SampleRequest sample(
+      Integer ground,
+      Integer grapple,
+      Integer skyline,
+      Integer highlead,
+      Integer helicopter,
+      Integer other,
+      BigDecimal distance,
+      BigDecimal cycle,
+      Boolean uphill,
+      Boolean waterDump,
+      String skidType) {
+    return new Schedule8SampleRequest(
+        null,
+        null,
+        "C",
+        null,
+        ground,
+        grapple,
+        skyline,
+        highlead,
+        helicopter,
+        other,
+        null,
+        null,
+        null,
+        cycle,
+        distance,
+        uphill,
+        waterDump,
+        skidType,
+        null,
+        null,
+        null);
   }
 
   @Test
@@ -44,54 +73,55 @@ class Schedule8ValidatorsTest {
 
   @Test
   void sample_sumWithinHundred_noConditionals_isValid() {
-    assertTrue(sampleRules.isValid(
-        sample(40, 20, 10, 0, 0, 0, null, null, null, null, null), ctx()));
+    assertTrue(
+        sampleRules.isValid(sample(40, 20, 10, 0, 0, 0, null, null, null, null, null), ctx()));
   }
 
   @Test
   void sample_sumOverHundred_isInvalid() {
-    assertFalse(sampleRules.isValid(
-        sample(60, 30, 20, 0, 0, 0, null, null, null, null, null), ctx()));
+    assertFalse(
+        sampleRules.isValid(sample(60, 30, 20, 0, 0, 0, null, null, null, null, null), ctx()));
   }
 
   @Test
   void sample_helicopterNonZero_missingConditionalFields_isInvalid() {
-    assertFalse(sampleRules.isValid(
-        sample(0, 0, 0, 0, 50, 0, null, null, null, null, null), ctx()));
+    assertFalse(
+        sampleRules.isValid(sample(0, 0, 0, 0, 50, 0, null, null, null, null, null), ctx()));
   }
 
   @Test
   void sample_helicopterNonZero_allConditionalFieldsPresent_isValid() {
-    assertTrue(sampleRules.isValid(
-        sample(0, 0, 0, 0, 50, 0, new BigDecimal("5"), new BigDecimal("2"), true, false, null),
-        ctx()));
+    assertTrue(
+        sampleRules.isValid(
+            sample(0, 0, 0, 0, 50, 0, new BigDecimal("5"), new BigDecimal("2"), true, false, null),
+            ctx()));
   }
 
   @Test
   void sample_otherNonZero_naSkidType_isInvalid() {
-    assertFalse(sampleRules.isValid(
-        sample(0, 0, 0, 0, 0, 20, null, null, null, null, "NA"), ctx()));
+    assertFalse(
+        sampleRules.isValid(sample(0, 0, 0, 0, 0, 20, null, null, null, null, "NA"), ctx()));
   }
 
   @Test
   void sample_otherNonZero_blankSkidType_isInvalid() {
-    assertFalse(sampleRules.isValid(
-        sample(0, 0, 0, 0, 0, 20, null, null, null, null, "  "), ctx()));
+    assertFalse(
+        sampleRules.isValid(sample(0, 0, 0, 0, 0, 20, null, null, null, null, "  "), ctx()));
   }
 
   @Test
   void sample_otherNonZero_validSkidType_isValid() {
-    assertTrue(sampleRules.isValid(
-        sample(0, 0, 0, 0, 0, 20, null, null, null, null, "GR"), ctx()));
+    assertTrue(sampleRules.isValid(sample(0, 0, 0, 0, 0, 20, null, null, null, null, "GR"), ctx()));
   }
 
-  // ---- TsaOrTflRequiredValidator (S/BR-03 context) -----------------------------------------------
+  // ---- TsaOrTflRequiredValidator (S/BR-03 context)
+  // -----------------------------------------------
 
   private final TsaOrTflRequiredValidator tsaOrTfl = new TsaOrTflRequiredValidator();
 
   private static Schedule8PageRequest page(String tsa, String tfl) {
-    return new Schedule8PageRequest(null, null, "LIC", "SC", "RG", "BZ", tsa, tfl, null, null, null,
-        null, null, null);
+    return new Schedule8PageRequest(
+        null, null, "LIC", "SC", "RG", "BZ", tsa, tfl, null, null, null, null, null, null);
   }
 
   @Test

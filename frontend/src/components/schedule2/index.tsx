@@ -1,10 +1,12 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule2Response from '@/interfaces/Schedule2Response'
 import type { CostBlock, CheckStatusResponse } from '@/interfaces/Schedule2Response'
 import type Schedule2Request from '@/interfaces/Schedule2Request'
-import { useState } from 'react'
+import type { Schedule2CheckRequest } from '@/interfaces/Schedule2Request'
+import { useRef, useState } from 'react'
 import {
-  Button,
   Column,
   Grid,
   Modal,
@@ -15,17 +17,20 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
+import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import { isScheduleSaved } from '@/utils/schedule'
+import { enteredNum } from '@/utils/derivedMath'
+import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
+import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
 import './index.scss'
@@ -33,7 +38,6 @@ import './index.scss'
 // ERR-001 (mill/year not selected) and the confirm-delete text are client-side chrome (a suppression
 // with no request / a confirm dialog), so their verbatim text lives here. Success/error text comes
 // from the API `message.text` / ProblemDetail.detail — never hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
@@ -78,6 +82,14 @@ function buildRequest(doc: Schedule2Response, form: FieldValues): Schedule2Reque
   }
 }
 
+// The Check Status body (#359): the item-25 cost as it is ON SCREEN — `form`, the keystroke state,
+// not the blur-committed snapshot, because that is what legacy's full postback submitted. `toNum`
+// returns null for a blank field and that null is carried through deliberately: the server's check
+// is a pure null test (a stored `0` passes), so a `?? 0` here would turn a missing cost into a pass.
+function buildCheckRequest(form: FieldValues): Schedule2CheckRequest {
+  return { purchasedLogCostCost: toNum(form[F_ITEM25_COST] ?? '') }
+}
+
 const Schedule2: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
@@ -102,9 +114,20 @@ const Schedule2: FC = () => {
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever a
+  // checked field changes, so an older response cannot repaint a verdict over newer values.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setStatusMessages(null)
+  }
+
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule2Response>({
       path: '/v1/schedule2',
+      scheduleName: 'Schedule 2',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -112,6 +135,12 @@ const Schedule2: FC = () => {
       mapLoadError,
       onReset: resetBanners,
     })
+
+  // The blur-committed snapshot the derived mirror reads (defect #291). `form` still tracks every
+  // keystroke because it drives the inputs; `committed` only advances when a field loses focus, so the
+  // read-only figures settle once per field instead of churning mid-number — legacy's AJAX-on-blur
+  // behaviour. Re-seeds whenever `data` is replaced (load / Save echo / Delete reload).
+  const { committed, commit } = useCommittedValues(form, data)
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
@@ -139,7 +168,11 @@ const Schedule2: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-check the gate in the handler, not only in the button's `disabled` (defect #292 code
+    // review): a disabled attribute is presentation, and any other route into this handler — a
+    // mis-wired bar, a programmatic open, the modal's submit — would otherwise fire a DELETE for a
+    // schedule that does not exist. Mirrors handleSave, which also re-validates here.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
@@ -147,13 +180,26 @@ const Schedule2: FC = () => {
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 2.',
       // Schedule 2 never 404s: with the summary gone, a re-GET returns the 200 empty EDITABLE
-      // document (revisionCount null). Reload it so the meta row / form reflect reality and the
+      // document (no revisionCount). Reload it so the meta row / form reflect reality and the
       // Licensee can immediately re-enter data (legacy AF1), while keeping the API delete message.
       // This per-page empty-state lives at the call site (Story 29.6): list/re-GET pages re-seed
       // from the reload, single-doc reset-in-place pages (Schedules 1/3) reset in place instead.
       onSuccess: (delResp) => {
         const deleteMessage = delResp?.message?.text ?? null
-        run(
+        // Drop the optimistic-lock token BEFORE the reload is dispatched, so "this schedule is
+        // saved" becomes false the instant the record is gone (defect #292 code review, face 2).
+        // Schedules 1/3 avoid the whole problem by resetting in place; this is the same move,
+        // narrowed to the token the gate reads.
+        setData((prev) => (prev ? { ...prev, revisionCount: null } : prev))
+        // RETURN the reload so delete→reload is ONE locked operation (PR #351 review). Clearing the
+        // token alone closed the DELETE gate but left the WINDOW open: `run`'s `.finally` released
+        // `saving` when the DELETE settled while this GET was still out, so for the length of the
+        // reload — and permanently if it failed — `saving` was false, `form` still held the
+        // pre-delete values and `revisionCount` was null. Save is gated on `saving`, not on the
+        // persisted-record check, so a click in that window PUT `revisionCount: 0` and RE-CREATED
+        // the schedule with the old figures; the reload then painted an empty document over a row
+        // that now existed. Returning the promise keeps the lock held until the reload settles.
+        return run(
           apiService
             .getAxiosInstance()
             .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`),
@@ -178,67 +224,80 @@ const Schedule2: FC = () => {
     }
     // Legacy Check Status is validateClient="true": invalid entered values block the action with the
     // same FLD-* messages Save uses, rather than firing a POST that ignores them.
-    if (Object.keys(validateSchedule2(form)).length > 0) {
+    // Gated on `editable`, exactly as `fieldErrors` is: a read-only page highlights nothing, so a stored
+    // value failing the client range check must not block the check silently.
+    if (data.editable && Object.keys(validateSchedule2(form)).length > 0) {
       setSaveMessage(null)
       setStatusMessages(null)
       setSaveError('Please correct the highlighted fields before checking status.')
       return
     }
     clearBanners() // don't leave a stale Save success banner beside a new check result
-    checkStatus<CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setStatusMessages,
-    })
-  }
-
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // The body carries the screen (#359); nothing is persisted (AD-5).
+    checkStatus<CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: (result) => {
+          if (checkSnapshotVersionRef.current === submittedSnapshotVersion) {
+            setStatusMessages(result)
+          }
+        },
+      },
+      buildCheckRequest(form),
     )
   }
 
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 2" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 2', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
   }
 
   const editable = data.editable
-  // Delete targets a persisted summary; an unsaved document (revisionCount null) has nothing to
-  // delete, so gate it exactly like legacy isScheduleOpen() (BR-08 / S06).
-  const deletable = editable && data.revisionCount !== null
+  // Delete targets a persisted summary; an unsaved document has nothing to delete, so gate it exactly
+  // like legacy isScheduleOpen() (BR-08 / S06). The absent-vs-null subtlety that made #292 possible
+  // lives in the shared predicate — read it before touching this line.
+  const scheduleSaved = isScheduleSaved(data)
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
+
+  // What the value rows render. While the schedule is editable, the figures that depend on entry come
+  // from the display-only mirror fed by the COMMITTED (blurred) values, so they track data entry the
+  // way legacy did; the Save echo then replaces the document and the mirror re-seeds from it. Outside
+  // Draft / in view mode there is no entry, so the document's own server-computed figures are rendered
+  // as-is (defect #291). `purchasedWoodOverhead` and `totalCompanyLogging` are wholly carried from
+  // Schedules 3 and 1 and always come from `data` — the mirror deliberately does not return them.
+  const figures = editable
+    ? deriveSchedule2(data, {
+        purchasedLogCostCost: enteredNum(committed[F_ITEM25_COST] ?? ''),
+        lessLogSalesVolume: enteredNum(committed[F_ITEM26_VOLUME] ?? ''),
+        lessLogSalesCost: enteredNum(committed[F_ITEM26_COST] ?? ''),
+      })
+    : data
 
   // An editable value cell: a caret-preserving comma-grouped input when the field is entered-by-user
   // and the schedule is editable, otherwise read-only text. Right-aligned so the entered numbers line
   // up with the read-only cells above/below. The hidden `labelText` is a terse, stable a11y name (the
   // visible legacy label lives in the row's first cell).
-  const inputCell = (fieldKey: string, label: string) => (
+  // Legacy renders four indicators on this page (schedule2.xhtml): item 25's cost, item 26's volume
+  // and cost, and the comments. Every carried and derived figure gets none — nothing stores them.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: string | number | null | undefined,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator originals={originals} field={field} current={current} label={label} />
+    )
+
+  const inputCell = (
+    fieldKey: string,
+    label: string,
+    originals?: OriginalValues | null,
+    originalField?: string,
+  ) => (
     <TableCell className="schedule-2__num">
       <CommaNumberInput
         id={fieldKey}
@@ -246,15 +305,31 @@ const Schedule2: FC = () => {
         hideLabel
         size="sm"
         value={form[fieldKey] ?? ''}
-        onValueChange={(raw) => setForm((prev) => ({ ...prev, [fieldKey]: raw }))}
+        onValueChange={(raw) => {
+          // Only the item-25 cost is checked; an edit to it makes a shown verdict stale.
+          if (fieldKey === F_ITEM25_COST) {
+            invalidateCheckResult()
+          }
+          setForm((prev) => ({ ...prev, [fieldKey]: raw }))
+        }}
+        onBlur={() => commit(fieldKey, { invalid: Boolean(fieldErrors[fieldKey]) })}
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}
       />
+      {indicator(originals, originalField, label, form[fieldKey] ?? '')}
     </TableCell>
   )
 
-  const readOnlyCell = (value: number | null | undefined) => (
-    <TableCell className="schedule-2__num">{fmtNumber(value)}</TableCell>
+  const readOnlyCell = (
+    value: number | null | undefined,
+    originals?: OriginalValues | null,
+    originalField?: string,
+    label = '',
+  ) => (
+    <TableCell className="schedule-2__num">
+      {fmtNumber(value)}
+      {indicator(originals, originalField, label, value)}
+    </TableCell>
   )
 
   // The $/m³ column is currency: thousands-separated with two decimals (shared currency style).
@@ -268,9 +343,19 @@ const Schedule2: FC = () => {
       <TableCell>Purchased/Private Log Costs:</TableCell>
       {readOnlyCell(data.purchasedLogCost.volume)}
       {editable
-        ? inputCell(F_ITEM25_COST, 'Purchased Log Cost cost')
-        : readOnlyCell(data.purchasedLogCost.cost)}
-      {perUnitCell(data.purchasedLogCost.perUnit)}
+        ? inputCell(
+            F_ITEM25_COST,
+            'Purchased Log Cost cost',
+            data.purchasedLogCost.originalValues,
+            'cost',
+          )
+        : readOnlyCell(
+            data.purchasedLogCost.cost,
+            data.purchasedLogCost.originalValues,
+            'cost',
+            'Purchased Log Cost cost',
+          )}
+      {perUnitCell(figures.purchasedLogCost.perUnit)}
     </TableRow>
   )
 
@@ -279,19 +364,48 @@ const Schedule2: FC = () => {
     <TableRow>
       <TableCell>(less) Log Sales:</TableCell>
       {editable
-        ? inputCell(F_ITEM26_VOLUME, 'Less Log Sales volume')
-        : readOnlyCell(data.lessLogSales.volume)}
+        ? inputCell(
+            F_ITEM26_VOLUME,
+            'Less Log Sales volume',
+            data.lessLogSales.originalValues,
+            'volume',
+          )
+        : readOnlyCell(
+            data.lessLogSales.volume,
+            data.lessLogSales.originalValues,
+            'volume',
+            'Less Log Sales volume',
+          )}
       {editable
-        ? inputCell(F_ITEM26_COST, 'Less Log Sales cost')
-        : readOnlyCell(data.lessLogSales.cost)}
-      {perUnitCell(data.lessLogSales.perUnit)}
+        ? inputCell(F_ITEM26_COST, 'Less Log Sales cost', data.lessLogSales.originalValues, 'cost')
+        : readOnlyCell(
+            data.lessLogSales.cost,
+            data.lessLogSales.originalValues,
+            'cost',
+            'Less Log Sales cost',
+          )}
+      {perUnitCell(figures.lessLogSales.perUnit)}
     </TableRow>
   )
 
   // Read-only derived / carried block (never inputs, never sent on write).
-  // `sectionStart` draws a heavier top border to visually divide the table into its 4 cost groups.
-  const derivedRow = (label: string, block: CostBlock, sectionStart = false) => (
-    <TableRow key={label} className={sectionStart ? 'schedule-2__section-start' : undefined}>
+  //
+  // `sectionStart` draws a heavier top border to visually divide the table into its 4 cost groups —
+  // a GROUPING cue and nothing else. The summary band is keyed off the row being calculated instead
+  // (#411 Overall 5): every derived row gets one, the table's final figure takes the darker total
+  // band and the rest the lighter subtotal band. The two used to ride the same flag, which shaded by
+  // where a group happened to start rather than by what the row is — leaving Wood Overhead and Total
+  // Company Logging Costs bare, and giving the grand total the subtotal grey.
+  const derivedRow = (label: string, block: CostBlock, sectionStart = false, isTotal = false) => (
+    <TableRow
+      key={label}
+      className={[
+        isTotal ? 'schedule-2__total-row' : 'schedule-2__subtotal-row',
+        sectionStart ? 'schedule-2__section-start' : null,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <TableCell>{label}</TableCell>
       {readOnlyCell(block.volume)}
       {readOnlyCell(block.cost)}
@@ -299,22 +413,21 @@ const Schedule2: FC = () => {
     </TableRow>
   )
 
-  const actions = (
-    <Column sm={4} md={8} lg={16} className="schedule-2__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
-        Save
-      </Button>
-      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
-        Check Status
-      </Button>
-      <Button
-        kind="danger--tertiary"
-        disabled={!deletable || saving}
-        onClick={() => setConfirmDeleteOpen(true)}
-      >
-        Delete
-      </Button>
-    </Column>
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule and
+  // Save + Check Status + Delete below it (schedule2.xhtml:35-36 vs :172-178), the same shape as
+  // Schedules 1 and 3. Deleting the whole schedule is the one destructive action on this page, and
+  // legacy kept it off the bar a reporter meets first (defect #292 — it used to render on both).
+  const actionBar = (showDelete: boolean) => (
+    <ScheduleActions
+      className="schedule-2__actions"
+      editable={editable}
+      saving={saving}
+      onSave={handleSave}
+      onCheckStatus={handleCheckStatus}
+      onDelete={() => setConfirmDeleteOpen(true)}
+      showDelete={showDelete}
+      scheduleSaved={scheduleSaved}
+    />
   )
 
   return (
@@ -337,7 +450,7 @@ const Schedule2: FC = () => {
             />
           ))}
 
-        {actions}
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-2__section">
           <TableContainer>
@@ -356,11 +469,11 @@ const Schedule2: FC = () => {
               <TableBody>
                 {item25Row}
                 {derivedRow('Purchased/Private Wood Overhead:', data.purchasedWoodOverhead)}
-                {derivedRow('Subtotal:', data.subtotal, true)}
+                {derivedRow('Subtotal:', figures.subtotal, true)}
                 {item26Row}
-                {derivedRow('Net Purchased/Private Log Cost:', data.netPurchased, true)}
+                {derivedRow('Net Purchased/Private Log Cost:', figures.netPurchased, true)}
                 {derivedRow('Total Company Logging Costs(Sch 1):', data.totalCompanyLogging)}
-                {derivedRow('Total Average Logging Costs:', data.totalAverage, true)}
+                {derivedRow('Total Average Logging Costs:', figures.totalAverage, true, true)}
               </TableBody>
             </Table>
           </TableContainer>
@@ -368,11 +481,10 @@ const Schedule2: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-2__section">
           {editable ? (
-            <TextArea
+            <CommentsTextArea
               id="comments"
               className="schedule-2__comments-field"
               labelText="If you have any additional comments, please enter them here:"
-              enableCounter
               maxCount={COMMENTS_MAX}
               value={form[F_COMMENTS] ?? ''}
               onChange={setField(F_COMMENTS)}
@@ -385,9 +497,16 @@ const Schedule2: FC = () => {
               <p className="schedule-2__comments">{data.comments ?? '—'}</p>
             </>
           )}
+          <OriginalValueIndicator
+            originals={data.originalValues}
+            field="comments"
+            current={editable ? (form[F_COMMENTS] ?? '') : data.comments}
+            numeric={false}
+            label="Comments"
+          />
         </Column>
 
-        {actions}
+        {actionBar(true)}
       </Grid>
 
       {editable && (

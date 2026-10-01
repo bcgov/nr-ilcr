@@ -1,5 +1,8 @@
-import type { FC } from 'react'
-import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+import { Fragment, type FC } from 'react'
+import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import type { Bridge, BridgeCodeLists, BridgeCodeOption } from '@/interfaces/Schedule7aResponse'
 import { numStrGroup } from '@/utils/number'
 import type { BridgeErrors, BridgeFormValues, CodeField, CostField } from './validation'
@@ -32,16 +35,16 @@ type CostCell = { field: CostField; label: string }
 
 type CostRowSpec = {
   label: string
-  triple: readonly [CostCell, CostCell, CostCell] | null
-  secondary: CostCell | null
+  triple: readonly [CostCell, CostCell, CostCell]
+  secondary: CostCell
+  // The cells' slots in the `.schedule-7a__costs` grid-template-areas (index.scss).
+  area: { label: string; triple: readonly [string, string, string]; secondary: string }
 }
 
+// Site Plan shares the Material/Deliver/Install heading row, so it has no triple of its own.
+const SITE_PLAN: CostCell = { field: 'sitePlanCost', label: 'Site Plan / Gen. Arr. ($)' }
+
 const COST_ROWS: readonly CostRowSpec[] = [
-  {
-    label: '',
-    triple: null,
-    secondary: { field: 'sitePlanCost', label: 'Site Plan / Gen. Arr. ($)' },
-  },
   {
     label: 'Superstructure ($)',
     triple: [
@@ -50,6 +53,7 @@ const COST_ROWS: readonly CostRowSpec[] = [
       { field: 'superstructureInstallCost', label: 'Superstructure Install ($)' },
     ],
     secondary: { field: 'approachCost', label: 'Approach works ($)' },
+    area: { label: 'sl', triple: ['sm', 'sd', 'si'], secondary: 'ap' },
   },
   {
     label: 'Abutments ($)',
@@ -59,6 +63,7 @@ const COST_ROWS: readonly CostRowSpec[] = [
       { field: 'abutmentInstallCost', label: 'Abutments Install ($)' },
     ],
     secondary: { field: 'afterInstallCost', label: 'Certification After install ($)' },
+    area: { label: 'al', triple: ['am', 'ad', 'ai'], secondary: 'ce' },
   },
 ]
 
@@ -72,12 +77,26 @@ type Props = {
   readonly errors: BridgeErrors
   readonly codeLists: BridgeCodeLists
   readonly disabled: boolean
-  // Absent in the Add panel: a bridge that does not exist yet has no server-computed totals.
-  readonly totals?: Bridge | null
+  // The four derived totals: the served bridge for an untouched row, the display-only mirror once the
+  // reporter has committed a cost, and the mirror from the start in the Add panel (#291).
+  readonly totals?: Pick<
+    Bridge,
+    'totalMaterial' | 'totalDeliver' | 'totalInstall' | 'grandTotal'
+  > | null
   readonly onChange: <K extends keyof BridgeFormValues>(key: K, value: string) => void
   // Re-group a money field once the user leaves it (schedule 3's `groupField` idiom). On blur rather
   // than on change so inserting a separator mid-word cannot move the caret while typing.
   readonly onGroup: (key: CostField) => void
+  /**
+   * Leaving a text field (or the comments) — the row's per-field "change" validation (#359 group B
+   * change log). Absent on the Add panel, which keeps validating on Add only.
+   */
+  readonly onCommit?: (key: keyof BridgeFormValues) => void
+  /**
+   * The Licensee's submitted values for this bridge (Story 16.2, BR-04) — undefined on the Add
+   * panel, null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 const BridgeFields: FC<Props> = ({
@@ -89,7 +108,21 @@ const BridgeFields: FC<Props> = ({
   totals,
   onChange,
   onGroup,
+  onCommit,
+  originals,
 }) => {
+  // Legacy rendered 23 indicators on a bridge — thirteen attributes plus ten costs
+  // (BridgeReportType.java:548-596, Schedule7aDAO.java:299-432). The four TOTALS get none: legacy's
+  // own OV summing for them is commented out (BridgeReportType.java:408,410,412).
+  const indicator = (field: keyof BridgeFormValues, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const text = (
     field: keyof BridgeFormValues,
     label: string,
@@ -109,44 +142,64 @@ const BridgeFields: FC<Props> = ({
     // Split off: `rightAlign` is ours, not a TextInput prop, and would reach the DOM via the spread.
     const { rightAlign, ...inputProps } = extra
     return (
-      <TextInput
-        id={`${idPrefix}-${field}`}
-        labelText={label}
-        size="sm"
-        className={rightAlign ? 'schedule-7a__num' : undefined}
-        disabled={disabled}
-        value={form[field]}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-        onChange={(event) => onChange(field, event.target.value)}
-        {...inputProps}
-      />
+      <div className="schedule-7a__field">
+        <TextInput
+          id={`${idPrefix}-${field}`}
+          labelText={label}
+          size="sm"
+          className={rightAlign ? 'schedule-7a__num' : undefined}
+          disabled={disabled}
+          value={form[field]}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+          onChange={(event) => onChange(field, event.target.value)}
+          {...inputProps}
+          onBlur={() => {
+            inputProps.onBlur?.()
+            onCommit?.(field)
+          }}
+        />
+        {indicator(
+          field,
+          label,
+          !(field === 'comments' || field === 'builtDate' || field === 'locationName'),
+        )}
+      </div>
     )
   }
 
   const code = (field: CodeField) => {
     const spec = codeSpec(field)
     const items = codeLists[spec.list] as readonly BridgeCodeOption[]
+    const selected = items.find((item) => item.code === form[field]) ?? null
     return (
-      <Dropdown<BridgeCodeOption>
-        id={`${idPrefix}-${field}`}
-        titleText={spec.label}
-        label="Select"
-        size="sm"
-        items={items as BridgeCodeOption[]}
-        itemToString={(item) => item?.description ?? ''}
-        // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
-        // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
-        // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
-        // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
-        selectedItem={
-          (items.find((item) => item.code === form[field]) ?? null) as BridgeCodeOption | undefined
-        }
-        disabled={disabled}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-        onChange={({ selectedItem }) => onChange(field, selectedItem?.code ?? '')}
-      />
+      <div className="schedule-7a__field">
+        <Dropdown<BridgeCodeOption>
+          id={`${idPrefix}-${field}`}
+          titleText={spec.label}
+          label="Select"
+          // NO `title` here, deliberately (#295 code review). The New/Used descriptions run to 49
+          // characters ("RU-Replacement installation with a Used structure"), so a narrow cell truncates
+          // the closed control — but Carbon ALREADY sets `title={itemToString(selectedItem)}` on the
+          // control itself (Dropdown.js:275), so the hover text needs nothing from us. Passing `title`
+          // made it worse: Carbon spreads unknown props onto the WRAPPER, and the menu is a descendant of
+          // that wrapper, so the selected option's tooltip floated over the open list — the one place the
+          // whole description is readable. The other reading is the open menu, which the app already wraps
+          // app-wide (`styles/_overrides.scss`, added for the shared code selectors).
+          items={items as BridgeCodeOption[]}
+          itemToString={(item) => item?.description ?? ''}
+          // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
+          // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
+          // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
+          // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
+          selectedItem={selected as BridgeCodeOption | undefined}
+          disabled={disabled}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+          onChange={({ selectedItem }) => onChange(field, selectedItem?.code ?? '')}
+        />
+        {indicator(field, spec.label, false)}
+      </div>
     )
   }
 
@@ -178,6 +231,12 @@ const BridgeFields: FC<Props> = ({
     </div>
   )
 
+  const secondary = (area: string, cell: CostCell) => (
+    <div className="schedule-7a__cost-secondary" data-area={area}>
+      {cost(cell.field, cell.label)}
+    </div>
+  )
+
   return (
     <Grid fullWidth condensed className="schedule-7a__fields">
       {/* Legacy lays the twelve attribute fields out three-across, reading left-to-right then down
@@ -205,67 +264,70 @@ const BridgeFields: FC<Props> = ({
         </div>
       </Column>
 
-      {COST_ROWS.map((row) => (
-        <Column key={row.secondary?.field ?? row.label} sm={4} md={8} lg={16}>
-          <div className="schedule-7a__cost-row">
-            <span className="schedule-7a__cost-label">{row.label}</span>
-            <div className="schedule-7a__cost-triple">
-              {row.triple ? (
-                <>
-                  {cost(row.triple[0].field, row.triple[0].label, true)}
-                  {cost(row.triple[1].field, row.triple[1].label, true)}
-                  {cost(row.triple[2].field, row.triple[2].label, true)}
-                </>
-              ) : (
-                <>
-                  <span className="schedule-7a__cost-heading">Material</span>
-                  <span className="schedule-7a__cost-heading">Deliver</span>
-                  <span className="schedule-7a__cost-heading">Install</span>
-                </>
-              )}
-            </div>
-            {row.secondary && (
-              <div className="schedule-7a__cost-secondary">
-                {cost(row.secondary.field, row.secondary.label)}
-              </div>
-            )}
-          </div>
-        </Column>
-      ))}
-
-      {/* Legacy's Total row carries no fourth cost — Other Costs sits beside Comments on the row
-          below (schedule7A.xhtml:412-447 vs :448-480). */}
+      {/* The cost matrix is ONE grid, not a stack of per-row grids. Legacy draws it as a single table:
+          the Material/Deliver/Install headings share a row with Site Plan, and each triple row carries
+          its standalone cost on the right (schedule7A.xhtml:412-480). As separate rows, a narrow editor
+          stacked each row on its own and parted the headings from their boxes — "Material Deliver
+          Install" floated over Site Plan with nothing beneath it. One grid lets a narrow editor move
+          only the standalone column below the matrix, keeping the headings on their boxes. `data-area`
+          names each cell's slot; the DOM order is the phone-width reading order. */}
       <Column sm={4} md={8} lg={16}>
-        <div className="schedule-7a__cost-row">
-          <span className="schedule-7a__cost-label">Total ($)</span>
-          <div className="schedule-7a__cost-triple">
-            {total('Material', totals?.totalMaterial, true)}
-            {total('Deliver', totals?.totalDeliver, true)}
-            {total('Install', totals?.totalInstall, true)}
-          </div>
-          <div className="schedule-7a__cost-secondary" />
-        </div>
-      </Column>
+        <div className="schedule-7a__costs">
+          <span className="schedule-7a__cost-heading" data-area="hm">
+            Material
+          </span>
+          <span className="schedule-7a__cost-heading" data-area="hd">
+            Deliver
+          </span>
+          <span className="schedule-7a__cost-heading" data-area="hi">
+            Install
+          </span>
+          {secondary('sp', SITE_PLAN)}
 
-      {/* Grand Total closes the right-hand standalone-cost column directly under Other Costs, as in
-          legacy — not as a full-width row of its own. */}
-      <Column sm={4} md={8} lg={16}>
-        <div className="schedule-7a__cost-row">
-          <span className="schedule-7a__cost-label">Comments</span>
-          <TextArea
-            id={`${idPrefix}-comments`}
-            labelText="Comments"
-            hideLabel
-            rows={2}
-            enableCounter
-            maxCount={COMMENTS_MAX_LENGTH}
-            disabled={disabled}
-            value={form.comments}
-            invalid={Boolean(errors.comments)}
-            invalidText={errors.comments}
-            onChange={(event) => onChange('comments', event.target.value)}
-          />
-          <div className="schedule-7a__cost-secondary">
+          {COST_ROWS.map((row) => (
+            <Fragment key={row.label}>
+              <span className="schedule-7a__cost-label" data-area={row.area.label}>
+                {row.label}
+              </span>
+              {row.triple.map((cell, index) => (
+                <div key={cell.field} data-area={row.area.triple[index]}>
+                  {cost(cell.field, cell.label, true)}
+                </div>
+              ))}
+              {secondary(row.area.secondary, row.secondary)}
+            </Fragment>
+          ))}
+
+          {/* Legacy's Total row carries no fourth cost — Other Costs sits beside Comments on the row
+              below (schedule7A.xhtml:412-447 vs :448-480). */}
+          <span className="schedule-7a__cost-label" data-area="tl">
+            Total ($)
+          </span>
+          <div data-area="tm">{total('Material', totals?.totalMaterial, true)}</div>
+          <div data-area="td">{total('Deliver', totals?.totalDeliver, true)}</div>
+          <div data-area="ti">{total('Install', totals?.totalInstall, true)}</div>
+
+          {/* Grand Total closes the right-hand standalone-cost column directly under Other Costs, as
+              in legacy — not as a full-width row of its own. */}
+          <span className="schedule-7a__cost-label" data-area="cl">
+            Comments
+          </span>
+          <div data-area="cc">
+            <CommentsTextArea
+              id={`${idPrefix}-comments`}
+              labelText="Comments"
+              hideLabel
+              rows={2}
+              maxCount={COMMENTS_MAX_LENGTH}
+              disabled={disabled}
+              value={form.comments}
+              invalid={Boolean(errors.comments)}
+              invalidText={errors.comments}
+              onChange={(event) => onChange('comments', event.target.value)}
+              onBlur={() => onCommit?.('comments')}
+            />
+          </div>
+          <div className="schedule-7a__cost-secondary" data-area="og">
             {cost('otherCost', 'Other Costs ($)')}
             {total('Grand Total ($)', totals?.grandTotal)}
           </div>

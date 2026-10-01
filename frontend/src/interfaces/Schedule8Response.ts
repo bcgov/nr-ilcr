@@ -1,3 +1,5 @@
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+
 // Mirrors the backend Schedule8Response DTO (Story 14.1 read + 14.2–14.4 write echoes + 14.6
 // check-status). Jackson omits nulls (non_null), so absent members simply won't be in the JSON.
 // Every derived value (percentTotal, actualHarvested, additionsTotal, deductionsTotal, finalRate,
@@ -18,6 +20,9 @@ export interface RateRow {
   readonly costingRate: number | null
   readonly costTypeCode: string | null
   readonly costTypeDescription: string | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // One Tree-to-Truck sample. The six skidding %s are stored as entered; percentTotal is their
@@ -56,6 +61,9 @@ export interface Sample {
   readonly deductionCount: number
   readonly additions: RateRow[]
   readonly deductions: RateRow[]
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // One report page (TREE_TO_TRUCK_REPORT). The six code fields carry both the stored code and its
@@ -83,6 +91,9 @@ export interface Page {
   readonly comments: string | null
   readonly sampleCount: number
   readonly samples: Sample[]
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 export default interface Schedule8Response {
@@ -102,14 +113,23 @@ export interface CheckFieldIssue {
   readonly message: MessageInfo
 }
 
+// Where a finding belongs (#461): the 1-based ordinal and the legacy title the screen shows for the
+// page ("Page # 1  -TSA: TSA5 -CP: cp123") or sample ("Sample # 1 - CMET"), so two pages missing the
+// same field are distinguishable. Always present: the server composes both on every response, and
+// no verdict is ever stored (the Check Status sweep evaluates live), so there is no older shape to
+// fall back from — same contract as Schedule 10's required `pageLabel`.
 export interface SampleCheckResult {
   readonly id: number | null
+  readonly sampleNumber: number
+  readonly sampleLabel: string
   readonly met: boolean
   readonly issues: CheckFieldIssue[]
 }
 
 export interface PageCheckResult {
   readonly id: number | null
+  readonly pageNumber: number
+  readonly pageLabel: string
   readonly met: boolean
   readonly issues: CheckFieldIssue[]
   readonly samples: SampleCheckResult[]

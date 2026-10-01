@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
+import { Logout } from '@carbon/icons-react'
 import useAuth from '@/context/auth/useAuth'
 
 /**
@@ -22,7 +23,7 @@ const NoAccess: FC = () => {
       </Grid>
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
-          <Button kind="secondary" onClick={() => void signOut()}>
+          <Button kind="secondary" renderIcon={Logout} onClick={() => void signOut()}>
             Sign out
           </Button>
         </Column>

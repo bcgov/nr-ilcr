@@ -19,6 +19,14 @@ id for a negative case, a missing FK parent from a one-hop extract — do we add
 - **Documented.** State which UC/scenario needs it and *why real data fell short*.
 - **Re-verify on re-extract.** Real data is non-deterministic across extracts; revisit patches when
   the DB is refreshed (each `.sql` should carry its own re-pick/verification query).
+- **Fold it into the CI seed, in the same change.** **These patches never run in CI.** The CI e2e job has
+  no extract image and no `sqlplus` step — it rebuilds the schema with Flyway from
+  `backend/src/test/resources/db/` plus `db-e2e/R__80_e2e_anchor_seed.sql`. So every anchor a patch here
+  creates must also be transcribed into that seed, following **its** conventions (plain `INSERT`s with
+  pre-claimed ids against an empty schema, not the guarded PL/SQL used here) with its ID-CLAIMS header
+  extended. Skip this and the suite passes locally and 404s in CI, which reads as an app defect rather
+  than as missing data. `preflight/ci-seed-parity.setup.ts` fails the run if you forget; it needs no
+  database, so it fires locally too.
 
 ## Layout (added as needed)
 ```
@@ -49,12 +57,47 @@ After applying to an already-running backend, **evict the app's reference-data c
 
 ## Current patches
 
-_None yet — the suite runs on discovered real data. Add a row only as a real gap is hit during test
-creation._
-
 | Patch | UC(s) | Why real data fell short |
 |---|---|---|
-| _(example)_ `<domain>/<name>.sql` (+ `.teardown.sql`) | `UC-<DOMAIN>-<NNN>` | _One sentence: which real-data precondition was missing and why discovery couldn't satisfy it. Note it's reversible + `E2E_SEED`-sentinel-marked._ |
+| `sch4/view-mode-amounts.sql` (+ `.teardown.sql`) | `UC-SCH4-001` | The extract contains **no Schedule 4 amounts at all** — 289 category-"4" `TRANSPORTATION_REPORT` rows but not one `ILCR_COST_REPORT_DETAIL` row with a Schedule 4 cost item (40–55), so all 68 locations have an empty category grid and no sub-page rows. Draft scenarios don't care (they create their own data through the app's own endpoints), but the read-only S18/STA-001 arm cannot: the Draft gate answers 409 to any write on a Submitted/Verified mill-year, and no non-Draft location has amounts to render. Adds ONE sentinel location (`E2E View Location`, `ENTRY_USERID='E2E_SEED'`) with a fixed category, a distance category and one Towing row, on each of the two non-Draft anchors. Reversible + double-sentinel-keyed; verified idempotent (2× apply → 1 copy) and fully removed by its teardown. |
+
+| `sch3/draft-anchors.sql` (+ `.teardown.sql`) | `UC-SCH3-001` | Schedule 3 had **no create path** before defect #296, so a summary could not be made through the app: the patch seeds an empty category-3 summary on 17 Draft mill-years, one category-1 Schedule 1 for the BR-09 crown anchor, and stored amounts on 5 read-only Check Status / a11y anchors. Part 1 is retirable since #296 but deliberately kept — parts 2 and 3 depend on those summaries, and the read-only anchors must not be written to by any scenario. |
+| `sch2/unsaved-check-anchors.sql` (+ `.teardown.sql`) | `UC-SCH2-001` | Two dedicated Draft mill-years for the BR-12 / #359 arms. See the note below — the extract had no free anchor left. |
+| `sch11/unsaved-check-anchors.sql` (+ `.teardown.sql`) | `UC-SCH11-001` | Two dedicated Draft mill-years for the BR-12 / #359 arms. Same reason. |
+| `sch4/unsaved-check-anchors.sql` (+ `.teardown.sql`) | `UC-SCH4-001` | One dedicated Draft mill-year for the BR-12 / #359 scenario. Same reason, and Schedule 4's preflight is the strictest — it enforces one anchor per mutating scenario *and* "used in at most one feature file". Retired 2026-09-18 (#465) and **referenced again since 2026-09-28 (#359 group B)**: Check Status now validates the open panel's on-screen entry before checking, so `check-status-unsaved.feature` (S33/S34) is back on this anchor (sch4 `defects.md` DIV-8). Apply it; do not apply the teardown. |
+| `mill/mill-status-anchors.sql` (+ `.teardown.sql`) | `UC-MILL-001` | **The first MILL-keyed patch: the dedicated mills every mutating mills scenario except S01 runs on.** Status changes cannot use any schedule anchor (a closed mill answers 409 on every schedule) and every ACT extract mill is one, with active users; the one unpinned mill, 14050, is CLS with no current-year records, so activating it would enrol it (rows no endpoint removes); and the extract has **no importable mill at all**. Adds mills 26050-26063 (numbers 9181-9194), one per writer: S03, S04, S12, S08, S09, S13, S05, a read-only one for S07/S10/a11y, 26057 (a `THE.MILL` row with NO tracking, for the S02/S14 import), and the coverage-gap mills: contacts set (GAP-1), a never-written Closed mill (GAP-4), one with NO current-year records and one with the status row ALONE (GAP-6), and one for adding a user with no account (GAP-7). A never-set head-office indicator could NOT be seeded: delivery's audit trigger `IMSXA_B_I_U` rejects a NULL one (UC-MILL-001 defects.md VER-5). Each tracked mill except GAP-6's two carries a COMPLETE current-year set (1 status row + 11 category rows, year from `MAX(REPORT_YEAR)`), so activate writes the status alone and every status cleanup is an exact API round trip. Also six synthetic licensees (32-hex GUIDs `E2E000…0N`; the Users route drops non-hex ones) and their associations. The three writes with no delete endpoint — an import, an activation's enrolment, and an added association (with any account it provisions) — are undone by `../scripts/mill_db_restore.py`, guarded to these mills. Sentinel `E2E_SEED_MILLSTAT`, which `common/mock-submitter-associations.sql` **skips**, because an association there would give S03's mill an active user. **Unlike the schedule patches, its `ILCR_REPORT_CATEGORY` rows ARE folded into R__80**: `activate` counts them, and a status row without them reads as PARTIAL (409) in CI. |
+| `usr/user-admin-anchors.sql` (+ `.teardown.sql`) | `UC-USR-001`, `UC-USR-002` | **The dedicated users and mills every Users-page scenario runs on** — ten ACT mills (26064-26073) and twelve licensees (`E2E0…0011`-`0022`), one user per writer. The extract's only accounts are the mock submitter and the mill-admin licensees, all of them some other scenario's fixture, and the account flag has no read endpoint, so a shared account is a race nothing can see. ENDED rows carry **no** `ACTIVE_DATE` (the shape the app's own end leaves — the Users page reads a row with both dates as Active), and each mill carries a current-year report-status row only (the Add-mill dropdown lists a mill only with one). Sentinel `E2E_SEED_USRADM`, excluded by `common/mock-submitter-associations.sql`. Folded into R__80 2026-09-29. |
+| `common/mock-submitter-associations.sql` (+ `.teardown.sql`) | ALL (Home) | **Not an anchor — an identity.** The extract's `ILCR_MILL_USER_XREF` associations all belong to real IDIR users, and a local run has none: security is off, so the caller is the mock principal with the synthetic GUID `CANONSUBMITTER…`. Since Story 5.5 `listMills` fail-closes an unassociated submitter to an EMPTY list, so Home offers a mock submitter no mill and no schedule is reachable. Story 16.1 made that fatal — an admin is now read-only at Draft, so neither mock user can enter data. Adds one `ILCR_USER` row plus one active association per mill, set-based over `ILCR_MILL_STATUS_XREF`, so it needs no re-pick after a re-extract. Associating *every* mill is deliberate: the submitter's scoped list is then the same SET as the admin's (verified both ways with `MINUS`), so the dropdown is unchanged while the query behind it becomes the real scoped one. Pointing `ilcr.security.mock-user-guid` at a real extract GUID was rejected — real directory identifiers must not be committed, and they don't exist in CI. **This one is not optional**: since the suite stopped borrowing `ILCR_ADMIN` for the mill list, forgetting `apply-patches.sh` leaves the dropdown empty and every browser scenario times out at "select the mill". `preflight/mill-scope.setup.ts` fails first, with the command to run. |
+
+> **Why three patches exist purely to create ANCHORS (2026-08-27) — read this before adding a fourth.**
+> The extract has run out of usable mill-years, and the numbers are worth knowing before you go hunting:
+> **114** (mill, year) keys were already pinned across the six domain fixtures when this was measured — 119
+> now, these five anchors included; Home offers only reporting
+> years **2015-2021** (`GET /api/v1/reporting-years`), so an anchor outside that range cannot be selected by
+> a scenario at all; and across the 17 ACT mills × those 7 years exactly **four** unclaimed pairs are
+> openable — every one of them NON-DRAFT, which disables Check Status. So a new mutating scenario in sch2,
+> sch4 or sch11 has nowhere to live without seeding.
+>
+> **Two prerequisites, both found the hard way.** A mill-year needs (1) an `ILCR_MILL_REPORT_STATUS` row —
+> `MillContextService` answers 404 without it — and (2) **eleven `ILCR_REPORT_CATEGORY` rows**, which is what
+> every real reporting mill-year carries. With only (1) the page opens fine and then the first save fails
+> HTTP 500 `scheduleNotSavedErrorMsg`, logged type-only as `DataIntegrityViolationException`. The comparison
+> that explained it: a working anchor held 11 category rows and the bare one held none.
+>
+> **When searching for a free anchor, do not write your own grep — reuse `preflight/anchor-keys.ts`.**
+> Anchors are declared in three shapes and two of them defeat a line-based search: `at(...)` entries wrap
+> across four lines (`at(\n MILL_987,\n 12050,\n 2015,`), and `sec` interleaves `millNumber`/`millName`
+> between `millId` and `year`. That module pairs each `millId` with the `year` in its own enclosing braces
+> and handles both. Under-scanning here has cost real time — two wrong "no anchors exist" conclusions
+> (caught by Schedule 4's preflight), and the cross-domain guard itself missed 62 of the 119 keys, twice,
+> for those two reasons.
+
+**Every patch above is also folded into `backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql`**
+(the five anchor patches as of 2026-08-28, the identity patch 2026-09-09), so the same anchors — and the
+same mock-submitter GUID — exist in CI. `preflight/ci-seed-parity.setup.ts` keeps them in step.
+The one thing NOT transcribed for the SCHEDULE anchors is the eleven `ILCR_REPORT_CATEGORY` rows per anchor (the mill-status anchors are the exception — see their row): the real Oracle's
+composite FK is what makes them necessary, and the Flyway test schema has no such FK (that omission is
+recorded in the seed's own header).
 
 Add entries only as real gaps are hit during test creation/testing.
 

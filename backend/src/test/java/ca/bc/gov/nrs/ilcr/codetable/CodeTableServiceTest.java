@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.codetable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -19,28 +19,30 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
-/** Unit test for the code-table maintenance service (Story 24.3 / T2) — validation + upsert routing. */
+/**
+ * Unit test for the code-table maintenance service (Story 24.3 / T2) — validation + upsert routing.
+ */
 @ExtendWith(MockitoExtension.class)
 class CodeTableServiceTest {
 
   private static final LocalDate JAN_2020 = LocalDate.of(2020, 1, 1);
   private static final LocalDate DEC_2030 = LocalDate.of(2030, 12, 31);
 
-  @Mock
-  private CodeTableRepository repository;
+  @Mock private CodeTableRepository repository;
 
-  @InjectMocks
-  private CodeTableService service;
+  @InjectMocks private CodeTableService service;
 
   private CodeTableException saveExpectingReject(CodeTableEntry entry) {
-    return assertThrows(CodeTableException.class, () -> service.save("UNIT_CODE", entry, "alex.admin"));
+    return assertThrows(
+        CodeTableException.class, () -> service.save("UNIT_CODE", entry, "alex.admin"));
   }
 
   @Test
-  void listTables_excludesContractual_soOnlyTheGenericTablesAreOffered() {
+  void listTables_includesContractualSchedule9Table() {
     var tables = service.listTables();
-    assertEquals(18, tables.size()); // 19 registry entries minus Contractual Item Codes
-    assertFalse(tables.stream().anyMatch(t -> "CONTRACTUAL_ITEM_CODE".equals(t.key())));
+    assertEquals(19, tables.size());
+    assertTrue(
+        tables.stream().anyMatch(t -> "CONTRACTUAL_ITEM_CODE".equals(t.key()) && t.contractual()));
   }
 
   @Test
@@ -50,6 +52,61 @@ class CodeTableServiceTest {
         .thenReturn(UpsertResult.INSERTED);
     assertEquals(UpsertResult.INSERTED, service.save("UNIT_CODE", entry, "alex.admin"));
     verify(repository).upsert(CodeTableRegistry.UNIT_CODE, entry);
+  }
+
+  @Test
+  void save_contractualItem_allowsBlankGeneratedCode() {
+    CodeTableEntry entry = new CodeTableEntry("", "New item", JAN_2020, DEC_2030);
+    when(repository.upsertContractualItem(eq(entry), eq("alex.admin")))
+        .thenReturn(UpsertResult.INSERTED);
+
+    assertEquals(UpsertResult.INSERTED, service.save("CONTRACTUAL_ITEM_CODE", entry, "alex.admin"));
+    verify(repository).upsertContractualItem(entry, "alex.admin");
+  }
+
+  @Test
+  void save_contractualItem_requiresExpiry() {
+    CodeTableException ex =
+        assertThrows(
+            CodeTableException.class,
+            () ->
+                service.save(
+                    "CONTRACTUAL_ITEM_CODE",
+                    new CodeTableEntry("", "New item", JAN_2020, null),
+                    "alex.admin"));
+
+    assertEquals("expiryDateRequiredErrorMsg", ex.getMessageKey());
+    verify(repository, never()).upsertContractualItem(any(), any());
+  }
+
+  @Test
+  void save_contractualItem_descriptionOverColumnCap_is400() {
+    CodeTableException ex =
+        assertThrows(
+            CodeTableException.class,
+            () ->
+                service.save(
+                    "CONTRACTUAL_ITEM_CODE",
+                    new CodeTableEntry("", "x".repeat(121), JAN_2020, DEC_2030),
+                    "alex.admin"));
+
+    assertEquals("codeTableDescriptionLengthErrorMsg", ex.getMessageKey());
+    verify(repository, never()).upsertContractualItem(any(), any());
+  }
+
+  @Test
+  void save_contractualItem_multibyteDescriptionOverByteCap_is400() {
+    CodeTableException ex =
+        assertThrows(
+            CodeTableException.class,
+            () ->
+                service.save(
+                    "CONTRACTUAL_ITEM_CODE",
+                    new CodeTableEntry("", "é".repeat(61), JAN_2020, DEC_2030),
+                    "alex.admin"));
+
+    assertEquals("codeTableDescriptionLengthErrorMsg", ex.getMessageKey());
+    verify(repository, never()).upsertContractualItem(any(), any());
   }
 
   @Test
@@ -71,13 +128,15 @@ class CodeTableServiceTest {
 
   @Test
   void save_blankDescription_is400() {
-    assertEquals("descriptionRequiredErrorMsg",
+    assertEquals(
+        "descriptionRequiredErrorMsg",
         saveExpectingReject(new CodeTableEntry("M3", "", JAN_2020, DEC_2030)).getMessageKey());
   }
 
   @Test
   void save_missingEffectiveDate_is400() {
-    assertEquals("effectiveDateRequiredErrorMsg",
+    assertEquals(
+        "effectiveDateRequiredErrorMsg",
         saveExpectingReject(new CodeTableEntry("M3", "d", null, DEC_2030)).getMessageKey());
   }
 
@@ -92,14 +151,16 @@ class CodeTableServiceTest {
 
   @Test
   void save_expiryBeforeEffective_is400() {
-    assertEquals("expiryBeforeEffectiveErrorMsg",
+    assertEquals(
+        "expiryBeforeEffectiveErrorMsg",
         saveExpectingReject(new CodeTableEntry("M3", "d", DEC_2030, JAN_2020)).getMessageKey());
   }
 
   @Test
   void save_codeExceedingTableCap_is400() {
     // UNIT_CODE codeMaxLength = 10.
-    assertEquals("codeTableCodeLengthErrorMsg",
+    assertEquals(
+        "codeTableCodeLengthErrorMsg",
         saveExpectingReject(new CodeTableEntry("ABCDEFGHIJK", "d", JAN_2020, DEC_2030))
             .getMessageKey());
   }
@@ -108,7 +169,8 @@ class CodeTableServiceTest {
   void save_descriptionExceedingTableCap_is400() {
     // UNIT_CODE descriptionMaxLength = 120.
     String tooLong = "x".repeat(121);
-    assertEquals("codeTableDescriptionLengthErrorMsg",
+    assertEquals(
+        "codeTableDescriptionLengthErrorMsg",
         saveExpectingReject(new CodeTableEntry("M3", tooLong, JAN_2020, DEC_2030)).getMessageKey());
   }
 }

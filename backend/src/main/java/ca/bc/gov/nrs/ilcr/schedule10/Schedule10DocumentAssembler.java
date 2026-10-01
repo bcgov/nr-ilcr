@@ -18,6 +18,10 @@ import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10CostItems.SUB_GRADE_TRANSF
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10CostItems.VOLUME_SCALE;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.BecClassificationRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CostLineRow;
@@ -31,6 +35,7 @@ import ca.bc.gov.nrs.ilcr.schedule10.dto.Stabilizing;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.SubGrade;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,14 +63,14 @@ import org.slf4j.LoggerFactory;
  * from within the same bean never passes through the Spring proxy.
  *
  * <p>Derivation rules that matter:
+ *
  * <ul>
  *   <li><strong>Road Group</strong> is derived per page from the TSA/TSB or TFL tables and is never
- *       stored. Unmapped combinations serve {@code null} with no error (S12).</li>
+ *       stored. Unmapped combinations serve {@code null} with no error (S12).
  *   <li><strong>Costs</strong> are keyed rows, not columns: each is routed to its substructure
- *       field by legacy cost-item ordinal (BR-08).</li>
+ *       field by legacy cost-item ordinal (BR-08).
  *   <li><strong>Totals</strong> come from {@link Schedule10Amounts} only. An absent cost line
- *       counts as ZERO in a total (legacy {@code getCostValue}) while rendering blank on its
- *       own.</li>
+ *       counts as ZERO in a total (legacy {@code getCostValue}) while rendering blank on its own.
  * </ul>
  */
 class Schedule10DocumentAssembler {
@@ -73,9 +78,16 @@ class Schedule10DocumentAssembler {
   private static final Logger LOG = LoggerFactory.getLogger(Schedule10DocumentAssembler.class);
 
   private final Schedule10Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  Schedule10DocumentAssembler(Schedule10Repository repository) {
+  Schedule10DocumentAssembler(
+      Schedule10Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -85,24 +97,28 @@ class Schedule10DocumentAssembler {
    * without self-invoking {@link #getSchedule10}. A {@code this.}-call never passes through the
    * Spring proxy, so the inner {@code @Transactional} was silently ignored — the reads simply
    * joined the caller's transaction, which is correct behaviour but not what the annotation
-   * appeared to promise. Extracting the body states that directly rather than relying on a
-   * proxy subtlety, and
-   * removes the self-invocation Sonar flags (code review follow-up 2026-08-18).
+   * appeared to promise. Extracting the body states that directly rather than relying on a proxy
+   * subtlety, and removes the self-invocation Sonar flags (code review follow-up 2026-08-18).
    *
    * <p>Every caller is already inside a transaction: {@code getSchedule10} and {@code checkStatus}
    * open a read-only one, and each write method opens a read-write one. Nothing calls this
    * unwrapped, so the single-snapshot guarantee is unchanged.
    */
   Schedule10Response assemble(long millId, int year, String trackStatus, boolean editable) {
+    // The licensee's submitted figures (Story 16.2, BR-04). Read once for the whole document —
+    // three queries however many pages and road details it holds — and skipped at Draft.
+    Submitted submitted = loadSubmitted(millId, year, trackStatus);
     List<RoadConstructionReportEntity> pageRows = repository.findPages(millId, year);
     List<RoadConstructionReportDetailEntity> detailRows = repository.findRoadDetails(millId, year);
     List<CostLineRow> costRows = repository.findCostLines(millId, year);
 
-    Map<Integer, List<RoadConstructionReportDetailEntity>> detailsByPage = detailRows.stream()
-        .collect(Collectors.groupingBy(
-            RoadConstructionReportDetailEntity::roadConstructionReprtId,
-            LinkedHashMap::new,
-            Collectors.toList()));
+    Map<Integer, List<RoadConstructionReportDetailEntity>> detailsByPage =
+        detailRows.stream()
+            .collect(
+                Collectors.groupingBy(
+                    RoadConstructionReportDetailEntity::roadConstructionReprtId,
+                    LinkedHashMap::new,
+                    Collectors.toList()));
 
     // costItemId -> cost, per road detail. A null value is a legitimate entry, not a defect:
     // ILCR_COST_REPORT_DETAIL.COST is nullable and legacy stores NULL for a cost the licensee left
@@ -136,9 +152,13 @@ class Schedule10DocumentAssembler {
     Map<Integer, Map<Integer, BigDecimal>> costsByDetail = new LinkedHashMap<>();
     for (CostLineRow row : costRows) {
       if (!ROUTED.contains(row.costItemId())) {
-        LOG.warn("Schedule 10 road detail {} carries unrouted cost item {} — excluded from every"
-            + " derived total (mill {}, year {})",
-            row.roadDetailId(), row.costItemId(), millId, year);
+        LOG.warn(
+            "Schedule 10 road detail {} carries unrouted cost item {} — excluded from every"
+                + " derived total (mill {}, year {})",
+            row.roadDetailId(),
+            row.costItemId(),
+            millId,
+            year);
         continue;
       }
       Map<Integer, BigDecimal> byItem =
@@ -148,9 +168,13 @@ class Schedule10DocumentAssembler {
       // containsKey, not get() != null — a present-but-null entry is a real cost row, and a second
       // row for the same item must still be recognised as a duplicate.
       if (byItem.containsKey(row.costItemId())) {
-        LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} — the last row"
-            + " wins, as in legacy (mill {}, year {})",
-            row.roadDetailId(), row.costItemId(), millId, year);
+        LOG.warn(
+            "Schedule 10 road detail {} has MORE THAN ONE cost row for item {} — the last row"
+                + " wins, as in legacy (mill {}, year {})",
+            row.roadDetailId(),
+            row.costItemId(),
+            millId,
+            year);
       }
       byItem.put(row.costItemId(), row.cost());
     }
@@ -161,14 +185,13 @@ class Schedule10DocumentAssembler {
     Map<Integer, BecClassification> offerableBec = offerableBecById();
     Map<Integer, BecClassification> resolvableBec = resolvableBecById(offerableBec, millId, year);
 
-
     List<ConstructionPage> pages = new ArrayList<>(pageRows.size());
     int pageNumber = 0;
     for (RoadConstructionReportEntity page : pageRows) {
       pageNumber++;
       List<RoadConstructionReportDetailEntity> owned =
           detailsByPage.getOrDefault(page.roadConstructionReprtId(), List.of());
-      pages.add(toPage(page, pageNumber, owned, costsByDetail, resolvableBec));
+      pages.add(toPage(page, pageNumber, owned, costsByDetail, resolvableBec, submitted));
     }
 
     return new Schedule10Response(
@@ -209,8 +232,12 @@ class Schedule10DocumentAssembler {
 
   private static BecClassification toBec(BecClassificationRow row) {
     return new BecClassification(
-        row.biogeoclimaticCatalogueId(), row.becZoneCode(), row.subzone(),
-        row.variant(), row.phase(), row.label());
+        row.biogeoclimaticCatalogueId(),
+        row.becZoneCode(),
+        row.subzone(),
+        row.variant(),
+        row.phase(),
+        row.label());
   }
 
   private ConstructionPage toPage(
@@ -218,7 +245,8 @@ class Schedule10DocumentAssembler {
       int pageNumber,
       List<RoadConstructionReportDetailEntity> details,
       Map<Integer, Map<Integer, BigDecimal>> costsByDetail,
-      Map<Integer, BecClassification> becById) {
+      Map<Integer, BecClassification> becById,
+      Submitted submitted) {
 
     // The RAW stored values, deliberately un-normalized. Legacy tests `tflNumberCode != null`
     // against the column itself (RoadConstructionReportType.getRmg :455-464) and concatenates the
@@ -234,11 +262,13 @@ class Schedule10DocumentAssembler {
     int rowNumber = 0;
     for (RoadConstructionReportDetailEntity detail : details) {
       rowNumber++;
-      roadDetails.add(toRoadDetail(
-          detail,
-          rowNumber,
-          costsByDetail.getOrDefault(detail.roadConstructionReprtDtlId(), Map.of()),
-          becById));
+      roadDetails.add(
+          toRoadDetail(
+              detail,
+              rowNumber,
+              costsByDetail.getOrDefault(detail.roadConstructionReprtDtlId(), Map.of()),
+              becById,
+              submitted));
     }
 
     return new ConstructionPage(
@@ -254,12 +284,13 @@ class Schedule10DocumentAssembler {
         page.constructionPeriod(),
         roadDetails.size(),
         page.revisionCount(),
-        roadDetails);
+        roadDetails,
+        pageOriginals(submitted, page.roadConstructionReprtId()));
   }
 
   /**
-   * The legacy page summary label, reproduced byte-for-byte from
-   * {@code RoadConstructionReportType.getPageLabel} (:138-145).
+   * The legacy page summary label, reproduced byte-for-byte from {@code
+   * RoadConstructionReportType.getPageLabel} (:138-145).
    *
    * <pre>
    * String tsb = getTsbNumberCode() != null ? getTsbNumberCode() : "-";
@@ -269,30 +300,45 @@ class Schedule10DocumentAssembler {
    * </pre>
    *
    * <p>Three legacy quirks are preserved deliberately, all asserted byte-for-byte:
+   *
    * <ol>
-   *   <li>There is NO space after {@code "TFL:"} — every other separator has one.</li>
-   *   <li>Only TSB and TFL fall back to {@code "-"}.</li>
+   *   <li>There is NO space after {@code "TFL:"} — every other separator has one.
+   *   <li>Only TSB and TFL fall back to {@code "-"}.
    *   <li><strong>TSA and Period are NOT null-guarded</strong>, so on a TFL-located page (where TSA
    *       is null by BR-05) legacy renders the literal text {@code "TSA: null"}. That is a real
-   *  user-visible legacy defect, reproduced here rather than quietly corrected — see Story 11.1
-   *       deviation (l) and the matching Ministry open question. Changing it is a product decision,
-   *       not a developer one.</li>
+   *       user-visible legacy defect, reproduced here rather than quietly corrected — see Story
+   *       11.1 deviation (l) and the matching Ministry open question. Changing it is a product
+   *       decision, not a developer one.
    * </ol>
    */
   private static String pageLabel(
       int pageNumber, String period, String tsaNumber, String tsb, String tfl) {
-    return "Page " + pageNumber
-        + ", Period: " + period
-        + ", TSA: " + tsaNumber
-        + ", SB: " + (tsb != null ? tsb : "-")
-        + ", TFL:" + (tfl != null ? tfl : "-");
+    return "Page "
+        + pageNumber
+        + ", Period: "
+        + period
+        + ", TSA: "
+        + tsaNumber
+        + ", SB: "
+        + (tsb != null ? tsb : "-")
+        + ", TFL:"
+        + (tfl != null ? tfl : "-");
   }
 
   private RoadDetail toRoadDetail(
       RoadConstructionReportDetailEntity detail,
       int rowNumber,
       Map<Integer, BigDecimal> costs,
-      Map<Integer, BecClassification> becById) {
+      Map<Integer, BecClassification> becById,
+      Submitted submitted) {
+    Integer detailId = detail.roadConstructionReprtDtlId();
+    Schedule10Repository.DetailSnapshotRow snapshot = submitted.details().get(detailId);
+    // The shared cost snapshot is keyed by the finder's Long parent id; the lookup stays as
+    // null-tolerant as the detail lookup above it.
+    Map<Integer, Integer> submittedCosts =
+        detailId == null
+            ? Map.of()
+            : submitted.costs().getOrDefault(detailId.longValue(), Map.of());
 
     BigDecimal subGradeActual = costs.get(SUB_GRADE_ACTUAL);
     BigDecimal subGradeTt = costs.get(SUB_GRADE_TRANSFER);
@@ -306,27 +352,30 @@ class Schedule10DocumentAssembler {
 
     BigDecimal subGradeTotalCosts =
         Schedule10Amounts.subGradeTotalCosts(subGradeActual, subGradeTt, subGradeOther);
-    BigDecimal subGradeTotalDeductions = Schedule10Amounts.subGradeTotalDeductions(
-        lessBridges, lessCulverts, lessLandings, lessEndHaul, lessOverland, lessOtherEng);
+    BigDecimal subGradeTotalDeductions =
+        Schedule10Amounts.subGradeTotalDeductions(
+            lessBridges, lessCulverts, lessLandings, lessEndHaul, lessOverland, lessOtherEng);
     BigDecimal subGradeTotal =
         Schedule10Amounts.subGradeTotal(subGradeTotalCosts, subGradeTotalDeductions);
 
-    SubGrade subGrade = new SubGrade(
-        Schedule10Amounts.atScale(detail.subGradeLength(), LENGTH_SCALE),
-        Schedule10Amounts.atScale(detail.subGradeSurfaceWidth(), MEASURE_SCALE),
-        subGradeActual,
-        subGradeTt,
-        subGradeOther,
-        lessBridges,
-        lessCulverts,
-        lessLandings,
-        lessOverland,
-        lessOtherEng,
-        lessEndHaul,
-        subGradeTotalCosts,
-        subGradeTotalDeductions,
-        subGradeTotal,
-        Schedule10Amounts.costPerLength(subGradeTotal, detail.subGradeLength()));
+    SubGrade subGrade =
+        new SubGrade(
+            Schedule10Amounts.atScale(detail.subGradeLength(), LENGTH_SCALE),
+            Schedule10Amounts.atScale(detail.subGradeSurfaceWidth(), MEASURE_SCALE),
+            subGradeActual,
+            subGradeTt,
+            subGradeOther,
+            lessBridges,
+            lessCulverts,
+            lessLandings,
+            lessOverland,
+            lessOtherEng,
+            lessEndHaul,
+            subGradeTotalCosts,
+            subGradeTotalDeductions,
+            subGradeTotal,
+            Schedule10Amounts.costPerLength(subGradeTotal, detail.subGradeLength()),
+            subGradeOriginals(submitted.trackStatus(), snapshot, submittedCosts));
 
     BigDecimal stabilizingActual = costs.get(STABILIZING_ACTUAL);
     BigDecimal stabilizingTt = costs.get(STABILIZING_TRANSFER);
@@ -334,28 +383,35 @@ class Schedule10DocumentAssembler {
     BigDecimal stabilizingTotal =
         Schedule10Amounts.stabilizingTotal(stabilizingActual, stabilizingTt, stabilizingOther);
 
-    Stabilizing stabilizing = new Stabilizing(
-        detail.ilcrRoadBallastMethodCode(),
-        detail.ilcrRoadBallastMaterlCode(),
-        Schedule10Amounts.atScale(detail.stabilizingLength(), LENGTH_SCALE),
-        Schedule10Amounts.atScale(detail.stabilizingSurfaceWidth(), MEASURE_SCALE),
-        Schedule10Amounts.atScale(detail.stabilizingDepth(), MEASURE_SCALE),
-        Schedule10Amounts.atScale(detail.stabilizingDistanceToSource(), MEASURE_SCALE),
-        stabilizingActual,
-        stabilizingTt,
-        stabilizingOther,
-        stabilizingTotal,
-        Schedule10Amounts.costPerLength(stabilizingTotal, detail.stabilizingLength()));
+    Stabilizing stabilizing =
+        new Stabilizing(
+            detail.ilcrRoadBallastMethodCode(),
+            detail.ilcrRoadBallastMaterlCode(),
+            Schedule10Amounts.atScale(detail.stabilizingLength(), LENGTH_SCALE),
+            Schedule10Amounts.atScale(detail.stabilizingSurfaceWidth(), MEASURE_SCALE),
+            Schedule10Amounts.atScale(detail.stabilizingDepth(), MEASURE_SCALE),
+            Schedule10Amounts.atScale(detail.stabilizingDistanceToSource(), MEASURE_SCALE),
+            stabilizingActual,
+            stabilizingTt,
+            stabilizingOther,
+            stabilizingTotal,
+            Schedule10Amounts.costPerLength(stabilizingTotal, detail.stabilizingLength()),
+            stabilizingOriginals(submitted.trackStatus(), snapshot, submittedCosts));
 
-    MaterialComposition material = new MaterialComposition(
-        detail.solidRockPct(),
-        detail.rippableRockPct(),
-        detail.coarseMaterialPct(),
-        detail.fineMaterialPct(),
-        detail.organicMaterialPct(),
-        Schedule10Amounts.materialTypeTotal(
-            detail.solidRockPct(), detail.rippableRockPct(), detail.coarseMaterialPct(),
-            detail.fineMaterialPct(), detail.organicMaterialPct()));
+    MaterialComposition material =
+        new MaterialComposition(
+            detail.solidRockPct(),
+            detail.rippableRockPct(),
+            detail.coarseMaterialPct(),
+            detail.fineMaterialPct(),
+            detail.organicMaterialPct(),
+            Schedule10Amounts.materialTypeTotal(
+                detail.solidRockPct(),
+                detail.rippableRockPct(),
+                detail.coarseMaterialPct(),
+                detail.fineMaterialPct(),
+                detail.organicMaterialPct()),
+            materialOriginals(submitted.trackStatus(), snapshot));
 
     return new RoadDetail(
         detail.roadConstructionReprtDtlId(),
@@ -375,7 +431,8 @@ class Schedule10DocumentAssembler {
         Schedule10Amounts.atScale(detail.overlandDistance(), MEASURE_SCALE),
         Schedule10Amounts.atScale(detail.overlandVolume(), VOLUME_SCALE),
         detail.comments(),
-        detail.revisionCount());
+        detail.revisionCount(),
+        roadDetailOriginals(submitted.trackStatus(), snapshot));
   }
 
   private Schedule10CodeLists codeLists(
@@ -392,8 +449,236 @@ class Schedule10DocumentAssembler {
   }
 
   private static List<CodeDescriptionDto> toCodes(List<CodeRow> rows) {
-    return rows.stream()
-        .map(row -> new CodeDescriptionDto(row.code(), row.description()))
-        .toList();
+    return rows.stream().map(row -> new CodeDescriptionDto(row.code(), row.description())).toList();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04).
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * Everything submitted for one mill/year, gathered once. Empty at Draft, which is what makes
+   * every map below come back null without any caller branching on status.
+   *
+   * @param trackStatus the 1&ndash;10 track's status
+   * @param pages submitted construction pages by page id
+   * @param details submitted road details by detail id
+   * @param costs submitted cost amounts by detail id, then by cost item
+   */
+  private record Submitted(
+      String trackStatus,
+      Map<Integer, Schedule10Repository.PageSnapshotRow> pages,
+      Map<Integer, Schedule10Repository.DetailSnapshotRow> details,
+      Map<Long, Map<Integer, Integer>> costs) {}
+
+  private Submitted loadSubmitted(long millId, int year, String trackStatus) {
+    if (!originalValues.exposesOriginalValues(trackStatus)) {
+      return new Submitted(trackStatus, Map.of(), Map.of(), Map.of());
+    }
+    Map<Integer, Schedule10Repository.PageSnapshotRow> pages = new HashMap<>();
+    for (Schedule10Repository.PageSnapshotRow row : repository.findPageSnapshots(millId, year)) {
+      pages.putIfAbsent(row.pageId(), row);
+    }
+    Map<Integer, Schedule10Repository.DetailSnapshotRow> details = new HashMap<>();
+    for (Schedule10Repository.DetailSnapshotRow row :
+        repository.findDetailSnapshots(millId, year)) {
+      details.putIfAbsent(row.detailId(), row);
+    }
+    Map<Long, Map<Integer, Integer>> costs = new HashMap<>();
+    if (!details.isEmpty()) {
+      for (CostDetailSnapshotRepository.Row row :
+          costSnapshots.findByRoadConstructionDetails(
+              details.keySet().stream().map(Integer::longValue).toList())) {
+        if (row.parentId() != null && row.costItemCode() != null) {
+          costs
+              .computeIfAbsent(row.parentId(), id -> new HashMap<>())
+              .putIfAbsent(row.costItemCode(), row.cost());
+        }
+      }
+    }
+    return new Submitted(trackStatus, pages, details, costs);
+  }
+
+  /**
+   * One page's submitted values — the six legacy tracked on {@code RoadConstructionReportType}
+   * ({@code :342-420}). {@code roadGroup} is derived from the three classification codes and legacy
+   * left {@code rmgOriginal} with no accessor and no view reference, so it carries none (deviation
+   * D9).
+   */
+  private Map<String, OriginalValue> pageOriginals(Submitted submitted, int pageId) {
+    Schedule10Repository.PageSnapshotRow page = submitted.pages().get(pageId);
+    return originalValues
+        .forTrack(submitted.trackStatus())
+        .put("divisionName", page == null ? null : page.divisionName(), OriginalValueFormat.TEXT)
+        .put(
+            "constructionPeriod",
+            page == null ? null : page.constructionPeriod(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "forestRegionCode",
+            page == null ? null : page.forestRegionCode(),
+            OriginalValueFormat.TEXT)
+        .put("tsaNumber", page == null ? null : page.tsaNumber(), OriginalValueFormat.TEXT)
+        .put("tsbNumberCode", page == null ? null : page.tsbNumberCode(), OriginalValueFormat.TEXT)
+        .put("tflNumberCode", page == null ? null : page.tflNumberCode(), OriginalValueFormat.TEXT)
+        .build();
+  }
+
+  /**
+   * One road detail's own submitted values.
+   *
+   * <p>The BEC classification carries ONE indicator, on the control the page actually shows, keyed
+   * by the submitted catalogue id. Legacy defines thirteen further {@code isBioGeoCat*} accessors
+   * for the catalogue's zone/subzone/variant/phase/name/date parts ({@code
+   * RoadConstructionReportDetailType.java:284-556}) and NO view invokes any of them — the parts are
+   * display fragments of the one selection — so only the selection is served (deviation D9).
+   *
+   * <p>ASM Code, Soil Moisture Code and Boulder Area % are absent because the fields are: business
+   * direction removed them from Schedule 10 (PRD LD-1/2/3).
+   */
+  private Map<String, OriginalValue> roadDetailOriginals(
+      String trackStatus, Schedule10Repository.DetailSnapshotRow detail) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("roadName", detail == null ? null : detail.roadName(), OriginalValueFormat.TEXT)
+        .put(
+            "roadLifetimeCode",
+            detail == null ? null : detail.roadLifetimeCode(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "becClassification",
+            detail == null ? null : detail.becCatalogueId(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "relSoilMoistRgmClsCode",
+            detail == null ? null : detail.relSoilMoistRgmClsCode(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "sideSlopePct",
+            detail == null ? null : detail.sideSlopePct(),
+            OriginalValueFormat.PERCENTAGE)
+        .put(
+            "detailedEngineeringCostInd",
+            detail == null ? null : detail.detailEngineeringCostInd(),
+            OriginalValueFormat.YES_NO)
+        .put(
+            "endHaulDistance",
+            detail == null ? null : detail.endHaulDistance(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "endHaulVolume",
+            detail == null ? null : detail.endHaulVolume(),
+            OriginalValueFormat.WHOLE)
+        .put(
+            "overlandDistance",
+            detail == null ? null : detail.overlandDistance(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "overlandVolume",
+            detail == null ? null : detail.overlandVolume(),
+            OriginalValueFormat.WHOLE)
+        .put("comments", detail == null ? null : detail.comments(), OriginalValueFormat.TEXT)
+        .build();
+  }
+
+  /** The five submitted material percentages; the total is derived and carries none. */
+  private Map<String, OriginalValue> materialOriginals(
+      String trackStatus, Schedule10Repository.DetailSnapshotRow detail) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "solidRockPct",
+            detail == null ? null : detail.solidRockPct(),
+            OriginalValueFormat.PERCENTAGE)
+        .put(
+            "rippableRockPct",
+            detail == null ? null : detail.rippableRockPct(),
+            OriginalValueFormat.PERCENTAGE)
+        .put(
+            "coarsePct",
+            detail == null ? null : detail.coarseMaterialPct(),
+            OriginalValueFormat.PERCENTAGE)
+        .put(
+            "finePct",
+            detail == null ? null : detail.fineMaterialPct(),
+            OriginalValueFormat.PERCENTAGE)
+        .put(
+            "organicPct",
+            detail == null ? null : detail.organicMaterialPct(),
+            OriginalValueFormat.PERCENTAGE)
+        .build();
+  }
+
+  /**
+   * The sub-grade's two submitted measurements and its nine submitted cost items. The three totals
+   * and the per-length figure are derived and carry none.
+   */
+  private Map<String, OriginalValue> subGradeOriginals(
+      String trackStatus,
+      Schedule10Repository.DetailSnapshotRow detail,
+      Map<Integer, Integer> submittedCosts) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "length",
+            detail == null ? null : detail.subGradeLength(),
+            OriginalValueFormat.THREE_DECIMAL)
+        .put(
+            "surfaceWidth",
+            detail == null ? null : detail.subGradeSurfaceWidth(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put("actualCost", submittedCosts.get(SUB_GRADE_ACTUAL), OriginalValueFormat.WHOLE)
+        .put("ttTransfer", submittedCosts.get(SUB_GRADE_TRANSFER), OriginalValueFormat.WHOLE)
+        .put("otherTransfer", submittedCosts.get(OTHER_TT_TRANSFER), OriginalValueFormat.WHOLE)
+        .put("lessBridges", submittedCosts.get(LESS_BRIDGE), OriginalValueFormat.WHOLE)
+        .put("lessCulverts", submittedCosts.get(LESS_CULVERT), OriginalValueFormat.WHOLE)
+        .put("lessLandings", submittedCosts.get(LESS_LANDING), OriginalValueFormat.WHOLE)
+        .put("lessOverland", submittedCosts.get(LESS_OVERLAND), OriginalValueFormat.WHOLE)
+        .put("lessOtherEng", submittedCosts.get(LESS_OTHER_ENGINEERING), OriginalValueFormat.WHOLE)
+        .put("lessEndHaul", submittedCosts.get(LESS_END_HAUL), OriginalValueFormat.WHOLE)
+        .build();
+  }
+
+  /**
+   * Stabilizing's two ballast codes, its four submitted measurements and its three submitted cost
+   * items. The total and the per-length figure are derived and carry none.
+   */
+  private Map<String, OriginalValue> stabilizingOriginals(
+      String trackStatus,
+      Schedule10Repository.DetailSnapshotRow detail,
+      Map<Integer, Integer> submittedCosts) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "ballastMethodCode",
+            detail == null ? null : detail.ballastMethodCode(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "ballastMaterialCode",
+            detail == null ? null : detail.ballastMaterialCode(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "length",
+            detail == null ? null : detail.stabilizingLength(),
+            OriginalValueFormat.THREE_DECIMAL)
+        .put(
+            "surfaceWidth",
+            detail == null ? null : detail.stabilizingSurfaceWidth(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "depth",
+            detail == null ? null : detail.stabilizingDepth(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "distanceToSource",
+            detail == null ? null : detail.stabilizingDistanceToSource(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put("actualCost", submittedCosts.get(STABILIZING_ACTUAL), OriginalValueFormat.WHOLE)
+        .put("ttTransfer", submittedCosts.get(STABILIZING_TRANSFER), OriginalValueFormat.WHOLE)
+        .put(
+            "otherTransfer",
+            submittedCosts.get(STABILIZING_OTHER_TRANSFER),
+            OriginalValueFormat.WHOLE)
+        .build();
   }
 }

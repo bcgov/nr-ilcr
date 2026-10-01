@@ -19,8 +19,11 @@ import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.DETAI
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_DELETED;
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_SAVED;
 
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.MoistureCodePair;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
@@ -29,6 +32,7 @@ import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.StabilizingRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.SubGradeRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
@@ -50,28 +54,28 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Each public method opens the transaction — read-only for {@link #getSchedule10} and {@link
  * #checkStatus}, read-write for a save — and the assembly then runs inside it, so its queries
- * observe a single consistent snapshot. That ordering matters: a self-invoked {@code
- * @Transactional} method never passes through the Spring proxy, so annotating the assembly would
- * have looked like a guarantee without being one.
+ * observe a single consistent snapshot. That ordering matters: a self-invoked
+ * {@code @Transactional} method never passes through the Spring proxy, so annotating the assembly
+ * would have looked like a guarantee without being one.
  *
  * <p>Write rules that matter:
+ *
  * <ul>
- *   <li><strong>Draft only.</strong> Every write is gated on the 1–10 track status being {@code D},
- *       server-side. Legacy has no such gate at all.</li>
+ *   <li><strong>Role×status gated.</strong> Every write is gated server-side on the 1–10 track
+ *       status admitting the caller's role (Story 16.1): submitter at {@code D}, administrator at
+ *       {@code S} or {@code V}. Legacy has no such gate at all.
  *   <li><strong>Costs</strong> are keyed rows, not columns: all twelve are maintained per road
  *       detail, update-in-place, and a blank stores {@code COST = NULL} rather than deleting the
- *       row (BR-08, AC5).</li>
+ *       row (BR-08, AC5).
  *   <li><strong>Derived values are never accepted from a client.</strong> Totals, rates, labels and
  *       positional numbers are computed on read; the two LD-removed moisture columns are derived
- *       from BEC Zone plus RSMR class, and preserved untouched when neither input changes.</li>
+ *       from BEC Zone plus RSMR class, and preserved untouched when neither input changes.
  * </ul>
  */
 @Service
 public class Schedule10Service {
 
   /** The 1–10 track Draft code; the only status at which a SUBMITTER may edit (AD-9). */
-  private static final String DRAFT = "D";
-
   private static final Logger LOG = LoggerFactory.getLogger(Schedule10Service.class);
 
   private final Schedule10Repository repository;
@@ -79,18 +83,23 @@ public class Schedule10Service {
   private final Schedule10DocumentAssembler assembler;
 
   /**
-   * Wires the Schedule 10 repository. Mill/year validation happens in the controller via
-   * {@code MillContextService} (AD-4) before this service is ever reached.
+   * Wires the Schedule 10 repository. Mill/year validation happens in the controller via {@code
+   * MillContextService} (AD-4) before this service is ever reached.
    *
    * <p>The document assembler is constructed here rather than injected: it is an implementation
    * detail of this service with no independent lifecycle, and constructing it keeps the existing
    * single-argument constructor that every test already uses.
    *
    * @param repository the Schedule 10 data access
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
    */
-  public Schedule10Service(Schedule10Repository repository) {
+  public Schedule10Service(
+      Schedule10Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
-    this.assembler = new Schedule10DocumentAssembler(repository);
+    this.assembler = new Schedule10DocumentAssembler(repository, originalValues, costSnapshots);
   }
 
   /**
@@ -101,33 +110,31 @@ public class Schedule10Service {
    *
    * @param millId the mill, already validated by the caller
    * @param year the reporting year, already validated by the caller
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the assembled document
    */
   @Transactional(readOnly = true)
-  public Schedule10Response getSchedule10(long millId, int year, boolean callerMayEdit) {
-    return document(millId, year, callerMayEdit);
+  public Schedule10Response getSchedule10(long millId, int year, EditableStatuses caller) {
+    return document(millId, year, caller);
   }
 
   /**
    * Reads the track status once, derives editability from it, and hands both to the assembler.
    *
    * <p>Reading the status HERE rather than inside the assembly also removes a second query the
-   * write paths used to make: {@code requireDraft} read the status for its gate, and the assembly
-   * then read it again to compute {@code editable} (code review 2026-08-18, Low). One read per
-   * request now.
+   * write paths used to make: {@code requireEditable} read the status for its gate, and the
+   * assembly then read it again to compute {@code editable} (code review 2026-08-18, Low). One read
+   * per request now.
    *
-   * <p>{@code editable} is {@code callerMayEdit && "D".equals(trackStatus)} — the SUBMITTER row
-   * only. Legacy also grants edit on {@code S}+non-Licensee and {@code V}+Admin, but no shipped
-   * schedule implements those paths; they belong to the AD-9/AR14 remediation. Do not add a second
-   * code path.
+   * <p>{@code editable} asks the shared editability component whether this caller may write at the
+   * track's current status, so the full role&times;status matrix applies here — never a formula
+   * inlined in this service (AD-9). Do not add a second code path.
    */
-  private Schedule10Response document(long millId, int year, boolean callerMayEdit) {
+  private Schedule10Response document(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    boolean editable = callerMayEdit && DRAFT.equals(trackStatus);
+    boolean editable = caller.allows(trackStatus);
     return assembler.assemble(millId, year, trackStatus, editable);
   }
-
 
   // ===============================================================================================
   // WRITES
@@ -170,15 +177,14 @@ public class Schedule10Service {
       List.of("ED", "VD", "MD", "SD", "F", "M", "VM", "W");
 
   /** Stand-ins so an omitted optional substructure needs no null checks at every use site. */
-  private static final SubGradeRequest NO_SUB_GRADE = new SubGradeRequest(
-      null, null, null, null, null, null, null, null, null, null, null);
+  private static final SubGradeRequest NO_SUB_GRADE =
+      new SubGradeRequest(null, null, null, null, null, null, null, null, null, null, null);
 
   private static final MaterialCompositionRequest NO_MATERIAL =
       new MaterialCompositionRequest(null, null, null, null, null);
 
   /** A page's location after the mutual-exclusion rule has been applied. */
-  private record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
-  }
+  private record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {}
 
   /**
    * Creates a construction page.
@@ -187,19 +193,26 @@ public class Schedule10Service {
    * @param year the validated reporting year
    * @param request the entered page fields
    * @param user the actor stamped into the audit columns
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}, for the echoed document
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}, for the echoed document
    * @return the refreshed document
    */
   @Transactional
   public Schedule10Response addPage(
-      long millId, int year, ConstructionPageRequest request, String user, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      ConstructionPageRequest request,
+      String user,
+      EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     requireOfferedForestRegion(millId, year, request.forestRegionCode());
     Location location = classify(request);
     int pageId = repository.nextPageId();
-    persist(() -> repository.insertPage(
-        toPageEntity(pageId, millId, year, request, location), millId, year, user), PAGE_NOT_SAVED);
-    return document(millId, year, callerMayEdit);
+    persist(
+        () ->
+            repository.insertPage(
+                toPageEntity(pageId, millId, year, request, location), millId, year, user),
+        PAGE_NOT_SAVED);
+    return document(millId, year, caller);
   }
 
   /**
@@ -211,31 +224,41 @@ public class Schedule10Service {
    * @param pageId the page to edit
    * @param request the entered page fields, carrying the last-read revision
    * @param user the actor stamped into the audit columns
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed document
    */
   @Transactional
   public Schedule10Response updatePage(
-      long millId, int year, int pageId, ConstructionPageRequest request, String user,
-      boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      int pageId,
+      ConstructionPageRequest request,
+      String user,
+      EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     int expectedRevision = requireRevision(request.revisionCount());
     // Existence first, and deliberately before any body validation: an unknown or foreign id must
     // answer 404 regardless of what the body contains, not 400 for a field the caller cannot reach.
     requirePage(pageId, millId, year);
     requireOfferedForestRegion(millId, year, request.forestRegionCode());
     Location location = classify(request);
-    persist(() -> {
-      int updated = repository.updatePage(
-          toPageEntity(pageId, millId, year, request, location), millId, year, expectedRevision,
-          user);
-      if (updated == 0) {
-        // Zero rows means the id is gone or the revision moved. Re-probe to say which.
-        requirePage(pageId, millId, year);
-        throw new StaleRevisionException();
-      }
-    }, PAGE_NOT_SAVED);
-    return document(millId, year, callerMayEdit);
+    persist(
+        () -> {
+          int updated =
+              repository.updatePage(
+                  toPageEntity(pageId, millId, year, request, location),
+                  millId,
+                  year,
+                  expectedRevision,
+                  user);
+          if (updated == 0) {
+            // Zero rows means the id is gone or the revision moved. Re-probe to say which.
+            requirePage(pageId, millId, year);
+            throw new StaleRevisionException();
+          }
+        },
+        PAGE_NOT_SAVED);
+    return document(millId, year, caller);
   }
 
   /**
@@ -249,25 +272,35 @@ public class Schedule10Service {
    * @param year the validated reporting year
    * @param pageId the page to copy
    * @param user the actor stamped into the audit columns
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed document
    */
   @Transactional
   public Schedule10Response copyPage(
-      long millId, int year, int pageId, String user, boolean callerMayEdit) {
-    requireDraft(millId, year);
-    RoadConstructionReportEntity source = repository.findPages(millId, year).stream()
-        .filter(page -> page.roadConstructionReprtId() == pageId)
-        .findFirst()
-        .orElseThrow(ConstructionPageNotFoundException::new);
+      long millId, int year, int pageId, String user, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
+    RoadConstructionReportEntity source =
+        repository.findPages(millId, year).stream()
+            .filter(page -> page.roadConstructionReprtId() == pageId)
+            .findFirst()
+            .orElseThrow(ConstructionPageNotFoundException::new);
 
     int copyId = repository.nextPageId();
-    RoadConstructionReportEntity copy = new RoadConstructionReportEntity(
-        copyId, year, millId, CATEGORY, source.constructionPeriod(),
-        source.constructionDivisionName(), source.ilcrForestRegionCode(), source.tsbNumberCode(),
-        source.tsaNumber(), source.tflNumberCode(), 0);
+    RoadConstructionReportEntity copy =
+        new RoadConstructionReportEntity(
+            copyId,
+            year,
+            millId,
+            CATEGORY,
+            source.constructionPeriod(),
+            source.constructionDivisionName(),
+            source.ilcrForestRegionCode(),
+            source.tsbNumberCode(),
+            source.tsaNumber(),
+            source.tflNumberCode(),
+            0);
     persist(() -> repository.insertPage(copy, millId, year, user), PAGE_NOT_SAVED);
-    return document(millId, year, callerMayEdit);
+    return document(millId, year, caller);
   }
 
   /**
@@ -280,24 +313,25 @@ public class Schedule10Service {
    * @param millId the validated mill
    * @param year the validated reporting year
    * @param pageId the page to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed document
    */
   @Transactional
-  public Schedule10Response deletePage(
-      long millId, int year, int pageId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+  public Schedule10Response deletePage(long millId, int year, int pageId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     requirePage(pageId, millId, year);
-    persist(() -> {
-      repository.deleteCostsForPage(pageId, millId, year);
-      repository.deleteRoadDetailsForPage(pageId, millId, year);
-      // The result is checked rather than discarded: a silently zero-row delete would answer
-      // "deleted successfully" while the row survived.
-      if (repository.deletePage(pageId, millId, year) == 0) {
-        throw new ConstructionPageNotFoundException();
-      }
-    }, PAGE_NOT_DELETED);
-    return document(millId, year, callerMayEdit);
+    persist(
+        () -> {
+          repository.deleteCostsForPage(pageId, millId, year);
+          repository.deleteRoadDetailsForPage(pageId, millId, year);
+          // The result is checked rather than discarded: a silently zero-row delete would answer
+          // "deleted successfully" while the row survived.
+          if (repository.deletePage(pageId, millId, year) == 0) {
+            throw new ConstructionPageNotFoundException();
+          }
+        },
+        PAGE_NOT_DELETED);
+    return document(millId, year, caller);
   }
 
   /**
@@ -308,27 +342,35 @@ public class Schedule10Service {
    * @param pageId the owning page
    * @param request the entered road-detail fields
    * @param user the actor stamped into the audit columns
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed document
    */
   @Transactional
   public Schedule10Response addRoadDetail(
-      long millId, int year, int pageId, RoadDetailRequest request, String user,
-      boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      int pageId,
+      RoadDetailRequest request,
+      String user,
+      EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     requirePage(pageId, millId, year);
     requireOfferedDetailCodes(millId, year, request);
     MoistureCodePair moisture = deriveMoistureCodes(request);
     RoadDetailRequest coupled = applyBallastCoupling(request);
 
     int roadDetailId = repository.nextRoadDetailId();
-    persist(() -> {
-      repository.insertRoadDetail(
-          toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
-          moisture.asmCode(), user);
-      writeCostLines(roadDetailId, coupled, user, millId, year);
-    }, DETAIL_NOT_SAVED);
-    return document(millId, year, callerMayEdit);
+    persist(
+        () -> {
+          repository.insertRoadDetail(
+              toDetailEntity(roadDetailId, pageId, coupled),
+              moisture.soilMoistureCode(),
+              moisture.asmCode(),
+              user);
+          writeCostLines(roadDetailId, coupled, user, millId, year);
+        },
+        DETAIL_NOT_SAVED);
+    return document(millId, year, caller);
   }
 
   /**
@@ -343,31 +385,44 @@ public class Schedule10Service {
    * @param roadDetailId the road detail to edit
    * @param request the entered fields, carrying the last-read revision
    * @param user the actor stamped into the audit columns
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed document
    */
   @Transactional
   public Schedule10Response updateRoadDetail(
-      long millId, int year, int pageId, int roadDetailId, RoadDetailRequest request, String user,
-      boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      int pageId,
+      int roadDetailId,
+      RoadDetailRequest request,
+      String user,
+      EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     int expectedRevision = requireRevision(request.revisionCount());
     requireRoadDetail(roadDetailId, pageId, millId, year);
     requireOfferedDetailCodes(millId, year, request);
     MoistureCodePair moisture = moistureForEdit(roadDetailId, request);
     RoadDetailRequest coupled = applyBallastCoupling(request);
 
-    persist(() -> {
-      int updated = repository.updateRoadDetail(
-          toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
-          moisture.asmCode(), millId, year, expectedRevision, user);
-      if (updated == 0) {
-        requireRoadDetail(roadDetailId, pageId, millId, year);
-        throw new StaleRevisionException();
-      }
-      writeCostLines(roadDetailId, coupled, user, millId, year);
-    }, DETAIL_NOT_SAVED);
-    return document(millId, year, callerMayEdit);
+    persist(
+        () -> {
+          int updated =
+              repository.updateRoadDetail(
+                  toDetailEntity(roadDetailId, pageId, coupled),
+                  moisture.soilMoistureCode(),
+                  moisture.asmCode(),
+                  millId,
+                  year,
+                  expectedRevision,
+                  user);
+          if (updated == 0) {
+            requireRoadDetail(roadDetailId, pageId, millId, year);
+            throw new StaleRevisionException();
+          }
+          writeCostLines(roadDetailId, coupled, user, millId, year);
+        },
+        DETAIL_NOT_SAVED);
+    return document(millId, year, caller);
   }
 
   /**
@@ -377,28 +432,30 @@ public class Schedule10Service {
    * @param year the validated reporting year
    * @param pageId the owning page
    * @param roadDetailId the road detail to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed document
    */
   @Transactional
   public Schedule10Response deleteRoadDetail(
-      long millId, int year, int pageId, int roadDetailId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int pageId, int roadDetailId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     requireRoadDetail(roadDetailId, pageId, millId, year);
-    persist(() -> {
-      repository.deleteCostsForRoadDetail(roadDetailId, millId, year);
-      if (repository.deleteRoadDetail(roadDetailId, pageId, millId, year) == 0) {
-        throw new RoadDetailNotFoundException();
-      }
-    }, DETAIL_NOT_DELETED);
-    return document(millId, year, callerMayEdit);
+    persist(
+        () -> {
+          repository.deleteCostsForRoadDetail(roadDetailId, millId, year);
+          if (repository.deleteRoadDetail(roadDetailId, pageId, millId, year) == 0) {
+            throw new RoadDetailNotFoundException();
+          }
+        },
+        DETAIL_NOT_DELETED);
+    return document(millId, year, caller);
   }
 
   /**
    * Runs the Schedule 10 readiness rules over the current document.
    *
-   * <p>Mutates nothing and is deliberately NOT Draft-gated: a submitted or verified schedule can
-   * still be checked, which is why the endpoint asks only for view rights. Scope is always the
+   * <p>Mutates nothing and is deliberately NOT editability-gated: a submitted or verified schedule
+   * can still be checked, which is why the endpoint asks only for view rights. Scope is always the
    * whole schedule — legacy has no per-page mode, and neither does any other schedule here.
    *
    * <p>Evaluating the assembled document rather than the tables means Check Status and the GET can
@@ -406,13 +463,14 @@ public class Schedule10Service {
    *
    * @param millId the validated mill
    * @param year the validated reporting year
-   * @return the unresolved outcome; the controller composes the verbatim text
+   * @return the unresolved outcome; {@link Schedule10CheckStatusResolver} composes the verbatim
+   *     text
    */
   @Transactional(readOnly = true)
   public Schedule10CheckStatus.Outcome checkStatus(long millId, int year) {
-    // callerMayEdit is irrelevant to the rules, and passing false keeps this read from implying any
-    // edit authority in the document it evaluates.
-    return Schedule10CheckStatus.evaluate(document(millId, year, false));
+    // Editability is irrelevant to the rules, and permitting nothing keeps this read from
+    // implying any edit authority in the document it evaluates.
+    return Schedule10CheckStatus.evaluate(document(millId, year, EditableStatuses.NONE));
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -425,15 +483,17 @@ public class Schedule10Service {
    * <p>Legacy has no server-side check at all — its gate is the rendered {@code disabled} attribute
    * — so a crafted post reaches its DAO unimpeded. This is the house hardening rather than parity.
    *
-   * <p>The status read is deliberately not locked. A concurrent transition between this check and
-   * the write is theoretically possible, but no endpoint in the application can move a track today,
-   * and the locked variant belongs to the status-transition work where it can be applied
-   * consistently.
+   * <p>The status read takes the {@code FOR UPDATE} row lock (Story 15.3, D8): the submit endpoint
+   * can now move the track, and it locks the same row before re-running the ten-schedule gate, so
+   * the two serialize — a save cannot land between the transition's gate and its commit, and a
+   * transition cannot land between this gate and the write it guards.
    */
-  private void requireDraft(long millId, int year) {
-    if (!DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   private static int requireRevision(Integer revisionCount) {
@@ -508,9 +568,10 @@ public class Schedule10Service {
       return candidates.get(0);
     }
     return candidates.stream()
-        .min(Comparator.comparingInt((MoistureCodePair pair) -> gradientRank(pair.asmCode()))
-            .thenComparing(MoistureCodePair::asmCode)
-            .thenComparing(MoistureCodePair::soilMoistureCode))
+        .min(
+            Comparator.comparingInt((MoistureCodePair pair) -> gradientRank(pair.asmCode()))
+                .thenComparing(MoistureCodePair::asmCode)
+                .thenComparing(MoistureCodePair::soilMoistureCode))
         .orElseThrow(InvalidBecClassificationException::new);
   }
 
@@ -531,7 +592,8 @@ public class Schedule10Service {
    * permanently unsaveable, because an unchanged classification never re-enters the gate.
    */
   private MoistureCodePair moistureForEdit(int roadDetailId, RoadDetailRequest request) {
-    return repository.findStoredClassification(roadDetailId)
+    return repository
+        .findStoredClassification(roadDetailId)
         .filter(stored -> stored.asmCode() != null && stored.soilMoistureCode() != null)
         .filter(stored -> Objects.equals(stored.becId(), request.becbiogeoCatalogueId()))
         .filter(stored -> Objects.equals(stored.rsmrClassCode(), request.relSoilMoistRgmClsCode()))
@@ -556,10 +618,10 @@ public class Schedule10Service {
    *   <li>{@code N} — the four dimensions, the actual cost and the other transfer are forced to
    *       zero, and the material code to {@code "NA"}. Note the tree-to-truck transfer is
    *       deliberately NOT zeroed: legacy re-converts only the actual-cost and other-transfer
-   *       items.</li>
+   *       items.
    *   <li>{@code D} — only the material code is forced to {@code "NA"}; the figures are stored as
-   *       submitted. The asymmetry with {@code N} is legacy's, not an oversight here.</li>
-   *   <li>{@code C} — nothing is forced, and the material code is required.</li>
+   *       submitted. The asymmetry with {@code N} is legacy's, not an oversight here.
+   *   <li>{@code C} — nothing is forced, and the material code is required.
    * </ul>
    *
    * <p>Legacy additionally cleared these fields from the browser when the method changed. That is
@@ -591,22 +653,31 @@ public class Schedule10Service {
       if (blankToNull(stabilizing.ballastMaterialCode()) != null) {
         return request;
       }
-      return withStabilizing(request, new StabilizingRequest(
-          method, BALLAST_MATERIAL_NOT_APPLICABLE, stabilizing.length(),
-          stabilizing.surfaceWidth(), stabilizing.depth(), stabilizing.distanceToSource(),
-          stabilizing.actualCost(), stabilizing.ttTransfer(), stabilizing.otherTransfer()));
+      return withStabilizing(
+          request,
+          new StabilizingRequest(
+              method,
+              BALLAST_MATERIAL_NOT_APPLICABLE,
+              stabilizing.length(),
+              stabilizing.surfaceWidth(),
+              stabilizing.depth(),
+              stabilizing.distanceToSource(),
+              stabilizing.actualCost(),
+              stabilizing.ttTransfer(),
+              stabilizing.otherTransfer()));
     }
 
-    StabilizingRequest coupled = new StabilizingRequest(
-        method,
-        BALLAST_MATERIAL_NOT_APPLICABLE,
-        notRequired ? BigDecimal.ZERO : stabilizing.length(),
-        notRequired ? BigDecimal.ZERO : stabilizing.surfaceWidth(),
-        notRequired ? BigDecimal.ZERO : stabilizing.depth(),
-        notRequired ? BigDecimal.ZERO : stabilizing.distanceToSource(),
-        notRequired ? 0 : stabilizing.actualCost(),
-        stabilizing.ttTransfer(),
-        notRequired ? 0 : stabilizing.otherTransfer());
+    StabilizingRequest coupled =
+        new StabilizingRequest(
+            method,
+            BALLAST_MATERIAL_NOT_APPLICABLE,
+            notRequired ? BigDecimal.ZERO : stabilizing.length(),
+            notRequired ? BigDecimal.ZERO : stabilizing.surfaceWidth(),
+            notRequired ? BigDecimal.ZERO : stabilizing.depth(),
+            notRequired ? BigDecimal.ZERO : stabilizing.distanceToSource(),
+            notRequired ? 0 : stabilizing.actualCost(),
+            stabilizing.ttTransfer(),
+            notRequired ? 0 : stabilizing.otherTransfer());
 
     return withStabilizing(request, coupled);
   }
@@ -630,11 +701,20 @@ public class Schedule10Service {
   private RoadDetailRequest withStabilizing(
       RoadDetailRequest request, StabilizingRequest stabilizing) {
     return new RoadDetailRequest(
-        request.roadName(), request.roadLifetimeCode(), request.becbiogeoCatalogueId(),
-        request.relSoilMoistRgmClsCode(), request.sideSlopePct(),
-        request.detailedEngineeringCostInd(), request.subGrade(), stabilizing,
-        request.materialComposition(), request.endHaulDistance(), request.endHaulVolume(),
-        request.overlandDistance(), request.overlandVolume(), request.comments(),
+        request.roadName(),
+        request.roadLifetimeCode(),
+        request.becbiogeoCatalogueId(),
+        request.relSoilMoistRgmClsCode(),
+        request.sideSlopePct(),
+        request.detailedEngineeringCostInd(),
+        request.subGrade(),
+        stabilizing,
+        request.materialComposition(),
+        request.endHaulDistance(),
+        request.endHaulVolume(),
+        request.overlandDistance(),
+        request.overlandVolume(),
+        request.comments(),
         request.revisionCount());
   }
 
@@ -682,9 +762,17 @@ public class Schedule10Service {
   private static RoadConstructionReportEntity toPageEntity(
       int pageId, long millId, int year, ConstructionPageRequest request, Location location) {
     return new RoadConstructionReportEntity(
-        pageId, year, millId, CATEGORY, blankToNull(request.constructionPeriod()),
-        blankToNull(request.divisionName()), request.forestRegionCode(), location.tsbNumberCode(),
-        location.tsaNumber(), location.tflNumberCode(), 0);
+        pageId,
+        year,
+        millId,
+        CATEGORY,
+        blankToNull(request.constructionPeriod()),
+        blankToNull(request.divisionName()),
+        request.forestRegionCode(),
+        location.tsbNumberCode(),
+        location.tsaNumber(),
+        location.tflNumberCode(),
+        0);
   }
 
   /**
@@ -782,8 +870,7 @@ public class Schedule10Service {
     try {
       write.run();
     } catch (DataAccessException ex) {
-      LOG.warn(
-          "Schedule 10 write failed [{}] for [{}]", ex.getClass().getSimpleName(), messageKey);
+      LOG.warn("Schedule 10 write failed [{}] for [{}]", ex.getClass().getSimpleName(), messageKey);
       throw new Schedule10PersistenceException(messageKey);
     }
   }

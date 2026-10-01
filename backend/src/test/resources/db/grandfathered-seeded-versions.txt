@@ -1,0 +1,90 @@
+# Grandfathered: versioned Flyway fixtures that carry seed rows, frozen as the baseline.
+#
+# The 2026-08-20 decision (docs/decisions/flyway-test-fixture-strategy.md) moved seed data out of the
+# versioned namespace and into repeatable R__ migrations. It did NOT convert the existing chain --
+# "the existing chain freezes as the baseline" -- so a uniformly applied check would fail this whole
+# tree on day one. Every filename below is a file that already contained INSERTs when the check was
+# written; FlywayMigrationConventionTest exempts exactly these and nothing else.
+#
+# THIS LIST IS SHRINK-ONLY.
+#
+#   * Adding a line grandfathers a NEW versioned seed file. That is the escape hatch this convention
+#     exists to close, so the diff has to be argued for in review. It is not forbidden -- it is meant
+#     to be visible.
+#   * Removing a line is the record that one more fixture moved to R__. Do it in the same commit.
+#   * A line naming a file that no longer exists, or one that no longer contains INSERTs, FAILS the
+#     build. The list cannot quietly rot. (This is not hypothetical: bcgov/nr-ilcr#367 was filed
+#     citing V30__ilcr_mill_user_profile_xref.sql as one of three clean files, two days after
+#     PR #356 deleted it.)
+#
+# NOT ALL 45 ARE PRE-DECISION. Three post-date it, and two of those are in breach of convention 1a
+# as already written:
+#
+#   V20260821__tsa_tsb_code_table_dates_and_seeds.sql   landed 38 minutes BEFORE the decision merged
+#   V20260822__seed_schedule6_correction_fixtures.sql   landed 2026-08-24, 53 INSERTs  <-- violation
+#   V20260823__seed_print_schedule8_combined_fixture.sql landed 2026-08-25, 11 INSERTs <-- violation
+#
+# Those last two are the files that proved the convention needed a machine check at all, so the
+# baseline exempts the very violations that motivated it. That is a deliberate scoping call, not an
+# oversight: the guard exists to stop the NEXT one, and retro-converting fixtures 115 IT classes read
+# from is a different and riskier piece of work. They are the obvious first withdrawals from this
+# list. Recorded here rather than left for a reader to discover (code review, 2026-08-27).
+#
+# Baseline captured at nr-ilcr main 3be15fe, 2026-08-27 -- 45 entries. Generated, not hand-typed.
+# This command matches what FlywayMigrationConventionTest.containsSeedDml() does -- all three INSERT
+# forms plus MERGE, and comments stripped so a "-- INSERT INTO ... (moved to R__30_)" header does not
+# count. An earlier version of this recipe grepped only 'insert into' over raw text; it produced the
+# same 45 today but would have disagreed with the check the moment a MERGE-based fixture landed:
+#
+#   for f in V*.sql; do
+#     sed -e 's:--.*::' "$f" | tr '\n' ' ' | sed -e 's:/\*[^*]*\*/: :g' \
+#       | grep -qiE 'insert[[:space:]]+(into|all|first)|merge[[:space:]]+into' && echo "$f"
+#   done
+#
+# Blank lines and #-comments are ignored -- leading or trailing, so an inline note after a filename
+# is fine. A duplicated entry FAILS the build. See db/README.md conventions 1 and 1a.
+V10__seed_schedule2_read_fixtures.sql
+V11__seed_schedule2_write_fixtures.sql
+V13__schedule4_transportation_report_and_read_fixtures.sql
+V14__seed_schedule4_write_fixtures.sql
+V15__seed_schedule4_subpage_fixtures.sql
+V16__seed_schedule4_checkstatus_fixtures.sql
+V17__seed_schedule3_document.sql
+V18__seed_schedule3_write_fixtures.sql
+V19__seed_schedule3_subpage_fixtures.sql
+V20260807__seed_schedule5_write_fixtures.sql
+V20260811__the_schedule7b_snapshot.sql
+V20260812__seed_code_table_fixtures.sql
+V20260813__seed_schedule9_read_fixtures.sql
+V20260814__seed_schedule5_subpage_fixtures.sql
+V20260815__seed_schedule9_write_fixtures.sql
+V20260816__seed_print_schedule11_fixtures.sql
+V20260817__the_schedule10_snapshot_and_read_fixtures.sql
+V20260818__seed_schedule10_write_fixtures.sql
+V20260819__seed_reporting_year_open_fixtures.sql
+V20260820__seed_home_content_fixtures.sql
+V20260821__tsa_tsb_code_table_dates_and_seeds.sql
+V20260822__seed_schedule6_correction_fixtures.sql
+V20260823__seed_print_schedule8_combined_fixture.sql
+V20__seed_schedule11_locations.sql
+V21__seed_schedule11_write_fixtures.sql
+V22__the_schedule8_snapshot.sql
+V23__seed_schedule8_page_write_fixtures.sql
+V24__seed_schedule8_sample_write_fixtures.sql
+V25__seed_schedule8_rate_write_fixtures.sql
+V26__seed_schedule8_check_status_fixtures.sql
+V27__the_schedule7a_snapshot.sql
+V28__seed_schedule11_biogeo_catalogue.sql
+V29__seed_schedule11_biogeo_cap_fixtures.sql
+V2__seed_schedule1_context.sql
+V31__the_schedule6_snapshot_and_read_fixtures.sql
+V32__seed_schedule6_write_fixtures.sql
+V33__seed_schedule2_sch3_actual_costs.sql
+V34__the_schedule5_snapshot_and_read_fixtures.sql
+V3__seed_schedule1_details.sql
+V4__seed_schedule1_write_fixtures.sql
+V5__seed_schedule3_crown_and_admin.sql
+V6__seed_other_costs_fixtures.sql
+V7__seed_check_status_fixtures.sql
+V8__seed_home_page_fixtures.sql
+V9__seed_home_context_fixtures.sql

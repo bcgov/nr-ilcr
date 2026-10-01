@@ -18,7 +18,7 @@
 -- Per-report FK column on the shared cost-detail table. Delivery DOES carry a real FK constraint here
 -- (ILCR_LCRD_BRG_RPT_FK, ENABLED, DELETE_RULE = 'NO ACTION') — an earlier version of this comment
 -- claimed otherwise and the resulting parent-first delete shipped as a 500. The constraint itself is
--- declared in R__cost_detail_bridge_culvert_fks.sql, which Flyway applies after EVERY versioned
+-- declared in R__90_cost_detail_bridge_culvert_fks.sql, which Flyway applies after EVERY versioned
 -- migration — i.e. after every fixture that populates this column.
 ALTER TABLE THE.ILCR_COST_REPORT_DETAIL ADD BRIDGE_REPORT_ID NUMBER(10);
 

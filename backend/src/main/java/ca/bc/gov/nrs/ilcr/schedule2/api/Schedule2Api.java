@@ -1,7 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule2.api;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import jakarta.validation.Valid;
@@ -18,17 +19,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Schedule 2 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule2Controller} implements it and adds
- * authorization. {@code millId} and {@code year} are required query params (AD-4). Covers GET (read),
- * PUT (save), DELETE, and POST /check-status (Story 3.2).
+ * authorization. {@code millId} and {@code year} are required query params (AD-4). Covers GET
+ * (read), PUT (save), DELETE, and POST /check-status (Story 3.2).
  */
 @RequestMapping("/api/v1/schedule2")
 public interface Schedule2Api {
 
   /**
    * Get the Schedule 2 aggregate document for a mill and reporting year. Context guards
-   * (400/404/409/403) are enforced by {@code MillContextService} + method security. Unlike
-   * Schedule 1, a valid, active mill/year with no saved Schedule 2 returns a 200 empty editable
-   * document — never a 404.
+   * (400/404/409/403) are enforced by {@code MillContextService} + method security. Unlike Schedule
+   * 1, a valid, active mill/year with no saved Schedule 2 returns a 200 empty editable document —
+   * never a 404.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -41,9 +42,10 @@ public interface Schedule2Api {
 
   /**
    * Save (create-or-update) the two entered Schedule 2 line items for a mill/year and return the
-   * recomputed document (Story 3.2, S12). Unlike Schedule 1, a mill/year with no saved Schedule 2 is
-   * created on save (never 404). Range validation on the request body returns 400; a non-Draft track
-   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns 403.
+   * recomputed document (Story 3.2, S12). Unlike Schedule 1, a mill/year with no saved Schedule 2
+   * is created on save (never 404). Range validation on the request body returns 400; a non-Draft
+   * track returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE}
+   * returns 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -60,32 +62,44 @@ public interface Schedule2Api {
 
   /**
    * Delete the whole Schedule 2 (summary + items 25/26) for a mill/year (Story 3.2). Idempotent: a
-   * Draft mill with no summary returns 200 (never 404). Non-Draft track → 409; missing
-   * {@code EDIT_SCHEDULE} → 403.
+   * Draft mill with no summary returns 200 (never 404). Non-Draft track → 409; missing {@code
+   * EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   *     <p>The status is 200 for both outcomes, but the {@code message} distinguishes them (defect
+   *     #292 code review): {@code dataDeletedSuccesfullyInfoMsg} when a summary was removed, {@code
+   *     noDataToDeleteInfoMsg} when there was nothing to remove. Callers render it verbatim (AD-8),
+   *     so a no-op no longer reads as a successful delete — for the UI or for any other client.
    * @param authentication the caller (drives EDIT_SCHEDULE)
-   * @return 200 with the success {@code message} (SUC-002, AD-8)
+   * @return 200 with the outcome {@code message} (SUC-002 on a real delete, AD-8)
    */
   @DeleteMapping
   ResponseEntity<MessageResponse> deleteSchedule2(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Evaluate the Schedule 2 completion requirement (BR-07, Check Status) for a mill/year — read-only
-   * (AD-5), mutates nothing, no request body. Returns 200 {@code {outcome:"MET", ...}} when the
-   * server-assembled {@code purchasedLogCost.cost} (item 25) is present, else
-   * {@code {outcome:"ISSUES", ...}} (including an unsaved schedule with no summary — never 404). Same
+   * Evaluate the Schedule 2 completion requirement (BR-07, Check Status) for a mill/year —
+   * read-only (AD-5), mutates nothing. Returns 200 {@code {outcome:"MET", ...}} when the ON-SCREEN
+   * {@code purchasedLogCostCost} (item 25) is present, else {@code {outcome:"ISSUES", ...}}. Same
    * no-summary-required context guards as read/write: 400 (bad param) / 404 (unknown mill) / 409
    * (closed) / 403 (no VIEW_SCHEDULE).
    *
+   * <p>{@code request} carries the value currently ON SCREEN (#359): legacy's Check Status was a
+   * full postback that judged the screen, not the saved record, so an unsaved edit must move the
+   * verdict. The body is REQUIRED — an absent one is a clean 400 — but its member is unvalidated,
+   * because reporting a missing value is the check's whole job.
+   *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param request the on-screen value the check reads
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
-   * @return 200 with the {@link CheckStatusResponse} (outcome + resolved message)
+   * @return 200 with the {@link Schedule2CheckStatusResponse} (outcome + resolved message)
    */
   @PostMapping("/check-status")
-  ResponseEntity<CheckStatusResponse> checkStatus(
-      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+  ResponseEntity<Schedule2CheckStatusResponse> checkStatus(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule2CheckRequest request,
+      Authentication authentication);
 }

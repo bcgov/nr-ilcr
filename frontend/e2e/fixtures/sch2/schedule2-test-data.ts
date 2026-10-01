@@ -104,6 +104,28 @@ export const CHECK_MET_ANCHOR: Sch2Anchor = { key: { millId: 23051, year: 2019 }
 export const PERSIST_ANCHOR: Sch2Anchor = { key: { millId: 23052, year: 2017 }, mill: MILL_20176 };
 
 /**
+ * S17/S18 — BR-12 / #359: Check Status must judge what is on screen, not the last saved schedule.
+ *
+ * SEEDED, not discovered. Both scenarios save their own precondition, so each needs a mill-year no other
+ * scenario writes to — and the extract has none left: 114 (mill, year) keys are already pinned across the
+ * six fixtures, Home only offers reporting years 2015-2021, and every unclaimed openable pair in that range
+ * is non-Draft (which disables Check Status). `real-test-data-patches/sch2/unsaved-check-anchors.sql`
+ * therefore creates these two, and that file's header records the measurement.
+ *
+ * Reusing `check-met` / `saved-incomplete` was tried FIRST and is not safe: their Givens seed through the
+ * API, so a second scenario on either collides with S07/S08 under `fullyParallel` — observed as four red
+ * tests on 2026-08-27.
+ */
+export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch2Anchor = {
+  key: { millId: 23052, year: 2015 },
+  mill: MILL_20176,
+};
+export const CHECK_UNSAVED_FIX_ANCHOR: Sch2Anchor = {
+  key: { millId: 23052, year: 2016 },
+  mill: MILL_20176,
+};
+
+/**
  * Legacy rendered Save and Check Status TWICE (a top and a bottom action bar) and the rewrite keeps
  * both, so the bottom Save must genuinely save. That is a write, so it owns its own key rather than
  * sharing the persistence anchor.
@@ -226,10 +248,6 @@ export const GUARD_ANCHORS: Record<string, Sch2Anchor & { expectHttp: number; de
 /** The Schedule 2 aggregate endpoint for a (mill, year) — GET read-back / PUT save / DELETE cleanup. */
 export const scheduleUrl = (millId: number, year: number): string =>
   `/api/v1/schedule2?millId=${millId}&year=${year}`;
-
-/** The read-only Check Status evaluation endpoint (POST, no body — mutates nothing). */
-export const checkStatusUrl = (millId: number, year: number): string =>
-  `/api/v1/schedule2/check-status?millId=${millId}&year=${year}`;
 
 /** The Home Mill-dropdown option text for a mill ("20171 - MILES MILLING"). */
 export const millOptionText = (m: MillRef): string => `${m.millNumber} - ${m.millName}`;

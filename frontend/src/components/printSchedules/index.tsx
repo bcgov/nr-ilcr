@@ -1,19 +1,19 @@
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { Button, Checkbox, Column, FormGroup, Grid, InlineNotification } from '@carbon/react'
-import { Printer } from '@carbon/icons-react'
+import { Printer, Reset } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
-import { extractBlobDetail, triggerDownload } from '@/utils/download'
+import { assertCompletePdf, extractBlobDetail, triggerDownload } from '@/utils/download'
 import './index.scss'
 
 const PRINT_PATH = '/v1/reports/print'
 const PDF_FILENAME = 'schedules_print.pdf'
 
 // The twelve schedule flags in the legacy PrintSchedulesMB order. Every flag is offered (legacy
-// parity); the backend renders the in-scope sections (5/6/7A/7B/9/11) and accepts the rest for
-// forward-compatibility (no section rendered yet — see PrintRequest).
+// parity); the backend renders every schedule section except the still-deferred Mill Information
+// report.
 type ScheduleFlag =
   | 'schedule1'
   | 'schedule2'
@@ -28,25 +28,24 @@ type ScheduleFlag =
   | 'schedule10'
   | 'schedule11'
 
-// `renderable` = the backend produces a section today (5/6/7A/7B/9/11). The rest are shown for legacy
-// parity but disabled with a "(coming soon)" note until their print backend lands, so a selection can't
-// silently no-op (and the server never has to skip a deferred schedule).
+// `renderable` = the backend produces a section today. Deferred choices are shown for legacy parity
+// but disabled with a "(coming soon)" note, so a selection can't silently no-op.
 const SCHEDULES: {
   readonly key: ScheduleFlag
   readonly label: string
   readonly renderable: boolean
 }[] = [
-  { key: 'schedule1', label: 'Schedule 1', renderable: false },
-  { key: 'schedule2', label: 'Schedule 2', renderable: false },
-  { key: 'schedule3', label: 'Schedule 3', renderable: false },
-  { key: 'schedule4', label: 'Schedule 4', renderable: false },
+  { key: 'schedule1', label: 'Schedule 1', renderable: true },
+  { key: 'schedule2', label: 'Schedule 2', renderable: true },
+  { key: 'schedule3', label: 'Schedule 3', renderable: true },
+  { key: 'schedule4', label: 'Schedule 4', renderable: true },
   { key: 'schedule5', label: 'Schedule 5', renderable: true },
   { key: 'schedule6', label: 'Schedule 6', renderable: true },
   { key: 'schedule7a', label: 'Schedule 7A', renderable: true },
   { key: 'schedule7b', label: 'Schedule 7B', renderable: true },
-  { key: 'schedule8', label: 'Schedule 8', renderable: false },
+  { key: 'schedule8', label: 'Schedule 8', renderable: true },
   { key: 'schedule9', label: 'Schedule 9', renderable: true },
-  { key: 'schedule10', label: 'Schedule 10', renderable: false },
+  { key: 'schedule10', label: 'Schedule 10', renderable: true },
   { key: 'schedule11', label: 'Schedule 11', renderable: true },
 ]
 
@@ -139,6 +138,10 @@ const PrintSchedules: FC = () => {
         .post(`${PRINT_PATH}?millId=${String(millId)}&year=${String(year)}`, body, {
           responseType: 'blob',
         })
+      // Belt and braces — see assertCompletePdf; the backend now spools the export before it
+      // commits a status, so a failed render is a 500 rather than a short 200. Checked before the
+      // freshness re-read below so the save stays the last thing that happens.
+      await assertCompletePdf(response.data as Blob)
       if (!dispatchedCurrent()) {
         return
       }
@@ -251,7 +254,7 @@ const PrintSchedules: FC = () => {
                 >
                   {busy ? 'Generating…' : 'Generate PDF'}
                 </Button>
-                <Button kind="secondary" disabled={busy} onClick={handleClear}>
+                <Button kind="secondary" disabled={busy} renderIcon={Reset} onClick={handleClear}>
                   Clear
                 </Button>
               </div>

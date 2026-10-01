@@ -16,6 +16,19 @@ spring:
       # deferred-work.md:180; turning the feature off closes it for every schedule at once rather
       # than leaving Schedule 5 the only safe one.
       accept-float-as-int: false
+  mvc:
+    async:
+      # No request-mapped handler returns an async type any more, so nothing currently runs under this
+      # clock. It is kept, and kept explicit, because the value inherited from the container is the
+      # thing you would rather not discover by accident the first time an async handler is added.
+      #
+      # Story 29.2 introduced it when report/print PDFs answered with StreamingResponseBody. They no
+      # longer do: the fill AND the export now finish on the synchronous request thread, so that a
+      # failure at either stage can still become problem+json instead of a truncated 200, and the
+      # finished file is then served as a Resource on that same thread. Writing the body from an async
+      # thread while the response declared a Content-Length is what raced — see
+      # ExportedPdf#asResource.
+      request-timeout: ${SPRING_MVC_ASYNC_REQUEST_TIMEOUT:120000}
   datasource:
     url: ${SPRING_DATASOURCE_URL:}
     username: ${SPRING_DATASOURCE_USERNAME:}
@@ -75,9 +88,43 @@ ilcr:
   version: ${APP_VERSION:0.0.1-SNAPSHOT}
   security:
     enabled: ${ILCR_SECURITY_ENABLED:false}
+    mock-user-guid: ${ILCR_SECURITY_MOCK_USER_GUID:CANONSUBMITTERBBBBCCCCDDDD000001}
   datasource:
     enabled: ${ILCR_DATASOURCE_ENABLED:false}
     validation-query: ${ILCR_DATASOURCE_VALIDATION_QUERY:SELECT 1 FROM DUAL}
+  # NR User Lookup API (DL-27) — the directory behind the assignment picker. Off by default and in
+  # every environment until the service account exists; the client credential is a per-environment
+  # Vault secret injected as env vars, never a value in source or in this file.
+  user-lookup:
+    enabled: ${ILCR_USER_LOOKUP_ENABLED:false}
+    base-url: ${ILCR_USER_LOOKUP_BASE_URL:}
+    token-url: ${ILCR_USER_LOOKUP_TOKEN_URL:}
+    client-id: ${ILCR_USER_LOOKUP_CLIENT_ID:}
+    client-secret: ${ILCR_USER_LOOKUP_CLIENT_SECRET:}
+    # Explicit ceilings on the app's only outbound HTTP dependency, which another ministry team
+    # owns. The read timeout is the load-bearing one: a directory that accepts the connection and
+    # then hangs would otherwise pin a servlet thread per picker keystroke until the pool is gone,
+    # taking the local assignments view down with it -- the exact coupling the 502 degradation
+    # exists to prevent. Sized for a directory search, not a report render.
+    connect-timeout: ${ILCR_USER_LOOKUP_CONNECT_TIMEOUT:5s}
+    read-timeout: ${ILCR_USER_LOOKUP_READ_TIMEOUT:10s}
+  reporting:
+    # Story 29.2 — the Jasper swap-file virtualizer that spills report page objects to disk under a
+    # large or combined ("all schedules") fill, so the section object graph never pins the JVM heap.
+    virtualizer:
+      # swap-directory: where the per-render swap file lives. Empty → the JVM temp dir (java.io.tmpdir).
+      # In OpenShift the container root fs is read-only AND /tmp is a MEMORY-backed emptyDir, so the
+      # deploy sets ILCR_REPORTING_SWAP_DIR to a dedicated DISK-backed ephemeral volume (see
+      # backend/openshift.deploy.yml) — otherwise "spill to disk" would spill to RAM and defeat the
+      # whole point. The file is created eagerly per render and deleted when the render finishes.
+      swap-directory: ${ILCR_REPORTING_SWAP_DIR:}
+      # max-size: pages kept in memory before the least-recently-used ones page out to the swap file.
+      # A deliberate, conservative default (a page count, not a measured byte budget): high enough that
+      # an ordinary single-schedule print never pages out (avoiding swap churn on the common path), low
+      # enough to bound heap on a big combined print. Tune via ILCR_REPORTING_VIRTUALIZER_MAX_SIZE if
+      # profiling shows a real workload wants a different ceiling. (The spill path itself is proven by
+      # ReportVirtualizerSpillIT, which forces max-size=1.)
+      max-size: ${ILCR_REPORTING_VIRTUALIZER_MAX_SIZE:300}
 
 features:
   flags:

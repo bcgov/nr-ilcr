@@ -7,13 +7,24 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, waitFor } from '@/test-utils'
+import {
+  declaredRole,
+  fireEvent,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule4 from '@/components/schedule4'
 import { Route as realScheduleRoute } from '@/routes/schedule-4'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import type { Location } from '@/interfaces/Schedule4Response'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 
 // Schedule 4's sub-page level is URL-driven (search: loc + sub), so render it inside a REAL memory
 // router — the component's route search hooks + navigation (and the browser Back button) need router
@@ -35,6 +46,16 @@ function makeRouter(initialUrl = '/schedule-4') {
 
 const renderSchedule4 = (initialUrl = '/schedule-4') =>
   render(<RouterProvider router={makeRouter(initialUrl)} />)
+
+// Schedule 4 renders its action bar twice (defect #293): Add New Location + Check Status at the top,
+// Check Status alone at the foot. Both buttons share an accessible name, so address the bars by their
+// marker rather than by document position — `getAllByRole(...)[index]` silently retargets if either bar
+// moves or disappears, which a mutation run proved could hide the loss of the top button entirely
+// (review 2026-08-24).
+const topActions = () => within(screen.getByTestId('schedule-4-top-actions'))
+const bottomActions = () => within(screen.getByTestId('schedule-4-bottom-actions'))
+const bottomCheckStatus = () => bottomActions().getByRole('button', { name: /check status/i })
+const checkStatusButtons = () => screen.getAllByRole('button', { name: /check status/i })
 
 const URL = 'http://localhost:3000/api/v1/schedule4'
 const LOCATIONS_URL = 'http://localhost:3000/api/v1/schedule4/locations'
@@ -90,6 +111,26 @@ describe('Schedule4 page', () => {
     expect(screen.getByRole('button', { name: /add new location/i })).toBeEnabled()
     // Row actions include Edit (not View) when editable.
     expect(screen.getAllByRole('button', { name: /^edit$/i }).length).toBeGreaterThan(0)
+  })
+
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText('Harbour Dump')).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/add new location/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
   })
 
   test('Add New Location opens the category-grid panel with editable inputs', async () => {
@@ -258,7 +299,151 @@ describe('Schedule4 page', () => {
     expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
   })
 
-  test('Check Status renders the per-location results', async () => {
+  // ---- Defect #291: the panel's $/m³ column tracks entry, on blur, before Save. -------------------
+
+  /** A category row's cells as text: [label, dist, volume, cost, $/m³, cycle]. */
+  const gridCells = (label: string) => {
+    const tr = screen.getByText(`${label}:`).closest('tr')
+    if (!tr) throw new Error(`no grid row for "${label}"`)
+    return within(tr)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent)
+  }
+  /** The read-only $/m³ cell of a category row (index 4). */
+  const rate = (label: string) => gridCells(label)[4]
+
+  test('typing alone leaves $/m³ alone; blurring the cost recalculates it (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    // Seeded from the saved amounts: 100000/2000 = 50.00.
+    expect(rate('Lakeside Dry Dump')).toBe('50.00')
+
+    const cost = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '150000')
+    expect(rate('Lakeside Dry Dump')).toBe('50.00') // not per keystroke
+
+    await userEvent.tab()
+    expect(rate('Lakeside Dry Dump')).toBe('75.00') // 150000/2000
+  })
+
+  test('blurring the volume recalculates $/m³, and only that category (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '4000')
+    await userEvent.tab()
+
+    expect(rate('Lakeside Dry Dump')).toBe('25.00') // 100000/4000
+    // The other saved category is untouched, and an empty one stays blank.
+    expect(rate('Truck Barge/Ferry')).toBe('50.00') // 25000/500
+    expect(rate('Water Dump')).toBe('—')
+  })
+
+  test('clearing the volume blanks $/m³ rather than showing Infinity (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.tab()
+    expect(rate('Lakeside Dry Dump')).toBe('—')
+
+    // A zero volume is the divide-by-zero case the server nulls out.
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump volume'), '0')
+    await userEvent.tab()
+    expect(rate('Lakeside Dry Dump')).toBe('—')
+  })
+
+  test("Copy shows the cloned amounts' $/m³ immediately, without a save (#291)", async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+
+    // A copy clones the amounts, so their rate is known — it used to render blank until the first save
+    // because the panel captured $/m³ from the server and a copy has no server figure yet.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
+    expect(rate('Lakeside Dry Dump')).toBe('50.00')
+    expect(rate('Truck Barge/Ferry')).toBe('50.00')
+  })
+
+  test('the Save echo supersedes the mirror, and the rates agree (#291 AC5)', async () => {
+    // Schedule 4 had no AC5 test at all, and its panel was never re-seeded from the echo — so
+    // `deriveCategoryPerUnits(panelCommitted)` kept driving the column for the rest of the session
+    // (code review 2026-08-21). The echo below carries the server's own perUnit for the saved amounts.
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 150000, distance: null, perUnit: 75.0 },
+        { code: 47, kind: 'DISTANCE', volume: 500, cost: 25000, distance: 120.5, perUnit: 50.0 },
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json({
+          ...doc({ locations: [saved, emptyLanding] }),
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const cost = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '150000')
+    await userEvent.tab()
+    // The mirror must already agree with the rate the server will echo: 150000 / 2000 = 75.00.
+    expect(rate('Lakeside Dry Dump')).toBe('75.00')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // The panel stays open in edit mode; the column now reflects the echo and still reads 75.00.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('150,000')
+    expect(rate('Lakeside Dry Dump')).toBe('75.00')
+    expect(rate('Truck Barge/Ferry')).toBe('50.00')
+  })
+
+  test('View mode renders the document $/m³ as-is — no client recomputation (#291 AC7)', async () => {
+    // The stored perUnit deliberately disagrees with the stored pair: a recomputing view would show
+    // 50.00 instead of the server's own figure.
+    const skewed: Location = {
+      ...harbour,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 100000, distance: null, perUnit: 999.99 },
+      ],
+    }
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ editable: false, locations: [skewed], trackStatus: 'S' })),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+
+    expect(rate('Lakeside Dry Dump')).toBe('999.99')
+  })
+
+  // The one finding the check can raise (#465, legacy parity): a null or blank location description.
+  // The backend passes the stored value through, so `name` arrives as NULL on the wire; the location
+  // has no name to head the banner with, so the report id stands in; the field is named ahead of the
+  // API's verbatim text (#326).
+  test('Check Status renders the per-location results (null-named location does not crash)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, () =>
@@ -268,11 +453,11 @@ describe('Schedule4 page', () => {
           locations: [
             {
               id: 7001,
-              name: 'Harbour Dump',
+              name: null,
               met: false,
               messages: [],
               issues: [
-                { code: 52, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+                { code: 0, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
               ],
             },
             {
@@ -294,12 +479,132 @@ describe('Schedule4 page', () => {
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
-    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    expect(await screen.findByText('Description: Value Required')).toBeInTheDocument()
+    expect(screen.getByText('Location 7001 — required')).toBeInTheDocument()
     expect(
       screen.getByText('All requirements for Empty Landing have been met.'),
     ).toBeInTheDocument()
+    // The bare, unlabelled text never appears on its own.
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  // A Volume-only category is the state #465 removed from the check: the API now answers MET for it,
+  // and the page shows the met messages with no "required" banner anywhere.
+  test('a location whose category has a Volume but no Cost is reported met (#465)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: true,
+              messages: [
+                {
+                  key: 'locationRequirementsMetMsg',
+                  text: 'All requirements for Harbour Dump have been met.',
+                },
+              ],
+              issues: [],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(
+      await screen.findByText('All requirements for Harbour Dump have been met.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('All requirements for this schedule have been met')).toBeInTheDocument()
+    expect(screen.queryByText(/— required/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Value Required/)).not.toBeInTheDocument()
+  })
+
+  // Defect #326 (DIV-2): legacy named the field on every issue ("Location : <name> - Lakeside Dry
+  // Dump (Cost $): Value Required", Schedule4MB.java:688) and the page used to render only "Value
+  // Required". The API no longer emits cost-item codes (#465), but the vocabulary is kept so a
+  // finding would be named should a Cost check ever be enabled — grid categories AND the list
+  // sub-pages (43/46/55).
+  test('a cost-item code, were one ever emitted, names its category (#326 fallback)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              issues: [
+                { code: 40, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+                { code: 46, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(
+      await screen.findByText('Lakeside Dry Dump (Cost $): Value Required'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Truck Rehaul-Dewater/Transfer (Cost $): Value Required'),
+    ).toBeInTheDocument()
+    // One banner per issue, each headed by the location.
+    expect(screen.getAllByText('Harbour Dump — required')).toHaveLength(2)
+  })
+
+  test('an issue whose code has no label falls back to the API text verbatim (AD-8)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              issues: [
+                { code: 999, message: { key: 'missingRequiredFieldMsg', text: 'Value Required' } },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    expect(screen.getByText('Harbour Dump — required')).toBeInTheDocument()
+    expect(screen.queryByText(/Description|\(Cost \$\)/)).not.toBeInTheDocument()
   })
 
   test('editable:false renders View actions and disables Add/Copy/Delete (STA-001)', async () => {
@@ -502,6 +807,57 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
+  // #332: the sub-page's row writes fall back to hardcoded messages when the failure carries no
+  // ProblemDetail detail (an empty-bodied 500). 'Row could not be saved.' is reached from both the
+  // add-row POST and the in-place edit PUT, so each path gets its own arm.
+  test('a detail-less add-row failure falls back to the generic row message and keeps the draft (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(ROWS_7001, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Added Towing')
+    await userEvent.type(screen.getByLabelText('Volume (m³)'), '5')
+    await userEvent.click(screen.getByRole('button', { name: /add row/i }))
+
+    expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
+    // The typed draft is retained for retry (the form only resets on success).
+    expect(screen.getByLabelText('Description')).toHaveValue('Added Towing')
+  })
+
+  test('a detail-less row-edit Save failure falls back to the generic row message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${ROWS_7001}/7013`, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    const cost = screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i })
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '12345')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less row delete failure falls back to the generic delete-row message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${ROWS_7001}/7013`, () => new HttpResponse(null, { status: 500 })),
+    )
+    await openTowing()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deleteButtons = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deleteButtons[deleteButtons.length - 1])
+
+    expect(await screen.findByText('Unable to delete row.')).toBeInTheDocument()
+    // The document only updates on success, so the row is still there.
+    expect(screen.getByDisplayValue('Deferred towing row')).toBeInTheDocument()
+  })
+
   test('Back returns from a sub-page to the location list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
@@ -695,7 +1051,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
           messages: [
             {
               key: 'scheduleRequirementsMetMsg',
-              text: 'All Schedule 4 requirements have been met.',
+              text: 'All requirements for this schedule have been met',
             },
           ],
           locations: [],
@@ -705,10 +1061,10 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
     expect(
-      await screen.findByText('All Schedule 4 requirements have been met.'),
+      await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
   })
 
@@ -721,9 +1077,60 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
+  })
+
+  // #332: every write falls back to a hardcoded message when the failure carries no ProblemDetail
+  // detail. An empty-bodied 500 is that case; the verbatim-detail siblings above cover the other arm.
+  test('a detail-less save failure falls back to the generic save message and keeps the panel open (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // The record stays open for retry; no success banner.
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  test('a detail-less delete failure falls back to the generic delete message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(LOCATIONS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deletes = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deletes[deletes.length - 1])
+
+    expect(await screen.findByText('Unable to delete location.')).toBeInTheDocument()
+    // Nothing was re-read, so the family is still listed.
+    expect(screen.getByText('Harbour Dump')).toBeInTheDocument()
+  })
+
+  test('a detail-less Check Status failure falls back to the generic check message (#332)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
+    // The in-flight lock releases on failure, so the check can be re-run.
+    await waitFor(() => expect(bottomCheckStatus()).toBeEnabled())
   })
 
   test('View opens a read-only panel (no Save) and sub-pages open directly (STA-001)', async () => {
@@ -743,6 +1150,203 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     expect(
       screen.queryByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
     ).not.toBeInTheDocument()
+  })
+
+  // ---- Defect #293: the page's own bottom Check Status. ------------------------------------------
+  // Legacy carried Check Status by itself on a row at the very bottom of the page (schedule4.xhtml:216-222).
+  // The bottom bar is Check Status ALONE — no Add New Location — and it is NOT part of the location panel's
+  // Save/Back row. Document order puts the top bar first, so the bottom instance is the LAST match.
+
+  test('a bottom Check Status renders below the content and runs the same check (#293)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    const firstRow = await screen.findByText('Harbour Dump')
+
+    expect(checkStatusButtons()).toHaveLength(2)
+    // The bottom bar follows the locations table and is not inside it.
+    const table = firstRow.closest('table') as HTMLElement
+    expect(table).not.toContainElement(bottomCheckStatus())
+    expect(firstRow.compareDocumentPosition(bottomCheckStatus())).toBe(
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    // Check Status alone — Add New Location rides the top bar only.
+    expect(screen.getAllByRole('button', { name: /add new location/i })).toHaveLength(1)
+    expect(bottomActions().queryByRole('button', { name: /add new location/i })).toBeNull()
+
+    await userEvent.click(bottomCheckStatus())
+
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+  })
+
+  test('a Check Status verdict takes focus, so the result is reached from either bar (#293)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    // The verdict renders at the TOP of the page; the bottom button sits at the foot. Focus is what
+    // carries the user (and a screen reader) to the result — it replaced a window.scrollTo that moved
+    // the viewport but left focus stranded on the off-screen button (PR #353 review).
+    await userEvent.click(bottomCheckStatus())
+
+    const verdict = await screen.findByText('All requirements for this schedule have been met')
+    const region = verdict.closest('.schedule-4__check')
+    expect(region).not.toBeNull()
+    await waitFor(() => {
+      expect(region).toHaveFocus()
+    })
+    // Programmatic target only — never in the tab order.
+    expect(region).toHaveAttribute('tabindex', '-1')
+  })
+
+  test('a FAILED Check Status moves focus to the error banner too (#293)', async () => {
+    const detail = 'Unable to evaluate the schedule right now.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json({ detail }, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    // The failure banner renders in the same top-of-page region, so the failure path must reach it as
+    // well — the success path alone would leave a failed check just as invisible as before.
+    await userEvent.click(bottomCheckStatus())
+
+    const banner = await screen.findByText(detail)
+    await waitFor(() => {
+      expect(banner.closest('[tabindex="-1"]')).toHaveFocus()
+    })
+  })
+
+  test('a Save validation error does NOT steal focus from the field being corrected (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await screen.findByText('New Location')
+
+    // Focus-on-banner is armed by Check Status only. A Save that fails validation must leave focus
+    // where the user is typing — yanking it to a banner would be worse than the bug it fixes.
+    const nameField = screen.getByLabelText('Location Name')
+    await userEvent.click(nameField)
+    expect(nameField).toHaveFocus()
+
+    await userEvent.click(
+      within(
+        screen.getByText('New Location').closest('.schedule-4__panel') as HTMLElement,
+      ).getByRole('button', { name: /^save$/i }),
+    )
+
+    // The banner DOES render, and it renders in the very region Check Status focuses — so without the
+    // `focusVerdict` guard this is exactly where focus would be stolen.
+    const banner = await screen.findByText('Location Name: Value is required.')
+    expect(banner.closest('[tabindex="-1"]')).not.toBeNull()
+    expect(document.activeElement).not.toHaveAttribute('tabindex', '-1')
+  })
+
+  test('the bottom Check Status is locked while a check is in flight — one POST per click (#293)', async () => {
+    // The response is HELD open by the test, not delayed by a timer. The first version used a fixed
+    // 50 ms msw delay, so under full-suite load the second click landed after the first response and
+    // the test failed for reasons unrelated to the lock — green in isolation, red in CI (#332 review).
+    // Same shape as CheckStatus.test.tsx's "a verify in flight cannot be sent twice".
+    let posts = 0
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        posts += 1
+        await held
+        return HttpResponse.json({ outcome: 'MET', messages: [], locations: [] })
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    const button = bottomCheckStatus()
+    await userEvent.click(button)
+    // While the request is open the button is out of action, so a second click cannot post.
+    await waitFor(() => expect(posts).toBe(1))
+    expect(button).toBeDisabled()
+    await userEvent.click(button)
+    expect(posts).toBe(1)
+
+    release()
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(posts).toBe(1)
+  })
+
+  test('the location panel keeps Save/Back only — the bottom bar sits below it (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    const heading = await screen.findByText('New Location')
+
+    // Still exactly two: opening a panel adds no third Check Status to its own button row.
+    expect(checkStatusButtons()).toHaveLength(2)
+
+    // Containment, not document order: `compareDocumentPosition(...) === FOLLOWING` is also true for a
+    // button nested INSIDE the panel, so folding the button into schedule-4__panel-actions — the design
+    // this fix rejected — passed the old assertion (review 2026-08-24).
+    const panel = heading.closest('.schedule-4__panel')
+    expect(panel).not.toBeNull()
+    expect(panel).not.toContainElement(bottomCheckStatus())
+    const panelActions = panel?.querySelector('.schedule-4__panel-actions') as HTMLElement
+    expect(within(panelActions).queryByRole('button', { name: /check status/i })).toBeNull()
+    expect(within(panelActions).getByRole('button', { name: /^back$/i })).toBeInTheDocument()
+    expect(within(panelActions).getByRole('button', { name: /^save$/i })).toBeInTheDocument()
+  })
+
+  test('both Check Status buttons are DISABLED outside Draft (DIV-1 / #322)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(await screen.findByText('View Location')).toBeInTheDocument()
+
+    // Legacy bound EVERY Check Status instance to disableReportEdits() (schedule4.xhtml:43, :220-221;
+    // schedule4NewLocation.xhtml:275; schedule4ExistingLocation.xhtml:1144), and the other seven
+    // schedules already carry the `!editable` term. Ratified 2026-08-24: close it here for Schedule 4.
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    expect(checkStatusButtons()).toHaveLength(2)
+    expect(topActions().getByRole('button', { name: /check status/i })).toBeDisabled()
+    expect(bottomCheckStatus()).toBeDisabled()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeDisabled()
   })
 
   test('New location → sub-page link → NAV-003 save-first → opens the saved sub-page', async () => {
@@ -856,6 +1460,766 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
   })
 })
 
+// ---- Story 16.3: the ministry-correction journey at Submitted ------------------------------------
+//
+// Story 16.1 shipped a server-side role x status matrix: ILCR_SUBMITTER may edit only at Draft,
+// ILCR_ADMIN only at Submitted and Verified (read-only at Draft, deliberately). The page learns this
+// from ONE server-computed boolean — `editable` on the schedule document — and never derives it from
+// `trackStatus` or from the acting role (AD-9).
+//
+// So the fixtures below do NOT hardcode that boolean. The MSW GET answers `editable` by applying the
+// matrix to the role the request actually carried on `X-Mock-Groups`, which makes each arm's
+// `renderAsAdmin` / `renderAsSubmitter` load-bearing rather than decorative: swap the role in an arm
+// and the server's answer — and the arm — changes. A hardcoded `editable: true` would have proved
+// only "a page handed editable:true allows correction", which is not the claim. Every existing 'S'
+// test in this suite pairs 'S' with `editable: false`, the SUBMITTER's answer; the admin's answer had
+// no coverage at all before these arms.
+//
+// Every user-facing string is asserted VERBATIM against backend/src/main/resources/messages.properties
+// (AD-8).
+describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
+  const renderAsAdminAt = (initialUrl = '/schedule-4') =>
+    renderAsAdmin(<RouterProvider router={makeRouter(initialUrl)} />)
+  const renderAsSubmitterAt = (initialUrl = '/schedule-4') =>
+    renderAsSubmitter(<RouterProvider router={makeRouter(initialUrl)} />)
+
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill still
+  // owns the data. Anything else — `O`, a null track, an unknown role — is read-only.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes the falsification check trivial
+  // (flip the admin entry to ['D'] and every admin-at-Submitted arm must fail; narrow it to ['S'] and
+  // the Verified arm must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock user
+   * onto `X-Mock-Groups` (api-service.ts:13), so this is the same signal the real mock backend gates
+   * on — not something the test asserts about itself.
+   *
+   * The throw is a sanity rail, NOT the identity guard: `mockUserGroups()` resolves through
+   * `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` — the ADMIN — so a header is
+   * always sent even when no role was declared, and a declared admin is byte-identical on the wire to
+   * a fallback admin. That is why `expectActingAs` asserts the DECLARATION (`declaredRole()`)
+   * alongside the header: the declaration is the one thing the fallback cannot fake. Both are
+   * asserted in the test BODY, which also keeps failures attributable — an `expect` that throws
+   * inside an MSW resolver surfaces as a request failure and is misattributed.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /** The role the GET actually carried, recorded by the handler and asserted in the test body. */
+  let sentRole: string | null = null
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * `editable` per the matrix, for the role(s) the request carried, at `trackStatus`. The header is a
+   * COMMA-JOINED list (`roles.join(',')`, api-service.ts:13) and the server UNIONS the permitted
+   * statuses across every role a caller holds (`ScheduleEditability.forCaller`), so this unions too.
+   * Keying on the raw header would encode a different rule than the one being mirrored — unreachable
+   * today, since a mock user holds exactly one role, but wrong is wrong in a pinned contract.
+   */
+  const matrixEditable = (roles: string, trackStatus: unknown): boolean => {
+    const permitted = new Set(roles.split(',').flatMap((role) => EDITABLE_STATUSES[role] ?? []))
+    return permitted.has(String(trackStatus))
+  }
+
+  /** A Submitted Schedule 4 document, with per-test overrides. */
+  const submitted = (over: Record<string, unknown> = {}) => doc({ trackStatus: 'S', ...over })
+
+  /**
+   * GET that answers `editable` per the matrix for whoever is asking. `over` may be a thunk so an
+   * arm can vary the document between reads (post-delete) or count the reads it provoked.
+   */
+  const matrixGet = (over: Record<string, unknown> | (() => Record<string, unknown>) = {}) =>
+    http.get(URL, ({ request }) => {
+      const body = submitted(typeof over === 'function' ? over() : over)
+      sentRole = actingRole(request)
+      return HttpResponse.json({ ...body, editable: matrixEditable(sentRole, body.trackStatus) })
+    })
+
+  // Verbatim from backend/src/main/resources/messages.properties (AD-8), read off the bundle rather
+  // than transcribed: dataSavedSuccesfullyInfoMsg:173, dataDeletedSuccesfullyInfoMsg:174,
+  // confirmDeleteMsg:202, missingRequiredFieldMsg:54, locationRequirementsMetMsg:185,
+  // millNotActiveForCurrentYearMsg:10. Note the requirements-met family is NOT uniform:
+  // locationRequirementsMetMsg takes a {0} (the location name) and ends in a full stop, while its
+  // schedule-level sibling scheduleRequirementsMetMsg:184 takes no parameter and has NO full stop.
+  // These arms assert the per-location one, substituted.
+  const SAVED = 'Data saved successfully'
+  const DELETED = 'Data deleted successfully'
+  const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+  const VALUE_REQUIRED = 'Value Required'
+  const LOCATION_MET = 'All requirements for Empty Landing have been met.'
+  const MILL_NOT_ACTIVE =
+    'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.'
+
+  /**
+   * Schedule 4 hand-rolls its own delete confirm (index.tsx:1047-1058) instead of using
+   * `core/ConfirmDeleteModal`, and Carbon keeps a Modal mounted while closed — so the dialog is
+   * addressed by its container and "closed" is the absence of `is-visible`, not absence from the DOM.
+   */
+  const deleteDialog = () => screen.getByText(CONFIRM_DELETE).closest('.cds--modal') as HTMLElement
+
+  /**
+   * Both halves of the identity claim each arm's name makes: the role this test DECLARED, and the
+   * role the request actually CARRIED. They are equal by construction — the header is `roles.join(',')`
+   * and a mock user holds exactly one role — but they fail for different reasons, and only the first
+   * catches a forgotten `renderAs*`: `declaredRole()` is null then, while the header still reads
+   * ILCR_ADMIN off the `MOCK_USERS[0]` fallback.
+   */
+  const expectActingAs = (role: IlcrRole) => {
+    expect(declaredRole()).toBe(role)
+    expect(sentRole).toBe(role)
+  }
+
+  /** The read-only shape: the row affordance is View, and every write control is withheld. */
+  const expectReadOnly = () => {
+    expect(screen.getAllByRole('button', { name: /^view$/i }).length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('button', { name: /^edit$/i })).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeDisabled()
+    checkStatusButtons().forEach((button) => expect(button).toBeDisabled())
+    screen.getAllByRole('button', { name: /^copy$/i }).forEach((b) => expect(b).toBeDisabled())
+    screen.getAllByRole('button', { name: /^delete$/i }).forEach((b) => expect(b).toBeDisabled())
+    // The confirm dialog is not even mounted at editable:false (index.tsx:1047), so there is no
+    // Delete primary to reach past the disabled row buttons.
+    expect(screen.queryByText(CONFIRM_DELETE)).not.toBeInTheDocument()
+  }
+
+  /** The correction shape: the row affordance is Edit, and every write control is live. */
+  const expectCorrectable = () => {
+    expect(screen.getAllByRole('button', { name: /^edit$/i }).length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('button', { name: /^view$/i })).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeEnabled()
+    checkStatusButtons().forEach((button) => expect(button).toBeEnabled())
+    screen.getAllByRole('button', { name: /^copy$/i }).forEach((b) => expect(b).toBeEnabled())
+    screen.getAllByRole('button', { name: /^delete$/i }).forEach((b) => expect(b).toBeEnabled())
+  }
+
+  test('ADMIN at Submitted corrects a cost and saves: PUT fired, SUC-001 verbatim, track still S', async () => {
+    let body: Record<string, unknown> | null = null
+    let echoed: Record<string, unknown> | null = null
+    let putRole: string | null = null
+    const corrected: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 150000, distance: null, perUnit: 75.0 },
+        harbour.categories[1],
+      ],
+    }
+    server.use(
+      matrixGet(),
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        putRole = actingRole(request)
+        body = (await request.json()) as Record<string, unknown>
+        // The echo is STILL Submitted. There is exactly one status writer in the whole backend (the
+        // year-open INSERT, ReportingYearRepository:139) and no transition endpoint at all, so the
+        // save path cannot move a track — this echo is that contract, and its `editable` comes from
+        // the matrix too, so the page must render the corrected document as still-correctable.
+        const echo = {
+          ...submitted({
+            locations: [corrected, emptyLanding],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: SAVED },
+          }),
+          editable: matrixEditable(putRole, 'S'),
+        }
+        echoed = echo
+        return HttpResponse.json(echo)
+      }),
+    )
+    renderAsAdminAt()
+    await screen.findByText('Harbour Dump')
+
+    // Declared as, and fetched as, the administrator — not as whoever MOCK_USERS[0] happens to be.
+    expectActingAs(ILCR_ROLES.admin)
+    // Submitted is not read-only for THIS actor: the row affordance is Edit (not View) and every
+    // write control is live — including Check Status, which #322 bound to `!editable`, not to Draft.
+    expectCorrectable()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    const cost = screen.getByLabelText('Lakeside Dry Dump cost')
+    expect(cost).toBeEnabled()
+    // fireEvent over user.type deliberately: the panel mounts an editor per category row, so typing
+    // is O(rows x chars) and has timed the schedule suites out on CI.
+    fireEvent.change(cost, { target: { value: '150000' } })
+    fireEvent.blur(cost)
+    await userEvent.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+
+    expect(await screen.findByText(SAVED)).toBeInTheDocument()
+    // The correction itself was issued as the administrator too.
+    expect(putRole).toBe(ILCR_ROLES.admin)
+    expect(body).not.toBeNull()
+    expect(body!.id).toBe(7001)
+    expect(body!.categories).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 40, cost: 150000 })]),
+    )
+    // Saving must not move status, and the request carries no field it could move it with.
+    expect(Object.keys(body!).sort()).toEqual([
+      'categories',
+      'comments',
+      'id',
+      'name',
+      'revisionCount',
+    ])
+    // The echoed document is still Submitted — and still editable for this actor — so the page stays
+    // on the correction surface rather than falling back to View.
+    expect(echoed!.trackStatus).toBe('S')
+    expect(echoed!.editable).toBe(true)
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^edit$/i }).length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('button', { name: /^view$/i })).toHaveLength(0)
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('150,000')
+  })
+
+  test('SUBMITTER at Submitted is read-only: the row affordance is View and every write control is disabled', async () => {
+    // The negative arm. Same 'S' track and the same handler — only the acting role differs, and the
+    // matrix answers editable:false. If the gate ever widened to "Submitted is editable by anyone",
+    // the admin arm above would still be green and only this one would fail.
+    server.use(matrixGet())
+    renderAsSubmitterAt()
+    await screen.findByText('Harbour Dump')
+
+    expectActingAs(ILCR_ROLES.submitter)
+    expectReadOnly()
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(screen.getByText('View Location')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+  })
+
+  test('ADMIN at Draft is read-only — the capability Story 16.1 deliberately removed', async () => {
+    // Completing the matrix was two-directional: it ADDED admin@Submitted and REMOVED the admin@Draft
+    // edit the pre-epic blanket gate allowed. The mill still owns its Draft data.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsAdminAt()
+    await screen.findByText('Harbour Dump')
+
+    expectActingAs(ILCR_ROLES.admin)
+    expectReadOnly()
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(screen.getByText('View Location')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+  })
+
+  test('SUBMITTER at Draft still edits — the matrix discriminates, it is not uniformly closed', async () => {
+    // Guards the two read-only arms against a degenerate handler (or a broken identity helper) that
+    // simply answered editable:false to everything.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsSubmitterAt()
+    await screen.findByText('Harbour Dump')
+
+    expectActingAs(ILCR_ROLES.submitter)
+    expectCorrectable()
+  })
+
+  // The admin row is ['S', 'V'], but 'V' is served NOWHERE in the repo's frontend fixtures — so
+  // narrowing the backend matrix to ['S'] alone would leave every suite green and the VERIFIED half
+  // of the correction capability unevidenced. These three pin the rest of the row: Verified is
+  // correctable, and neither an unknown status nor a null track is.
+  test.each([
+    ['V', true],
+    ['O', false],
+    [null, false],
+  ])(
+    'ADMIN on a %s track: editability follows the matrix, not the fact of being an administrator',
+    async (trackStatus, correctable) => {
+      server.use(matrixGet({ trackStatus }))
+      renderAsAdminAt()
+      await screen.findByText('Harbour Dump')
+
+      expectActingAs(ILCR_ROLES.admin)
+      if (correctable) expectCorrectable()
+      else expectReadOnly()
+    },
+  )
+
+  test('ADMIN at Submitted deletes behind the verbatim confirm: DELETE fired, DEL-001 shown', async () => {
+    let deletes = 0
+    let deleteRole: string | null = null
+    server.use(
+      matrixGet(() => (deletes ? { locations: [emptyLanding] } : {})),
+      http.delete(LOCATIONS_URL, ({ request }) => {
+        deleteRole = actingRole(request)
+        deletes += 1
+        return HttpResponse.json({
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: DELETED },
+        })
+      }),
+    )
+    renderAsAdminAt()
+    await screen.findByText('Harbour Dump')
+    expectActingAs(ILCR_ROLES.admin)
+
+    const row = screen.getByRole('cell', { name: 'Harbour Dump' }).closest('tr') as HTMLElement
+    const rowDelete = within(row).getByRole('button', { name: /^delete$/i })
+    expect(rowDelete).toBeEnabled()
+    await userEvent.click(rowDelete)
+
+    // Assert what stands, change nothing (user ruling 2026-09-11): the verbatim confirmDeleteMsg is
+    // correct here; only the heading and Delete/Cancel labels diverge from legacy's "Confirmation" +
+    // Yes/No, and that divergence is recorded as deferred work rather than fixed.
+    const dialog = deleteDialog()
+    expect(dialog).toHaveClass('is-visible')
+    expect(within(dialog).getByText(CONFIRM_DELETE)).toBeInTheDocument()
+    expect(within(dialog).getByText('Delete location')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText(DELETED)).toBeInTheDocument()
+    expect(deletes).toBe(1)
+    expect(deleteRole).toBe(ILCR_ROLES.admin)
+    await waitFor(() => expect(screen.queryByText('Harbour Dump')).not.toBeInTheDocument())
+  })
+
+  test('cancelling the delete confirm issues NO DELETE and leaves the document alone', async () => {
+    let deletes = 0
+    let gets = 0
+    server.use(
+      matrixGet(() => {
+        gets += 1
+        return {}
+      }),
+      http.delete(LOCATIONS_URL, () => {
+        deletes += 1
+        return HttpResponse.json({
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: DELETED },
+        })
+      }),
+    )
+    renderAsAdminAt()
+    await screen.findByText('Harbour Dump')
+    expectActingAs(ILCR_ROLES.admin)
+    const getsAfterLoad = gets
+
+    const row = screen.getByRole('cell', { name: 'Harbour Dump' }).closest('tr') as HTMLElement
+    await userEvent.click(within(row).getByRole('button', { name: /^delete$/i }))
+    expect(deleteDialog()).toHaveClass('is-visible')
+
+    await userEvent.click(within(deleteDialog()).getByRole('button', { name: /^cancel$/i }))
+
+    // Closed is the class, not absence — Carbon leaves the Modal mounted.
+    await waitFor(() => expect(deleteDialog()).not.toHaveClass('is-visible'))
+    expect(deletes).toBe(0)
+    // The document is untouched: the family is still listed, no DEL-001 banner, and no re-read (the
+    // confirmed path re-GETs on success, so an unchanged GET count also proves nothing ran).
+    expect(screen.getByRole('cell', { name: 'Harbour Dump' })).toBeInTheDocument()
+    expect(screen.queryByText(DELETED)).not.toBeInTheDocument()
+    expect(gets).toBe(getsAfterLoad)
+  })
+
+  test('Check Status is available and read-only at Submitted — result renders, document unchanged', async () => {
+    let gets = 0
+    let checks = 0
+    let checkRole: string | null = null
+    server.use(
+      matrixGet(() => {
+        gets += 1
+        return {}
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        checkRole = actingRole(request)
+        checks += 1
+        return HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          locations: [
+            {
+              id: 7001,
+              name: 'Harbour Dump',
+              met: false,
+              messages: [],
+              // A blank description is the one finding the check raises (#465); named per #326.
+              issues: [
+                { code: 0, message: { key: 'missingRequiredFieldMsg', text: VALUE_REQUIRED } },
+              ],
+            },
+            {
+              id: 7002,
+              name: 'Empty Landing',
+              met: true,
+              messages: [{ key: 'locationRequirementsMetMsg', text: LOCATION_MET }],
+              issues: [],
+            },
+          ],
+        })
+      }),
+    )
+    renderAsAdminAt()
+    await screen.findByText('Harbour Dump')
+    expectActingAs(ILCR_ROLES.admin)
+    const getsAfterLoad = gets
+
+    // Legacy disabled every Check Status instance whenever the report was not editable (DIV-1 / #322),
+    // so an administrator only regains it at Submitted BECAUSE the button follows `editable`.
+    const top = topActions().getByRole('button', { name: /check status/i })
+    expect(top).toBeEnabled()
+    expect(bottomCheckStatus()).toBeEnabled()
+    await userEvent.click(top)
+
+    expect(await screen.findByText(`Description: ${VALUE_REQUIRED}`)).toBeInTheDocument()
+    expect(screen.getByText(LOCATION_MET)).toBeInTheDocument()
+    expect(checks).toBe(1)
+    expect(checkRole).toBe(ILCR_ROLES.admin)
+    // Read-only: the check writes nothing and does not even re-read the document …
+    expect(gets).toBe(getsAfterLoad)
+    // … and the page is still the Submitted-editable correction surface it was before the check.
+    expect(screen.getByRole('cell', { name: 'Harbour Dump' })).toBeInTheDocument()
+    expectCorrectable()
+  })
+
+  test('a 409 closed-mill load guard renders its verbatim detail and suppresses the location list', async () => {
+    // The suite's other load-failure arm feeds a DETAIL-LESS error and asserts the generic
+    // 'Unable to load Schedule 4.' fallback, so `mapLoadError: (detail) => detail ?? …`
+    // (index.tsx:329) could lose its pass-through with the suite still green — and with it the only
+    // closed-mill surface this page has. The detail below is messages.properties:10 in full.
+    server.use(
+      http.get(
+        URL,
+        () =>
+          new HttpResponse(JSON.stringify({ detail: MILL_NOT_ACTIVE }), {
+            status: 409,
+            headers: { 'Content-Type': 'application/problem+json' },
+          }),
+      ),
+    )
+    renderAsAdminAt()
+
+    // No document is served here, so there is no `sentRole` to pair with — the declaration is still
+    // stated, so this arm cannot quietly become a role-less render either.
+    expect(declaredRole()).toBe(ILCR_ROLES.admin)
+    expect(await screen.findByText(MILL_NOT_ACTIVE)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 4" satisfied the assertion above
+    // while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 4')).not.toBeInTheDocument()
+    // No form: the guard shell carries neither action bar, so there is nothing to correct with.
+    expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('button', { name: /check status/i })).toHaveLength(0)
+    expect(screen.queryByText('Harbour Dump')).not.toBeInTheDocument()
+  })
+})
+
+// ---- NAV-001 (#324): confirm before unsaved panel / sub-page input is discarded. -------------------
+// Legacy attached `confirmNavigationMsg` to the panel's Add New / Edit / Copy / Close controls
+// (schedule4.xhtml:74,130,160,189,213) and to each sub-page's Back (schedule4TowingTotal.xhtml:173-175).
+// The rewrite fires it only when something would actually be lost, so both arms are pinned here: the
+// prompt on a dirty panel, and its ABSENCE on a clean one.
+describe('Schedule4 NAV-001 — confirm before discarding unsaved changes (#324)', () => {
+  const NAV_MSG = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+
+  // The dialog is addressed by its accessible name: a closed ComposedModal is `aria-hidden`, so the
+  // role query answers "is the prompt showing?" honestly, where a text query would find the hidden copy.
+  const unsavedDialog = () => screen.getByRole('dialog', { name: 'Unsaved changes' })
+  const noUnsavedDialog = () =>
+    expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument()
+  const continueButton = () => within(unsavedDialog()).getByRole('button', { name: /^continue$/i })
+  const cancelButton = () => within(unsavedDialog()).getByRole('button', { name: /^cancel$/i })
+
+  // The panel/sub-page action-bar Back (scoped — the always-rendered delete-confirm modal has a "Cancel").
+  const actionBack = () =>
+    screen
+      .getAllByRole('button', { name: /^back$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))[0]
+
+  const openHarbourForEdit = async () => {
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+  }
+
+  // Dirty the open panel with one keystroke in a category cell (Harbour Dump's Lakeside cost is 100000).
+  const dirtyHarbour = async () => {
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+  }
+
+  test('Back on an untouched Edit panel closes it with no prompt', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+
+    await userEvent.click(actionBack())
+
+    noUnsavedDialog()
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+  })
+
+  test('Back on a dirty Edit panel asks first; Cancel keeps the entry, Continue discards it without a write', async () => {
+    let puts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => {
+        puts += 1
+        return HttpResponse.json(doc())
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    // Cancel: the panel stays with the typed value intact.
+    await userEvent.click(cancelButton())
+    noUnsavedDialog()
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+
+    // Continue: the panel closes and the edit is dropped, never saved (the compensating guarantee).
+    await userEvent.click(actionBack())
+    await userEvent.click(continueButton())
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+    expect(puts).toBe(0)
+    // Re-opening shows the STORED value, not the abandoned one.
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
+  })
+
+  test('Add New Location over a dirty panel asks first; Continue opens the New panel', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    // Held: still the Edit panel behind the dialog.
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+
+    await userEvent.click(continueButton())
+    expect(screen.getByText('New Location')).toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('')
+  })
+
+  test('Edit of another location over a dirty panel asks first; Continue opens that location', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[1]) // Empty Landing
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour Dump')
+
+    await userEvent.click(continueButton())
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Empty Landing')
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('')
+  })
+
+  test('Copy of another location over a dirty panel asks first; Cancel stays on the edit', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[1]) // Empty Landing
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(cancelButton())
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    expect(screen.queryByText('Copy Location')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour Dump')
+  })
+
+  test('a Copy panel counts as unsaved from the moment it opens (like Schedule 5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+    expect(screen.getByText('Copy Location')).toBeInTheDocument()
+
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(continueButton())
+    expect(screen.queryByText('Copy Location')).not.toBeInTheDocument()
+  })
+
+  test('an untouched New panel closes with no prompt; a typed one asks', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByText('New Location')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.type(screen.getByLabelText('Location Name'), 'Half typed')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Half typed')
+  })
+
+  test('a typed comment alone makes the panel dirty', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openHarbourForEdit()
+
+    await userEvent.type(screen.getByLabelText(/additional comments/i), ' more')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+  })
+
+  test('after a successful Save the panel is clean again: Back closes it with no prompt', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({
+            locations: [
+              {
+                ...harbour,
+                revisionCount: 1,
+                categories: [
+                  { ...harbour.categories[0], cost: 1000009, perUnit: 500.0045 },
+                  harbour.categories[1],
+                ],
+              },
+              emptyLanding,
+            ],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour()
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await screen.findByText('Data saved successfully')
+    // The saved panel stays open, re-seeded from the echo — and is no longer "unsaved".
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+  })
+
+  // PR #492 review: the inputs stay live while the PUT is pending, so a keystroke landing mid-request
+  // used to be wiped by the echo re-seed and then counted as clean. Post-dispatch entry must survive
+  // the save AND still be guarded; untouched fields still take the server's echo (AD-5).
+  test('typing while a Save is in flight survives the echo and is still guarded by NAV-001', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 1000009, distance: null, perUnit: 500.0045 },
+        harbour.categories[1],
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, async () => {
+        await gate
+        return HttpResponse.json(
+          doc({
+            locations: [saved, emptyLanding],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    await openHarbourForEdit()
+    await dirtyHarbour() // Lakeside cost 1000009 — what the PUT carries
+
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    // Mid-flight entry: a different category cell and the name, neither of which the PUT carried.
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry volume'), '7')
+    await userEvent.type(screen.getByLabelText('Location Name'), 'X')
+    release()
+    await screen.findByText('Data saved successfully')
+
+    // The echo landed on the field that was sent; the mid-flight entry was NOT replaced by it.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('1,000,009')
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+    expect(screen.getByLabelText('Location Name')).toHaveValue('Harbour DumpX')
+
+    // And it is still unsaved: Back asks first.
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+    await userEvent.click(cancelButton())
+    expect(screen.getByLabelText('Truck Barge/Ferry volume')).toHaveValue('5,007')
+  })
+
+  test('the read-only View panel closes with no prompt (nothing to lose)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(screen.getByText('View Location')).toBeInTheDocument()
+
+    const [close] = screen
+      .getAllByRole('button', { name: /^close$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))
+    await userEvent.click(close)
+    noUnsavedDialog()
+    expect(screen.queryByText('View Location')).not.toBeInTheDocument()
+  })
+
+  // ---- The sub-page's own Back (fourth path). ----------------------------------------------------
+
+  // Edit Harbour Dump → "Towing Total (1)" → NAV-002 Continue → the Towing sub-page.
+  const openTowingSubPage = async () => {
+    await openHarbourForEdit()
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(continueButton())
+    await screen.findByRole('table', { name: /Towing Total/i })
+  }
+
+  test('sub-page Back with a typed add-row asks first; Cancel keeps the input, Continue returns to the list', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Half a row')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+
+    await userEvent.click(cancelButton())
+    expect(screen.getByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toHaveValue('Half a row')
+
+    await userEvent.click(actionBack())
+    await userEvent.click(continueButton())
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+  })
+
+  test('sub-page Back with an unsaved in-place row edit asks first', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.type(screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i }), '1')
+    await userEvent.click(actionBack())
+    expect(within(unsavedDialog()).getByText(NAV_MSG)).toBeInTheDocument()
+  })
+
+  test('sub-page Back with nothing pending returns to the list with no prompt', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowingSubPage()
+
+    await userEvent.click(actionBack())
+    noUnsavedDialog()
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
+  })
+})
+
 import useMillYear from '@/context/millYear/useMillYear'
 
 const StaleRaceHarness = () => {
@@ -869,3 +2233,628 @@ const StaleRaceHarness = () => {
     </>
   )
 }
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B — Check Status evaluates the open panel as it is on screen.
+// ---------------------------------------------------------------------------------------------------
+
+// Every error banner's subtitle, in render order — the validation banner is one line per failing field.
+const errorBannerLines = () =>
+  Array.from(
+    document.querySelectorAll(
+      '.cds--inline-notification--error .cds--inline-notification__subtitle',
+    ),
+  ).map((node) => node.textContent)
+
+const MET = { outcome: 'MET', messages: [], locations: [] }
+
+const locationRow = (name: string) => within(screen.getByText(name).closest('tr') as HTMLElement)
+
+const panelSave = () =>
+  within(document.querySelector('.schedule-4__panel') as HTMLElement).getByRole('button', {
+    name: /^save$/i,
+  })
+
+describe('Schedule4 Check Status evaluates the open panel (#359 group B)', () => {
+  test('no panel open: the body is {"location": null}', async () => {
+    let body: unknown = 'unsent'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(body).toEqual({ location: null })
+    })
+  })
+
+  test('an open existing location sends its id and its ON-SCREEN (renamed, trimmed) name', async () => {
+    let body: unknown = 'unsent'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    const name = await screen.findByLabelText('Location Name')
+    await userEvent.clear(name)
+    await userEvent.type(name, '  Harbour Renamed ')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(body).toEqual({ location: { id: 7001, name: 'Harbour Renamed' } })
+    })
+  })
+
+  test('an unsaved New or Copy panel is sent with a null id', async () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Location Name'), 'Fresh Landing')
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bodies).toEqual([{ location: { id: null, name: 'Fresh Landing' } }])
+    })
+
+    // Copy is also unsaved — the copy of Empty Landing (no amounts) given a new name.
+    await userEvent.click(locationRow('Empty Landing').getByRole('button', { name: /^copy$/i }))
+    // The New panel holds a typed name, so leaving it asks first (NAV-001).
+    await userEvent.click(await screen.findByRole('button', { name: /^continue$/i }))
+    await screen.findByText('Copy Location')
+    await userEvent.type(screen.getByLabelText('Location Name'), 'Copied Landing')
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bodies).toHaveLength(2)
+    })
+    expect(bodies[1]).toEqual({ location: { id: null, name: 'Copied Landing' } })
+  })
+
+  test('existing panel, Crew Barge/Ferry Distance only: no request, both legacy lines in the banner, inline Value Required on both cells', async () => {
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET)
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await userEvent.type(await screen.findByLabelText('Crew Barge/Ferry distance'), '50')
+
+    await userEvent.click(bottomCheckStatus())
+
+    // `schedule4ExistingLocation.xhtml:629,650` labels, verbatim.
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Crew Barge Ferry Volume (m3): Value is required.',
+        'Crew Barge Ferry (Cost $): Value is required.',
+      ])
+    })
+    expect(posts).toBe(0)
+    const volumeCell = screen.getByLabelText('Crew Barge/Ferry volume').closest('td') as HTMLElement
+    const costCell = screen.getByLabelText('Crew Barge/Ferry cost').closest('td') as HTMLElement
+    expect(within(volumeCell).getByText('Value Required')).toBeInTheDocument()
+    expect(within(costCell).getByText('Value Required')).toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Please correct the highlighted fields before saving.'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('new panel, blank name + Rail Haul Distance only: Save and Check Status both list the name and both Rail Haul lines', async () => {
+    let posts = 0
+    let writes = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json(MET)
+      }),
+      http.put(LOCATIONS_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Rail Haul distance'), '12')
+
+    // `schedule4NewLocation.xhtml:14,206,209` labels, verbatim — the New panel's own wording, which
+    // differs from the existing-location panel's (`Rail Haul Volume (m3)`).
+    const expected = [
+      'Location Name: Value is required.',
+      'Rail Haul (Volume m³): Value is required.',
+      'Rail Haul (Cost $): Value is required.',
+    ]
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(posts).toBe(0)
+    // ERR-001 marks the name inline once the gate has blocked an action.
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Value Required')).toHaveLength(2)
+
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(expected)
+    })
+    expect(writes).toBe(0)
+  })
+
+  test('a whitespace-only name keeps the bean message; the copy panel uses the New panel labels', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Empty Landing').getByRole('button', { name: /^copy$/i }))
+    await screen.findByText('Copy Location')
+    await userEvent.type(screen.getByLabelText('Location Name'), '   ')
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry volume'), '800')
+
+    await userEvent.click(bottomCheckStatus())
+    // JSF `required` passes a whitespace name, so the bean's own ERR-001 text is what legacy showed;
+    // the Copy panel is `schedule4NewLocation.xhtml`, whose Distance is labelled `Distance (Km)`. A
+    // Volume alone now requires the Distance AND the Cost at once (all-or-nothing, BA decision 2026-09-29).
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Location Name can not be empty. Please enter a description.',
+        'Distance (Km): Value is required.',
+        'Truck Barge Ferry (Cost $): Value is required.',
+      ])
+    })
+  })
+
+  test('an out-of-range amount reports its verbatim range text in the banner', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    const volume = await screen.findByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '10000000')
+
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Entered volume must be between 0 and 9,999,999.'])
+    })
+  })
+
+  test('a panel edit (category or name) after a check clears the shown verdict', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '1')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Location Name'), 'x')
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a check response for a superseded panel snapshot is dropped', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          locations: [],
+        })
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeDisabled()
+    })
+    // The panel inputs stay live while a request is out, so an edit CAN land before the verdict.
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+
+    releaseCheck()
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeEnabled()
+    })
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  const MET_WITH_BANNER = {
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    locations: [],
+  }
+
+  test('closing the panel clears a verdict given on its values', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_WITH_BANNER)),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /^back$/i }))
+    expect(screen.queryByText('Edit Location')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a Save blocked by validation clears a shown verdict, so "met" never sits beside the lines', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json(MET_WITH_BANNER)),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+
+    // Every edit to a checked field already drops the verdict, so the blocked-Save branch clearing it
+    // too is defence in depth (a panel that fails validation cannot be checked into a verdict); this
+    // pins the observable end state of that journey.
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '10000000')
+    // The edit above already cleared it; the Save path must not bring anything stale back either.
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Entered volume must be between 0 and 9,999,999.'])
+    })
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a FAILED check for a superseded panel snapshot is dropped too — no stale error banner', async () => {
+    let releaseCheck!: () => void
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve
+    })
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        await checkGate
+        return HttpResponse.json({ detail: 'Stale check failure detail' }, { status: 500 })
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeDisabled()
+    })
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '9')
+
+    releaseCheck()
+    await waitFor(() => {
+      expect(bottomCheckStatus()).toBeEnabled()
+    })
+    expect(screen.queryByText('Stale check failure detail')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unable to check status.')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// #359 group B change log — the category grid is judged ON CHANGE (blur with a change), never per
+// keystroke, and the banner ACCUMULATES per cell.
+// ---------------------------------------------------------------------------------------------------
+
+describe('Schedule4 per-cell validation on change (#359 group B change log)', () => {
+  const openHarbour = async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await screen.findByLabelText('Location Name')
+  }
+
+  test('typing shows NO error until the cell is left; leaving it shows the inline text and its banner line', async () => {
+    await openHarbour()
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '10000000')
+
+    expect(
+      screen.queryByText('Entered volume must be between 0 and 9,999,999.'),
+    ).not.toBeInTheDocument()
+    expect(errorBannerLines()).toEqual([])
+
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Entered volume must be between 0 and 9,999,999.'])
+    expect(
+      within(volume.closest('td') as HTMLElement).getByText(
+        'Entered volume must be between 0 and 9,999,999.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  test('a Distance changed to a value passes itself and says NOTHING about Volume/Cost until Save / Check', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Crew Barge/Ferry distance'), '50')
+    await userEvent.tab()
+
+    expect(errorBannerLines()).toEqual([])
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+
+    // Save judges the whole panel and replaces the banner with the full list, the name first.
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Location Name: Value is required.',
+        'Crew Barge Ferry (Volume m³): Value is required.',
+        'Crew Barge Ferry (Cost $): Value is required.',
+      ])
+    })
+    expect(screen.getAllByText('Value Required')).toHaveLength(2)
+  })
+
+  test('clearing a Distance while its Volume is present fails the Distance; a second failing cell adds a line; fixing the first removes only its own', async () => {
+    // Harbour's Truck Barge/Ferry holds distance 120.5, volume 500, cost 25000.
+    await openHarbour()
+    await userEvent.clear(screen.getByLabelText('Truck Barge/Ferry distance'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Truck Barge Ferry (Km): Value is required.'])
+
+    // A second failure, EARLIER in page order (Lakeside, code 40), lands above it.
+    const lakeside = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(lakeside)
+    await userEvent.type(lakeside, '100000000')
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual([
+      'Entered cost must be between -99,999,999 and 99,999,999.',
+      'Truck Barge Ferry (Km): Value is required.',
+    ])
+
+    await userEvent.type(screen.getByLabelText('Truck Barge/Ferry distance'), '80')
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Entered cost must be between -99,999,999 and 99,999,999.'])
+    const distanceCell = screen
+      .getByLabelText('Truck Barge/Ferry distance')
+      .closest('td') as HTMLElement
+    expect(within(distanceCell).queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('clearing a Volume while its Distance is present fails the Volume only (Cost is not judged)', async () => {
+    await openHarbour()
+    await userEvent.clear(screen.getByLabelText('Truck Barge/Ferry volume'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Truck Barge Ferry Volume (m3): Value is required.'])
+  })
+
+  test('focusing and leaving a cell without a change judges nothing', async () => {
+    await openHarbour()
+    await userEvent.click(screen.getByLabelText('Rail Haul volume'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual([])
+  })
+
+  test('the Location Name is judged on Save / Check Status only, never on its own change', async () => {
+    await openHarbour()
+    const name = screen.getByLabelText('Location Name')
+    await userEvent.clear(name)
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual([])
+    expect(
+      screen.queryByText('Location Name can not be empty. Please enter a description.'),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual(['Location Name: Value is required.'])
+    })
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+  })
+
+  test('after a blocked Check, a later cell change keeps the other lines (and the name marker)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Rail Haul distance'), '12')
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toHaveLength(3)
+    })
+
+    await userEvent.type(screen.getByLabelText('Rail Haul volume'), '400')
+    // Typing changes nothing yet…
+    expect(errorBannerLines()).toHaveLength(3)
+    await userEvent.tab()
+    // …leaving the corrected cell removes only its own line.
+    expect(errorBannerLines()).toEqual([
+      'Location Name: Value is required.',
+      'Rail Haul (Cost $): Value is required.',
+    ])
+    expect(
+      screen.getByText('Location Name can not be empty. Please enter a description.'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Value Required')).toHaveLength(1)
+  })
+})
+
+describe('Schedule4 BR-04 all-or-nothing on the distance rows (BA decision, 2026-09-29)', () => {
+  test('a Volume typed into an empty row and left flags nothing yet; Save then lists Distance AND Cost at once', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(topActions().getByRole('button', { name: /add new location/i }))
+    await userEvent.type(await screen.findByLabelText('Location Name'), 'Named')
+    await userEvent.type(screen.getByLabelText('Rail Haul volume'), '400')
+    await userEvent.tab()
+    // Only the changed cell is judged on change, and it passes (its row had nothing else in it).
+    expect(errorBannerLines()).toEqual([])
+
+    await userEvent.click(panelSave())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Distance (Km): Value is required.',
+        'Rail Haul (Cost $): Value is required.',
+      ])
+    })
+    const distanceCell = screen.getByLabelText('Rail Haul distance').closest('td') as HTMLElement
+    const costCell = screen.getByLabelText('Rail Haul cost').closest('td') as HTMLElement
+    expect(within(distanceCell).getByText('Value Required')).toBeInTheDocument()
+    expect(within(costCell).getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('Check Status lists every missing cell of a Cost-only row at once', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await userEvent.type(await screen.findByLabelText('Crew Barge/Ferry cost'), '900')
+    await userEvent.tab()
+    await userEvent.click(bottomCheckStatus())
+    await waitFor(() => {
+      expect(errorBannerLines()).toEqual([
+        'Crew Barge Ferry (Km): Value is required.',
+        'Crew Barge Ferry Volume (m3): Value is required.',
+      ])
+    })
+  })
+
+  test('on change: clearing a Distance while the Volume is present flags the Distance', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(locationRow('Harbour Dump').getByRole('button', { name: /^edit$/i }))
+    await userEvent.clear(await screen.findByLabelText('Truck Barge/Ferry distance'))
+    await userEvent.tab()
+    expect(errorBannerLines()).toEqual(['Truck Barge Ferry (Km): Value is required.'])
+  })
+})
+
+// The business ruling on legacy's inconsistency: every schedule freezes the row open in the editor,
+// as legacy Schedule 8 did (disableReport). Legacy Schedule 4 left it live.
+describe('Schedule4 open-row freeze', () => {
+  test('the location open in the panel has its row actions disabled; other rows stay live', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+
+    const table = await screen.findByRole('table', { name: 'Existing Locations' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    const actions = [/^edit$/i, /^copy$/i, /^delete$/i]
+    for (const name of actions) {
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name })).toBeEnabled()
+    }
+
+    await userEvent.click(within(rowOf('Harbour Dump')).getByRole('button', { name: /^edit$/i }))
+
+    await waitFor(() =>
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name: /^edit$/i })).toBeDisabled(),
+    )
+    for (const name of actions) {
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name })).toBeDisabled()
+      expect(within(rowOf('Empty Landing')).getByRole('button', { name })).toBeEnabled()
+    }
+  })
+
+  test('a non-editable viewer gets the same freeze on the row being viewed', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+
+    const table = await screen.findByRole('table', { name: 'Existing Locations' })
+    const rowOf = (name: string) => within(table).getByText(name).closest('tr') as HTMLElement
+    await userEvent.click(within(rowOf('Harbour Dump')).getByRole('button', { name: /^view$/i }))
+
+    await waitFor(() =>
+      expect(within(rowOf('Harbour Dump')).getByRole('button', { name: /^view$/i })).toBeDisabled(),
+    )
+    expect(within(rowOf('Empty Landing')).getByRole('button', { name: /^view$/i })).toBeEnabled()
+  })
+})

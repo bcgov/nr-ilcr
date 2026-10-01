@@ -22,11 +22,12 @@ class CognitoGroupsJwtAuthenticationConverterTest {
       new CognitoGroupsJwtAuthenticationConverter();
 
   private Jwt jwtWithGroups(Object groupsClaim) {
-    Jwt.Builder builder = Jwt.withTokenValue("token")
-        .header("alg", "none")
-        .issuedAt(Instant.now())
-        .expiresAt(Instant.now().plusSeconds(60))
-        .subject("user");
+    Jwt.Builder builder =
+        Jwt.withTokenValue("token")
+            .header("alg", "none")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(60))
+            .subject("user");
     if (groupsClaim != null) {
       builder.claim("cognito:groups", groupsClaim);
     }
@@ -41,22 +42,27 @@ class CognitoGroupsJwtAuthenticationConverterTest {
 
   @Test
   void ilcrSubmitter_mapsToSubmitter() {
-    assertEquals(Set.of("SUBMITTER"), authorities(converter.convert(jwtWithGroups(List.of("ILCR_SUBMITTER")))));
+    assertEquals(
+        Set.of("SUBMITTER"),
+        authorities(converter.convert(jwtWithGroups(List.of("ILCR_SUBMITTER")))));
   }
 
   @Test
   void ilcrAdmin_mapsToAdmin() {
-    assertEquals(Set.of("ADMIN"), authorities(converter.convert(jwtWithGroups(List.of("ILCR_ADMIN")))));
+    assertEquals(
+        Set.of("ADMIN"), authorities(converter.convert(jwtWithGroups(List.of("ILCR_ADMIN")))));
   }
 
   @Test
   void orgPrefixedGroup_matches() {
-    assertEquals(Set.of("ADMIN"), authorities(converter.convert(jwtWithGroups(List.of("NRS_ILCR_ADMIN")))));
+    assertEquals(
+        Set.of("ADMIN"), authorities(converter.convert(jwtWithGroups(List.of("NRS_ILCR_ADMIN")))));
   }
 
   @Test
   void foreignGroup_noAuthorities() {
-    assertTrue(authorities(converter.convert(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN")))).isEmpty());
+    assertTrue(
+        authorities(converter.convert(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN")))).isEmpty());
   }
 
   @Test
@@ -86,14 +92,15 @@ class CognitoGroupsJwtAuthenticationConverterTest {
   void principalName_isIdpUsername_notTheSubUuid() {
     // The audit user (authentication.getName()) must be custom:idp_username, which fits
     // UPDATE_USERID VARCHAR2(30) — not the ~36-char sub UUID that would overflow it.
-    Jwt jwt = Jwt.withTokenValue("token")
-        .header("alg", "none")
-        .issuedAt(Instant.now())
-        .expiresAt(Instant.now().plusSeconds(60))
-        .subject("11111111-2222-3333-4444-555555555555")
-        .claim("cognito:groups", List.of("ILCR_ADMIN"))
-        .claim("custom:idp_username", "GPASCUCCI")
-        .build();
+    Jwt jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "none")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(60))
+            .subject("11111111-2222-3333-4444-555555555555")
+            .claim("cognito:groups", List.of("ILCR_ADMIN"))
+            .claim("custom:idp_username", "GPASCUCCI")
+            .build();
     assertEquals("GPASCUCCI", converter.convert(jwt).getName());
   }
 

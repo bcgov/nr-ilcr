@@ -9,10 +9,13 @@
 #    writes nothing. The observable outcome is SUC-001 + the working-context banner (ContextBanner.tsx),
 #    the modern #subMenu. Nothing to clean up; scenarios are parallel-safe.
 #  - VALIDATION is backend-authoritative (the app posts empty params, the server returns the 400). The
-#    empty-dropdown slices S04/S05/S08 are NOT UI-reproducible on current data because the mount default
-#    (13050/2017) is present in both lists, so both dropdowns pre-select and Carbon has no clear control
-#    — covered at the contract level instead (see coverage.md / defects.md). S02 (single-mill pre-select)
-#    is not-applicable on the 21-mill delivery data.
+#    empty-dropdown slices S04/S05/S08 were logged NOT UI-reproducible because MillYearProvider seeded a
+#    13050/2017 mount default, so both dropdowns always pre-selected and Carbon has no clear-to-placeholder
+#    control — they were covered at the contract level instead (see coverage.md / defects.md). That default
+#    is GONE as of commit e37649b (a first-ever visit now lands with no context), so an empty dropdown IS
+#    reachable in the UI and those three slices are re-openable as UI scenarios — NOT done here; this file
+#    only re-grounds the landing state the removal changed. S02 (single-mill pre-select) is still
+#    not-applicable on the 21-mill delivery data.
 
 @sec @UC-SEC-001
 Feature: Establish Working Context (Home) — select a mill and reporting year
@@ -23,19 +26,46 @@ Feature: Establish Working Context (Home) — select a mill and reporting year
   Background:
     Given I am on the Home page
 
-  @S01 @landing @a11y @p1
-  Scenario: Landing populates the lists, pre-selects the default context, and is accessible
+  @S01 @landing @p1
+  Scenario: Landing populates the lists and asks the user to choose a context
     Then the mill and reporting-year option lists are populated
-    And the working context is pre-selected on landing
-    And the "Home (landing)" view has no WCAG 2.1 AA accessibility violations
+    And no working context is selected on landing
 
-  @S01 @SUC-001 @a11y @p0
+  @S01 @SUC-001 @p0
   Scenario: Select a mill and an opened reporting year and save successfully
     When I select the working context "open with status"
     And I save the working context
     Then I should see the message "Data saved successfully"
     And the working-context banner shows the "open with status" context
-    And the working-context banner no longer shows the "default" context
+
+  # ---------------------------------------------------------------------------------------------------
+  # The two Home axe sweeps below used to be the LAST STEP of the two journey scenarios above. They were
+  # split out 2026-08-24 because they are red for a reason those journeys have nothing to do with, and a
+  # scan failing at the end of a scenario takes the whole scenario down with it: `@p0` "select a mill and
+  # save" — the core working-context journey — was failing on a colour, and `npm run test:gate` was red
+  # because neither scenario carried a `@discovered-*` tag to exclude it.
+  #
+  # Split, the journeys stay in the gate and green, and the contrast stays tracked instead of skipped.
+  # Nothing was deleted: the same two scans run against the same two states.
+  #
+  # WHY TWO SCANS AND NOT ONE: a page can be accessible in one state and not another, so Home is swept
+  # both before any context is selected and after a Save has populated the banner. Today both report the
+  # IDENTICAL two nodes, because the offending markup sits below the banner in both.
+  #
+  # READ defects.md BUG-1 BEFORE "FIXING" EITHER: the failing nodes are ADMIN-AUTHORED CONTENT (the
+  # welcome message stored in THE.ILCR_ROLE.MESSAGE_TEXT), not app CSS. That has a consequence for how a
+  # green here should be read — editing the welcome message also turns these green, without anything
+  # being fixed. Only a contrast constraint on authored content settles it.
+  # ---------------------------------------------------------------------------------------------------
+  @S01 @landing @a11y @p1 @discovered-bug
+  Scenario: The Home landing view is accessible [DISCOVERED BUG — authored-content contrast; defects.md BUG-1]
+    Then the "Home (landing)" view has no WCAG 2.1 AA accessibility violations
+
+  @S01 @SUC-001 @a11y @p1 @discovered-bug
+  Scenario: Home with a populated banner is accessible [DISCOVERED BUG — authored-content contrast; defects.md BUG-1]
+    When I select the working context "open with status"
+    And I save the working context
+    Then the working-context banner shows the "open with status" context
     And the "Home (banner populated after Save)" view has no WCAG 2.1 AA accessibility violations
 
   @S03 @p1

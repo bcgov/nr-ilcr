@@ -1,19 +1,21 @@
 package ca.bc.gov.nrs.ilcr.schedule11.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 11 location row of the pinned Story 25.1 wire contract (AD-12). All derived figures
- * are computed server-side per BR-08 (AD-5); costs are whole-dollar integers
- * ({@code ILCR_COST_REPORT_DETAIL.COST} is {@code NUMBER(8,0)}). Clean camelCase, never JSF
- * control-id spellings.
+ * are computed server-side per BR-08 (AD-5); costs are whole-dollar integers ({@code
+ * ILCR_COST_REPORT_DETAIL.COST} is {@code NUMBER(8,0)}). Clean camelCase, never JSF control-id
+ * spellings.
  *
  * @param locationId the location id ({@code BASIC_SILVICULTURE_REPORT_ID})
  * @param location the location text (label "Location", max 30)
  * @param enhancedIndicator {@code ENHANCED_IND} {@code "Y"} → true (label "ES")
  * @param biogeoclimaticCatalogueId the BEC catalogue id the row references
- * @param becLabel legacy {@code getBiogeoSubZoneVariantPase()}: zone+subzone+variant+phase,
- *     nulls → {@code ""}; null only if the catalogue row is missing
+ * @param becLabel legacy {@code getBiogeoSubZoneVariantPase()}: zone+subzone+variant+phase, nulls →
+ *     {@code ""}; null only if the catalogue row is missing
  * @param netArea {@code REFORESTED_NET_AREA} (label "NAR (ha)")
  * @param actualCost item-24 cost (label "Actual Cost ($)"); null when absent
  * @param plannedCost item-23 cost (label "Planned Cost ($)"); null when absent
@@ -37,5 +39,40 @@ public record SilvicultureLocation(
     Integer totalCost,
     BigDecimal costPerNetArea,
     String comments,
-    Integer revisionCount) {
+    Integer revisionCount,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public SilvicultureLocation(
+      long locationId,
+      String location,
+      boolean enhancedIndicator,
+      long biogeoclimaticCatalogueId,
+      String becLabel,
+      BigDecimal netArea,
+      Integer actualCost,
+      Integer plannedCost,
+      Integer totalCost,
+      BigDecimal costPerNetArea,
+      String comments,
+      Integer revisionCount) {
+    this(
+        locationId,
+        location,
+        enhancedIndicator,
+        biogeoclimaticCatalogueId,
+        becLabel,
+        netArea,
+        actualCost,
+        plannedCost,
+        totalCost,
+        costPerNetArea,
+        comments,
+        revisionCount,
+        null);
+  }
 }

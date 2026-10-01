@@ -1,14 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.api.Schedule2Api;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
-import java.util.List;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -20,8 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Schedule 2 endpoints. Authorizes by naming the schedule action (AD-7), delegates all mill/year
  * validation to {@link MillContextService} (AD-4), and never touches repositories directly (AD-1
- * layering). The read-only {@code editable} flag is derived from the caller's {@code EDIT_SCHEDULE}
- * permission, computed server-side (AD-5).
+ * layering). The read-only {@code editable} flag is derived server-side from the caller's
+ * role&times;status editability, resolved once here and evaluated against the track (AD-5/AD-9).
  *
  * <p>The read (GET) never 404s on a missing Schedule 2 summary — the single deliberate divergence
  * from Schedule 1's read — so it uses {@link MillContextService#validateMillYearActive} instead of
@@ -34,15 +35,22 @@ public class Schedule2Controller implements Schedule2Api {
 
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
   private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
+  // The idempotent DELETE that removed nothing gets its own message (defect #292 code review): a
+  // no-op must not borrow the success text of a delete that actually removed a record.
+  private static final String MSG_NOTHING_DELETED = "noDataToDeleteInfoMsg";
 
   private final MillContextService millContextService;
   private final Schedule2Service schedule2Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
+  private final Schedule2CheckStatusResolver checkStatusResolver;
 
-  /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
+  /**
+   * Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message.
+   */
   private MessageInfo message(String key) {
-    return new MessageInfo(key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
+    return new MessageInfo(
+        key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
   }
 
   @Override
@@ -51,8 +59,8 @@ public class Schedule2Controller implements Schedule2Api {
       long millId, int year, Authentication authentication) {
     // No summary-required 404 for Schedule 2 (AC4/AC6) — only mill/year existence + active checks.
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    return ResponseEntity.ok(schedule2Service.getSchedule2(millId, year, callerMayEdit));
+    EditableStatuses caller = editability.forCaller(authentication);
+    return ResponseEntity.ok(schedule2Service.getSchedule2(millId, year, caller));
   }
 
   @Override
@@ -60,9 +68,9 @@ public class Schedule2Controller implements Schedule2Api {
   public ResponseEntity<Schedule2Response> saveSchedule2(
       long millId, int year, Schedule2Request request, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
-    Schedule2Response saved = schedule2Service.saveSchedule2(millId, year, request, callerMayEdit, user);
+    Schedule2Response saved = schedule2Service.saveSchedule2(millId, year, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -71,28 +79,20 @@ public class Schedule2Controller implements Schedule2Api {
   public ResponseEntity<MessageResponse> deleteSchedule2(
       long millId, int year, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    schedule2Service.deleteSchedule2(millId, year);
-    return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
+    EditableStatuses caller = editability.forCaller(authentication);
+    // 200 either way (the DELETE never 404s); the message tells the truth about what happened.
+    boolean removed = schedule2Service.deleteSchedule2(millId, year, caller);
+    return ResponseEntity.ok(
+        new MessageResponse(message(removed ? MSG_DELETED : MSG_NOTHING_DELETED)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<CheckStatusResponse> checkStatus(
-      long millId, int year, Authentication authentication) {
+  public ResponseEntity<Schedule2CheckStatusResponse> checkStatus(
+      long millId, int year, Schedule2CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
+    // The body carries the screen (#359); the resolver judges it.
     millContextService.validateMillYearActive(millId, year);
-    CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
-    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message. The
-    // service carries an optional field label in MessageInfo.text; when present it is prefixed as
-    // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
-    List<MessageInfo> resolved = status.messages().stream()
-        .map(m -> {
-          MessageInfo base = message(m.key());
-          return m.text() == null
-              ? base
-              : new MessageInfo(base.key(), m.text() + ": " + base.text());
-        })
-        .toList();
-    return ResponseEntity.ok(new CheckStatusResponse(status.outcome(), resolved));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(request));
   }
 }

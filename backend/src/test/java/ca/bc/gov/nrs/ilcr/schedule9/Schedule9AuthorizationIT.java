@@ -37,8 +37,7 @@ class Schedule9AuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -49,10 +48,12 @@ class Schedule9AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -60,10 +61,12 @@ class Schedule9AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ prefix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -71,22 +74,28 @@ class Schedule9AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz, editable:true on the Draft context")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful())
         .andExpect(jsonPath("$.editable", is(true)));
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN group -> passes authz, editable:true on the Draft context")
-  void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+  @DisplayName("ILCR_ADMIN group -> passes authz but is READ-ONLY on a Draft context (AD-9)")
+  void admin_passesAuthorizationButIsReadOnlyAtDraft() throws Exception {
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful())
-        .andExpect(jsonPath("$.editable", is(true)));
+        // Administrator is not a superset of submitter: the statuses are a hand-off chain, so while
+        // the track is Draft the mill owns it and the ministry reads only.
+        .andExpect(jsonPath("$.editable", is(false)));
   }
 }

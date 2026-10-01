@@ -6,6 +6,7 @@
 // campAndAccessTotal), both counts, and the `cost` halves of the two `Other …` rows are computed
 // server-side per BR-04 — never recomputed here (AD-5).
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
@@ -24,6 +25,9 @@ export interface CategoryAmount {
   readonly volume?: number | null
   readonly cost?: number | null
   readonly costPerVolume?: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /**
@@ -75,6 +79,9 @@ export interface Camp {
   readonly otherCampExpenseCount: number
   /** Item-68 row count — drives the `Other Access Expenses (n): ` link label. */
   readonly otherAccessExpenseCount: number
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /**
@@ -108,7 +115,8 @@ export interface CampCheckMessage {
  * `Value Required` line per missing field — never both.
  */
 export interface CampCheckResult {
-  readonly campId: number
+  /** `null` for a camp that exists only on screen — an unsaved new or copied camp has no id yet. */
+  readonly campId: number | null
   readonly campName: string | null
   readonly requirementsMet: boolean
   readonly messages: readonly CampCheckMessage[]

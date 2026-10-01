@@ -13,6 +13,38 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
 
 **Divergences:**
 
+- **BUG-1 — Home fails WCAG 1.4.3 on the admin-authored welcome message. Found 2026-08-21, split into its
+  own scenarios 2026-08-24.** The two Home axe sweeps report `color-contrast` on the SAME two nodes,
+  `p:nth-child(1) > .headerUnderline` and `p:nth-child(2) > span`, measured against white:
+
+    | Text | Colour | Ratio | WCAG 1.4.3 (4.5:1) |
+    |---|---|---|---|
+    | "Administrator Welcome Message" | `rgb(51, 204, 0)` | **2.15:1** | FAIL |
+    | "Administrator Role" | `rgb(204, 51, 204)` | **4.27:1** | FAIL |
+
+  - **This is CONTENT, not app CSS — the distinction that governs everything else here.** Those colours are
+    inline `style` attributes inside the welcome message an administrator authors, stored raw in
+    `THE.ILCR_ROLE.MESSAGE_TEXT` and rendered by `home/index.tsx:233` through `dangerouslySetInnerHTML` +
+    `sanitizeHtml`. DOMPurify's defaults strip scripts and handlers but KEEP `style`, so authored colours
+    reach the page and axe measures them. The values above are legacy-migrated seed data.
+  - **A GREEN HERE WILL NOT PROVE THE FIX.** Unlike every other `@discovered-bug` in this suite, the red
+    depends on DB content rather than on app code: editing the welcome message also turns it green. That is
+    not hypothetical — it happened on 2026-08-21, when the message was edited through the app's TipTap
+    editor, whose StarterKit carries no colour mark and therefore silently discarded every colour on save;
+    the reds vanished until the database container was rebuilt and the seed restored. Anyone reading a green
+    here must confirm WHICH of the two causes produced it.
+  - **The app-level defect is the absence of a constraint,** not these two particular colours. Nothing stops
+    an administrator authoring any colour, so NFR1 cannot be guaranteed for this page as built. Agreed
+    direction (2026-08-24): add a contrast constraint on authored content. Until that lands, these two
+    scenarios stay red and excluded from `test:gate`.
+  - **Why the scans are their own scenarios.** Until 2026-08-24 each sweep was the last step of a journey
+    scenario, so this colour failed `@p0` "select a mill and an opened reporting year and save
+    successfully" — and, carrying no `@discovered-*` tag, made `npm run test:gate` red. Splitting them
+    keeps both journeys in the gate and green while the contrast stays tracked rather than skipped or
+    ignored. Skipping was rejected outright: it would have dropped the `@p0` save journey to hide a colour.
+  - **Test:** `working-context.feature` `@a11y @discovered-bug` ×2 (landing, and banner-populated).
+  - **Status:** OPEN — confirmed, and the fix is scheduled as a contrast constraint on authored content.
+
 - **DIV-1 — The Home page no longer shows a role-specific notice.**
   - **What's wrong:** Legacy `home.xhtml` rendered a "User Role Specific Message Section" — a per-role
     notice looked up by the user's role (BR-07), and UC-SEC-001 S01 asserts it appears. The new Home
@@ -112,11 +144,110 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     HOME-1.5 AC4 intent (Home + banner a11y proven) holds.
   - **Status:** CLOSED (2026-07-30).
 
-- **GAP-4 — Role-gated branches can't be exercised under single-role mock auth.**
-  - **Why not:** Security off → one fixed authority per run, so any role-conditional behaviour on Home can't
-    be varied. Same as UC-SCH1-001 GAP-1.
-  - **Future action:** revisit with FAM auth + finer roles.
-  - **Status:** OPEN — `blocked`.
+- **GAP-4 — Role-gated branches under mock auth — PREMISE CORRECTED 2026-09-09.**
+  - **What this used to say:** "Security off → one fixed authority per run, so any role-conditional
+    behaviour on Home can't be varied." That was true when written and **false since #265**
+    (2026-08-12): `service/api-service.ts` sends the selected mock user's roles as `X-Mock-Groups`
+    and `MockPrincipalFilter` prefers that header over `ilcr.security.mock-role`. The authority is
+    per REQUEST, so a role CAN be varied per scenario — `seedMockUser(page, 'admin' | 'submitter')`.
+  - **What it cost while it read the other way:** because `findMockUser` falls back to
+    `?? MOCK_USERS[0]` and the admin is listed first, the whole suite ran as **`ILCR_ADMIN`** while
+    every feature file declared "As a Licensee". Invisible until Story 16.1 made an administrator
+    read-only at Draft, at which point ~200 scenarios failed at once and read as an app regression.
+    Three documents said the selector could not matter, which is why nobody looked there.
+  - **What was still blocked, and no longer is (#385):** anything needing a DIRECTORY identity. The
+    mock principal was a `UsernamePasswordAuthenticationToken` with no `custom:idp_user_id`, so a
+    submitter's mill SCOPING could not be exercised at all. It now carries a stand-in GUID
+    (`ilcr.security.mock-user-guid`) that is associated with the mills in both e2e databases, so the
+    scoped query really runs — see GAP-5. What remains out of reach is a *real* FAM identity: the
+    GUID is synthetic, so anything reading claims other than `custom:idp_user_id` is still untested
+    here.
+  - **Status:** OPEN — `substantially unblocked` (2026-09-09). Role variation: available and used.
+    Directory-scoped behaviour: available and used, via a synthetic GUID.
+
+- **GAP-5 — A mock submitter was offered NO mill, so the suite borrowed the administrator for
+  `GET /v1/mills`. APP-SIDE gap. Found 2026-09-09, CLOSED 2026-09-09 (bcgov/nr-ilcr#385).**
+  - **The gap, in the app:** `MillContextController.currentUserGuid()` resolves to `""` for the
+    security-off dev principal (not a `Jwt`), and `MillContextService.listMills` fail-closes a
+    submitter with a blank GUID to `List.of()`. Eleven lines above it, `validateMillAccess` **exempts
+    that same principal** ("mock/security-off (AC6 exemption) — no real directory identity to scope
+    by"). So the two mill-scope gates disagree: the identity may WRITE to any mill and is shown none
+    to select. Under mock auth that leaves NO usable identity once the Story 16.1 matrix lands — the
+    admin, the only role Home offers a mill to, is read-only at Draft. It breaks local dev the same
+    way: neither mock user can enter schedule data.
+  - **The interim workaround, now DELETED:** `pages/common/mockUser.ts` `grantAdminOnMillList`
+    rewrote `X-Mock-Groups` to `ILCR_ADMIN` on `GET /api/v1/mills` **only**, installed by the global
+    `page` fixture, with the identity staying `ILCR_SUBMITTER` for every schedule GET, write and
+    check-status. It cost real coverage: the dropdown the suite asserted was the ADMIN's list
+    (`findAllMills` — every listable mill, closed included), so a submitter's SCOPED list
+    (`findMillsForUser`, and the S06 "closed *associated* mills still appear" shape) was not
+    covered here at all.
+  - **The app fix, taken (#385).** Two candidates were considered. Exempting the mock principal in
+    `listMills` as `validateMillAccess` does was rejected: it makes the gates agree but has the
+    suite BYPASS the scoped query, so the coverage above stays lost. Instead `MockPrincipalFilter`
+    now presents a stand-in directory GUID (`ilcr.security.mock-user-guid`, defaulting to the
+    test-scope canonical submitter) in a typed `MockUserPrincipal` — not its name, which feeds the
+    `VARCHAR2(30)` `ENTRY_USERID`/`UPDATE_USERID` audit columns while a FAM GUID is 32 chars, so
+    naming the principal after it would `ORA-12899` every save. `MillContextController
+    .currentUserGuid()` reads the typed principal's `userGuid` for a non-`Jwt` caller. Unreachable
+    when deployed: that filter is not registered with security on, and `DeployedSecurityGuard`
+    forbids security-off beside a datasource on a pod.
+  - **The data half, which the identity is useless without.** That GUID needs active
+    `ILCR_MILL_USER_XREF` rows in BOTH e2e databases, and `R__70_test_scope_canonical_submitter.sql`
+    sorts BEFORE `R__80_e2e_anchor_seed.sql` so its set-based association cannot reach the e2e
+    mills. Added in each: a set-based `INSERT` at the end of `R__80` for CI, and
+    `real-test-data-patches/common/mock-submitter-associations.sql` for the extract. Every mill is
+    associated, so the submitter's scoped list is the same SET as the admin's — verified with
+    `MINUS` both ways on the extract (0 rows each side), which is what makes the deletion of the
+    workaround behaviour-preserving for the dropdown while the query behind it becomes the real one.
+  - **Measured, same database, before and after:** `GET /api/v1/mills` as `ILCR_SUBMITTER` against
+    the extract returned **0 mills** on the old code and **21** on the fixed code (the admin
+    returned 21 in both). The first entry is a `CLS` mill, i.e. the S06 closed-associated shape now
+    renders for a submitter rather than only for an admin.
+  - **The other reason this mattered:** it broke LOCAL DEV outright. Since Story 16.1 an admin is
+    read-only at Draft while a submitter was offered no mill, so neither mock user could enter
+    schedule data. Note the default GUID exists only in the seeded databases — against any other
+    database, point `ilcr.security.mock-user-guid` at a GUID that database associates.
+  - **What is STILL not covered, stated precisely, because "the scoped query runs" is not the same
+    claim as "scoping is covered":** the fixture associates EVERY mill, so a submitter's list is the
+    same set as an admin's. A break INSIDE `findMillsForUser` (its joins, the
+    `ACTIVE_DATE`/`INACTIVE_DATE` predicates, the `EXISTS ILCR_MILL_REPORT_STATUS` gate) would now
+    fail this suite, because that query is really the one being run. But scoping being BYPASSED
+    would not — swap `listMills` back to `findAllMills` for everyone and every scenario here stays
+    green, since the two lists are indistinguishable. Discriminating coverage needs a mill the
+    submitter is deliberately NOT associated to, plus a scenario asserting it is absent for a
+    submitter and present for an admin; that changes what the dropdown contains, so it needs a mill
+    no fixture pins. **Deliberately not done here, because it is not an overall coverage gap** —
+    all three `listMills` branches are pinned at the unit layer, which is the right one for a
+    branch decision: `MillContextServiceTest.listMills_admin_returnsAllMills_ignoringGuid`,
+    `…listMills_submitter_returnsOnlyActivelyAssociatedMills_closedIncluded` (the S06 closed shape)
+    and `…listMills_submitterBlankOrNullGuid_returnsEmpty_failClosed` (strict Mockito proving no
+    repository read). Swap `findMillsForUser` for `findAllMills` and the second fails immediately.
+    **And the discriminating case exists at the INTEGRATION layer too**, against real Oracle:
+    `MillContextListScopeIT` ("Home mill list — per-user scoping (Story 5.5)") has
+    `submitter_seesOnlyActivelyAssociatedMills` and `submitter_noAssociations_returnsEmpty` — i.e.
+    the exact "a submitter does NOT see an unassociated mill" assertion this suite cannot make.
+    Reproducing it in a browser scenario would need a new mill invented in two databases to buy
+    coverage that already exists twice over, faster and more precisely, one and two layers down.
+    NOTE for whoever relies on that: the IT suite is **not run by CI** (`pom.xml` defaults
+    `skip.integration.tests=true`), so it has to be run locally —
+    `mvn -B -ntp clean -P all-tests verify`.
+  - **The dependency this created, and its guard.** Deleting the workaround means a green run now
+    REQUIRES association rows in whichever database the suite points at — forget
+    `./scripts/apply-patches.sh` on an extract and the dropdown is empty, which would surface as
+    ~240 locator timeouts reading as an app regression. `preflight/mill-scope.setup.ts` closes that:
+    it asserts the list is non-empty AND that every mill the fixtures pin is offered, before any
+    browser starts, with a message naming the command to run. Verified falsifiable — drop the
+    association rows and both checks fail, naming all 20 pinned mills.
+  - **What this fix did NOT do, deliberately:** make the two mill-scope gates agree. With security
+    off, `validateMillAccess` still EXEMPTS the mock principal outright while `listMills` now scopes
+    it, so a mock submitter may still WRITE to a mill it is not associated to. It does not show
+    today only because this fixture associates every mill. The asymmetry is invisible with security
+    ON — every caller presents a `Jwt` there, so both gates take the same branch — which is why it
+    was left rather than widened into an authorization change on a dev-only path.
+  - **Status:** CLOSED (2026-09-09) as an app gap: the identity is fixed, the workaround is deleted,
+    and the real scoped query is exercised. The *discrimination* gap and the gate asymmetry above
+    both remain, and neither is a suite failure — they are limits on what a green run here proves.
 
 **Spec gaps (the Gherkin is missing / underspecifies scenarios):**
 
@@ -155,3 +286,36 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
   the exact text is unchanged). bcgov's `tombstone.spec.ts` (S01 display / S03 switch / S06 closed / S07
   no-status) is ported here as `schedule-tombstone.feature` (on Schedule 2), verified green incl. axe.
   An app design move, not a defect — recorded so the ported source is traceable.
+- **VER-1 — the tombstone a11y sweep was FLAKY (≈1 run in 4) and blamed Schedule 2 for BUG-1. Suite
+  defect, fixed 2026-08-26; the app is fine.** `@S01 @a11y` failed intermittently with
+  `color-contrast` "on Schedule 2 tombstone", on the same two nodes as BUG-1
+  (`p:nth-child(1) > .headerUnderline`, `p:nth-child(2) > span`).
+  - **What actually happened:** the sweep ran on **Home**, not on Schedule 2. Client-side navigation
+    flips the URL before the route's content swaps — while Schedule 2 resolved, the router kept Home
+    mounted, so `window.location` already read `/schedule-2` while the DOM was still Home-after-Save.
+    `SchedulePage.open()` gated on exactly those two things, and both were satisfied by Home: the URL,
+    and a visible `region[name="Working context"]` — which Home's PageTitle-hosted ContextBanner renders
+    with the SAME landmark and the SAME `WorkingContextLines` text once a context is saved. The tombstone
+    line assertions then passed against Home's banner, and axe scanned Home, where the admin-authored
+    welcome message lives.
+  - **Proof (from the failing run's trace, not inference):** the axe payload reports
+    `environmentData.url = http://localhost:3000/schedule-2` with `fromFrame: false`, yet the scanned DOM
+    contained Home's `h1 "Mill and Reporting Year"` and `Administrator Welcome Message` and **no**
+    Schedule 2 content (no "Purchased", no "Check Status"). The failing node ancestry
+    (`… > div:nth-child(2) > div:nth-child(2) > div > p:nth-child(1) > span`) is byte-identical to the
+    `Home (banner populated after Save)` sweep's, and differs from the `Home (landing)` sweep's only by
+    the success banner that Save inserts.
+  - **Why the existing guard missed it:** the URL check was added for this very trap (PR #5 review — "a
+    nav that silently stayed on Home would let the tombstone assertions pass falsely"), but a URL is not
+    a rendering guarantee under client-side routing.
+  - **Fix:** `pages/common/schedulePage.ts` — gate `open()` on the route-specific tombstone heading
+    (`heading[level=1][name="Schedule 2"]`, which the outgoing Home page cannot satisfy), and scope
+    `context` to `.schedule-tombstone` so Home's identically-labelled banner can never satisfy a
+    tombstone assertion. Verified: the a11y scenario failed **2 of 8** repeats before, and **32 of 32**
+    tombstone runs passed after.
+  - **Why it matters beyond this scenario:** BUG-1's authored-content contrast is real but belongs to
+    **Home**. Any a11y sweep that can scan a stale Home DOM inherits it and reports it against the wrong
+    page — which is how a tracked, tagged red turned into an **untagged** one that breaks
+    `npm run test:gate` on a page that is actually clean. Readiness anchors for client-side navigation
+    must be route-specific, never a shared landmark.
+  - **Status:** CLOSED 2026-08-26 (suite fix; no app change, no ticket).

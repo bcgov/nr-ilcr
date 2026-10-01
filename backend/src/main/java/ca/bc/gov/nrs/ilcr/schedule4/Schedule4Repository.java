@@ -1,6 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,19 +13,21 @@ import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 4 tables (AD-3, re-pinned 2026-07-20:
- * domain repositories are Spring Data JDBC {@code Repository} interfaces with explicit {@code @Query}
- * named-param SQL + {@code @Table} record entities — no derived queries, no {@code CrudRepository.save}).
- * SQL stays explicit because the model is a legacy-projection; every derivation and the transaction
- * boundaries remain in {@link Schedule4Service}.
+ * domain repositories are Spring Data JDBC {@code Repository} interfaces with explicit
+ * {@code @Query} named-param SQL + {@code @Table} record entities — no derived queries, no {@code
+ * CrudRepository.save}). SQL stays explicit because the model is a legacy-projection; every
+ * derivation and the transaction boundaries remain in {@link Schedule4Service}.
  *
  * <p>Storage shape (delivery-DB confirmed): a location is a FAMILY of {@code TRANSPORTATION_REPORT}
- * rows sharing a {@code LOCATION_DESCRIPTION} — one primary report (distance null) carries the 9 fixed
- * categories, each distance-based category (47/48/52) lives on its own report with its own
+ * rows sharing a {@code LOCATION_DESCRIPTION} — one primary report (distance null) carries the 9
+ * fixed categories, each distance-based category (47/48/52) lives on its own report with its own
  * {@code DISTANCE}, and each sub-page list row (43/46/55, code 54 dead) is likewise its own report.
- * Category amounts are {@code ILCR_COST_REPORT_DETAIL} rows joined by {@code TRANSPORTATION_REPORT_ID}.
+ * Category amounts are {@code ILCR_COST_REPORT_DETAIL} rows joined by {@code
+ * TRANSPORTATION_REPORT_ID}.
  *
  * <p>The public {@code default} methods expose plain service-facing records ({@link LocationRow},
  * {@link DetailRow}, {@link SubPageRowRow}) and compose the sequence-insert / upsert / delete
@@ -33,30 +39,39 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   String SCHEDULE_4_CATEGORY = "4";
 
   /** One Schedule 4 location (a {@code TRANSPORTATION_REPORT} row). */
-  record LocationRow(int transportationReportId, String locationDescription, BigDecimal distance,
-      String comments, Integer revisionCount) {
-  }
+  record LocationRow(
+      int transportationReportId,
+      String locationDescription,
+      BigDecimal distance,
+      String comments,
+      Integer revisionCount) {}
 
   /** One in-scope transportation-category detail row for a location. */
-  record DetailRow(int transportationReportId, Integer costItemCode, BigDecimal volume,
-      Integer cost) {
-  }
+  record DetailRow(
+      int transportationReportId, Integer costItemCode, BigDecimal volume, Integer cost) {}
 
   /**
    * One sub-page list row (Story 4.3): its own report ({@code transportationReportId}) sharing the
    * location name, its {@code costItemCode} (43/46/55), free-text {@code description}, per-report
    * {@code distance}/{@code cycle}, and the single detail's {@code volume}/{@code cost}.
    */
-  record SubPageRowRow(int transportationReportId, String locationDescription, Integer costItemCode,
-      String description, BigDecimal distance, Integer cycle, BigDecimal volume, Integer cost) {
-  }
+  record SubPageRowRow(
+      int transportationReportId,
+      String locationDescription,
+      Integer costItemCode,
+      String description,
+      BigDecimal distance,
+      Integer cycle,
+      BigDecimal volume,
+      Integer cost) {}
 
   // -------------------------------------------------------------------------------------------------
   // Reads — @Query returns @Table entities / scalars; default methods adapt to the service records.
   // -------------------------------------------------------------------------------------------------
 
   /** The category-{@code "4"} report rows for a mill/year, ordered by report id (legacy order). */
-  @Query("""
+  @Query(
+      """
       SELECT TRANSPORTATION_REPORT_ID, LOCATION_DESCRIPTION, DISTANCE,
              TRANSPORTATION_CYCLE_TIME, COMMENTS, REVISION_COUNT
         FROM THE.TRANSPORTATION_REPORT
@@ -69,14 +84,19 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("millId") long millId, @Param("year") int year);
 
   /**
-   * The location rows for a mill/year (empty = the valid no-locations state, not an error). Maps the
-   * report entities to the service-facing {@link LocationRow}.
+   * The location rows for a mill/year (empty = the valid no-locations state, not an error). Maps
+   * the report entities to the service-facing {@link LocationRow}.
    */
   default List<LocationRow> findLocations(long millId, int year) {
     return findReportEntities(millId, year).stream()
-        .map(e -> new LocationRow(
-            e.transportationReportId(), e.locationDescription(), e.distance(), e.comments(),
-            e.revisionCount()))
+        .map(
+            e ->
+                new LocationRow(
+                    e.transportationReportId(),
+                    e.locationDescription(),
+                    e.distance(),
+                    e.comments(),
+                    e.revisionCount()))
         .toList();
   }
 
@@ -84,7 +104,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
    * The in-scope category detail rows (fixed 40,41,42,44,45,49,50,51,53; distance-based 47,48,52),
    * joined by {@code TRANSPORTATION_REPORT_ID}. Deferred sub-page codes (43,46,55) are excluded.
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.TRANSPORTATION_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
              d.VOLUME, d.COST, d.ITEM_DESCRIPTION
         FROM THE.ILCR_COST_REPORT_DETAIL d
@@ -107,7 +128,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   }
 
   /** The sub-page detail rows (codes 43,46,55) for a mill/year, joined for the category filter. */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.TRANSPORTATION_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
              d.VOLUME, d.COST, d.ITEM_DESCRIPTION
         FROM THE.ILCR_COST_REPORT_DETAIL d
@@ -123,9 +145,9 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("millId") long millId, @Param("year") int year);
 
   /**
-   * The sub-page list rows for a mill/year. Each row's own report supplies its
-   * {@code LOCATION_DESCRIPTION}/{@code DISTANCE}/{@code CYCLE}; joined in-memory to the report
-   * entities (avoids a cross-table result projection).
+   * The sub-page list rows for a mill/year. Each row's own report supplies its {@code
+   * LOCATION_DESCRIPTION}/{@code DISTANCE}/{@code CYCLE}; joined in-memory to the report entities
+   * (avoids a cross-table result projection).
    */
   default List<SubPageRowRow> findSubPageRows(long millId, int year) {
     Map<Integer, TransportationReportEntity> reportsById = new HashMap<>();
@@ -133,18 +155,19 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       reportsById.put(report.transportationReportId(), report);
     }
     return findSubPageDetailEntities(millId, year).stream()
-        .map(d -> {
-          TransportationReportEntity report = reportsById.get(d.transportationReportId());
-          return new SubPageRowRow(
-              d.transportationReportId(),
-              report == null ? null : report.locationDescription(),
-              d.costItemCode(),
-              d.itemDescription(),
-              report == null ? null : report.distance(),
-              report == null ? null : report.transportationCycleTime(),
-              d.volume(),
-              d.cost());
-        })
+        .map(
+            d -> {
+              TransportationReportEntity report = reportsById.get(d.transportationReportId());
+              return new SubPageRowRow(
+                  d.transportationReportId(),
+                  report == null ? null : report.locationDescription(),
+                  d.costItemCode(),
+                  d.itemDescription(),
+                  report == null ? null : report.distance(),
+                  report == null ? null : report.transportationCycleTime(),
+                  d.volume(),
+                  d.cost());
+            })
         .toList();
   }
 
@@ -152,7 +175,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
    * The Schedules 1–10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year —
    * NOT the silviculture track (AD-9). Empty when there is no report-status row.
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -161,12 +185,33 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
   /**
-   * The current {@code LOCATION_DESCRIPTION} of a report (the edit/delete/sub-page target's name), or
-   * empty when the report is not a category-{@code "4"} report for THIS mill/year. Scoping to the
-   * caller's context is a security guard: without it a foreign {@code reportId} would resolve a name
-   * and let a request mutate or delete another mill/year's data (IDOR).
+   * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row — every WRITE path's editability gate uses this; the read path
+   * keeps the unlocked variant. Holding the row for the whole write transaction makes the
+   * editability gate binding rather than advisory: a status transition (Story 15.3's submit, which
+   * locks the same row before re-running the ten-schedule gate) cannot commit between this gate and
+   * the INSERT/UPDATE/DELETE it guards, and this write cannot commit between the transition's gate
+   * and its commit. Must run inside the write {@code @Transactional}. A mill/year with no status
+   * row locks nothing and returns empty, which the gate already answers as 409.
    */
-  @Query("""
+  @Query(
+      """
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * The current {@code LOCATION_DESCRIPTION} of a report (the edit/delete/sub-page target's name),
+   * or empty when the report is not a category-{@code "4"} report for THIS mill/year. Scoping to
+   * the caller's context is a security guard: without it a foreign {@code reportId} would resolve a
+   * name and let a request mutate or delete another mill/year's data (IDOR).
+   */
+  @Query(
+      """
       SELECT LOCATION_DESCRIPTION
         FROM THE.TRANSPORTATION_REPORT
        WHERE TRANSPORTATION_REPORT_ID = :reportId
@@ -178,30 +223,52 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("reportId") int reportId, @Param("millId") long millId, @Param("year") int year);
 
   /**
-   * The distance-child report id holding {@code code}'s detail for the named location, or empty when
-   * the family has no report for that distance code yet (an insert is needed).
+   * The distance-child report id holding {@code code}'s detail for the named location, or empty
+   * when the family has no report for that distance code yet (an insert is needed).
    */
-  @Query("""
-      SELECT tr.TRANSPORTATION_REPORT_ID
-        FROM THE.TRANSPORTATION_REPORT tr
-        JOIN THE.ILCR_COST_REPORT_DETAIL d
-          ON d.TRANSPORTATION_REPORT_ID = tr.TRANSPORTATION_REPORT_ID
+  @Query(
+      """
+      SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.TRANSPORTATION_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
+             d.VOLUME, d.COST, d.ITEM_DESCRIPTION
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.TRANSPORTATION_REPORT tr
+          ON tr.TRANSPORTATION_REPORT_ID = d.TRANSPORTATION_REPORT_ID
        WHERE tr.ILCR_MILL_ID = :millId
          AND tr.REPORT_YEAR = :year
          AND tr.ILCR_CATEGORY_ID = '4'
          AND tr.LOCATION_DESCRIPTION = :name
-         AND d.ILCR_REPORT_COST_ITEM_ID = :code
-       ORDER BY tr.TRANSPORTATION_REPORT_ID
-       FETCH FIRST 1 ROWS ONLY
+         AND d.ILCR_REPORT_COST_ITEM_ID IN (47,48,52)
+       ORDER BY d.TRANSPORTATION_REPORT_ID, d.ILCR_COST_REPORT_DETAIL_ID
       """)
-  Optional<Integer> findDistanceReportId(
-      @Param("millId") long millId, @Param("year") int year, @Param("name") String name,
-      @Param("code") int code);
+  List<CostReportDetailEntity> findDistanceChildEntities(
+      @Param("millId") long millId, @Param("year") int year, @Param("name") String name);
+
+  /**
+   * Every report in a location family that carries a distance-category detail, keyed by code
+   * (47/48/52) with the report ids ascending. One read per save covers all three codes (#335).
+   *
+   * <p>A list, not a single id: the write path treats the request as the family's complete state
+   * and must reach EVERY child for a cleared code — legacy data can hold two children for one code,
+   * and a first-row-only lookup left the second one (and its figures) behind on every save. The
+   * lowest id may also be the location's own identity report on a legacy family with no
+   * distance-null primary (§Decision 2 fallback), which the service must not delete.
+   */
+  default Map<Integer, List<Integer>> findDistanceChildren(long millId, int year, String name) {
+    Map<Integer, List<Integer>> byCode = new HashMap<>();
+    for (CostReportDetailEntity d : findDistanceChildEntities(millId, year, name)) {
+      List<Integer> ids = byCode.computeIfAbsent(d.costItemCode(), k -> new ArrayList<>());
+      if (!ids.contains(d.transportationReportId())) {
+        ids.add(d.transportationReportId());
+      }
+    }
+    return byCode;
+  }
 
   // ---- name uniqueness (BR-02, case-insensitive) — branch on excludeName to avoid binding a null
   // ---- into UPPER(:excludeName) (ojdbc treats it as CLOB → ORA-22848).
 
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TRANSPORTATION_REPORT
        WHERE ILCR_MILL_ID = :millId
@@ -209,9 +276,11 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          AND ILCR_CATEGORY_ID = '4'
          AND UPPER(LOCATION_DESCRIPTION) = UPPER(:name)
       """)
-  int countByName(@Param("millId") long millId, @Param("year") int year, @Param("name") String name);
+  int countByName(
+      @Param("millId") long millId, @Param("year") int year, @Param("name") String name);
 
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TRANSPORTATION_REPORT
        WHERE ILCR_MILL_ID = :millId
@@ -221,7 +290,9 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          AND UPPER(LOCATION_DESCRIPTION) <> UPPER(:excludeName)
       """)
   int countByNameExcluding(
-      @Param("millId") long millId, @Param("year") int year, @Param("name") String name,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("name") String name,
       @Param("excludeName") String excludeName);
 
   /**
@@ -230,20 +301,23 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
    * null on create) removes the location's own family from the comparison.
    */
   default boolean nameExists(long millId, int year, String name, String excludeName) {
-    int count = excludeName == null
-        ? countByName(millId, year, name)
-        : countByNameExcluding(millId, year, name, excludeName);
+    int count =
+        excludeName == null
+            ? countByName(millId, year, name)
+            : countByNameExcluding(millId, year, name, excludeName);
     return count > 0;
   }
 
   /**
    * Whether {@code reportId} is a sub-page-list row (its own report with a single detail of code
-   * 43/46/55) belonging to the location named {@code name} for this mill/year. The
-   * {@code LOCATION_DESCRIPTION} match enforces the {@code /locations/{locationId}/rows/{rowId}} path
-   * semantics: the row-delete can only remove a row that actually lives under the addressed location
-   * (and never a primary/category report, or a row of another location — even in the same mill/year).
+   * 43/46/55) belonging to the location named {@code name} for this mill/year. The {@code
+   * LOCATION_DESCRIPTION} match enforces the {@code /locations/{locationId}/rows/{rowId}} path
+   * semantics: the row-delete can only remove a row that actually lives under the addressed
+   * location (and never a primary/category report, or a row of another location — even in the same
+   * mill/year).
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TRANSPORTATION_REPORT tr
         JOIN THE.ILCR_COST_REPORT_DETAIL d
@@ -256,8 +330,10 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          AND d.ILCR_REPORT_COST_ITEM_ID IN (43,46,55)
       """)
   int countSubPageRowOfLocation(
-      @Param("reportId") int reportId, @Param("name") String name,
-      @Param("millId") long millId, @Param("year") int year);
+      @Param("reportId") int reportId,
+      @Param("name") String name,
+      @Param("millId") long millId,
+      @Param("year") int year);
 
   /**
    * Whether {@code reportId} is a sub-page-list row of the location {@code name} for this mill/year
@@ -276,24 +352,29 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   int nextReportId();
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.TRANSPORTATION_REPORT
           (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT,
            ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
-          (:id, :year, :millId, '4', :name, :distance, :cycle, 0, :user, SYSTIMESTAMP,
-           :user, SYSTIMESTAMP)
+          (:id, :year, :millId, '4', :name, :distance, :cycle, 0, :user, SYSDATE,
+           :user, SYSDATE)
       """)
   int insertReportRow(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("name") String name, @Param("distance") BigDecimal distance,
-      @Param("cycle") Integer cycle, @Param("user") String user);
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("name") String name,
+      @Param("distance") BigDecimal distance,
+      @Param("cycle") Integer cycle,
+      @Param("user") String user);
 
   /**
-   * Insert a new category-{@code "4"} report at {@code REVISION_COUNT} 0 (primary: distance null) and
-   * return its generated id. Sequence-then-insert (Spring Data JDBC {@code @Modifying} cannot return
-   * a generated key).
+   * Insert a new category-{@code "4"} report at {@code REVISION_COUNT} 0 (primary: distance null)
+   * and return its generated id. Sequence-then-insert (Spring Data JDBC {@code @Modifying} cannot
+   * return a generated key).
    */
   default int insertReport(long millId, int year, String name, BigDecimal distance, String user) {
     int id = nextReportId();
@@ -310,20 +391,21 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   }
 
   /**
-   * Optimistic-lock bump of a report (§Decision 3): increments {@code REVISION_COUNT}, re-stamps the
-   * location {@code COMMENTS} (per-location free text on the primary report), and audit ONLY when the
-   * stored revision still matches {@code expectedRevision} AND the report is a category-{@code "4"}
-   * report for THIS mill/year. Returns rows affected — {@code 1} on success,
+   * Optimistic-lock bump of a report (§Decision 3): increments {@code REVISION_COUNT}, re-stamps
+   * the location {@code COMMENTS} (per-location free text on the primary report), and audit ONLY
+   * when the stored revision still matches {@code expectedRevision} AND the report is a
+   * category-{@code "4"} report for THIS mill/year. Returns rows affected — {@code 1} on success,
    * {@code 0} when stale OR when the {@code reportId} is not in the caller's context (→ 409). The
    * mill/year scoping is a security guard: it prevents bumping a foreign context's report (IDOR).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TRANSPORTATION_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              COMMENTS = :comments,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND REVISION_COUNT = :expectedRevision
          AND ILCR_MILL_ID = :millId
@@ -331,117 +413,141 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          AND ILCR_CATEGORY_ID = '4'
       """)
   int bumpRevision(
-      @Param("reportId") int reportId, @Param("expectedRevision") int expectedRevision,
-      @Param("millId") long millId, @Param("year") int year, @Param("comments") String comments,
+      @Param("reportId") int reportId,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("comments") String comments,
       @Param("user") String user);
 
   /** Re-stamp the distance on a distance-child report (audit updated). */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TRANSPORTATION_REPORT
          SET DISTANCE = :distance,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
       """)
   void updateReportDistance(
-      @Param("reportId") int reportId, @Param("distance") BigDecimal distance,
+      @Param("reportId") int reportId,
+      @Param("distance") BigDecimal distance,
       @Param("user") String user);
 
   /**
-   * Rename a whole location family: re-stamp {@code LOCATION_DESCRIPTION} on every category-{@code "4"}
-   * report for the mill/year currently under {@code oldName} (primary + distance children + sub-page
-   * rows stay consistent).
+   * Rename a whole location family: re-stamp {@code LOCATION_DESCRIPTION} on every category-{@code
+   * "4"} report for the mill/year currently under {@code oldName} (primary + distance children +
+   * sub-page rows stay consistent).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TRANSPORTATION_REPORT
          SET LOCATION_DESCRIPTION = :newName,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '4'
          AND LOCATION_DESCRIPTION = :oldName
       """)
   void renameFamily(
-      @Param("millId") long millId, @Param("year") int year, @Param("oldName") String oldName,
-      @Param("newName") String newName, @Param("user") String user);
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("oldName") String oldName,
+      @Param("newName") String newName,
+      @Param("user") String user);
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              COST = :cost,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND ILCR_REPORT_COST_ITEM_ID = :code
       """)
   int updateDetailRow(
-      @Param("reportId") int reportId, @Param("code") int code,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("reportId") int reportId,
+      @Param("code") int code,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /**
-   * Re-stamp a sub-page row report's own {@code DISTANCE} and {@code TRANSPORTATION_CYCLE_TIME} (cycle
-   * for Truck Rehaul only, null otherwise) — the report half of a sub-page row edit (Story 4.3, audit
-   * updated).
+   * Re-stamp a sub-page row report's own {@code DISTANCE} and {@code TRANSPORTATION_CYCLE_TIME}
+   * (cycle for Truck Rehaul only, null otherwise) — the report half of a sub-page row edit (Story
+   * 4.3, audit updated).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TRANSPORTATION_REPORT
          SET DISTANCE = :distance,
              TRANSPORTATION_CYCLE_TIME = :cycle,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
       """)
   void updateSubPageReport(
-      @Param("reportId") int reportId, @Param("distance") BigDecimal distance,
-      @Param("cycle") Integer cycle, @Param("user") String user);
+      @Param("reportId") int reportId,
+      @Param("distance") BigDecimal distance,
+      @Param("cycle") Integer cycle,
+      @Param("user") String user);
 
   /**
-   * Re-stamp a sub-page row's single detail (its {@code VOLUME}/{@code COST}/{@code ITEM_DESCRIPTION})
-   * — the detail half of a sub-page row edit (Story 4.3). Scoped by the row's own report id + its
-   * item code (43/46/55); returns rows affected.
+   * Re-stamp a sub-page row's single detail (its {@code VOLUME}/{@code COST}/{@code
+   * ITEM_DESCRIPTION}) — the detail half of a sub-page row edit (Story 4.3). Scoped by the row's
+   * own report id + its item code (43/46/55); returns rows affected.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              COST = :cost,
              ITEM_DESCRIPTION = :description,
              UPDATE_USERID = :user,
-             UPDATE_TIMESTAMP = SYSTIMESTAMP
+             UPDATE_TIMESTAMP = SYSDATE
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND ILCR_REPORT_COST_ITEM_ID = :code
       """)
   int updateSubPageDetail(
-      @Param("reportId") int reportId, @Param("code") int code,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost,
-      @Param("description") String description, @Param("user") String user);
+      @Param("reportId") int reportId,
+      @Param("code") int code,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
+      @Param("user") String user);
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
            UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
-           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   int insertDetailRow(
-      @Param("reportId") int reportId, @Param("code") int code,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("reportId") int reportId,
+      @Param("code") int code,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /**
    * Upsert a detail row by {@code (transportationReportId, costItemCode)}: update-in-place first,
-   * insert only when absent. A null {@code volume}/{@code cost} is still written so clearing a field
-   * persists null.
+   * insert only when absent. A null {@code volume}/{@code cost} is still written so clearing a
+   * field persists null.
    */
-  default void upsertDetail(int reportId, int costItemCode, BigDecimal volume, Integer cost,
-      String user) {
+  default void upsertDetail(
+      int reportId, int costItemCode, BigDecimal volume, Integer cost, String user) {
     if (updateDetailRow(reportId, costItemCode, volume, cost, user) == 0) {
       insertDetailRow(reportId, costItemCode, volume, cost, user);
     }
@@ -452,19 +558,54 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
    * free-text {@code ITEM_DESCRIPTION}.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
            UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
-           :volume, :cost, :description, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+           :volume, :cost, :description, 0, :user, SYSDATE, :user, SYSDATE)
       """)
   void insertDetailWithDescription(
-      @Param("reportId") int reportId, @Param("code") int costItemCode,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost,
-      @Param("description") String description, @Param("user") String user);
+      @Param("reportId") int reportId,
+      @Param("code") int costItemCode,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
+      @Param("user") String user);
+
+  /**
+   * Remove the detail rows for a set of category codes from one report, in a single statement — how
+   * cleared fixed categories (40/41/42/44/45/49/50/51/53) leave the primary, and how a cleared
+   * distance code leaves a report that must itself survive (#335). Returns rows affected: usually
+   * fewer than {@code codes.size()}, since a category that was never entered has no row, so callers
+   * need not look first. Legacy never created a row for an empty category and the read lists only
+   * stored rows, so "cleared" and "absent" are the same state and the row goes rather than being
+   * nulled.
+   */
+  @Modifying
+  @Query(
+      """
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE TRANSPORTATION_REPORT_ID = :reportId
+         AND ILCR_REPORT_COST_ITEM_ID IN (:codes)
+      """)
+  int deleteDetails(@Param("reportId") int reportId, @Param("codes") Collection<Integer> codes);
+
+  /**
+   * How many distance-category details (47/48/52) one report still carries — whether a cleared code
+   * was the last distance on a report that must itself survive, so its {@code DISTANCE} can go too.
+   */
+  @Query(
+      """
+      SELECT COUNT(*)
+        FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE TRANSPORTATION_REPORT_ID = :reportId
+         AND ILCR_REPORT_COST_ITEM_ID IN (47,48,52)
+      """)
+  int countDistanceDetails(@Param("reportId") int reportId);
 
   @Modifying
   @Query("DELETE FROM THE.ILCR_COST_REPORT_DETAIL WHERE TRANSPORTATION_REPORT_ID = :reportId")
@@ -474,14 +615,18 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   @Query("DELETE FROM THE.TRANSPORTATION_REPORT WHERE TRANSPORTATION_REPORT_ID = :reportId")
   int deleteReportRow(@Param("reportId") int reportId);
 
-  /** Delete one report and its cost-detail rows (used to clear an emptied distance-child / a sub-page row). */
+  /**
+   * Delete one report and its cost-detail rows (used to clear an emptied distance-child / a
+   * sub-page row).
+   */
   default void deleteReport(int reportId) {
     deleteDetailsByReport(reportId);
     deleteReportRow(reportId);
   }
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE TRANSPORTATION_REPORT_ID IN (
              SELECT TRANSPORTATION_REPORT_ID
@@ -495,7 +640,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("millId") long millId, @Param("year") int year, @Param("name") String name);
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.TRANSPORTATION_REPORT
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -506,11 +652,59 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("millId") long millId, @Param("year") int year, @Param("name") String name);
 
   /**
-   * Delete a whole location family for a mill/year — every category-{@code "4"} report under
-   * {@code name} and their cascaded cost-detail rows (BR-08). Idempotency is handled in the service.
+   * Delete a whole location family for a mill/year — every category-{@code "4"} report under {@code
+   * name} and their cascaded cost-detail rows (BR-08). Idempotency is handled in the service.
    */
   default void deleteFamily(long millId, int year, String name) {
     deleteFamilyDetails(millId, year, name);
     deleteFamilyReports(millId, year, name);
+  }
+
+  /**
+   * One submitted transportation report from {@code THE.TRANSPORTATION_REPORT_S_VW} — the
+   * licensee's own location name, distance and cycle time (Story 16.2, BR-04).
+   *
+   * <p>Reading {@code LOCATION_DESCRIPTION} here is the fix for a legacy defect. Legacy's own read
+   * of the submitted name is <em>commented out</em> at {@code Schedule4DAO.java:139-141}, with the
+   * author's note "for some reason these values are not being populated, not sure of the intent",
+   * and line 142 assigns the CURRENT value instead — so the location-name indicator legacy wires up
+   * can never fire. The field was doing double duty: {@code Schedule4MB.java:695-700}, {@code
+   * :257-263} and {@code :249},{@code :619} all need the AS-LOADED name to propagate and roll back
+   * a rename. Here those are two different concerns — the rename baseline is the page's own form
+   * state — so the submitted name can be what it says it is.
+   */
+  record TransportationSnapshotRow(
+      int transportationReportId,
+      String locationDescription,
+      BigDecimal distance,
+      BigDecimal cycleTime,
+      String comments) {}
+
+  /** Every submitted transportation report for a mill/year (category "4"). */
+  @Query(
+      value =
+          """
+      SELECT TRANSPORTATION_REPORT_ID, LOCATION_DESCRIPTION, DISTANCE,
+             TRANSPORTATION_CYCLE_TIME, COMMENTS
+        FROM THE.TRANSPORTATION_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '4'
+      """,
+      rowMapperClass = TransportationSnapshotRowMapper.class)
+  List<TransportationSnapshotRow> findTransportationSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code TRANSPORTATION_REPORT_S_VW} row. */
+  class TransportationSnapshotRowMapper implements RowMapper<TransportationSnapshotRow> {
+    @Override
+    public TransportationSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new TransportationSnapshotRow(
+          rs.getInt("TRANSPORTATION_REPORT_ID"),
+          rs.getString("LOCATION_DESCRIPTION"),
+          rs.getBigDecimal("DISTANCE"),
+          rs.getBigDecimal("TRANSPORTATION_CYCLE_TIME"),
+          rs.getString("COMMENTS"));
+    }
   }
 }

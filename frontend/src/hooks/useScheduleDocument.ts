@@ -1,7 +1,8 @@
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, ReactElement, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 
 export type FieldValues = Record<string, string>
 
@@ -17,6 +18,10 @@ type UseScheduleDocumentOptions<T> = {
   mapLoadError: (detail: string | undefined, millId: number | null, year: number | null) => string
   /** Clear page-specific transient state (save/action notifications) at the start of each load. */
   onReset?: () => void
+  /** The schedule's display name, e.g. {@code 'Schedule 7B'} — names the states in {@code loadState}. */
+  scheduleName: string
+  /** The page header band, rendered above every state in {@code loadState}. */
+  header: ReactNode
 }
 
 type UseScheduleDocumentResult<T> = {
@@ -28,6 +33,13 @@ type UseScheduleDocumentResult<T> = {
   errorDetail: string | null
   setErrorDetail: React.Dispatch<React.SetStateAction<string | null>>
   isLoading: boolean
+  /**
+   * The guard element this document's own state implies — context missing, loading, mill closed for
+   * the reporting year, load failed — or null when the page has a document to render. The page's
+   * whole obligation is {@code if (loadState) return loadState}: the states belong to the load this
+   * hook owns, so assembling the same five arguments in twelve pages only invited them to drift.
+   */
+  loadState: ReactElement | null
 }
 
 /**
@@ -36,6 +48,10 @@ type UseScheduleDocumentResult<T> = {
  * {@code isLoading}, resets on context change, GETs {@code path?millId&year}, seeds the form, and
  * ignores a stale response after the context changes again. Mutations (save/delete/check-status)
  * stay in the page. Extracted so each page stops re-inlining the identical fetch effect.
+ *
+ * <p>It also RENDERS what those states mean, as {@code loadState} — see
+ * {@link renderScheduleLoadState}. The page supplies its name and header band and returns the
+ * element; the guard is then one line per page instead of the same five-argument call twelve times.
  */
 export function useScheduleDocument<T>({
   path,
@@ -45,6 +61,8 @@ export function useScheduleDocument<T>({
   seedForm,
   mapLoadError,
   onReset,
+  scheduleName,
+  header,
 }: UseScheduleDocumentOptions<T>): UseScheduleDocumentResult<T> {
   const [data, setData] = useState<T | null>(null)
   const [form, setForm] = useState<FieldValues>({})
@@ -103,5 +121,25 @@ export function useScheduleDocument<T>({
       setForm((prev) => ({ ...prev, [key]: value }))
     }
 
-  return { data, setData, form, setForm, setField, errorDetail, setErrorDetail, isLoading }
+  // Rendered on every pass, including the one that returns null — the branches are four cheap
+  // comparisons, and computing it here is what lets a page carry the guard as a single line.
+  const loadState = renderScheduleLoadState({
+    header,
+    scheduleName,
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+
+  return {
+    data,
+    setData,
+    form,
+    setForm,
+    setField,
+    errorDetail,
+    setErrorDetail,
+    isLoading,
+    loadState,
+  }
 }

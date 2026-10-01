@@ -19,5 +19,4 @@ import java.util.List;
  *
  * @param culvertTypes {@code ILCR_CULVERT_TYPE_CODE} options effective for the reporting year
  */
-public record CulvertCodeLists(List<CodeDescriptionDto> culvertTypes) {
-}
+public record CulvertCodeLists(List<CodeDescriptionDto> culvertTypes) {}

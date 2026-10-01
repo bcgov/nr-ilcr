@@ -4,16 +4,22 @@ import static ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bRepository.ITEM_INSTALL;
 import static ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bRepository.ITEM_MATERIAL;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
+import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -22,7 +28,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -59,8 +67,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule7bService {
 
-  private static final String STATUS_DRAFT = "D";
-
   /** Legacy {@code Constant.CULVERT_TYPE_CODES.R} — the only type that requires a span (BR-07). */
   private static final String TYPE_ROUND = "R";
 
@@ -73,11 +79,27 @@ public class Schedule7bService {
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule7bRepository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
   private final MessageSource messageSource;
 
-  public Schedule7bService(Schedule7bRepository repository, MessageSource messageSource) {
+  /**
+   * Constructs the Schedule 7B service.
+   *
+   * @param repository the repository
+   * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule7bService(
+      Schedule7bRepository repository,
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   // ===============================================================================================
@@ -90,52 +112,85 @@ public class Schedule7bService {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (never inlined)
-   * @return the document with server-computed totals and Draft-gated editability
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (never inlined)
+   * @return the document with server-computed totals and editability-gated editability
    */
   @Transactional(readOnly = true)
-  public Schedule7bResponse getSchedule7b(long millId, int year, boolean callerMayEdit) {
+  public Schedule7bResponse getSchedule7b(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Assemble the served document for a known track status (writes reuse it with their proven "D").
+   * Assemble the served document for a known track status (writes reuse it with the status their
+   * gate proved).
    */
   private Schedule7bResponse buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     List<CulvertReportEntity> rows = repository.findCulverts(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
         costsByCulvert(repository.findCostDetails(millId, year));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Long, Schedule7bRepository.CulvertSnapshotRow> culvertSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costSnapshotsByCulvert = new HashMap<>();
+    if (exposeOriginals && !rows.isEmpty()) {
+      for (Schedule7bRepository.CulvertSnapshotRow snap :
+          repository.findCulvertSnapshots(millId, year)) {
+        culvertSnapshots.putIfAbsent(snap.culvertReportId(), snap);
+      }
+      List<Long> culvertIds =
+          rows.stream().map(CulvertReportEntity::culvertReportId).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCulvertReports(culvertIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          costSnapshotsByCulvert
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r.cost());
+        }
+      }
+    }
+
     List<Culvert> culverts = new ArrayList<>(rows.size());
     int rowCounter = 1;
     for (CulvertReportEntity row : rows) {
       culverts.add(
-          toCulvert(row, rowCounter++, costs.getOrDefault(row.culvertReportId(), Map.of())));
+          toCulvert(
+              row,
+              rowCounter++,
+              costs.getOrDefault(row.culvertReportId(), Map.of()),
+              culvertOriginals(
+                  trackStatus,
+                  culvertSnapshots.get(row.culvertReportId()),
+                  costSnapshotsByCulvert.getOrDefault(row.culvertReportId(), Map.of()))));
     }
     return new Schedule7bResponse(
-        millId, year, trackStatus, editable, culverts,
-        new CulvertCodeLists(repository.culvertTypeOptions(year)), null);
+        millId,
+        year,
+        trackStatus,
+        editable,
+        culverts,
+        new CulvertCodeLists(repository.culvertTypeOptions(year)),
+        null);
   }
 
   // ===============================================================================================
   // Writes (Story 13.2). Each method is one transaction: a persistence failure rolls back and
-  // surfaces as 500/ERR-001. Draft-gated on the 1–10 track (BR-01/AD-9).
+  // surfaces as 500/ERR-001. editability-gated on the 1–10 track (BR-01/AD-9).
   // ===============================================================================================
 
   /**
    * Record one culvert and return the recomputed document + the recalculated total (S01/S02). Both
    * costs are optional, but both detail rows are written either way — an absent cost stores a NULL
-   * row, never no row (see {@link #writeCosts}). Draft-gated; a type outside the year's effective
-   * codes → 400.
+   * row, never no row (see {@link #writeCosts}). editability-gated; a type outside the year's
+   * effective codes → 400.
    */
   @Transactional
   public Schedule7bResponse addCulvert(
-      long millId, int year, CulvertRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, CulvertRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     // No stored type on a create, so the year-effective check always applies.
     validateCulvertType(culvertTypeCodes(year), request, null);
     try {
@@ -143,11 +198,14 @@ public class Schedule7bService {
       repository.insertCulvert(toEntity(culvertId, request), millId, year, user);
       writeCosts(culvertId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7B add failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7B add failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -157,12 +215,16 @@ public class Schedule7bService {
    */
   @Transactional
   public Schedule7bResponse updateCulvert(
-      long millId, int year, long culvertId, CulvertRequest request, boolean callerMayEdit,
+      long millId,
+      int year,
+      long culvertId,
+      CulvertRequest request,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    final String trackStatus = requireEditable(millId, year, caller);
     applyCulvertUpdate(
         millId, year, culvertId, request, user, culvertTypeCodes(year), storedTypes(millId, year));
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -171,21 +233,21 @@ public class Schedule7bService {
    * button). Each entry goes through the same per-row path as {@link #updateCulvert}, so the
    * validation, optimistic lock and cost upsert rules are identical.
    *
-   * <p>Atomic by construction: one entry failing its Draft gate, revision check or type check rolls
-   * the WHOLE batch back. That is the legacy guarantee — a partial save would leave the reporter
-   * unable to tell which rows persisted.
+   * <p>Atomic by construction: one entry failing its editability gate, revision check or type check
+   * rolls the WHOLE batch back. That is the legacy guarantee — a partial save would leave the
+   * reporter unable to tell which rows persisted.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the culverts to save, each with its id and {@code revisionCount}
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the audit user
    * @return the recomputed document with refreshed totals
    */
   @Transactional
   public Schedule7bResponse saveAllCulverts(
-      long millId, int year, CulvertSaveAllRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, CulvertSaveAllRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     rejectDuplicateIds(request);
     // Read the code table ONCE for the batch rather than once per culvert: the list is year-scoped,
     // not row-scoped, so N culverts would otherwise issue N identical queries inside this
@@ -196,7 +258,7 @@ public class Schedule7bService {
       applyCulvertUpdate(
           millId, year, item.culvertReportId(), item.culvert(), user, codes, storedTypes);
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -215,7 +277,8 @@ public class Schedule7bService {
 
   /**
    * Correct one culvert and its costs. Shared by the per-row PUT and the save-all so a culvert is
-   * persisted by exactly one code path. Assumes the Draft gate has already run for the request.
+   * persisted by exactly one code path. Assumes the editability gate has already run for the
+   * request.
    *
    * <p>{@code storedTypes} carries the currently-stored type of every culvert in the mill/year so
    * an UNCHANGED type is exempt from the year-effective check — see {@link #validateCulvertType}.
@@ -224,26 +287,31 @@ public class Schedule7bService {
    * review). {@code storedTypes} holds an entry for every culvert of the mill/year, so its key set
    * is an existence oracle that costs no extra query — and {@code get} alone could not serve as
    * one, because a culvert with a NULL stored type and an absent culvert both answer null.
-   * Validating the
-   * submitted type first made the status depend on the BODY: an unknown id carrying a retired type
-   * answered 400 (invalid type) where the endpoint contract and the write tests both say 404. The
-   * same missing resource must report the same status whatever the body says, on the single PUT and
-   * on every entry of a page-level Save alike.
+   * Validating the submitted type first made the status depend on the BODY: an unknown id carrying
+   * a retired type answered 400 (invalid type) where the endpoint contract and the write tests both
+   * say 404. The same missing resource must report the same status whatever the body says, on the
+   * single PUT and on every entry of a page-level Save alike.
    *
    * <p>The {@code updated == 0} disambiguation further down stays as the concurrency backstop: this
    * check reads committed state, so a culvert deleted by another transaction between that read and
    * the UPDATE is still caught there.
    */
   private void applyCulvertUpdate(
-      long millId, int year, long culvertId, CulvertRequest request, String user,
-      Set<String> codes, Map<Long, String> storedTypes) {
+      long millId,
+      int year,
+      long culvertId,
+      CulvertRequest request,
+      String user,
+      Set<String> codes,
+      Map<Long, String> storedTypes) {
     if (!storedTypes.containsKey(culvertId)) {
       throw new CulvertNotFoundException();
     }
     validateCulvertType(codes, request, storedTypes.get(culvertId));
     try {
-      int updated = repository.updateCulvert(
-          toEntity(culvertId, request), millId, year, request.revisionCount(), user);
+      int updated =
+          repository.updateCulvert(
+              toEntity(culvertId, request), millId, year, request.revisionCount(), user);
       if (updated == 0) {
         // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate.
         if (repository.countCulvert(culvertId, millId, year) == 0) {
@@ -253,31 +321,34 @@ public class Schedule7bService {
       }
       writeCosts(culvertId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7B update failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7B update failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
   }
 
   /**
    * Delete one culvert and BOTH its cost children (S04 — legacy whole-row removal via Hibernate
-   * {@code CascadeType.ALL}, {@code model/CulvertReport.java:231}). Draft-gated; an unknown id →
-   * 404.
+   * {@code CascadeType.ALL}, {@code model/CulvertReport.java:231}). editability-gated; an unknown
+   * id → 404.
    *
-   * <p>CHILDREN FIRST, then the parent — the order Hibernate's cascade gave legacy. Delivery carries
-   * an FK from {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} without {@code ON DELETE CASCADE},
-   * so deleting the culvert while its cost rows still reference it raises ORA-02292 ("child record
-   * found") and the whole delete fails. The ownership/404 check therefore cannot be the parent
-   * delete's row count; it is a scoped {@code countCulvert} taken BEFORE either delete, so another
-   * mill's id still removes nothing.
+   * <p>CHILDREN FIRST, then the parent — the order Hibernate's cascade gave legacy. Delivery
+   * carries an FK from {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} without {@code ON DELETE
+   * CASCADE}, so deleting the culvert while its cost rows still reference it raises ORA-02292
+   * ("child record found") and the whole delete fails. The ownership/404 check therefore cannot be
+   * the parent delete's row count; it is a scoped {@code countCulvert} taken BEFORE either delete,
+   * so another mill's id still removes nothing.
    *
    * <p>The Yes/No confirmation (ALT-001) is an in-page dialog with no backend contract — a
    * cancelled delete (S05) simply never reaches here.
    */
   @Transactional
   public Schedule7bResponse deleteCulvert(
-      long millId, int year, long culvertId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, long culvertId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countCulvert(culvertId, millId, year) == 0) {
         throw new CulvertNotFoundException();
@@ -285,17 +356,21 @@ public class Schedule7bService {
       repository.deleteCostsForCulvert(culvertId);
       if (repository.deleteCulvert(culvertId, millId, year) == 0) {
         // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
-        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result is
+        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result
+        // is
         // discarded reported "Data deleted successfully" while the row survived — and here it would
         // have committed the cost deletes, so the row would re-render stripped of its costs.
         throw new CulvertNotFoundException();
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7B delete failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7B delete failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -314,8 +389,14 @@ public class Schedule7bService {
    */
   private static CulvertReportEntity toEntity(long culvertId, CulvertRequest r) {
     return new CulvertReportEntity(
-        culvertId, r.culvertTypeCode(), r.spanSize(), r.riseSize(), oneDecimal(r.length()),
-        r.culvertPieceCount(), r.comments(), 0);
+        culvertId,
+        r.culvertTypeCode(),
+        r.spanSize(),
+        r.riseSize(),
+        oneDecimal(r.length()),
+        r.culvertPieceCount(),
+        r.comments(),
+        0);
   }
 
   /**
@@ -338,12 +419,16 @@ public class Schedule7bService {
     repository.upsertCost(culvertId, ITEM_INSTALL, r.installCost(), user);
   }
 
-  /** The Draft gate for every write: the 1–10 track must be {@code D} (else 409, BR-01/AD-9). */
-  private void requireDraft(long millId, int year) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+  /**
+   * The editability gate for every write: the caller must be permitted to write at the 1–10 track's
+   * current status (else 409, BR-01/AD-9).
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
@@ -389,8 +474,7 @@ public class Schedule7bService {
    * @param r the incoming request
    * @param storedType the type currently stored on this row, or {@code null} on a create
    */
-  private static void validateCulvertType(
-      Set<String> codes, CulvertRequest r, String storedType) {
+  private static void validateCulvertType(Set<String> codes, CulvertRequest r, String storedType) {
     if (r.culvertTypeCode().equals(storedType)) {
       return;
     }
@@ -400,13 +484,53 @@ public class Schedule7bService {
   }
 
   // ===============================================================================================
-  // Check Status (Story 13.2, BR-07) — read-only, mutates nothing, VIEW-gated (not Draft-gated).
+  // Check Status (Story 13.2, BR-07) — read-only, mutates nothing, VIEW-gated (not
+  // editability-gated).
   // ===============================================================================================
 
   /**
-   * Walk every stored culvert in the exact legacy field order ({@code Schedule7bMB.java:130-158}),
+   * Check Status against the SCREEN — the endpoint's entry point (bcgov/nr-ilcr#359). Legacy's
+   * check read the bean's in-memory document with no reload ({@code Schedule7bMB.java:123-125}),
+   * into which every row input wrote on change, so the verdict described every row on screen —
+   * unsaved edits and other paginator pages included. The candidates are {@code request.culverts()}
+   * in payload order, numbered by 1-based payload ordinal; nothing is read from or written to the
+   * database. The rules are {@link #evaluate}, shared with {@link #checkStatusStored}.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the on-screen culvert rows
+   * @return the flags and verbatim messages; nothing is mutated
+   */
+  public Schedule7bCheckStatusResponse checkStatus(
+      long millId, int year, Schedule7bCheckRequest request) {
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (Schedule7bCheckRequest.CulvertEntry entry : request.culverts()) {
+      // Values taken VERBATIM, nulls included — every rule is a null test, so a coerced 0 would
+      // turn a missing value into a pass.
+      candidates.add(
+          new CheckCandidate(
+              entry.culvertTypeCode(),
+              entry.spanSize(),
+              entry.length(),
+              entry.culvertPieceCount(),
+              entry.materialCost(),
+              entry.installCost(),
+              entry.comments()));
+    }
+    return evaluate(candidates, this::resolveText);
+  }
+
+  /**
+   * Walk every STORED culvert in the exact legacy field order ({@code Schedule7bMB.java:130-158}),
    * flagging each missing required value with {@code missingRequiredFieldMsg} = "Value Required".
    * When every culvert passes, the response also carries the SUC-003 schedule-wide all-met message.
+   * The stored-data counterpart of {@link #checkStatus}, for report-level callers (the Check Status
+   * sweep and the submit gate) that have no screen to describe.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–3, 5 and 6: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
    *
    * <p>Unlike Schedule 7A there is NO per-culvert all-met message — legacy emits only the
    * schedule-wide line ({@code Schedule7bMB.java:162-164}).
@@ -416,54 +540,96 @@ public class Schedule7bService {
    * @return the flags and verbatim messages; nothing is mutated
    */
   @Transactional(readOnly = true)
-  public Schedule7bCheckStatusResponse checkStatus(long millId, int year) {
+  public Schedule7bCheckStatusResponse checkStatusStored(long millId, int year) {
     List<CulvertReportEntity> rows = repository.findCulverts(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
         costsByCulvert(repository.findCostDetails(millId, year));
+    List<CheckCandidate> candidates = new ArrayList<>();
+    for (CulvertReportEntity row : rows) {
+      Map<Integer, Integer> cost = costs.getOrDefault(row.culvertReportId(), Map.of());
+      candidates.add(
+          new CheckCandidate(
+              row.culvertTypeCode(),
+              row.spanSize(),
+              row.length(),
+              row.culvertPieceCount(),
+              cost.get(ITEM_MATERIAL),
+              cost.get(ITEM_INSTALL),
+              row.comments()));
+    }
+    return evaluate(candidates, this::resolveText);
+  }
 
+  /**
+   * The Schedule 7B values one culvert's check judges, from either source — the screen ({@link
+   * #checkStatus}) or the database ({@link #checkStatusStored}). Rise is absent because no rule
+   * reads it.
+   *
+   * @param culvertTypeCode the culvert type code
+   * @param spanSize the span
+   * @param length the length
+   * @param culvertPieceCount the number of pieces
+   * @param materialCost the material cost (item 77)
+   * @param installCost the installation cost (item 78)
+   * @param comments the comments
+   */
+  record CheckCandidate(
+      String culvertTypeCode,
+      Integer spanSize,
+      BigDecimal length,
+      Integer culvertPieceCount,
+      Integer materialCost,
+      Integer installCost,
+      String comments) {}
+
+  /**
+   * The BR-07 verdict, source-agnostic and pure: candidates in display order, numbered 1-based.
+   * Neither {@link #checkStatus} nor {@link #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the culverts to judge, in display order
+   * @param text resolves a bundle key to its verbatim text
+   * @return the flags and verbatim messages
+   */
+  static Schedule7bCheckStatusResponse evaluate(
+      List<CheckCandidate> candidates, UnaryOperator<String> text) {
     List<MessageInfo> errors = new ArrayList<>();
     boolean allMet = true;
 
     int rowCounter = 1;
-    for (CulvertReportEntity row : rows) {
-      Map<Integer, Integer> cost = costs.getOrDefault(row.culvertReportId(), Map.of());
-      List<String> missing = missingLabels(row, cost);
+    for (CheckCandidate candidate : candidates) {
+      List<String> missing = missingLabels(candidate);
       if (!missing.isEmpty()) {
         allMet = false;
         for (String label : missing) {
-          errors.add(new MessageInfo(MSG_VALUE_REQUIRED, missingText(rowCounter, label)));
+          errors.add(new MessageInfo(MSG_VALUE_REQUIRED, missingText(rowCounter, label, text)));
         }
       }
       rowCounter++;
     }
 
-    MessageInfo requirementsMetMessage = allMet
-        ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
-        : null;
+    MessageInfo requirementsMetMessage =
+        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, text.apply(MSG_REQUIREMENTS_MET)) : null;
     return new Schedule7bCheckStatusResponse(allMet, errors, requirementsMetMessage);
   }
 
   /**
    * One required-value check: the "is this value missing?" test paired with its verbatim legacy
-   * label. The predicate sees both the culvert row and its cost map, so an attribute check and a
-   * cost check share one shape.
+   * label. The predicate sees one {@link CheckCandidate}, so an attribute check and a cost check
+   * share one shape whichever source built the candidate.
    *
    * @param missing whether the value this check guards is absent
    * @param label the verbatim legacy label fragment, spacing included
    */
-  private record RequiredCheck(
-      java.util.function.BiPredicate<CulvertReportEntity, Map<Integer, Integer>> missing,
-      String label) {
-  }
+  private record RequiredCheck(Predicate<CheckCandidate> missing, String label) {}
 
   /** A required-attribute check on the culvert row itself. */
-  private static RequiredCheck attrCheck(Predicate<CulvertReportEntity> missing, String label) {
-    return new RequiredCheck((r, c) -> missing.test(r), label);
+  private static RequiredCheck attrCheck(Predicate<CheckCandidate> missing, String label) {
+    return new RequiredCheck(missing, label);
   }
 
-  /** A required-cost check: the cost item has no stored value for the culvert. */
-  private static RequiredCheck costCheck(int itemId, String label) {
-    return new RequiredCheck((r, c) -> c.get(itemId) == null, label);
+  /** A required-cost check: the culvert has no value for the cost. */
+  private static RequiredCheck costCheck(Function<CheckCandidate, Integer> cost, String label) {
+    return new RequiredCheck(c -> cost.apply(c) == null, label);
   }
 
   /**
@@ -494,7 +660,8 @@ public class Schedule7bService {
    * both conditional checks simply do not apply and the culvert is judged on the four unconditional
    * values alone. Same class of fix the 7A twin records for its abutment-height check ({@code
    * Schedule7aService.java:374-376}); a write cannot produce this state ({@code culvertTypeCode} is
-   * {@code @NotBlank}), so it is reachable only through legacy-written or migrated data.
+   * {@code @NotBlank}), so it is reachable only through legacy-written or migrated data — or, since
+   * #359, a screen whose type dropdown is still blank.
    *
    * <p>The label spacing is copied byte-for-byte, inconsistencies included: the two
    * type-conditional labels use {@code "Id : "} while the four unconditional ones use {@code "Id:
@@ -502,33 +669,36 @@ public class Schedule7bService {
    * are legacy string literals, not typos to tidy — the Gherkin assertions and the users' saved
    * screenshots expect them.
    */
-  private static final List<RequiredCheck> REQUIRED_CHECKS = List.of(
-      attrCheck(r -> TYPE_ROUND.equals(r.culvertTypeCode()) && r.spanSize() == null,
-          " - Culvert Type Round - Span size"),
-      attrCheck(r -> TYPE_OTHERS.equals(r.culvertTypeCode())
-              && (r.comments() == null || r.comments().isEmpty()),
-          " - Culvert Type Others - Comments"),
-      attrCheck(r -> r.length() == null, " - Length "),
-      attrCheck(r -> r.culvertPieceCount() == null, " - Piece Count "),
-      costCheck(ITEM_MATERIAL, " - Material Cost "),
-      costCheck(ITEM_INSTALL, " - Install Cost "));
+  private static final List<RequiredCheck> REQUIRED_CHECKS =
+      List.of(
+          attrCheck(
+              r -> TYPE_ROUND.equals(r.culvertTypeCode()) && r.spanSize() == null,
+              " - Culvert Type Round - Span size"),
+          attrCheck(
+              r ->
+                  TYPE_OTHERS.equals(r.culvertTypeCode())
+                      && (r.comments() == null || r.comments().isEmpty()),
+              " - Culvert Type Others - Comments"),
+          attrCheck(r -> r.length() == null, " - Length "),
+          attrCheck(r -> r.culvertPieceCount() == null, " - Piece Count "),
+          costCheck(CheckCandidate::materialCost, " - Material Cost "),
+          costCheck(CheckCandidate::installCost, " - Install Cost "));
 
   /**
    * The two type-conditional labels take {@code "Culvert Report Id : "} (space before the colon);
    * the four unconditional ones take {@code "Culvert Report Id: "}. Legacy hardcoded both spellings
    * ({@code Schedule7bMB.java:132,137} vs {@code :142,147,152,157}).
    */
-  private static final Set<String> SPACED_PREFIX_LABELS = Set.of(
-      " - Culvert Type Round - Span size", " - Culvert Type Others - Comments");
+  private static final Set<String> SPACED_PREFIX_LABELS =
+      Set.of(" - Culvert Type Round - Span size", " - Culvert Type Others - Comments");
 
   /**
    * The missing required-field labels for one culvert, in the exact legacy order (verbatim text).
    */
-  private static List<String> missingLabels(
-      CulvertReportEntity row, Map<Integer, Integer> cost) {
+  private static List<String> missingLabels(CheckCandidate candidate) {
     List<String> missing = new ArrayList<>();
     for (RequiredCheck check : REQUIRED_CHECKS) {
-      if (check.missing().test(row, cost)) {
+      if (check.missing().test(candidate)) {
         missing.add(check.label());
       }
     }
@@ -540,11 +710,10 @@ public class Schedule7bService {
    * ({@code FacesUtil.addCheckStatusErrorMessage} concatenates {@code label + ": " + bundleText},
    * {@code util/FacesUtil.java:134}).
    */
-  private String missingText(int rowCounter, String label) {
-    String prefix = SPACED_PREFIX_LABELS.contains(label)
-        ? "Culvert Report Id : "
-        : "Culvert Report Id: ";
-    return prefix + rowCounter + label + ": " + resolveText(MSG_VALUE_REQUIRED);
+  private static String missingText(int rowCounter, String label, UnaryOperator<String> text) {
+    String prefix =
+        SPACED_PREFIX_LABELS.contains(label) ? "Culvert Report Id : " : "Culvert Report Id: ";
+    return prefix + rowCounter + label + ": " + text.apply(MSG_VALUE_REQUIRED);
   }
 
   private String resolveText(String key) {
@@ -559,7 +728,8 @@ public class Schedule7bService {
   private static Map<Long, Map<Integer, Integer>> costsByCulvert(List<CulvertCostEntity> rows) {
     Map<Long, Map<Integer, Integer>> byCulvert = new HashMap<>();
     for (CulvertCostEntity row : rows) {
-      byCulvert.computeIfAbsent(row.culvertReportId(), k -> new HashMap<>())
+      byCulvert
+          .computeIfAbsent(row.culvertReportId(), k -> new HashMap<>())
           .put(row.costItemId(), row.cost());
     }
     return byCulvert;
@@ -567,14 +737,27 @@ public class Schedule7bService {
 
   /** Map one culvert row + its cost map to the wire shape, computing the total (BR-05). */
   private static Culvert toCulvert(
-      CulvertReportEntity row, int rowCounter, Map<Integer, Integer> cost) {
+      CulvertReportEntity row,
+      int rowCounter,
+      Map<Integer, Integer> cost,
+      Map<String, OriginalValue> submitted) {
     Integer material = cost.get(ITEM_MATERIAL);
     Integer install = cost.get(ITEM_INSTALL);
 
     return new Culvert(
-        row.culvertReportId(), rowCounter, row.culvertTypeCode(), row.spanSize(), row.riseSize(),
-        oneDecimal(row.length()), row.culvertPieceCount(), material, install,
-        totalCost(material, install), row.comments(), row.revisionCount());
+        row.culvertReportId(),
+        rowCounter,
+        row.culvertTypeCode(),
+        row.spanSize(),
+        row.riseSize(),
+        oneDecimal(row.length()),
+        row.culvertPieceCount(),
+        material,
+        install,
+        totalCost(material, install),
+        row.comments(),
+        row.revisionCount(),
+        submitted);
   }
 
   /**
@@ -609,5 +792,39 @@ public class Schedule7bService {
       return material;
     }
     return material + install;
+  }
+
+  /**
+   * One culvert's submitted values (Story 16.2, BR-04) — the six attributes plus the two costs
+   * legacy tracked ({@code CulvertReportType.java:373-393}, {@code Schedule7bDAO.java:306-343}).
+   * The Total is derived, so it carries none.
+   *
+   * <p>One normalisation, recorded: legacy compared {@code spanSize}, {@code riseSize} and {@code
+   * culvertPieceCount} with the GENERIC {@code equals} helper while comparing {@code length} with
+   * the rounded BigDecimal one ({@code :377-389}). All four are numbers, so all four compare by
+   * value here; the difference only ever showed as a spurious indicator when Oracle handed back a
+   * different scale for the same figure.
+   */
+  private Map<String, OriginalValue> culvertOriginals(
+      String trackStatus,
+      Schedule7bRepository.CulvertSnapshotRow culvert,
+      Map<Integer, Integer> submittedCosts) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "culvertTypeCode",
+            culvert == null ? null : culvert.culvertTypeCode(),
+            OriginalValueFormat.TEXT)
+        .put("spanSize", culvert == null ? null : culvert.spanSize(), OriginalValueFormat.WHOLE)
+        .put("riseSize", culvert == null ? null : culvert.riseSize(), OriginalValueFormat.WHOLE)
+        .put("length", culvert == null ? null : culvert.length(), OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "culvertPieceCount",
+            culvert == null ? null : culvert.culvertPieceCount(),
+            OriginalValueFormat.WHOLE)
+        .put("materialCost", submittedCosts.get(ITEM_MATERIAL), OriginalValueFormat.WHOLE)
+        .put("installCost", submittedCosts.get(ITEM_INSTALL), OriginalValueFormat.WHOLE)
+        .put("comments", culvert == null ? null : culvert.comments(), OriginalValueFormat.TEXT)
+        .build();
   }
 }
