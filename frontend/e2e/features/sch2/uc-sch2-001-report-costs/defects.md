@@ -173,7 +173,7 @@ at-rest state.
       (unlike Schedules 1 and 3), so these scenarios assert "the warning" — matching S08.
   - **Priority / env:** p1 · local seeded DB · Chrome.
   - **Status:** **CLOSED 2026-09-25 for Schedule 2 (#359 group A — Schedules 1, 2 and 3).**
-    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 (Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a); see sch3 DIV-6). The fix and its
+    **#359 itself stayed OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 until groups B and C fixed them; group C (2026-10-01) is its last part. Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a) and is deliberately left as is (see sch3 DIV-6). The fix and its
     reasoning are recorded in **sch3 DIV-6**, not here. Local to Schedule 2: the endpoint now takes
     `Schedule2CheckRequest`; the item-25 cost it checks is the only value it reads, so the payload path reads NOTHING from the database and no longer runs the document assembly at all; the Story 15.1 sweep keeps the stored path (`checkStatusStored`). Added 2026-08-27.
   - **The closure evidence, reproducible (2026-09-25).**

@@ -247,7 +247,9 @@ location with no costs stores real NULLs (which render as blank, not "0").
     checking status". A verdict over unsaved work can no longer be produced on this page, so neither the
     false-GREEN nor the false-RED is reachable. It is still a DEVIATION from legacy, which evaluated its
     unsaved in-memory model (`Schedule11MB.java:154-176`) — recorded as Story 26.2 deviation (C).
-    **#359 stays open for the other schedules**; Schedule 3's DIV-6 remains the analysis of record.
+    **#359 fixed the other schedules and closes with group C (2026-10-01), its last part.** Schedule 11 is
+    deliberately left as is: it changes only if the business or the BA raise it in manual testing.
+    Schedule 3's DIV-6 remains the analysis of record.
   - **Test:** `check-status-unsaved.feature` ×2 — now GREEN scenarios of the ruled behaviour (the change
     greys Check Status with its reason, the Save re-enables it, the verdict then describes what was saved).
     Their `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off with the re-grounding.

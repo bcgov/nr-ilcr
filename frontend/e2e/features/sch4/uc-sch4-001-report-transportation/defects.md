@@ -580,8 +580,8 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     `{label}: Value is required.` (`common/validation.properties:11`). The rebuild had skipped that and
     answered "requirements met" over an invalid panel. The fix gates Check Status on `validateLocationForm`
     over the open panel, names each failing field in legacy's wording (on Save too), and sends the panel
-    (`{location: {id, name}}`) so the check judges the name on screen. #359 stays OPEN for Schedules 8
-    and 10 (group C).
+    (`{location: {id, name}}`) so the check judges the name on screen. #359 then stayed OPEN for Schedules 8
+    and 10, until group C (2026-10-01), its last part.
     - **Closure evidence:**
       - Run command: `cd frontend/e2e && npx playwright test --grep "@sch4"`, then `--grep "@check-status-unsaved"`
       - Date: 2026-09-29, re-run after the per-field and all-or-nothing follow-ups and a merge of main

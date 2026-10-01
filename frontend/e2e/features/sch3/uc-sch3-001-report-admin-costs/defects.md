@@ -462,7 +462,10 @@ count does.
 
     **Update, 2026-10-01 (#359 group C, Part 3):** Schedules 8 (both surfaces) and 10 fixed — verified by
     backend unit/IT and Vitest; no e2e suite exists for either. Every schedule in the scope table is now
-    fixed or was already correct, except Schedule 11 (ruling D7(a)).
+    fixed or was already correct, except Schedule 11 (ruling D7(a)). Group C is the last part of #359 and
+    closes it; there is no further part. Schedule 11 is deliberately left as is: its Check Status is greyed
+    until the page is saved, so the unsaved case cannot arise there. It changes only if the business or the
+    BA raise it in manual testing.
   - **CLOSE-OUT CHECKLIST — QA must not close this family on the fix alone.** When #359 lands all TEN go
     green on their own. Then, per domain: retire the `@discovered-divergence` tag AND the `[DISCOVERED …]`
     title marker together, close that domain's pointer entry with the date and the fixing PR, and correct its

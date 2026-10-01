@@ -352,7 +352,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
       schedule becomes met — the anchor's other 21 values are genuinely still missing.
   - **Priority / env:** p1 · local seeded DB · Chrome.
   - **Status:** **CLOSED 2026-09-25 for Schedule 1 (#359 group A — Schedules 1, 2 and 3).**
-    **#359 itself stays OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 (Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a); see sch3 DIV-6). The fix and its
+    **#359 itself stayed OPEN** for Schedules 4, 7A, 7B, 8, 9 and 10 until groups B and C fixed them; group C (2026-10-01) is its last part. Schedule 11 was re-grounded separately by Story 26.2 under ruling D7(a) and is deliberately left as is (see sch3 DIV-6). The fix and its
     reasoning are recorded in **sch3 DIV-6**, not here. Local to Schedule 1: the endpoint now takes
     `Schedule1CheckRequest`; every checked line volume/cost and the shared Other Costs volume come from the screen, while the itemized Other Costs rows (count, cost subtotal, WRN-002) stay database-sourced — they are edited on the sub-page, never here. A volume the GET pre-filled from the crown volume is on screen, so the endpoint now passes it while the Story 15.1 sweep (`checkStatusStored`) still flags it; that disagreement is by design. Added 2026-08-27.
   - **The closure evidence, reproducible (2026-09-25).**

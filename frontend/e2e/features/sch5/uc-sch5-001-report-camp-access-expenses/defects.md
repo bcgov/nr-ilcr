@@ -24,7 +24,8 @@ availability gate that stood in for this is gone with it. **This does NOT restor
 `@discovered-divergence` tags and `[DISCOVERED …]` markers came off, both together. The green
 companion was replaced rather than retired: it used to pin the gate, and now pins the unsaved-NEW-camp
 case, which is the one an obvious implementation of this fix gets wrong. Details under DIV-1.
-**#359 remains open for Schedules 1, 2, 4 and 11.**
+**#359 then remained open for Schedules 1, 2, 4 and 11.** Groups A–C have since fixed the others (group
+C, 2026-10-01, is the last part); Schedule 11 is deliberately left as is under ruling D7(a).
 
 **UPDATED 2026-09-15 — triage round.** DIV-1 is now ticketed as
 [**bcgov/nr-ilcr#476**](https://github.com/bcgov/nr-ilcr/issues/476) (read the caveat under its **Ticket**
@@ -41,8 +42,8 @@ NFR), so "all 25 slices authored" read as complete with half of issue #97 unveri
 shape. **A slice catalogue is not a completeness test.**
 
 **DIV-1 was the only entry still open, and it closed 2026-09-22** when #476 shipped the endpoint
-change. Nothing in this UC is open now. The app-wide family (#359) is still open for the four other
-affected schedules, but no Schedule 5 entry depends on it.
+change. Nothing in this UC is open now. The app-wide family (#359) was then still open for the other
+affected schedules; it closes with group C (2026-10-01). No Schedule 5 entry depends on it.
 
 **A legacy screenshot supplied 2026-09-16 settled SPEC-3 on the facts.** With five camps and one
 incomplete, legacy shows a RED panel of that camp's three missing fields **and** a BLUE panel carrying
@@ -203,7 +204,8 @@ the unsafe one.**
     valid params must return **400** (old code: 200), and `curl
     http://localhost:3000/src/components/schedule5/index.tsx` must show `screenCamp` and no
     `saving || panelOpen`. (`/v3/api-docs` is 404 on the `local` profile, so use the status probe.)
-  - **⚠ #359 IS STILL OPEN.** This entry closes for Schedule 5 only. Schedules 1, 2, 4 and 11 carry the
+  - **⚠ #359 WAS STILL OPEN** when this entry closed (groups A–C have since fixed the other schedules, and
+    Schedule 11 is deliberately left as is under ruling D7(a)). This entry closes for Schedule 5 only. Schedules 1, 2, 4 and 11 carry the
     same defect and their own arms are still deliberately red; Schedule 6 was always correct. The
     split this fix introduced (`checkStatus` payload / `checkStatusStored`) is the shape the remaining
     four should follow.

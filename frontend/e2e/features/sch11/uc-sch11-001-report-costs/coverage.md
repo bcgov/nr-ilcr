@@ -40,7 +40,8 @@ arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by t
 `@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359). **Since
 2026-09-24 both are GREEN**: Story 26.2's ruling D7(a) disables Check Status while a change is unsaved, so
 the divergence is unreachable here — see defects.md **DIV-5** (CLOSED for Schedule 11; the analysis lives
-once, in `sch3/defects.md` DIV-6, and #359 stays open for the other schedules).
+once, in `sch3/defects.md` DIV-6; #359 closes with group C for the other schedules, and Schedule 11 is
+deliberately left as is).
 
 28 scenarios / **31 tests** after
 Scenario-Outline expansion: 28 green + **3 deliberate REDs** — S21/S22 above, plus the pre-existing
