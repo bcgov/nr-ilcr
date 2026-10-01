@@ -70,6 +70,13 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
   { code: 140, label: 'Total Silviculture (As per Financial Statements)', key: 'total' },
 ]
 
+const emptyLineItem = (costItemCode: number): LineItem => ({
+  costItemCode,
+  volume: null,
+  cost: null,
+  perUnit: null,
+})
+
 type FieldValues = Record<string, string>
 
 // The API's ProblemDetail text, verbatim (AD-8). This used to rewrite a 404 'Schedule not found.'
@@ -752,8 +759,11 @@ const Schedule1: FC = () => {
                   if (code === 143) {
                     return forestMgmtAdminRow
                   }
+                  // Drawn whether or not the document carries the line: the backend serves a line
+                  // item only once it is stored (or crown-prefilled), and legacy laid these rows out
+                  // statically, so a Not Initiated schedule showed every one of them empty (#512).
                   const item = data.lineItems.find((li) => li.costItemCode === code)
-                  return item ? lineItemRow(item) : null
+                  return lineItemRow(item ?? emptyLineItem(code))
                 })}
                 {otherCostsRow}
                 {subtotalCompanyLoggingRow}

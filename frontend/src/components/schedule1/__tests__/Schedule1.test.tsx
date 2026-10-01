@@ -452,6 +452,95 @@ describe('Schedule1 editable page', () => {
     expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
   })
 
+  // ---- Defect #512: every fixed line is drawn on a Not Initiated schedule. -----------------------
+
+  // The document the GET serves for a never-saved mill/year with no Schedule 3 Crown Timber volume:
+  // no stored rows and no pre-fill, so `lineItems` is EMPTY (Schedule1Service.assemble adds a line
+  // item only for a stored or pre-filled row). Jackson `non_null` omits the null revisionCount,
+  // comments and crownVolume; `undefined` drops them from the JSON body the same way.
+  const notInitiatedDoc = {
+    ...schedule1Doc,
+    revisionCount: undefined,
+    comments: undefined,
+    crownVolume: undefined,
+    schedule3CrownVolume: null,
+    lineItems: [],
+    silviculture: { actualSpent: null, accruedLessActual: null, lessAdmin: null, total: null },
+    otherCosts: { volume: null, costSubtotal: 0, perUnit: null, count: 0 },
+  }
+  const FIXED_LINES = [
+    'Standing Tree to Loaded Truck',
+    'Log Transportation',
+    'Road Management',
+    'Road Construction Costs',
+    'Post Logging Treatment',
+    'Stumpage and Royalty',
+    'Depletion and Amortization',
+  ]
+
+  test('a Not Initiated schedule draws lines 12-18 empty and editable, in legacy order (#512)', async () => {
+    // Legacy's schedule1.xhtml lays these rows out statically, so a Not Initiated Schedule 1 showed
+    // every one of them; the page used to draw only the line items the document carried.
+    server.use(http.get(URL, () => HttpResponse.json(notInitiatedDoc)))
+    render(<Schedule1 />)
+
+    await screen.findByText('Forest Management Administration Costs (Sch 3)')
+    for (const label of FIXED_LINES) {
+      expect(screen.getByLabelText(`${label} volume`)).toHaveValue('')
+      expect(screen.getByLabelText(`${label} cost`)).toHaveValue('')
+      expect(rate(label)).toBe('—')
+    }
+    // Legacy form order: 12-16, Forest Management Admin, 17, 18.
+    const table = screen.getByRole('table', { name: 'Company Logging Costs' })
+    const labels = within(table)
+      .getAllByRole('row')
+      .map((tr) => within(tr).queryAllByRole('cell')[0]?.textContent)
+      .filter(Boolean)
+    expect(labels.slice(0, 8)).toEqual([
+      ...FIXED_LINES.slice(0, 5),
+      'Forest Management Administration Costs (Sch 3)',
+      ...FIXED_LINES.slice(5),
+    ])
+  })
+
+  test('a value entered on a Not Initiated line reaches the first Save (#512)', async () => {
+    let captured: { lineItems: { costItemCode: number; volume: number | null }[] } | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(notInitiatedDoc)),
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as typeof captured
+        return HttpResponse.json({
+          ...notInitiatedDoc,
+          revisionCount: 0,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const volume = await screen.findByLabelText('Depletion and Amortization volume')
+    await user.type(volume, '4200')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(captured!.lineItems.find((li) => li.costItemCode === 18)?.volume).toBe(4200)
+  })
+
+  test('a Not Initiated schedule outside Draft still draws lines 12-18, read-only (#512)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({ ...notInitiatedDoc, trackStatus: 'S', editable: false }),
+      ),
+    )
+    render(<Schedule1 />)
+
+    await screen.findByText('Forest Management Administration Costs (Sch 3)')
+    for (const label of FIXED_LINES) {
+      expect(rowCells(label)).toEqual([label, '—', '—', '—'])
+    }
+  })
+
   test('valid Save PUTs the pinned request and shows the API success message (AC2)', async () => {
     let captured: unknown = null
     server.use(
@@ -670,11 +759,10 @@ describe('Schedule1 editable page', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
-    // Empty schedule: the code-12 row is gone.
+    // Empty schedule: the code-12 row is still drawn, now blank — a deleted schedule is a Not
+    // Initiated one, and that shows every fixed line (#512). This used to assert the row vanished.
     await waitFor(() =>
-      expect(
-        screen.queryByLabelText('Standing Tree to Loaded Truck volume'),
-      ).not.toBeInTheDocument(),
+      expect(screen.getByLabelText('Standing Tree to Loaded Truck volume')).toHaveValue(''),
     )
   })
 
