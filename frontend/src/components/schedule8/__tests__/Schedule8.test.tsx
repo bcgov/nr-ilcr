@@ -300,19 +300,89 @@ describe('Schedule8 page level', () => {
     expect(put).not.toHaveBeenCalled()
   })
 
-  test('Copy opens a prefilled editor (create path)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  // Re-grounded for #359 Part 3 on legacy source: copyReport → save() → insert
+  // (`Schedule8MB.java:207-213,242-248`). The copy is written at once — header fields only, never the
+  // samples — and the editor opens on it in edit mode. It no longer prefills an unsaved panel.
+  test('Copy saves the copy at once and opens it in edit (legacy copyReport)', async () => {
+    const copied: Page = { ...fullPage, id: 8003, sampleCount: 0, samples: [] }
+    let body: Record<string, unknown> | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(doc({ pages: [fullPage, emptyPage, copied], message: savedMsg }))
+      }),
+    )
     renderSchedule8()
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
 
-    expect(screen.getByText('Copy Page')).toBeInTheDocument()
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(body).toEqual({
+      id: null,
+      revisionCount: null,
+      license: 'LIC1',
+      supportCentre: 'SC1',
+      region: 'R1',
+      becZone: 'BZ1',
+      tsaNumber: 'TSA1',
+      tflNumber: null,
+      supplyBlock: 'A',
+      division: 'North',
+      contact: 'Jane Roe',
+      phone: '250-555-1212',
+      cuttingPermit: 'CP1',
+      comments: 'seed comment',
+    })
+    // The editor is open on the NEW page, in edit mode.
+    expect(screen.getByText(/^Edit Page — Page # 3/)).toBeInTheDocument()
     expect(screen.getByLabelText('License')).toHaveValue('LIC1')
-    // The seeded code (SC1) resolves to its option description in the combobox input value.
-    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveValue(
-      'Support Centre 1',
+    expect(screen.getByRole('button', { name: /TtT Samples \(0\)/i })).toBeInTheDocument()
+    expect(screen.queryByText('Copy Page')).not.toBeInTheDocument()
+  })
+
+  // The reply names no saved id, so the copy is the ONE new id in it. When another session added a
+  // page meanwhile there are two, and opening either could put someone else's record (and its lock
+  // token) in the editor — so the list and message refresh, but nothing opens.
+  test('a Copy reply with more than one new page refreshes the list but opens nothing', async () => {
+    const copied: Page = { ...fullPage, id: 8003, sampleCount: 0, samples: [] }
+    const foreign: Page = { ...emptyPage, id: 8004, cuttingPermit: 'OTHER' }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, () =>
+        HttpResponse.json(
+          doc({ pages: [fullPage, emptyPage, copied, foreign], message: savedMsg }),
+        ),
+      ),
     )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(screen.getByText(/Page # 3 -TSA/)).toBeInTheDocument()
+    expect(screen.getByText(/Page # 4 -TSA/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('License')).not.toBeInTheDocument()
+  })
+
+  test('a rejected Copy shows the error and creates nothing', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, () =>
+        HttpResponse.json({ detail: 'Copy was refused.' }, { status: 400 }),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+
+    expect(await screen.findByText('Copy was refused.')).toBeInTheDocument()
+    // No editor opened on an unsaved copy, and the list is unchanged.
+    expect(screen.queryByLabelText('License')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Page # 3/)).not.toBeInTheDocument()
   })
 
   test('Check Status (all pages) renders the per-page / per-sample results', async () => {
@@ -2256,5 +2326,449 @@ describe('Schedule8 open-row freeze', () => {
       expect(within(rowsOf(table)[0]).getByRole('button', { name })).toBeDisabled()
       expect(within(rowsOf(table)[1]).getByRole('button', { name })).toBeEnabled()
     }
+  })
+})
+
+// #359 Part 3: Check Status carries the open editor ON SCREEN. The all-pages check sends the open
+// EXISTING page panel (legacy built a new page outside the checked list); the single-page check
+// sends the open sample panel, a NEW sample included (legacy's Add put it into the checked list).
+describe('Schedule8 Check Status evaluates the screen (#359)', () => {
+  const MET = {
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    pages: [],
+  }
+  const MET_TEXT = 'All requirements for this schedule have been met'
+
+  /** Records every body POSTed to `url`; answers MET unless a response is supplied. */
+  const captureCheck = (
+    url: string,
+    respond: () => Response | Promise<Response> = () => HttpResponse.json(MET),
+  ) => {
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post(url, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return respond()
+      }),
+    )
+    return bodies
+  }
+
+  /** A check response held open until `release` is called, then answered by `answer`. */
+  const heldCheck = (url: string, answer: () => Response) => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const bodies = captureCheck(url, async () => {
+      await gate
+      return answer()
+    })
+    return { bodies, release: () => release() }
+  }
+
+  const checkButton = () => screen.getByRole('button', { name: /check status/i })
+
+  const openPage8001 = async () => {
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await screen.findByLabelText('Contact')
+  }
+
+  const openSampleLevel = async () => {
+    renderSchedule8('/schedule-8?pageId=8001')
+    await screen.findByRole('button', { name: /add new sample/i })
+  }
+
+  beforeEach(() => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  })
+
+  describe('all pages', () => {
+    test('with no panel open, page is null', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toEqual([{ page: null }])
+    })
+
+    test('the open existing page is sent as typed — a cleared field is null; samples are never sent', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      await openPage8001()
+      await userEvent.clear(screen.getByLabelText('Contact'))
+      await userEvent.click(checkButton())
+
+      await waitFor(() => {
+        expect(bodies).toHaveLength(1)
+      })
+      expect(bodies[0]).toEqual({
+        page: {
+          id: 8001,
+          division: 'North',
+          contact: null,
+          phone: '250-555-1212',
+          tsaNumber: 'TSA1',
+          tflNumber: null,
+          supplyBlock: 'A',
+          cuttingPermit: 'CP1',
+        },
+      })
+    })
+
+    test('an unsaved new page is not sent, and its blank required fields do not gate the check', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+      await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
+      await userEvent.type(screen.getByLabelText('Contact'), 'Unsaved')
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toEqual([{ page: null }])
+    })
+
+    test('Save’s validator gates the open existing page: no request, and the field is marked', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      await openPage8001()
+      await userEvent.clear(screen.getByLabelText('License'))
+      await userEvent.click(checkButton())
+
+      expect(await screen.findAllByText('Value Required')).not.toHaveLength(0)
+      expect(
+        screen.getByText('Please correct the highlighted fields before saving.'),
+      ).toBeInTheDocument()
+      expect(bodies).toHaveLength(0)
+    })
+
+    test('a page edit clears a shown verdict', async () => {
+      captureCheck(CHECK_URL)
+      await openPage8001()
+      await userEvent.click(checkButton())
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+
+      await userEvent.type(screen.getByLabelText('Contact'), 'x')
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+    })
+
+    test('a late answer for a screen that has since changed is dropped', async () => {
+      const held = heldCheck(CHECK_URL, () => HttpResponse.json(MET))
+      await openPage8001()
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(held.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Contact'), 'x')
+      held.release()
+
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+    })
+
+    test('a late FAILURE for a superseded screen is dropped too', async () => {
+      const held = heldCheck(CHECK_URL, () =>
+        HttpResponse.json({ detail: 'Check failed late' }, { status: 500 }),
+      )
+      await openPage8001()
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(held.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Contact'), 'x')
+      held.release()
+
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText('Check failed late')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('single page (samples)', () => {
+    test('with no panel open, sample is null', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toEqual([{ sample: null }])
+    })
+
+    test('the open existing sample is sent as typed — blank is null, a typed 0 stays 0', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await userEvent.clear(screen.getByLabelText('Cut Block'))
+      const coniferous = screen.getByLabelText('Coniferous Volume (m³)')
+      await userEvent.clear(coniferous)
+      await userEvent.type(coniferous, '0')
+      await userEvent.clear(screen.getByLabelText('Deciduous Volume (m³)'))
+      await userEvent.click(checkButton())
+
+      await waitFor(() => {
+        expect(bodies).toHaveLength(1)
+      })
+      expect(bodies[0]).toEqual({
+        sample: {
+          id: 8101,
+          contractId: 'C-1',
+          cutBlock: null,
+          groundBasePct: 100,
+          grapplePct: 0,
+          skylinePct: 0,
+          highleadPct: 0,
+          helicopterPct: 0,
+          otherSkiddingPct: 0,
+          skylineSlopeDistance: null,
+          skylineSupportNumber: null,
+          supportAvgDistance: null,
+          coniferousVolume: 0,
+          deciduousVolume: null,
+          originalRate: 10,
+        },
+      })
+    })
+
+    test('an open NEW sample is sent with id null, and its result renders without an id', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001, () =>
+        // The server omits null members, so the appended sample's result carries no `id` key.
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          pages: [
+            {
+              id: 8001,
+              pageNumber: 1,
+              pageLabel: 'Page # 1  -TSA: TSA1 -CP: CP1',
+              met: false,
+              issues: [],
+              samples: [
+                {
+                  id: 8101,
+                  sampleNumber: 1,
+                  sampleLabel: 'Sample # 1 - C-1',
+                  met: true,
+                  issues: [],
+                },
+                {
+                  sampleNumber: 2,
+                  sampleLabel: 'Sample # 2 - NEW-1',
+                  met: false,
+                  issues: [
+                    {
+                      field: 'Cut Block',
+                      message: { key: 'missingRequiredFieldMsg', text: 'Value Required' },
+                    },
+                    {
+                      field: 'Actual Harvested',
+                      message: {
+                        key: 'invalidLowerRangeZeroErrorMsg',
+                        text: 'Total value must be greater than 0.',
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      )
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+      await userEvent.type(screen.getByLabelText('Contract ID'), 'NEW-1')
+      await userEvent.type(screen.getByLabelText('Ground Base %'), '0')
+      await userEvent.click(checkButton())
+
+      expect(
+        await screen.findByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 2 - NEW-1 — Cut Block'),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 2 - NEW-1 — Actual Harvested'),
+      ).toBeInTheDocument()
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0]).toEqual({
+        sample: {
+          id: null,
+          contractId: 'NEW-1',
+          cutBlock: null,
+          groundBasePct: 0,
+          grapplePct: null,
+          skylinePct: null,
+          highleadPct: null,
+          helicopterPct: null,
+          otherSkiddingPct: null,
+          skylineSlopeDistance: null,
+          skylineSupportNumber: null,
+          supportAvgDistance: null,
+          coniferousVolume: null,
+          deciduousVolume: null,
+          originalRate: null,
+        },
+      })
+    })
+
+    test('Save’s validator gates the open sample: no request, and the field is marked', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText('Value Required')).toBeInTheDocument()
+      expect(
+        screen.getByText('Please correct the highlighted fields before saving.'),
+      ).toBeInTheDocument()
+      expect(bodies).toHaveLength(0)
+    })
+
+    test('a sample edit clears a shown verdict', async () => {
+      captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await userEvent.click(checkButton())
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+
+      await userEvent.type(screen.getByLabelText('Cut Block'), 'x')
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+    })
+
+    test('a late answer for a screen that has since changed is dropped, success or failure', async () => {
+      const held = heldCheck(PAGE_CHECK_8001, () => HttpResponse.json(MET))
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(held.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Cut Block'), 'x')
+      held.release()
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+
+      const failing = heldCheck(PAGE_CHECK_8001, () =>
+        HttpResponse.json({ detail: 'Check failed late' }, { status: 500 }),
+      )
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(failing.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Cut Block'), 'y')
+      failing.release()
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText('Check failed late')).not.toBeInTheDocument()
+    })
+  })
+
+  // Legacy `Schedule8DetailMB.copyReport` → save(): the sample fields are written at once as a NEW
+  // sample — never its additions or deductions — and the editor opens on the copy in edit mode.
+  describe('sample Copy saves at once', () => {
+    test('Copy fires the create, shows the success message and opens the copy in edit', async () => {
+      const copied: Sample = {
+        ...sample8101,
+        id: 8102,
+        additions: [],
+        deductions: [],
+        additionCount: 0,
+        deductionCount: 0,
+      }
+      let body: Record<string, unknown> | null = null
+      server.use(
+        http.put(SAMPLES_8001, async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>
+          return HttpResponse.json(
+            doc({
+              pages: [{ ...fullPage, sampleCount: 2, samples: [sample8101, copied] }, emptyPage],
+              message: savedMsg,
+            }),
+          )
+        }),
+      )
+      await openSampleLevel()
+
+      await userEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expect(body).toEqual({
+        id: null,
+        revisionCount: null,
+        contractId: 'C-1',
+        cutBlock: 'CB-1',
+        groundBasePct: 100,
+        grapplePct: 0,
+        skylinePct: 0,
+        highleadPct: 0,
+        helicopterPct: 0,
+        otherSkiddingPct: 0,
+        skylineSlopeDistance: null,
+        skylineSupportNumber: null,
+        supportAvgDistance: null,
+        cycleTime: null,
+        distance: null,
+        uphillDirection: false,
+        waterDumpDestination: false,
+        skidTypeCode: null,
+        coniferousVolume: 1000,
+        deciduousVolume: 500,
+        originalRate: 10,
+      })
+      expect(screen.getByText('Edit Sample — Sample # 2 - C-1')).toBeInTheDocument()
+      expect(screen.getByLabelText('Contract ID')).toHaveValue('C-1')
+      expect(screen.getByRole('button', { name: /Additions \(0\)/ })).toBeInTheDocument()
+      expect(screen.queryByText('Copy Sample')).not.toBeInTheDocument()
+    })
+
+    test('a Copy reply with more than one new sample refreshes the list but opens nothing', async () => {
+      const copied: Sample = { ...sample8101, id: 8102, additions: [], deductions: [] }
+      const foreign: Sample = { ...sample8101, id: 8103, contractId: 'OTHER' }
+      server.use(
+        http.put(SAMPLES_8001, () =>
+          HttpResponse.json(
+            doc({
+              pages: [
+                { ...fullPage, sampleCount: 3, samples: [sample8101, copied, foreign] },
+                emptyPage,
+              ],
+              message: savedMsg,
+            }),
+          ),
+        ),
+      )
+      await openSampleLevel()
+
+      await userEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expect(screen.getByText('Sample # 3 - OTHER')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Contract ID')).not.toBeInTheDocument()
+    })
+
+    test('a rejected Copy shows the error and creates nothing', async () => {
+      server.use(
+        http.put(SAMPLES_8001, () =>
+          HttpResponse.json({ detail: 'Sample copy was refused.' }, { status: 400 }),
+        ),
+      )
+      await openSampleLevel()
+
+      await userEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+      expect(await screen.findByText('Sample copy was refused.')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Contract ID')).not.toBeInTheDocument()
+      expect(screen.queryByText(/Sample # 2/)).not.toBeInTheDocument()
+    })
   })
 })

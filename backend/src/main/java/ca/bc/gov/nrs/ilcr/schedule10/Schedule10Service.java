@@ -576,23 +576,28 @@ public class Schedule10Service {
 
   /**
    * The TSA/TFL selector's mapping onto the three stored location columns, before any write-only
-   * validation: the {@code "TFL"} sentinel keeps only the TFL number, and anything else is a TSA
-   * code that keeps only the TSA and supply block. Blank values become null, as Save stores them.
+   * rejection: the {@code "TFL"} sentinel keeps only the TFL number, and anything else is a TSA
+   * code that keeps only the TSA and supply block. Blank values become null, as Save stores them. A
+   * TFL number {@link RoadGroup10Lookup#canonicalTfl} recognises is canonicalised (e.g. {@code "1"}
+   * to {@code "01"}), as Save stores it; one it does not recognise is kept as entered.
    *
-   * <p>Shared by {@link #classify} (which then canonicalises the TFL number and rejects what it
-   * cannot store) and by the Check Status overlay, which must judge an unsaved TSA-to-TFL switch
+   * <p>Shared by {@link #classify} (which then rejects a TFL number it cannot store, and a TSA code
+   * too wide for its column) and by the Check Status overlay, which must judge an unsaved edit
    * exactly as Save would store it — a TFL page with its TFL number blank reports {@code TFL #},
-   * not {@code Supply Block} (bcgov/nr-ilcr#359). Nothing is rejected here: reporting incomplete
-   * input is the check's whole job.
+   * not {@code Supply Block}, and the page label carries the canonical TFL number the saved label
+   * would (bcgov/nr-ilcr#359). Nothing is rejected here: reporting incomplete input is the check's
+   * whole job.
    *
    * @param tsaOrTfl the selector value: a TSA code or the {@code "TFL"} sentinel
    * @param supplyBlock the entered supply block
    * @param tflNumberCode the entered TFL number
-   * @return the location as Save would map it, uncanonicalised
+   * @return the location as Save would map it
    */
   static Location locate(String tsaOrTfl, String supplyBlock, String tflNumberCode) {
     if (TFL.equals(tsaOrTfl)) {
-      return new Location(null, null, blankToNull(tflNumberCode));
+      String entered = blankToNull(tflNumberCode);
+      String canonical = RoadGroup10Lookup.canonicalTfl(entered);
+      return new Location(null, null, canonical != null ? canonical : entered);
     }
     return new Location(blankToNull(tsaOrTfl), blankToNull(supplyBlock), null);
   }

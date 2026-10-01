@@ -11,6 +11,8 @@ import type {
   ConstructionPageRequest,
   MaterialCompositionRequest,
   RoadDetailRequest,
+  Schedule10CheckPageEntry,
+  Schedule10CheckRoadEntry,
   StabilizingRequest,
   SubGradeRequest,
 } from '@/interfaces/Schedule10Request'
@@ -625,6 +627,56 @@ export const buildRoadDetailBody = (
   comments: blankToNull(form.comments),
   ...(revisionCount === undefined ? {} : { revisionCount }),
 })
+
+/**
+ * The Check Status entry for the open page panel (#359): the page as it is ON SCREEN, built by Save's
+ * own body builder so the TSA-or-TFL branch is resolved exactly as a save would resolve it. A blank
+ * selector is sent as null rather than Save's `''`. The check does not report a blank selector (the
+ * server takes a null TSA down its TFL branch), but none reaches it from the UI: Save's validator
+ * requires the selector and gates the request while the panel is in edit mode.
+ */
+export const buildPageCheckEntry = (
+  form: PageFormValues,
+  pageId: number,
+): Schedule10CheckPageEntry => {
+  const body = buildPageBody(form)
+  return {
+    pageId,
+    divisionName: body.divisionName,
+    constructionPeriod: body.constructionPeriod,
+    tsaOrTfl: blankToNull(body.tsaOrTfl),
+    supplyBlock: body.supplyBlock,
+    tflNumberCode: body.tflNumberCode,
+  }
+}
+
+/**
+ * The Check Status entry for the open road editor (#359): every field the road rules read, taken
+ * from the body Save itself would send (`buildRoadDetailBody`), so the figures — ballast method
+ * `N`'s zeroing included — can never drift from Save's. No revision token: the check writes nothing.
+ * Blank text Save sends as `''` (road name, RSMR class, ballast method) is sent as null.
+ */
+export const buildRoadCheckEntry = (
+  form: RoadDetailFormValues,
+  pageId: number,
+  roadDetailId: number,
+): Schedule10CheckRoadEntry => {
+  const body = buildRoadDetailBody(form)
+  return {
+    pageId,
+    roadDetailId,
+    roadName: blankToNull(body.roadName),
+    becbiogeoCatalogueId: body.becbiogeoCatalogueId,
+    relSoilMoistRgmClsCode: blankToNull(body.relSoilMoistRgmClsCode),
+    sideSlopePct: body.sideSlopePct,
+    subGrade: body.subGrade,
+    stabilizing: {
+      ...body.stabilizing,
+      ballastMethodCode: blankToNull(body.stabilizing.ballastMethodCode),
+    },
+    materialComposition: body.materialComposition,
+  }
+}
 
 /**
  * The derived figures the legacy screen recomputed on every blur, so the reporter sees the effect of

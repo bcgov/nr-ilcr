@@ -4,8 +4,10 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule8.api.Schedule8Api;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
@@ -159,17 +161,23 @@ public class Schedule8Controller implements Schedule8Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule8CheckStatusResponse> checkStatus(
-      long millId, int year, Authentication authentication) {
+      long millId, int year, Schedule8CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary required), then evaluate — mutates nothing.
+    // The body carries the open page panel (#359); the resolver overlays it.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year, request));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule8CheckStatusResponse> checkStatusPage(
-      long millId, int year, int pageId, Authentication authentication) {
+      long millId,
+      int year,
+      int pageId,
+      Schedule8PageCheckRequest request,
+      Authentication authentication) {
+    // The body carries the open sample panel (#359); the resolver overlays it.
     millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(checkStatusResolver.checkStatusPage(millId, year, pageId));
+    return ResponseEntity.ok(checkStatusResolver.checkStatusPage(millId, year, pageId, request));
   }
 }

@@ -2310,3 +2310,296 @@ describe('the road level open-row freeze', () => {
     }
   })
 })
+
+// #359 Part 3: Check Status carries the editor ON SCREEN — the open EXISTING page panel at the page
+// level, the open EXISTING road editor at the road level — and the road level gains its own button
+// that checks the whole schedule (legacy's one button had no render condition).
+describe('check status evaluates the screen (#359)', () => {
+  const MET = {
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    pages: [],
+  }
+  const MET_TEXT = 'All requirements for this schedule have been met'
+
+  /** Records every check-status body; answers MET unless a response is supplied. */
+  const captureCheck = (
+    respond: () => Response | Promise<Response> = () => HttpResponse.json(MET),
+  ) => {
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post(CHECK_URL, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return respond()
+      }),
+    )
+    return bodies
+  }
+
+  /** A check response held open until `release` is called, then answered by `answer`. */
+  const heldCheck = (answer: () => Response) => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const bodies = captureCheck(async () => {
+      await gate
+      return answer()
+    })
+    return { bodies, release: () => release() }
+  }
+
+  test('with no panel open, both members are null', async () => {
+    const bodies = captureCheck()
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Check Status' }))
+
+    expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+    expect(bodies).toEqual([{ page: null, road: null }])
+  })
+
+  test('the open existing page is sent as typed — a cleared field is null, never 0', async () => {
+    const bodies = captureCheck()
+    renderSchedule10()
+    await openPagePanel()
+    await userEvent.clear(await screen.findByDisplayValue('North Division'))
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toEqual({
+      page: {
+        pageId: 8900,
+        divisionName: null,
+        constructionPeriod: '2021-06',
+        tsaOrTfl: '01',
+        supplyBlock: '01A',
+        tflNumberCode: null,
+      },
+      road: null,
+    })
+  })
+
+  test('an unsaved new page is not sent', async () => {
+    const bodies = captureCheck()
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
+    await userEvent.type(await screen.findByLabelText('Division:'), 'Unsaved')
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+    expect(bodies).toEqual([{ page: null, road: null }])
+  })
+
+  test('Save’s validator gates the open page: no request, and the field is marked', async () => {
+    const bodies = captureCheck()
+    renderSchedule10()
+    await openPagePanel()
+    const period = await screen.findByDisplayValue('2021-06')
+    await userEvent.clear(period)
+    await userEvent.type(period, '2021-6x')
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    expect(
+      await screen.findByText('The date is not valid. Enter date in format: YYYY-MM.'),
+    ).toBeInTheDocument()
+    expect(bodies).toHaveLength(0)
+  })
+
+  // The fields are disabled while a check is out, so the panel's Close is how the screen changes
+  // under an in-flight check here.
+  test('a late answer for a screen that has since changed is dropped', async () => {
+    const held = heldCheck(() => HttpResponse.json(MET))
+    renderSchedule10()
+    await openPagePanel()
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+    await waitFor(() => {
+      expect(held.bodies).toHaveLength(1)
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+    held.release()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+    })
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('a late FAILURE for a superseded screen is dropped too', async () => {
+    const held = heldCheck(() => problemBody(500, 'Check failed late'))
+    renderSchedule10()
+    await openPagePanel()
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+    await waitFor(() => {
+      expect(held.bodies).toHaveLength(1)
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+    held.release()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+    })
+    expect(screen.queryByText('Check failed late')).not.toBeInTheDocument()
+  })
+
+  test('closing the page panel clears a shown verdict', async () => {
+    captureCheck()
+    renderSchedule10()
+    await openPagePanel()
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+    expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('the road level has its own Check Status, right after Add Road, checking the whole schedule', async () => {
+    const bodies = captureCheck()
+    renderSchedule10('/schedule-10?pageId=8900')
+    const addRoad = await screen.findByRole('button', { name: 'Add Road' })
+    const check = screen.getByRole('button', { name: 'Check Status' })
+
+    expect(addRoad.nextElementSibling).toBe(check)
+    expect(check.querySelector('svg')).not.toBeNull()
+    expect(check).toBeEnabled()
+    await userEvent.click(check)
+
+    // The verdict renders in the road level's own banners.
+    expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+    expect(bodies).toEqual([{ page: null, road: null }])
+  })
+
+  test('the road-level Check Status is disabled when the caller cannot edit', async () => {
+    server.use(getHandler(doc({ editable: false, trackStatus: 'S' })))
+    renderSchedule10('/schedule-10?pageId=8900')
+
+    expect(await screen.findByRole('button', { name: 'Add Road' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check Status' })).toBeDisabled()
+  })
+
+  test('the open existing road is sent as typed, through Save’s own builders, with no revision token', async () => {
+    const bodies = captureCheck()
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.clear(await screen.findByLabelText('Side Slope (%):'))
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toEqual({
+      page: null,
+      road: {
+        pageId: 8900,
+        roadDetailId: 8910,
+        roadName: 'Mainline A',
+        becbiogeoCatalogueId: 8801,
+        relSoilMoistRgmClsCode: '1',
+        // Cleared on screen: null, never 0.
+        sideSlopePct: null,
+        subGrade: {
+          length: 12.5,
+          surfaceWidth: 6.5,
+          actualCost: 150000,
+          ttTransfer: null,
+          otherTransfer: null,
+          lessBridges: null,
+          lessCulverts: null,
+          lessLandings: null,
+          lessOverland: null,
+          lessOtherEng: null,
+          lessEndHaul: null,
+        },
+        stabilizing: {
+          ballastMethodCode: 'C',
+          ballastMaterialCode: 'GR',
+          length: 3,
+          surfaceWidth: 6.5,
+          depth: 0.3,
+          distanceToSource: 12.4,
+          actualCost: null,
+          ttTransfer: null,
+          otherTransfer: null,
+        },
+        materialComposition: {
+          solidRockPct: 10,
+          rippableRockPct: 20,
+          coarsePct: 40,
+          finePct: 20,
+          organicPct: 10,
+        },
+      },
+    })
+  })
+
+  test('a typed 0 on the road stays 0', async () => {
+    const bodies = captureCheck()
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    const slope = await screen.findByLabelText('Side Slope (%):')
+    await userEvent.clear(slope)
+    await userEvent.type(slope, '0')
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toMatchObject({ road: { sideSlopePct: 0 } })
+  })
+
+  test('an unsaved new road is not sent', async () => {
+    const bodies = captureCheck()
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
+    await userEvent.type(await screen.findByLabelText('Road Name:'), 'Unsaved Road')
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+    expect(bodies).toEqual([{ page: null, road: null }])
+  })
+
+  test('Save’s validator gates the open road: no request, and the field is marked', async () => {
+    const bodies = captureCheck()
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.clear(await screen.findByDisplayValue('Mainline A'))
+    await userEvent.click(screen.getByRole('button', { name: 'Check Status' }))
+
+    expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
+    expect(bodies).toHaveLength(0)
+  })
+
+  test('at the road level, a late answer for a screen that has since changed is dropped', async () => {
+    const held = heldCheck(() => HttpResponse.json(MET))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Check Status' }))
+    await waitFor(() => {
+      expect(held.bodies).toHaveLength(1)
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+    held.release()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+    })
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+
+  test('a road edit clears a shown verdict', async () => {
+    captureCheck()
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Check Status' }))
+    expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+
+    await userEvent.type(screen.getByDisplayValue('Mainline A'), 'x')
+    expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+  })
+})

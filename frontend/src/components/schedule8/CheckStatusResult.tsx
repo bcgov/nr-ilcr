@@ -36,7 +36,8 @@ const CheckStatusResult: FC<{ result: Schedule8CheckStatusResponse }> = ({ resul
       ...page.samples.flatMap((sample) =>
         sample.issues.map((issue) => (
           <InlineNotification
-            key={`sample-${sample.id}-${issue.field}`}
+            // By number, not id: an unsaved new sample's result carries no id (#359).
+            key={`sample-${page.pageNumber}-${sample.sampleNumber}-${issue.field}`}
             kind="warning"
             lowContrast
             title={`${page.pageLabel} — ${sample.sampleLabel} — ${issue.field}`}

@@ -137,7 +137,7 @@ public class CheckStatusSweepService {
                 Schedule7bCheckStatusResponse::requirementsMet),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_8,
-                schedule8::checkStatus,
+                schedule8::checkStatusStored,
                 response -> outcomeMet(response.outcome())),
             new ScheduleCheckAdapter<>(
                 CheckedSchedule.SCHEDULE_9,

@@ -4,7 +4,7 @@ import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
 import type Schedule8Options from '@/interfaces/Schedule8Options'
 import type { CodeOption } from '@/interfaces/Schedule8Options'
-import type { Schedule8PageRequest } from '@/interfaces/Schedule8Request'
+import type { Schedule8CheckRequest, Schedule8PageRequest } from '@/interfaces/Schedule8Request'
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -60,7 +60,7 @@ import './index.scss'
 // message.text / ProblemDetail.detail — never hardcoded (AD-8).
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 
-type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
+type PanelMode = 'closed' | 'new' | 'edit' | 'view'
 // The three-level tree: the page list/editor, then a page's samples, then a sample's additions/
 // deductions. The level is derived from the URL search (pageId, sampleId) so browser Back steps back.
 type NavView =
@@ -114,7 +114,7 @@ const Schedule8: FC = () => {
     setMessage: setSaveMessage,
     setActionError: setSaveError,
     setCheckResult,
-    clearBanners,
+    clearBanners: clearHookBanners,
     resetBanners,
     run,
     save,
@@ -126,6 +126,21 @@ const Schedule8: FC = () => {
     year,
     isCurrent,
   })
+
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever that
+  // snapshot changes, so an older response cannot repaint a verdict for values no longer on screen.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  // Every action clears the banners first, and in doing so supersedes any check still in flight.
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+  }
 
   // Sample/rates level from the URL (pageId, sampleId); navigate updates it.
   const search = scheduleRoute.useSearch()
@@ -238,45 +253,84 @@ const Schedule8: FC = () => {
     setShowErrors(false)
   }
 
-  const openCopy = (page: Page) => {
-    clearBanners()
-    setPanelMode('copy')
-    setForm(seedPageForm(page))
-    setEditId(null)
-    setRevision(null)
-    setShowErrors(false)
+  // Closing the panel takes its values off screen, so a verdict that included them is cleared.
+  const closePanel = () => {
+    setPanelMode('closed')
+    invalidateCheckResult()
   }
 
-  const closePanel = () => setPanelMode('closed')
+  // Every page-editor edit goes through here: it changes the screen a shown verdict describes.
+  const updateForm = (update: (prev: PageForm) => PageForm) => {
+    setForm(update)
+    invalidateCheckResult()
+  }
 
   const setField = (field: keyof PageForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = event.target
-    setForm((prev) => ({ ...prev, [field]: value }))
+    updateForm((prev) => ({ ...prev, [field]: value }))
   }
 
   const setComments = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const { value } = event.target
-    setForm((prev) => ({ ...prev, comments: value }))
+    updateForm((prev) => ({ ...prev, comments: value }))
   }
 
-  const buildRequest = (): Schedule8PageRequest => {
-    const tfl = isTflSelected(form)
+  // The page write body for `source`; a null id is a create (Add New Page, and Copy).
+  const buildRequest = (
+    source: PageForm,
+    id: number | null,
+    revisionCount: number | null,
+  ): Schedule8PageRequest => {
+    const tfl = isTflSelected(source)
     return {
-      id: panelMode === 'edit' ? editId : null,
-      revisionCount: panelMode === 'edit' ? (revision ?? 0) : null,
-      license: form.license.trim(),
-      supportCentre: form.supportCentre.trim(),
-      region: form.region.trim(),
-      becZone: form.becZone.trim(),
-      tsaNumber: blankToNull(form.tsaNumber),
-      tflNumber: tfl ? blankToNull(form.tflNumber) : null,
-      supplyBlock: tfl ? null : blankToNull(form.supplyBlock),
-      division: blankToNull(form.division),
-      contact: blankToNull(form.contact),
-      phone: blankToNull(form.phone),
-      cuttingPermit: blankToNull(form.cuttingPermit),
-      comments: blankToNull(form.comments),
+      id,
+      revisionCount,
+      license: source.license.trim(),
+      supportCentre: source.supportCentre.trim(),
+      region: source.region.trim(),
+      becZone: source.becZone.trim(),
+      tsaNumber: blankToNull(source.tsaNumber),
+      tflNumber: tfl ? blankToNull(source.tflNumber) : null,
+      supplyBlock: tfl ? null : blankToNull(source.supplyBlock),
+      division: blankToNull(source.division),
+      contact: blankToNull(source.contact),
+      phone: blankToNull(source.phone),
+      cuttingPermit: blankToNull(source.cuttingPermit),
+      comments: blankToNull(source.comments),
     }
+  }
+
+  /**
+   * Copy saves at once, as legacy did (`Schedule8MB.java:207-213,242-248`: copyReport, then save(),
+   * then an insert): the header fields are written as a NEW page, never its samples, then the success
+   * message shows and the editor opens on the copy in edit mode. A rejected write shows its error and
+   * opens nothing, so no unsaved copy ever exists on screen.
+   */
+  const copyPage = (page: Page) => {
+    if (saving || !data?.editable) return
+    clearBanners()
+    // Page ids present before the write. The reply names no saved id, so the copy is identified as
+    // the ONE new id in it; the client's list may be stale, so if another session added a page
+    // meanwhile there are several and none can be told apart from someone else's record.
+    const prevIds = new Set(data.pages.map((p) => p.id))
+    save<Schedule8Response>(buildRequest(seedPageForm(page), null, null), {
+      suffix: '/pages',
+      fallback: 'Schedule could not be saved.',
+      onSuccess: (doc) => {
+        setData(doc)
+        setSaveMessage(doc.message?.text ?? null)
+        // Ambiguous (zero or several new ids): the list and message refresh, but nothing opens.
+        const added = doc.pages.filter((p) => p.id != null && !prevIds.has(p.id))
+        const copy = added.length === 1 ? added[0] : undefined
+        if (copy && copy.id != null) {
+          setPanelMode('edit')
+          setForm(seedPageForm(copy))
+          setEditId(copy.id)
+          setRevision(copy.revisionCount ?? 0)
+          setShowErrors(false)
+        }
+      },
+    })
   }
 
   const handleSave = () => {
@@ -288,31 +342,35 @@ const Schedule8: FC = () => {
       return
     }
     clearBanners()
-    // Page ids present before the save — used to find a freshly created page (new/copy) in the reply.
+    // Page ids present before the save — used to find a freshly created page in the reply.
     const prevIds = new Set(data.pages.map((p) => p.id))
     // List-shaped write: PUT the /pages list endpoint (no by-id suffix — the id/revision travels in the
     // body). run()'s isCurrent() guard drops the echo if mill/year changed mid-flight (Story 29.6).
-    save<Schedule8Response>(buildRequest(), {
-      suffix: '/pages',
-      fallback: 'Schedule could not be saved.',
-      onSuccess: (doc) => {
-        setData(doc)
-        setSaveMessage(doc.message?.text ?? null)
-        // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
-        // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
-        const saved =
-          panelMode === 'edit' && editId !== null
-            ? doc.pages.find((p) => p.id === editId)
-            : doc.pages.find((p) => p.id != null && !prevIds.has(p.id))
-        if (saved && saved.id != null) {
-          setPanelMode('edit')
-          setEditId(saved.id)
-          setRevision(saved.revisionCount ?? 0)
-        } else {
-          setPanelMode('closed')
-        }
+    const editing = panelMode === 'edit'
+    save<Schedule8Response>(
+      buildRequest(form, editing ? editId : null, editing ? (revision ?? 0) : null),
+      {
+        suffix: '/pages',
+        fallback: 'Schedule could not be saved.',
+        onSuccess: (doc) => {
+          setData(doc)
+          setSaveMessage(doc.message?.text ?? null)
+          // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
+          // one new id — refreshing the optimistic-lock token so a follow-up save doesn't 409.
+          const saved =
+            panelMode === 'edit' && editId !== null
+              ? doc.pages.find((p) => p.id === editId)
+              : doc.pages.find((p) => p.id != null && !prevIds.has(p.id))
+          if (saved && saved.id != null) {
+            setPanelMode('edit')
+            setEditId(saved.id)
+            setRevision(saved.revisionCount ?? 0)
+          } else {
+            setPanelMode('closed')
+          }
+        },
       },
-    })
+    )
   }
 
   const handleDelete = () => {
@@ -343,6 +401,28 @@ const Schedule8: FC = () => {
     })
   }
 
+  // The Check Status body (#359): the open panel as it is on screen, but only for an EXISTING page —
+  // legacy's Add built a new page outside the checked list (`Schedule8MB.java:193-198`), so an unsaved
+  // new page is never evaluated. Cutting Permit is carried for the page label, not checked.
+  const buildCheckRequest = (): Schedule8CheckRequest => {
+    if (panelMode === 'closed' || panelMode === 'new' || editId === null) {
+      return { page: null }
+    }
+    const body = buildRequest(form, editId, null)
+    return {
+      page: {
+        id: editId,
+        division: body.division,
+        contact: body.contact,
+        phone: body.phone,
+        tsaNumber: body.tsaNumber,
+        tflNumber: body.tflNumber,
+        supplyBlock: body.supplyBlock,
+        cuttingPermit: body.cuttingPermit,
+      },
+    }
+  }
+
   const handleCheckStatus = () => {
     if (saving) return
     // The single `saving` lock (shared with save/delete via run()) gates re-entrancy — Schedule 8 had
@@ -353,10 +433,27 @@ const Schedule8: FC = () => {
     // a cross-page change and is recorded as deferred work, not an oversight. Nothing is at risk in
     // the meantime — the endpoint is VIEW_SCHEDULE-gated, read-only, and mutates nothing.
     clearBanners()
-    checkStatus<Schedule8CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    // Gated on Save's validator over the open existing page, marked as Save marks it — but only while
+    // the panel is editable: a View panel (or a read-only page) highlights nothing, so it must not block.
+    if (data?.editable === true && panelMode === 'edit' && editId !== null) {
+      if (Object.keys(validatePageForm(form)).length > 0) {
+        setShowErrors(true)
+        setSaveError('Please correct the highlighted fields before saving.')
+        return
+      }
+    }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void checkStatus<Schedule8CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes a panel no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
+      buildCheckRequest(),
+    )
   }
 
   const openSamples = (pageId: number) => {
@@ -558,7 +655,7 @@ const Schedule8: FC = () => {
     // When a formatter is supplied it also normalizes entry live (e.g. phone → 222-222-2222).
     const onChange = opts.format
       ? (event: React.ChangeEvent<HTMLInputElement>) =>
-          setForm((prev) => ({ ...prev, [field]: opts.format!(event.target.value) }))
+          updateForm((prev) => ({ ...prev, [field]: opts.format!(event.target.value) }))
       : setField(field)
     return (
       <div className="schedule-8__field">
@@ -615,7 +712,7 @@ const Schedule8: FC = () => {
           items={itemList}
           selectedCode={current}
           onSelect={(code) =>
-            opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
+            opts.onChange ? opts.onChange(code) : updateForm((prev) => ({ ...prev, [field]: code }))
           }
           disabled={opts.disabled}
           invalid={Boolean(errors[field])}
@@ -664,7 +761,7 @@ const Schedule8: FC = () => {
                         size="sm"
                         renderIcon={Copy}
                         disabled={!editable || saving || isOpen}
-                        onClick={() => openCopy(page)}
+                        onClick={() => copyPage(page)}
                       >
                         Copy
                       </Button>
@@ -699,7 +796,6 @@ const Schedule8: FC = () => {
                 data.pages.findIndex((p) => p.id === editId),
               )}`
             : 'Edit Page')}
-        {panelMode === 'copy' && 'Copy Page'}
         {panelMode === 'view' && 'View Page'}
       </h3>
 
@@ -718,7 +814,7 @@ const Schedule8: FC = () => {
         {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems, {
           className: 'schedule-8__tsa-tfl',
           onChange: (code) =>
-            setForm((prev) => {
+            updateForm((prev) => {
               const next = { ...prev, tsaNumber: code }
               if (code === 'TFL') {
                 next.supplyBlock = ''

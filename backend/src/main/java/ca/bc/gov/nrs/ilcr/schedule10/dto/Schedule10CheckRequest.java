@@ -120,8 +120,15 @@ public record Schedule10CheckRequest(PageEntry page, RoadEntry road) {
 
   /**
    * The on-screen additional-stabilizing inputs, mirroring {@link StabilizingRequest} without its
-   * validation. No ballast-method coupling is applied: legacy's check read the in-memory model, and
-   * the coupling happened only in its save.
+   * validation.
+   *
+   * <p>The overlay applies no ballast-method coupling of its own: it evaluates the figures exactly
+   * as sent. The client sends the output of Save's own request builder, so a method {@code N} road
+   * arrives with its figures zeroed as Save would store them. The Type and the three cost rules run
+   * only for method {@code C}; the four dimensions are range-checked for every method but required
+   * only for {@code C}. So a blank figure moves the verdict only on a method {@code C} road, and on
+   * any other method only an out-of-range dimension can — judged as sent, which is what Save would
+   * store.
    *
    * @param ballastMethodCode the Ballast Method; {@code "C"} makes the figures required
    * @param ballastMaterialCode the Additional Stabilizing Type

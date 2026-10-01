@@ -367,13 +367,13 @@ count does.
     | 1, 2, 3 | no body; shared `useScheduleMutations.checkStatus` posts no payload | affected | **FIXED** by #359 group A (2026-09-25) |
     | 4 | same | affected | **FIXED** by #359 group B (2026-09-28): the body carries the one open panel, and the panel's field validation gates the check — green in the e2e run of 2026-09-28 |
     | 5 | same | affected | correct since #476 |
-    | 8 | same | affected | **OPEN** — #359 group C |
+    | 8 | same | affected | **fixed by #359 group C (Part 3, 2026-10-01) — verified by backend unit/IT and Vitest; no e2e suite exists for this schedule**. The main page sends the open existing page panel; the sample sub-page sends the open sample, a new one included. Each is gated on Save's validator |
     | 7a, 7b, 9 | no body; each page's own `.post(CHECK_STATUS_PATH + query)` with no second argument | affected | **fixed by #359 group B (2026-09-28) — verified by backend unit/IT and Vitest; no e2e suite exists for this schedule**. Every row is sent as on screen, gated on Save's validator |
-    | 10 | same | affected | **OPEN** — #359 group C |
+    | 10 | same | affected | **fixed by #359 group C (Part 3, 2026-10-01) — verified by backend unit/IT and Vitest; no e2e suite exists for this schedule**. The page level sends the open existing page panel; the road level gains legacy's Check Status button and sends the open existing road. Each is gated on Save's validator |
     | 11 | same | affected | re-grounded by Story 26.2 under ruling D7(a) — a recorded deviation, not fixed by #359 |
 
     Schedule 8 has a second surface with the same shape — its sample sub-page posts
-    `/v1/schedule8/pages/{pageId}/check-status?…` with no body (`schedule8/SamplePage.tsx:239-244`).
+    `/v1/schedule8/pages/{pageId}/check-status?…` with no body (`schedule8/SamplePage.tsx:239-244` as found). Fixed by #359 group C, which sends the open sample.
   - **What this entry does NOT claim.** For Schedule 3 the behaviour is proven end-to-end by the failing
     scenario. For the other ten, only the *wire contract* was read — an endpoint that receives no client
     state cannot evaluate one, which is sufficient for the defect, but two page-level details were not
@@ -400,7 +400,7 @@ count does.
   - **Priority / env:** p1 · branch `test/schedule-3-e2e` · local seeded DB · Chrome.
   - **Status:** **CLOSED 2026-09-25 for Schedule 3 (#359 group A — Schedules 1, 2 and 3).** Found
     2026-08-25 by the repo owner; legacy-source-confirmed and scoped across the app the same day.
-    **#359 itself stays OPEN** for Schedules 8 and 10 (group C). Schedules 7A, 7B and 9 were
+    **#359 stayed OPEN** for Schedules 8 and 10 until group C (Part 3, 2026-10-01). Schedules 7A, 7B and 9 were
     fixed by #359 group B on 2026-09-28 — verified by backend unit/IT and Vitest; no e2e suite exists for
     these schedules. Schedule 4 was fixed in the same change, with its e2e confirmation pending (sch4 DIV-8).
     See the scope table. Schedules 5 (#476) and 6 were already correct;
@@ -459,6 +459,10 @@ count does.
     **Update, 2026-09-28 (#359 group B):** Schedules 7A, 7B and 9 fixed by #359 group B — verified by
     backend unit/IT and Vitest; no e2e suite exists for these schedules. Schedule 4 fixed in the same change:
     its `@S33 @S34` are back as two green scenarios (sch4 DIV-8 — green in the e2e run of 2026-09-28). #359 stays open for Schedules 8 and 10 (group C).
+
+    **Update, 2026-10-01 (#359 group C, Part 3):** Schedules 8 (both surfaces) and 10 fixed — verified by
+    backend unit/IT and Vitest; no e2e suite exists for either. Every schedule in the scope table is now
+    fixed or was already correct, except Schedule 11 (ruling D7(a)).
   - **CLOSE-OUT CHECKLIST — QA must not close this family on the fix alone.** When #359 lands all TEN go
     green on their own. Then, per domain: retire the `@discovered-divergence` tag AND the `[DISCOVERED …]`
     title marker together, close that domain's pointer entry with the date and the fixing PR, and correct its

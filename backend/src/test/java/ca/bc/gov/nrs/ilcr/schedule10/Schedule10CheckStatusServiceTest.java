@@ -10,12 +10,16 @@ import ca.bc.gov.nrs.ilcr.schedule10.Schedule10CheckStatus.Issue;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10CheckStatus.Outcome;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10CheckStatus.PageOutcome;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.BecClassificationRow;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetail;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest.MaterialCompositionEntry;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest.PageEntry;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest.RoadEntry;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest.StabilizingEntry;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest.SubGradeEntry;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Stabilizing;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.SubGrade;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
@@ -54,6 +58,7 @@ class Schedule10CheckStatusServiceTest {
   private static final int BEC_STORED = 8801;
   private static final int BEC_OTHER = 8802;
   private static final int BEC_NO_SUBZONE = 8803;
+  private static final int BEC_DELISTED = 8804;
   private static final String STORED_LABEL = "Page 1, Period: 2021-06, TSA: 01, SB: 01A, TFL:-";
 
   @Mock private Schedule10Repository repository;
@@ -90,6 +95,10 @@ class Schedule10CheckStatusServiceTest {
 
   /** A clean stored road: ballast N, material 100%, every figure in range, no cost rows. */
   private static RoadConstructionReportDetailEntity storedRoad() {
+    return storedRoad(BEC_STORED);
+  }
+
+  private static RoadConstructionReportDetailEntity storedRoad(int becId) {
     return new RoadConstructionReportDetailEntity(
         ROAD_ID,
         PAGE_ID,
@@ -99,7 +108,7 @@ class Schedule10CheckStatusServiceTest {
         20,
         10,
         40,
-        BEC_STORED,
+        becId,
         20,
         10,
         new BigDecimal("12.500"),
@@ -592,6 +601,140 @@ class Schedule10CheckStatusServiceTest {
       assertThat(service.checkStatusStored(MILL, YEAR).met()).isFalse();
 
       assertThat(check(null, storedRoadOnScreen()).met()).isTrue();
+    }
+  }
+
+  @Nested
+  @DisplayName("overlay fidelity")
+  class OverlayFidelity {
+
+    private RoadDetail overlaidRoad(RoadEntry road) {
+      Schedule10Response document =
+          Schedule10CheckOverlay.apply(
+              service.getSchedule10(MILL, YEAR, EditableStatuses.NONE),
+              new Schedule10CheckRequest(null, road));
+      return document.pages().get(0).roadDetails().get(0);
+    }
+
+    @Test
+    @DisplayName("a TFL number Save canonicalises ('1') is labelled as Save stores it ('01')")
+    void tflNumberIsCanonicalisedAsSaveStoresIt() {
+      Outcome outcome = check(new PageEntry(PAGE_ID, null, "2021-06", "TFL", null, "1"), null);
+
+      assertThat(pageFields(outcome)).containsExactly("divisionName");
+      assertThat(onlyPage(outcome).pageLabel())
+          .isEqualTo("Page 1, Period: 2021-06, TSA: null, SB: -, TFL:01");
+    }
+
+    @Test
+    @DisplayName("a TFL number Save does not recognise is kept as entered — present, not missing")
+    void unrecognisedTflNumberIsKeptAsEntered() {
+      Outcome outcome =
+          check(new PageEntry(PAGE_ID, "North Division", "2021-06", "TFL", null, "99"), null);
+
+      assertThat(outcome.met()).isTrue();
+      assertThat(onlyPage(outcome).pageLabel())
+          .isEqualTo("Page 1, Period: 2021-06, TSA: null, SB: -, TFL:99");
+    }
+
+    @Test
+    @DisplayName("BEC unchanged on screen keeps the stored road's own row, even when de-listed")
+    void unchangedBecKeepsTheStoredRowEvenWhenDelisted() {
+      when(repository.findReferencedBecClassifications(MILL, YEAR))
+          .thenReturn(List.of(new BecClassificationRow(BEC_DELISTED, "MS", "xk", "2", null)));
+      when(repository.findRoadDetails(MILL, YEAR)).thenReturn(List.of(storedRoad(BEC_DELISTED)));
+      Outcome stored = service.checkStatusStored(MILL, YEAR);
+      // De-listed: the BEC Zone rule fires, but the row resolves, so Sub Zone is present.
+      assertThat(roadFields(stored)).containsExactly("becClassification");
+
+      RoadEntry onScreen =
+          road(
+              "Mainline A",
+              BEC_DELISTED,
+              25,
+              storedSubGradeOnScreen(),
+              storedStabilizingOnScreen(),
+              storedMaterialOnScreen());
+
+      assertThat(check(null, onScreen)).isEqualTo(stored);
+    }
+
+    @Test
+    @DisplayName("every one of the twelve cost figures lands in its own slot")
+    void everyCostFigureLandsInItsOwnSlot() {
+      SubGradeEntry subGrade =
+          new SubGradeEntry(
+              new BigDecimal("12.500"),
+              new BigDecimal("6.5"),
+              new BigDecimal("101"),
+              new BigDecimal("102"),
+              new BigDecimal("103"),
+              new BigDecimal("104"),
+              new BigDecimal("105"),
+              new BigDecimal("106"),
+              new BigDecimal("107"),
+              new BigDecimal("108"),
+              new BigDecimal("109"));
+      StabilizingEntry stabilizing =
+          new StabilizingEntry(
+              "C",
+              "GR",
+              new BigDecimal("1.000"),
+              new BigDecimal("5.0"),
+              new BigDecimal("0.3"),
+              new BigDecimal("2.0"),
+              new BigDecimal("110"),
+              new BigDecimal("111"),
+              new BigDecimal("112"));
+
+      RoadDetail road =
+          overlaidRoad(
+              road("Mainline A", BEC_STORED, 25, subGrade, stabilizing, storedMaterialOnScreen()));
+
+      SubGrade sg = road.subGrade();
+      assertThat(sg.actualCost()).isEqualByComparingTo("101");
+      assertThat(sg.ttTransfer()).isEqualByComparingTo("102");
+      assertThat(sg.otherTransfer()).isEqualByComparingTo("103");
+      assertThat(sg.lessBridges()).isEqualByComparingTo("104");
+      assertThat(sg.lessCulverts()).isEqualByComparingTo("105");
+      assertThat(sg.lessLandings()).isEqualByComparingTo("106");
+      assertThat(sg.lessOverland()).isEqualByComparingTo("107");
+      assertThat(sg.lessOtherEng()).isEqualByComparingTo("108");
+      assertThat(sg.lessEndHaul()).isEqualByComparingTo("109");
+      assertThat(sg.totalCosts()).isEqualByComparingTo("306");
+      assertThat(sg.totalDeductions()).isEqualByComparingTo("639");
+      assertThat(sg.total()).isEqualByComparingTo("-333");
+      Stabilizing st = road.stabilizing();
+      assertThat(st.actualCost()).isEqualByComparingTo("110");
+      assertThat(st.ttTransfer()).isEqualByComparingTo("111");
+      assertThat(st.otherTransfer()).isEqualByComparingTo("112");
+      assertThat(st.total()).isEqualByComparingTo("333");
+    }
+
+    @Test
+    @DisplayName("method C with Type and all three stabilizing costs filled reports nothing")
+    void crushedComplete() {
+      StabilizingEntry crushed =
+          new StabilizingEntry(
+              "C",
+              "GR",
+              new BigDecimal("1.000"),
+              new BigDecimal("5.0"),
+              new BigDecimal("0.3"),
+              new BigDecimal("2.0"),
+              new BigDecimal("1000"),
+              new BigDecimal("200"),
+              new BigDecimal("300"));
+      RoadEntry edited =
+          road(
+              "Mainline A",
+              BEC_STORED,
+              25,
+              storedSubGradeOnScreen(),
+              crushed,
+              storedMaterialOnScreen());
+
+      assertThat(check(null, edited).met()).isTrue();
     }
   }
 

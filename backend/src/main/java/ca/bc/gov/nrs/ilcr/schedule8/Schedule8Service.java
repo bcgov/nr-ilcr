@@ -13,8 +13,10 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
@@ -281,17 +283,14 @@ public class Schedule8Service {
       long millId, int year, Schedule8PageRequest request, EditableStatuses caller, String user) {
     requireEditable(millId, year, caller);
     // TFL vs Supply Block are mutually exclusive (BR-03): a TFL selection clears the supply block
-    // and
-    // vice-versa — normalized server-side so exactly one is ever stored.
-    boolean usesTfl = isNotBlank(request.tflNumber());
-    final String tflNumber = usesTfl ? request.tflNumber().trim() : null;
-    final String supplyBlock = usesTfl ? null : trimToNull(request.supplyBlock());
-    // Stamp the legacy "TFL" sentinel into TSA_NUMBER when the page uses a TFL, so the write side
-    // and
-    // the Check Status discriminator (TSA_NUMBER == "TFL") agree — otherwise a TFL page saved
-    // through
-    // this API lands in the Supply-Block-required branch and can never reach MET (H2).
-    final String tsaNumber = usesTfl ? TFL_MARKER : trimToNull(request.tsaNumber());
+    // and vice-versa, and a TFL page gets the legacy "TFL" sentinel — the mapping lives in
+    // locate().
+    final Location location =
+        locate(request.tsaNumber(), request.tflNumber(), request.supplyBlock());
+    final boolean usesTfl = location.tflNumber() != null;
+    final String tflNumber = location.tflNumber();
+    final String supplyBlock = location.supplyBlock();
+    final String tsaNumber = location.tsaNumber();
     // Ownership guard on EDIT: the page must belong to THIS mill/year (H1 — mirrors saveSample/
     // deletePage). Without it, a Draft context could overwrite another mill/year's page by id
     // (IDOR),
@@ -669,36 +668,81 @@ public class Schedule8Service {
   }
 
   /**
-   * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) for a mill/year —
-   * read-only (AD-5), mutates nothing (Story 14.6, all-pages sweep). Reuses the assembled read
-   * model and applies the Check-Status-only rules per page and sample. {@code outcome} is {@code
-   * MET} only when EVERY page (and its samples) passes. Emits bundle KEYS; the resolver resolves
-   * verbatim text (AD-8). A mill/year with no pages is vacuously MET.
+   * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) against the SCREEN — the
+   * all-pages endpoint's entry point (bcgov/nr-ilcr#359). The stored pages are the candidates, with
+   * the open page panel ({@code request.page()}) overlaid onto the page with the same id — see
+   * {@link Schedule8CheckOverlay#overlayPage}. The rules are {@link #evaluate}, shared with {@link
+   * #checkStatusStored} (AD-5).
+   *
+   * <p>Legacy's Check Status walked its in-memory model with no reload, and the checked page inputs
+   * wrote into that model on change ({@code Schedule8MB.java:139-159}), so an unsaved edit moved
+   * the verdict. The shipped implementation re-read the database instead; this restores legacy.
+   * Mutates nothing, needs no revision token, and is not editability-gated.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the open page panel, if any
+   * @return the MET/ISSUES outcome + per-page/per-sample/per-field breakdown
+   */
+  @Transactional(readOnly = true)
+  public Schedule8CheckStatusResponse checkStatus(
+      long millId, int year, Schedule8CheckRequest request) {
+    return evaluate(Schedule8CheckOverlay.overlayPage(storedPages(millId, year), request), null);
+  }
+
+  /**
+   * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) for the SAVED pages of a
+   * mill/year — the stored-data counterpart of {@link #checkStatus}, for report-level callers (the
+   * Check Status sweep and the submit gate) that have no screen to describe. Read-only (AD-5),
+   * mutates nothing (Story 14.6, all-pages sweep). Reuses the assembled read model and applies the
+   * Check-Status-only rules per page and sample. {@code outcome} is {@code MET} only when EVERY
+   * page (and its samples) passes. Emits bundle KEYS; the resolver resolves verbatim text (AD-8). A
+   * mill/year with no pages is vacuously MET.
+   *
+   * <p><strong>A deliberate semantic divergence from the endpoint, not a duplicate of it.</strong>
+   * The endpoint answers "is what I'm LOOKING AT complete?"; this answers "is what is SAVED
+   * complete?". Named apart on purpose, as on Schedules 1–7B, 9 and 10: with both called {@code
+   * checkStatus} a future caller picks the wrong one by autocomplete and the failure is SILENT.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @return the MET/ISSUES outcome + per-page/per-sample/per-field breakdown
    */
   @Transactional(readOnly = true)
-  public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
-    return evaluate(assembleSchedule8(millId, year, EditableStatuses.NONE).pages(), null);
+  public Schedule8CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedPages(millId, year), null);
   }
 
   /**
-   * Evaluate Check Status for a single page (Story 14.6, S14/BR-09) — read-only, mutates nothing.
-   * Scopes the sweep to the one page (legacy {@code Schedule8DetailMB.checkStatus} single-page
-   * overload). A {@code pageId} not present for the mill/year yields a vacuously-MET empty result.
+   * Evaluate Check Status for a single page against the SCREEN — the single-page endpoint's entry
+   * point (Story 14.6, S14/BR-09; bcgov/nr-ilcr#359). The page's stored samples are the candidates,
+   * with the open sample panel ({@code request.sample()}) overlaid — see {@link
+   * Schedule8CheckOverlay#overlaySample}: a stored sample is replaced in place, and a new one (or
+   * one with an unknown id) is evaluated as the page's next sample, as legacy's Add put it into the
+   * checked list ({@code Schedule8DetailMB.java:222-231}). The page header stays stored. Read-only,
+   * mutates nothing, needs no revision token. A {@code pageId} not present for the mill/year yields
+   * a vacuously-MET empty result.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param pageId the page to check
+   * @param request the open sample panel, if any
    * @return the MET/ISSUES outcome scoped to that page
    */
   @Transactional(readOnly = true)
-  public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
-    // The full document goes in, not a pre-filtered one, so the page keeps its position in the
-    // Page Summary (page 2 is "Page # 2" in its notices, #461); evaluate() skips the others.
-    return evaluate(assembleSchedule8(millId, year, EditableStatuses.NONE).pages(), pageId);
+  public Schedule8CheckStatusResponse checkStatusPage(
+      long millId, int year, int pageId, Schedule8PageCheckRequest request) {
+    return evaluate(
+        Schedule8CheckOverlay.overlaySample(storedPages(millId, year), pageId, request), pageId);
+  }
+
+  /**
+   * The stored pages, for every Check Status scope. The full document goes in, not a pre-filtered
+   * one, so a page keeps its position in the Page Summary (page 2 is "Page # 2" in its notices,
+   * #461); {@link #evaluate} skips the others. Editability is irrelevant to the rules.
+   */
+  private List<Page> storedPages(long millId, int year) {
+    return assembleSchedule8(millId, year, EditableStatuses.NONE).pages();
   }
 
   /**
@@ -819,6 +863,34 @@ public class Schedule8Service {
     return value != null && !value.isBlank();
   }
 
+  /** A page's location as stored: the TSA column, and at most one of TFL # or Supply Block. */
+  record Location(String tsaNumber, String tflNumber, String supplyBlock) {}
+
+  /**
+   * TFL vs Supply Block are mutually exclusive (BR-03): a non-blank TFL # selects TFL and clears
+   * the supply block, otherwise the supply block applies and the TFL # is cleared — normalized
+   * server-side so exactly one is ever stored. A TFL page also gets the legacy {@code "TFL"}
+   * sentinel stamped into TSA_NUMBER, so the write side and the Check Status discriminator ({@code
+   * TSA_NUMBER == "TFL"}) agree — otherwise a TFL page saved through this API lands in the
+   * Supply-Block-required branch and can never reach MET (H2). Blank values become null.
+   *
+   * <p>Shared by {@link #savePage} and by the Check Status overlay, which must judge an unsaved
+   * location exactly as Save would map it: a page switched to TFL with its TFL # still blank keeps
+   * the selector's {@code "TFL"} and so reports {@code TFL #}, not {@code Supply Block}
+   * (bcgov/nr-ilcr#359). Nothing is rejected here.
+   *
+   * @param tsaNumber the TSA-or-TFL selector value
+   * @param tflNumber the entered TFL #
+   * @param supplyBlock the entered Supply Block
+   * @return the location as Save would map it
+   */
+  static Location locate(String tsaNumber, String tflNumber, String supplyBlock) {
+    if (isNotBlank(tflNumber)) {
+      return new Location(TFL_MARKER, tflNumber.trim(), null);
+    }
+    return new Location(trimToNull(tsaNumber), null, trimToNull(supplyBlock));
+  }
+
   /** Reject (400) a code that does not resolve to a row in its reference/code table. */
   private static void requireKnownCode(Map<String, String> codeTable, String code) {
     if (code == null || !codeTable.containsKey(code)) {
@@ -826,7 +898,7 @@ public class Schedule8Service {
     }
   }
 
-  private static String trimToNull(String value) {
+  static String trimToNull(String value) {
     if (value == null) {
       return null;
     }
@@ -884,17 +956,16 @@ public class Schedule8Service {
                 labelFor(subcategories, r.costItemCode()));
       }
     }
-    BigDecimal originalRate = zeroIfNull(s.originalRate());
-    BigDecimal finalRate = originalRate.add(additionsTotal).subtract(deductionsTotal);
+    BigDecimal finalRate = finalRate(s.originalRate(), additionsTotal, deductionsTotal);
     Integer percentTotal =
-        sumInts(
+        percentTotal(
             s.groundBasePct(),
             s.grapplePct(),
             s.skylinePct(),
             s.highleadPct(),
             s.helicopterPct(),
             s.otherSkiddingPct());
-    Integer actualHarvested = sumInts(s.coniferousVolume(), s.deciduousVolume());
+    Integer actualHarvested = actualHarvested(s.coniferousVolume(), s.deciduousVolume());
 
     return new Sample(
         s.id(),
@@ -923,7 +994,7 @@ public class Schedule8Service {
         normalize(s.originalRate()),
         normalize(additionsTotal),
         normalize(deductionsTotal),
-        normalize(finalRate),
+        finalRate,
         additions.size(),
         deductions.size(),
         additions,
@@ -933,6 +1004,40 @@ public class Schedule8Service {
 
   private static BigDecimal zeroIfNull(BigDecimal value) {
     return value == null ? BigDecimal.ZERO : value;
+  }
+
+  /**
+   * A sample's {@code percentTotal}: the sum of its six skidding/yarding percentages, a blank one
+   * counting as 0. Shared by the read path and the Check Status overlay, so an on-screen sample is
+   * totalled exactly as a stored one.
+   */
+  static Integer percentTotal(
+      Integer groundBasePct,
+      Integer grapplePct,
+      Integer skylinePct,
+      Integer highleadPct,
+      Integer helicopterPct,
+      Integer otherSkiddingPct) {
+    return sumInts(
+        groundBasePct, grapplePct, skylinePct, highleadPct, helicopterPct, otherSkiddingPct);
+  }
+
+  /**
+   * A sample's {@code actualHarvested}: Coniferous + Deciduous, a blank one counting as 0. Shared
+   * by the read path and the Check Status overlay.
+   */
+  static Integer actualHarvested(Integer coniferousVolume, Integer deciduousVolume) {
+    return sumInts(coniferousVolume, deciduousVolume);
+  }
+
+  /**
+   * A sample's {@code finalRate = originalRate + additionsTotal - deductionsTotal} (a blank
+   * original rate counting as 0), in natural form. Shared by the read path and the Check Status
+   * overlay.
+   */
+  static BigDecimal finalRate(
+      BigDecimal originalRate, BigDecimal additionsTotal, BigDecimal deductionsTotal) {
+    return normalize(zeroIfNull(originalRate).add(additionsTotal).subtract(deductionsTotal));
   }
 
   /**
@@ -998,7 +1103,7 @@ public class Schedule8Service {
    * serializes as an integer ({@code 5}, not {@code 5.0000}) and a decimal drops trailing zeros
    * ({@code 28.5}) — Schedule 1/2/4 wire-contract parity. Null-safe.
    */
-  private static BigDecimal normalize(BigDecimal value) {
+  static BigDecimal normalize(BigDecimal value) {
     if (value == null) {
       return null;
     }

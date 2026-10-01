@@ -16,6 +16,7 @@ import {
 import { Add, CheckmarkOutline, Close, Copy, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
+import type { Schedule10CheckRequest } from '@/interfaces/Schedule10Request'
 import type {
   ConstructionPage,
   RoadDetail,
@@ -47,6 +48,8 @@ import {
   MASK_DIGITS,
   SCH10_MESSAGES,
   buildPageBody,
+  buildPageCheckEntry,
+  buildRoadCheckEntry,
   buildRoadDetailBody,
   emptyPageForm,
   emptyRoadDetailForm,
@@ -110,10 +113,25 @@ const Schedule10: FC = () => {
     setMessage,
     setActionError,
     setCheckResult,
-    clearBanners,
+    clearBanners: clearHookBanners,
     resetBanners,
     run,
   } = useScheduleBanners<Schedule10CheckSummary>(isCurrent)
+
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever that
+  // snapshot changes, so an older response cannot repaint a verdict for values no longer on screen.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = useCallback(() => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }, [setCheckResult])
+
+  // Every action clears the banners first, and in doing so supersedes any check still in flight.
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+  }
 
   const [pagePanelMode, setPagePanelMode] = useState<PanelMode>('closed')
   const [openPageId, setOpenPageId] = useState<number | null>(null)
@@ -134,20 +152,23 @@ const Schedule10: FC = () => {
   // A pending level change, held while the unsaved-changes confirmation is open.
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null)
 
+  // Closing either editor takes its values off screen, so a verdict that included them is cleared.
   const closePagePanel = useCallback(() => {
     setPagePanelMode('closed')
     setOpenPageId(null)
     setPageForm(emptyPageForm())
     setPageErrors({})
     setRoadGroupStale(false)
-  }, [])
+    invalidateCheckResult()
+  }, [invalidateCheckResult])
 
   const closeRoadPanel = useCallback(() => {
     setRoadPanelMode('closed')
     setOpenRoadId(null)
     setRoadForm(emptyRoadDetailForm())
     setRoadErrors({})
-  }, [])
+    invalidateCheckResult()
+  }, [invalidateCheckResult])
 
   const resetTransient = useCallback(() => {
     resetBanners()
@@ -220,7 +241,7 @@ const Schedule10: FC = () => {
     if (LOCATION_FIELDS.has(key)) {
       setRoadGroupStale(true)
     }
-    setCheckResult(null)
+    invalidateCheckResult()
   }
 
   const setRoadField = (key: keyof RoadDetailFormValues, value: string) => {
@@ -234,7 +255,7 @@ const Schedule10: FC = () => {
       return next
     })
     setRoadErrors((prev) => clearFieldError(prev, key))
-    setCheckResult(null)
+    invalidateCheckResult()
   }
 
   const maskRoadField = (key: MaskedField) => {
@@ -424,18 +445,68 @@ const Schedule10: FC = () => {
     )
   }
 
+  /**
+   * Check Status over the whole schedule, from either level (#359). The body carries the editor open
+   * at the level on screen — the page panel at the page level, the road editor at the road level —
+   * but only for an EXISTING page or road: legacy built a new one outside the checked list, so an
+   * unsaved new page or road is never evaluated. Returns null when Save's validator blocks the open
+   * editor, after marking its fields exactly as Save does.
+   */
+  const buildCheckRequest = (): Schedule10CheckRequest | null => {
+    const editable = data?.editable === true
+    const roadPage =
+      search.pageId === undefined
+        ? undefined
+        : data?.pages.find((entry) => entry.pageId === search.pageId)
+    if (roadPage) {
+      const roadOpen = roadPanelMode === 'edit' || roadPanelMode === 'view'
+      if (!roadOpen || openRoadId === null) {
+        return { page: null, road: null }
+      }
+      // Gated only while the editor is editable: a View editor highlights nothing, so it must not block.
+      if (editable && roadPanelMode === 'edit') {
+        const errors = validateRoadDetail(roadForm)
+        setRoadErrors(errors)
+        if (Object.keys(errors).length > 0) {
+          return null
+        }
+      }
+      return { page: null, road: buildRoadCheckEntry(roadForm, roadPage.pageId, openRoadId) }
+    }
+    const pageOpen = pagePanelMode === 'edit' || pagePanelMode === 'view'
+    if (!pageOpen || openPageId === null) {
+      return { page: null, road: null }
+    }
+    if (editable && pagePanelMode === 'edit') {
+      const errors = validatePage(pageForm)
+      setPageErrors(errors)
+      if (Object.keys(errors).length > 0) {
+        return null
+      }
+    }
+    return { page: buildPageCheckEntry(pageForm, openPageId), road: null }
+  }
+
   const checkStatus = () => {
     if (!data || saving) {
       return
     }
     clearBanners()
+    const body = buildCheckRequest()
+    if (body === null) {
+      return
+    }
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
     run(
       apiService
         .getAxiosInstance()
-        .post<Schedule10CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),
+        .post<Schedule10CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),
       {
         fallback: 'Unable to check status.',
         onSuccess: (response) => setCheckResult(summariseCheckStatus(response)),
+        // A response — success OR failure — for a superseded snapshot describes values no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
       },
     )
   }
@@ -526,6 +597,7 @@ const Schedule10: FC = () => {
               }}
               onCloseForm={closeRoadPanel}
               onSave={() => saveRoadDetail(currentPage)}
+              onCheckStatus={checkStatus}
               onRequestDelete={(detail) => setDeleteTarget({ kind: 'road', detail })}
               onBack={() =>
                 guardLevelChange(roadPanelMode !== 'closed', roadPanelMode === 'view', () => {

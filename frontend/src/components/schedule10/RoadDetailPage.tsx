@@ -10,7 +10,16 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, ArrowLeft, Close, Edit, Save, TrashCan, View } from '@carbon/icons-react'
+import {
+  Add,
+  ArrowLeft,
+  CheckmarkOutline,
+  Close,
+  Edit,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import type {
   ConstructionPage,
   RoadDetail,
@@ -34,6 +43,8 @@ type RoadDetailPageProps = {
   readonly onOpenDetail: (detail: RoadDetail) => void
   readonly onCloseForm: () => void
   readonly onSave: () => void
+  /** Checks the WHOLE schedule, carrying the open road editor (#359). */
+  readonly onCheckStatus: () => void
   readonly onRequestDelete: (detail: RoadDetail) => void
   readonly onBack: () => void
   readonly onChange: (key: keyof RoadDetailFormValues, value: string) => void
@@ -59,6 +70,7 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
   onOpenDetail,
   onCloseForm,
   onSave,
+  onCheckStatus,
   onRequestDelete,
   onBack,
   onChange,
@@ -78,6 +90,17 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
       <div className="schedule-10__actions">
         <Button kind="primary" disabled={controlsDisabled} renderIcon={Add} onClick={onOpenNew}>
           Add Road
+        </Button>
+        {/* Legacy's one Check Status button had no render condition (`schedule10.xhtml:52-55`), so it
+            showed at this level too; it sits after Add Road as the page level's sits after Add New
+            Page, under the same disabled rule. */}
+        <Button
+          kind="tertiary"
+          renderIcon={CheckmarkOutline}
+          disabled={controlsDisabled}
+          onClick={onCheckStatus}
+        >
+          Check Status
         </Button>
         {/* Back is never disabled, including for a caller who may not edit — a read-only reporter
             must be able to leave the level. */}
