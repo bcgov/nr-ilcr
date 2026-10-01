@@ -381,7 +381,38 @@ class Schedule4WriteServiceTest {
     verify(repository).upsertDetail(7001, 40, bd("1000"), 50000, USER); // fixed row on the identity
     verify(repository).deleteDetails(7001, List.of(47)); // its own code: the detail goes…
     verify(repository, never()).deleteReport(7001); // …the report never does
+    // No distance code is left on it, so the cleared code's distance goes with it.
+    verify(repository).updateReportDistance(7001, null, USER);
     verify(repository).deleteReport(7002); // an ordinary child goes whole
+  }
+
+  @Test
+  void save_edit_identityReportKeepingAnotherDistanceCode_keepsItsDistance() {
+    // Legacy data can put two distance codes on one report, sharing its single DISTANCE. Clearing
+    // 52 while keeping 47 must not null the distance 47 was just re-stamped with (47 is written
+    // before 52 in the same save).
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(7001, MILL, YEAR)).thenReturn(Optional.of("Old Dump"));
+    when(repository.nameExists(MILL, YEAR, "Old Dump", "Old Dump")).thenReturn(false);
+    when(repository.bumpRevision(7001, 0, MILL, YEAR, null, USER)).thenReturn(1);
+    when(repository.findDistanceChildren(MILL, YEAR, "Old Dump"))
+        .thenReturn(Map.of(47, List.of(7001), 52, List.of(7001)));
+    when(repository.countDistanceDetails(7001)).thenReturn(1); // 47 is still on it
+    stubRecompute();
+
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            7001, 0, "Old Dump", null, List.of(new CategoryInput(47, bd("50"), 100, bd("10")))),
+        CallerRights.SUBMITTER,
+        USER);
+
+    verify(repository).updateReportDistance(7001, bd("10"), USER); // 47 re-stamps the distance
+    verify(repository).deleteDetails(7001, List.of(52)); // 52's detail goes…
+    verify(repository, never()).updateReportDistance(7001, null, USER); // …its distance stays
+    verify(repository, never()).deleteReport(7001);
   }
 
   @Test

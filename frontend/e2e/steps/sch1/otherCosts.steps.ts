@@ -202,11 +202,10 @@ Then(
 );
 
 /**
- * DIV-3's assertion (bcgov#362): removing a row must ASK first. Deliberately RED today — the trash
- * button goes straight to `useEditableCostRows.removeRow` -> `persist(next, 'delete')` with no dialog,
- * so a mis-click destroys a recorded cost with no undo. Legacy prompted with `confirmDeleteMsg`
- * (`schedule1OtherCosts.xhtml:94-96`). Schedule 3 asserts the same guarantee on the same shared hook
- * (`sch3` DIV-5, `row-delete-confirm.feature`), so one fix turns both green.
+ * DIV-3's assertion (bcgov#362): removing a row must ASK first, as legacy did with `confirmDeleteMsg`
+ * (`schedule1OtherCosts.xhtml:94-96`). A tracked red until #362 put the trash button behind the shared
+ * confirmation; it now guards against the prompt being dropped again. Schedule 3 asserts the same
+ * guarantee on the same shared hook (`sch3` DIV-5, `row-delete-confirm.feature`).
  */
 Then('the Other Costs sub-page asks me to confirm the removal', async ({ otherCostsPage }) => {
   await expect(

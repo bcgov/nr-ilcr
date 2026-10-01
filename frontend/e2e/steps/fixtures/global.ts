@@ -166,6 +166,16 @@ export type World = {
    * year anywhere on it, so `scheduleKey` does not apply.
    */
   millAnchor?: import('../../fixtures/mill/mills-test-data').AdminMillAnchor;
+
+  // --- usr ---
+  /**
+   * The seeded users the scenario works on, by their feature-file key — set by "the <key> user is at
+   * rest" (a scenario may hold several: a switch, a carry). `usrSelected` is the one on the page now.
+   */
+  usrAnchors?: Record<string, import('../../fixtures/usr/users-test-data').UsrAnchor>;
+  usrSelected?: import('../../fixtures/usr/users-test-data').UsrAnchor;
+  /** Every directory lookup the page sent, in order (pages/usr/usersPage.ts stubUserDirectory). */
+  usrLookups?: URLSearchParams[];
 };
 
 export type GlobalFixtures = {

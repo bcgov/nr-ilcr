@@ -76,7 +76,14 @@ export interface EditableCostRows<TDoc extends EditableRowsDoc> {
   setRowDescription: (key: number, value: string) => void
   setRowValue: (key: number, fieldKey: string, value: string) => void
   handleAdd: () => void
-  removeRow: (key: number) => void
+  /** The row awaiting an answer to the delete confirmation, or null when no prompt is open. */
+  pendingRemoveKey: number | null
+  /** Trash-can click: opens the delete confirmation for the row; nothing is removed yet. */
+  requestRemove: (key: number) => void
+  /** "Yes": removes the pending row and persists the set. */
+  confirmRemove: () => void
+  /** "No" / close: dismisses the prompt, no request, the row is untouched. */
+  cancelRemove: () => void
   handleSave: () => void
   handleBack: () => void
   confirmBack: () => void
@@ -93,7 +100,8 @@ const hasErrors = (errors: RowValidationErrors): boolean =>
  * The shared editing state machine for the Schedule 1 / Schedule 3 cost sub-pages, replicating the
  * legacy edit-in-place + batch-persist model: every row is a live input held in memory, and each
  * mutation (Add, Remove, Save) persists the WHOLE set in one call (the server reconciles
- * insert/update/delete). Add/Remove persist immediately; the {@code intent} only selects the success
+ * insert/update/delete). Add persists immediately and Remove persists as soon as the delete
+ * confirmation is answered Yes (legacy p:confirm, #362); the {@code intent} only selects the success
  * message. Callers own only their page-specific columns/markup — this owns load, edit, add, remove,
  * save, and the unsaved-changes Back guard.
  */
@@ -120,6 +128,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
   const [rows, setRows] = useState<EditRow[]>([])
   const [rowErrors, setRowErrors] = useState<Record<number, RowValidationErrors>>({})
   const [dirty, setDirty] = useState(false)
+  const [pendingRemoveKey, setPendingRemoveKey] = useState<number | null>(null)
 
   const [addDescription, setAddDescription] = useState('')
   const [addValues, setAddValues] = useState<Record<string, string>>(() => emptyValues(fieldKeys))
@@ -157,6 +166,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     setAddDescription('')
     setAddValues(emptyValues(fieldKeys))
     setAddErrors({})
+    setPendingRemoveKey(null)
     /* eslint-enable @eslint-react/set-state-in-effect */
     let active = true
     apiService
@@ -227,6 +237,9 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     }
     if (Object.keys(errs).length > 0) {
       setRowErrors(errs)
+      // Nothing is sent, so a caller that already changed local state (Remove) must undo it — else
+      // the row vanishes from the grid while it is still stored.
+      rollback?.()
       return
     }
     setRowErrors({})
@@ -289,7 +302,10 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     persist(next, 'save')
   }
 
-  // "Remove" drops the row and immediately persists the whole set (legacy delete → update(false)).
+  // "Remove" asks first: legacy attaches p:confirm to the row's Delete (schedule1OtherCosts.xhtml:94-96,
+  // schedule3SubtotalOtherCosts.xhtml:94-96, schedule3IncludedUnacceptableCosts.xhtml:80-82; #362).
+  // Only "Yes" reaches removeRow, which drops the row and persists the whole set (legacy delete →
+  // update(false)) — persisting on the answer is faithful, legacy wrote on the click too.
   const removeRow = (key: number) => {
     if (saving) {
       return
@@ -314,13 +330,46 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     // position, into whatever the grid holds by then: the row inputs stay live during the request,
     // so replacing the whole array from this closure would discard edits made to other rows in the
     // meantime (SScholefield, #506). A failed Save/Add keeps the entered values on screen already.
-    persist(next, 'delete', () =>
+    //
+    // Legacy's Delete submits only itself (process="@this" on all three pages), so an invalid edit in
+    // ANOTHER row neither blocks it nor reaches the database: legacy refused that value when it was
+    // typed, and the delete wrote the row as last stored. So such a row is sent with its saved values
+    // (and one never saved is left out); success then re-seeds the grid from the server, as legacy
+    // re-read the schedule after update().
+    const savedById = new Map(data ? rowsFromDoc(data).map((r) => [r.id, r]) : [])
+    const toSend = next.flatMap((r) => {
+      if (!hasErrors(validate(r.description, r.values))) {
+        return [r]
+      }
+      const saved = r.id === null ? undefined : savedById.get(r.id)
+      return saved ? [{ ...r, description: saved.description, values: saved.values }] : []
+    })
+    persist(toSend, 'delete', () =>
       setRows((current) =>
         current.some((r) => r.key === key)
           ? current
           : [...current.slice(0, index), removed, ...current.slice(index)],
       ),
     )
+  }
+
+  const requestRemove = (key: number) => {
+    if (!saving && pendingRemoveKey === null) {
+      setPendingRemoveKey(key)
+    }
+  }
+
+  const cancelRemove = () => setPendingRemoveKey(null)
+
+  const confirmRemove = () => {
+    if (saving) {
+      return
+    }
+    const key = pendingRemoveKey
+    setPendingRemoveKey(null)
+    if (key !== null) {
+      removeRow(key)
+    }
   }
 
   // "Save" persists the whole set (legacy save() → update(true)).
@@ -364,7 +413,10 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
     setRowDescription,
     setRowValue,
     handleAdd,
-    removeRow,
+    pendingRemoveKey,
+    requestRemove,
+    confirmRemove,
+    cancelRemove,
     handleSave,
     handleBack,
     confirmBack,

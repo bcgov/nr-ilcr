@@ -15,6 +15,7 @@ import {
   NEW_ACCOUNT_GUID,
   S05_LICENSEE_GUID,
 } from '../fixtures/mill/mills-test-data';
+import { USR_ANCHORS, USR_MILLS, UNKNOWN_GUID } from '../fixtures/usr/users-test-data';
 
 /**
  * PREFLIGHT — the CI seed carries every anchor the fixtures pin.
@@ -127,6 +128,12 @@ const MILL_KEYED_DOMAINS = new Map<string, string>([
     "UC-MILL-001 works on the mill's own ILCR_MILL_STATUS_XREF row and its client-location contacts; "
       + 'the Mills page has no reporting year anywhere on it. Its anchors are ADMIN_MILL_ANCHORS, '
       + 'checked against the seed by the mill-administration test in this file.',
+  ],
+  [
+    'usr',
+    "UC-USR-001/002 work on a user's ILCR_USER account and ILCR_MILL_USER_XREF assignments; the "
+      + 'Users page has no reporting year anywhere on it. Its anchors are USR_ANCHORS / USR_MILLS, '
+      + 'checked against the seed by the user-administration test in this file.',
   ],
 ]);
 
@@ -940,13 +947,92 @@ test('seed parity: every mill-administration anchor is seeded with its location,
   ).toEqual([]);
 });
 
+test('seed parity: every user-administration anchor is seeded, at rest, as the fixture pins it', async () => {
+  // The users-keyed half of the gate (MILL_KEYED_DOMAINS 'usr'). Every Users-page scenario leans on
+  // rows the schedule anchors never need, each CI-only if missing or wrong:
+  //  - each mill's THE.MILL row, an ACT xref and a current-year report-status row — without that row
+  //    GET /v1/mills does not list the mill, and the Add-mill dropdown has no option to pick;
+  //  - each user's ILCR_USER row with its pinned ACTIVE_IND (the account actions assert it), and NO
+  //    row for the first-time-import users, or activate/add would never provision one;
+  //  - exactly the pinned assignments, ACTIVE as ACTIVE_DATE set + INACTIVE_DATE null, ENDED as
+  //    INACTIVE_DATE set + ACTIVE_DATE NULL — the Users page reads a row with both dates as Active;
+  //  - an xref ENTRY_USERID other than 'E2E_SEED', which the mock-submitter association INSERT keys on.
+  const { all } = readMigrations();
+  const mills = new Map(parseInserts(all, 'MILL').map((r) => [r.MILL_ID, r]));
+  const xrefs = new Map(
+    parseInserts(all, 'ILCR_MILL_STATUS_XREF').map((r) => [r.ILCR_MILL_STATUS_XREF_ID, r]),
+  );
+  const currentYear = Math.max(
+    ...parseInserts(all, 'ILCR_REPORTING_PERIOD').map((r) => Number(r.REPORT_YEAR)),
+  );
+  const reportStatus = new Set(
+    parseInserts(all, 'ILCR_MILL_REPORT_STATUS').map((r) => `${r.ILCR_MILL_ID}/${r.REPORT_YEAR}`),
+  );
+  const users = new Map(parseInserts(all, 'ILCR_USER').map((r) => [r.USER_GUID, r]));
+  const assignments = parseInserts(all, 'ILCR_MILL_USER_XREF');
+
+  const problems: string[] = [];
+  for (const m of USR_MILLS) {
+    const at = `usr mill ${m.millId} (${m.millNumber} - ${m.millName})`;
+    const mill = mills.get(String(m.millId));
+    if (!mill) problems.push(`${at}: no THE.MILL row`);
+    else if (mill.MILL_NUMBER !== m.millNumber || mill.MILL_NAME !== m.millName) {
+      problems.push(`${at}: THE.MILL reads ${mill.MILL_NUMBER} - ${mill.MILL_NAME}`);
+    }
+    const xref = xrefs.get(String(m.millId));
+    if (!xref) problems.push(`${at}: no THE.ILCR_MILL_STATUS_XREF row`);
+    else {
+      if (xref.ILCR_MILL_STATUS_CODE !== 'ACT') problems.push(`${at}: xref status is ${xref.ILCR_MILL_STATUS_CODE}, expected ACT`);
+      if (xref.ENTRY_USERID === 'E2E_SEED') {
+        problems.push(`${at}: xref ENTRY_USERID 'E2E_SEED' hands it an active mock-submitter assignment`);
+      }
+    }
+    if (!reportStatus.has(`${m.millId}/${currentYear}`)) {
+      problems.push(`${at}: no ${currentYear} ILCR_MILL_REPORT_STATUS row, so GET /v1/mills does not list it`);
+    }
+  }
+
+  for (const a of Object.values(USR_ANCHORS)) {
+    const at = `usr user "${a.key}" (${a.userGuid})`;
+    const account = users.get(a.userGuid);
+    if (a.account === null) {
+      if (account) problems.push(`${at}: has an ILCR_USER row, so the first-time import never provisions it`);
+    } else if (!account) {
+      problems.push(`${at}: no ILCR_USER row`);
+    } else if (account.ACTIVE_IND !== a.account) {
+      problems.push(`${at}: ACTIVE_IND is ${account.ACTIVE_IND}, expected ${a.account}`);
+    }
+    const rows = assignments.filter((x) => x.USER_GUID === a.userGuid);
+    const shape = (x: Record<string, string | null>) =>
+      x.INACTIVE_DATE ? (x.ACTIVE_DATE ? 'BOTH' : 'ENDED') : x.ACTIVE_DATE ? 'ACTIVE' : 'NEITHER';
+    const served = rows.map((x) => `${x.ILCR_MILL_ID}:${shape(x)}`).sort();
+    const pinned = [
+      ...a.active.map((id) => `${id}:ACTIVE`),
+      ...a.ended.map((id) => `${id}:ENDED`),
+    ].sort();
+    if (JSON.stringify(served) !== JSON.stringify(pinned)) {
+      problems.push(`${at}: assignments are [${served.join(', ')}], expected [${pinned.join(', ')}]`);
+    }
+  }
+  if (users.has(UNKNOWN_GUID)) problems.push(`the unresolvable carried user ${UNKNOWN_GUID} has an ILCR_USER row`);
+
+  expect(
+    problems,
+    `${SEED} does not carry the user-administration anchors fixtures/usr/users-test-data.ts pins:\n`
+      + `${problems.join('\n')}\n${FIX_IT}`,
+  ).toEqual([]);
+});
+
 test('seed parity: the e2e-only seed carries no anchor no fixture pins', async ({}, testInfo) => {
   // ADVISORY, not a failure. An unreferenced row is harmless headroom, and the sec domain leans on the
   // Home lists these rows populate. But a row left behind by a retired anchor is also how the seed
   // grows a state nobody can explain, so it is surfaced rather than ignored.
   const keys = collectAnchorKeys(FIXTURES_DIR);
   // The mill-keyed status anchors' report rows are pinned by the mill-administration check, not a key.
-  const millKeyed = new Set(ADMIN_MILL_ANCHORS.map((a) => String(a.millId)));
+  const millKeyed = new Set([
+    ...ADMIN_MILL_ANCHORS.map((a) => String(a.millId)),
+    ...USR_MILLS.map((m) => String(m.millId)),
+  ]);
   const orphans = [...statusKeys(readMigrations().e2eOnly).keys()]
     .filter((key) => !keys.has(key) && !millKeyed.has(key.split('/')[0]))
     .sort(byMillThenYear);

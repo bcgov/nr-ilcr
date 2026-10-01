@@ -57,7 +57,7 @@ const OtherCostsPage: FC = () => {
     setRowDescription,
     setRowValue,
     handleAdd,
-    removeRow,
+    requestRemove,
     saving,
   } = editor
 
@@ -152,7 +152,7 @@ const OtherCostsPage: FC = () => {
                     iconDescription="Remove"
                     renderIcon={TrashCan}
                     disabled={saving}
-                    onClick={() => removeRow(row.key)}
+                    onClick={() => requestRemove(row.key)}
                   />
                 </TableCell>
               </>

@@ -1,9 +1,17 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { act, getDefaultNormalizer } from '@testing-library/react'
 import { render, screen, userEvent, waitFor, within } from '@/test-utils'
 import { server } from '@/test-setup'
 import MillAssociations from '../index'
+
+const navigateSpy = vi.fn()
+// Spread over the REAL module, as the Mills suite does: the page renders bare, outside any router,
+// and the per-row View is its only router consumer.
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useNavigate: () => navigateSpy,
+}))
 
 const API = 'http://localhost:3000/api'
 const LOOKUP = `${API}/v1/users/lookup`
@@ -92,6 +100,7 @@ const drainEventLoop = async (turns = 20) => {
 }
 
 beforeEach(() => {
+  navigateSpy.mockReset()
   server.use(
     http.get(MILLS, () => HttpResponse.json(MILL_LIST)),
     http.get(LOOKUP, () => HttpResponse.json([ADA])),
@@ -1028,5 +1037,49 @@ describe('Users page — resilience (AC6)', () => {
     // The table still shows the pre-write row; "has been deactivated" standing over it would
     // claim the opposite of what is on screen.
     expect(screen.queryByText(/has been deactivated/)).not.toBeInTheDocument()
+  })
+})
+
+describe('Users page — the jump-to-mill link (UC-MILL-002 S01)', () => {
+  test('View renders on EVERY row, active or ended, and carries the mill across', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670, endedOn671)
+    render(<MillAssociations />)
+    await selectAda(user)
+    await screen.findByText('Cedar Mill')
+
+    // users.xhtml:85 has no `rendered` guard on View at all.
+    expect(within(rowFor('670')).getByRole('button', { name: 'View mill 670' })).toBeInTheDocument()
+    expect(within(rowFor('671')).getByRole('button', { name: 'View mill 671' })).toBeInTheDocument()
+
+    await user.click(within(rowFor('671')).getByRole('button', { name: 'View mill 671' }))
+
+    // The mill's ID, not its number: the Mills page reads GET /v1/admin/mills/{millId}.
+    expect(navigateSpy).toHaveBeenCalledTimes(1)
+    expect(navigateSpy).toHaveBeenCalledWith({ to: '/mills', search: { millId: 671 } })
+  })
+
+  test('View writes nothing — it is a navigation, not an assignment action', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    const writes: string[] = []
+    server.use(
+      http.post(`${API}/v1/mills/:millId/submitters`, ({ request }) => {
+        writes.push(request.url)
+        return HttpResponse.json({})
+      }),
+      http.patch(`${API}/v1/mills/:millId/submitters/:userGuid`, ({ request }) => {
+        writes.push(request.url)
+        return HttpResponse.json({})
+      }),
+    )
+    render(<MillAssociations />)
+    await selectAda(user)
+    await screen.findByText('Cedar Mill')
+
+    await user.click(within(rowFor('670')).getByRole('button', { name: 'View mill 670' }))
+    await drainEventLoop()
+
+    expect(writes).toEqual([])
   })
 })

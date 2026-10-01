@@ -9,7 +9,7 @@ import MillAssociations from '@/components/millAssociations'
 // a param survives a reload and a shared link, which `state` does not.
 //
 // This is the half Story 23.3 deferred as AC10 because the Mills page did not exist yet; the
-// REVERSE leg (this page handing a mill over to Mills) stays with 23.3's own AC10 work.
+// REVERSE leg (this page handing a mill over to Mills) is routes/mills.tsx's `millId`.
 export type MillAssociationsSearch = {
   userGuid?: string
 }
