@@ -4,6 +4,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import AppProviders from '@/app/AppProviders'
 import { configureAmplify } from '@/config/auth/amplify-initializer'
 import { isMockAuth } from '@/env'
+
 import '@/styles/index.scss'
 
 // Import the generated route tree
