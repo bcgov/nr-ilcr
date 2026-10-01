@@ -26,7 +26,7 @@ frontend/    React/Vite web app; frontend/e2e is the Playwright + playwright-bdd
 database/    Oracle Free image for the CI e2e database (tools namespace)
 common/      OpenShift init template, API smoke test, k6 load tests
 scripts/     Local DDL helper and read-only delivery-schema probes
-docs/        Decision records and delivery-schema probe output
+docs/        API inventory, decision records and delivery-schema probe output
 monitoring/  Sysdig alert templates (used by the PROD monitor job)
 ```
 
@@ -212,6 +212,8 @@ The backend follows the CSP-style JVM deployment path: Spring Boot 4, executable
   - Schedule writes also pass the role × status editability matrix.
   - Submitters are limited to mills they are actively assigned to.
 - **Errors** are RFC 7807 `ProblemDetail`, and message text comes from `messages.properties` under the legacy keys.
+
+Every endpoint and the permission it requires is listed in [`docs/api-inventory.md`](docs/api-inventory.md). Keep it in step when you add or change an endpoint.
 
 ## OpenShift Status
 
