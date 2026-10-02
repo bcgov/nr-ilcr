@@ -223,8 +223,8 @@ const Mills: FC<MillsProps> = ({ carriedMillId }) => {
     setContacts([])
     setUsers([])
     if (!keepMessages) clearNotifications()
-    loadContacts(next.millId)
-    loadUsers(next.millId)
+    void loadContacts(next.millId)
+    void loadUsers(next.millId)
   }
 
   // `adopt` closes over fresh state every render; read through a ref at call time so the resolve
@@ -277,7 +277,7 @@ const Mills: FC<MillsProps> = ({ carriedMillId }) => {
           setError(extractDetail(failure) || MILL_FAILED)
         }
       })
-    loadUsers(millId)
+    void loadUsers(millId)
   }
 
   /** One guarded write: lock, clear the banners, then re-read from the server on success. */
@@ -401,7 +401,7 @@ const Mills: FC<MillsProps> = ({ carriedMillId }) => {
         else setMessage(data.message)
         // Legacy reloaded the panel in BOTH branches (MillsMB.java:503-504). On the duplicate
         // branch that refetch is observably a no-op, which is what keeps the panel unchanged.
-        loadUsers(millId)
+        void loadUsers(millId)
       },
       // A refusal renders INSIDE the still-open dialog: the page banner sits behind the Carbon
       // overlay, so routing it there would show the administrator nothing at all.
@@ -426,7 +426,7 @@ const Mills: FC<MillsProps> = ({ carriedMillId }) => {
         setMessage(data.message)
         // Legacy's row flipped only because the DAO mutated the very object the table held
         // (MillsMB.java:448-461); a DTO-based rebuild must refetch or nothing changes on screen.
-        loadUsers(millId)
+        void loadUsers(millId)
       },
     )
   }

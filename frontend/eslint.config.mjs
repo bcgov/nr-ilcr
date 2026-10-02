@@ -1,8 +1,8 @@
-import { defineConfig } from 'eslint/config';
-import tseslint from 'typescript-eslint';
-import eslintReact from '@eslint-react/eslint-plugin';
-import prettierPlugin from 'eslint-plugin-prettier';
-import prettierConfig from 'eslint-config-prettier';
+import { defineConfig } from 'eslint/config'
+import tseslint from 'typescript-eslint'
+import eslintReact from '@eslint-react/eslint-plugin'
+import prettierPlugin from 'eslint-plugin-prettier'
+import prettierConfig from 'eslint-config-prettier'
 
 const baseIgnores = [
   '**/vite.config.*',
@@ -12,15 +12,11 @@ const baseIgnores = [
   '**/dist/**',
   '**/node_modules/**',
   '**/coverage/**',
-];
+]
 
 export default defineConfig([
   {
-    ignores: [
-      ...baseIgnores,
-      '**/public/**',
-      'src/routeTree.gen.ts',
-    ],
+    ignores: [...baseIgnores, '**/public/**', 'src/routeTree.gen.ts'],
   },
   ...tseslint.configs.recommended,
   eslintReact.configs['recommended-typescript'],
@@ -28,6 +24,14 @@ export default defineConfig([
     files: ['**/*.ts', '**/*.tsx'],
     plugins: {
       prettier: prettierPlugin,
+    },
+    // Type information is needed by ONE rule below (no-floating-promises). `projectService` lets
+    // typescript-eslint find each file's tsconfig itself; nothing else here is type-aware.
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       'prettier/prettier': 'error',
@@ -49,6 +53,14 @@ export default defineConfig([
       '@typescript-eslint/no-use-before-define': ['error', { functions: false }],
       '@typescript-eslint/no-var-requires': 'off',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
+
+      // SonarCloud S9383 ("Promises must be awaited, end with .catch / .then(ok, err), or be
+      // explicitly marked as ignored with `void`") failed the frontend quality gate with 53 hits
+      // and dropped the reliability rating to C. This is the same rule, enforced at lint time so
+      // it fails a PR here instead of on SonarCloud after the push. Fire-and-forget calls whose
+      // errors are handled inside the callee — the schedule hooks' run/save/remove/checkStatus,
+      // the loaders that end in .catch, router navigate() — are marked `void` on purpose.
+      '@typescript-eslint/no-floating-promises': ['error', { ignoreVoid: true }],
 
       'react/prop-types': 'off',
 
@@ -82,4 +94,4 @@ export default defineConfig([
     },
   },
   prettierConfig,
-]);
+])

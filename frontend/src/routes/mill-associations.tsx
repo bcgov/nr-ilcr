@@ -45,7 +45,7 @@ const MillAssociationsRoute: FC = () => {
     if (!userGuid) return
     // `replace`, so Back returns to the Mills page rather than re-entering this one with the param
     // still on it and re-selecting the user the administrator has already navigated away from.
-    navigate({ search: {}, replace: true })
+    void navigate({ search: {}, replace: true })
   }, [userGuid, navigate])
 
   return <MillAssociations carriedUserGuid={carried} />

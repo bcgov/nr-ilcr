@@ -833,7 +833,7 @@ const Schedule5: FC = () => {
     // mill/year query the hook's save/remove/checkStatus build — so it cannot go through a suffix.
     // It still shares the hook's guarded run() (same saving lock, same isCurrent guard). The null
     // fallback fails SILENTLY: a failed lookup leaves the banner absent rather than inventing text.
-    run(
+    void run(
       apiService.getAxiosInstance().get<MessageInfo>(MESSAGES_PATH, {
         params: { key: COPY_MESSAGE_KEY, arg: camp.campName ?? '' },
       }),
@@ -1047,7 +1047,7 @@ const Schedule5: FC = () => {
     // An update PUTs /v1/schedule5/camps/{id}; a new camp POSTs /v1/schedule5/camps. The suffix
     // reproduces each URL verbatim over the '/v1/schedule5' base, with the mill/year query the hook
     // appends.
-    save<Schedule5Response>(body, {
+    void save<Schedule5Response>(body, {
       method: isUpdate ? 'put' : 'post',
       suffix: isUpdate ? `/camps/${String(panelCampId)}` : '/camps',
       fallback: 'Camp could not be saved.',
@@ -1062,7 +1062,7 @@ const Schedule5: FC = () => {
     const target = confirmDelete
     setConfirmDelete(null)
     clearBanners()
-    remove<Schedule5Response>({
+    void remove<Schedule5Response>({
       suffix: `/camps/${String(target.campId)}`,
       fallback: 'Unable to delete camp.',
       onSuccess: (document) => {
@@ -1109,7 +1109,7 @@ const Schedule5: FC = () => {
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The hook's default `/check-status` suffix over the '/v1/schedule5' base reproduces the
     // check-status URL verbatim. The body carries the screen; nothing is persisted (AD-5).
-    checkStatus<Schedule5CheckStatusResponse>(
+    void checkStatus<Schedule5CheckStatusResponse>(
       {
         fallback: 'Unable to check status.',
         onSuccess: (result) => {
@@ -1204,7 +1204,7 @@ const Schedule5: FC = () => {
     const knownIds = new Set((data?.camps ?? []).map((camp) => camp.campId))
     // Always a POST to /v1/schedule5/camps: this ladder opens only for an UNSAVED (new or copied)
     // camp, so the save is a create.
-    save<Schedule5Response>(body, {
+    void save<Schedule5Response>(body, {
       method: 'post',
       suffix: '/camps',
       fallback: 'Camp could not be saved.',

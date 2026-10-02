@@ -292,7 +292,7 @@ const Schedule8: FC = () => {
     const prevIds = new Set(data.pages.map((p) => p.id))
     // List-shaped write: PUT the /pages list endpoint (no by-id suffix — the id/revision travels in the
     // body). run()'s isCurrent() guard drops the echo if mill/year changed mid-flight (Story 29.6).
-    save<Schedule8Response>(buildRequest(), {
+    void save<Schedule8Response>(buildRequest(), {
       suffix: '/pages',
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
@@ -323,14 +323,14 @@ const Schedule8: FC = () => {
     // By-id DELETE; the id/revision travels in the path. Schedule 8 is list-shaped, so (unlike the
     // single-doc pages) it re-GETs after delete — DELETE returns only a message and the list must
     // refresh. The re-GET stays hand-rolled at the call site (Story 29.6 per-page empty-state).
-    remove<{ message?: { text?: string } }>({
+    void remove<{ message?: { text?: string } }>({
       suffix: `/pages/${target.id}`,
       fallback: 'Unable to delete page.',
       onSuccess: (resp) => {
         setSaveMessage(resp?.message?.text ?? null)
         setPanelMode('closed')
         // Delete returns only a message — re-read the document so the list reflects the removal.
-        run(
+        void run(
           apiService
             .getAxiosInstance()
             .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`),
@@ -353,7 +353,7 @@ const Schedule8: FC = () => {
     // a cross-page change and is recorded as deferred work, not an oversight. Nothing is at risk in
     // the meantime — the endpoint is VIEW_SCHEDULE-gated, read-only, and mutates nothing.
     clearBanners()
-    checkStatus<Schedule8CheckStatusResponse>({
+    void checkStatus<Schedule8CheckStatusResponse>({
       fallback: 'Unable to check status.',
       onSuccess: setCheckResult,
     })

@@ -46,7 +46,21 @@ async function dead321(code: string, filePath = 'src/components/__fixture__/Fixt
 const component = (jsx: string) => `export const Fixture = () => (${jsx})\n`
 
 beforeAll(() => {
-  eslint = new ESLint({ cwd: FRONTEND_ROOT })
+  eslint = new ESLint({
+    cwd: FRONTEND_ROOT,
+    // The fixtures are linted from memory at a path that does not exist, and the project config
+    // enables type-aware parsing (`projectService`, needed only by no-floating-promises), which
+    // refuses a file it cannot find and so would silently stop every rule, this one included — the
+    // "fires" cases went vacuously quiet the day that rule landed. The #321 rule is pure syntax, so
+    // this instance parses without type information and leaves the type-aware rule off.
+    overrideConfig: [
+      {
+        files: ['**/*.ts', '**/*.tsx'],
+        languageOptions: { parserOptions: { projectService: false } },
+        rules: { '@typescript-eslint/no-floating-promises': 'off' },
+      },
+    ],
+  })
 })
 
 describe('the #321 lint rule: <Table aria-label> inside <TableContainer title>', () => {

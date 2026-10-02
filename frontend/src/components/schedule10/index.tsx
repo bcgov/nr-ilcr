@@ -281,7 +281,7 @@ const Schedule10: FC = () => {
     }
     const axios = apiService.getAxiosInstance()
     if (pagePanelMode === 'new') {
-      run(axios.post<Schedule10Response>(`${PAGES_PATH}${query}`, buildPageBody(pageForm)), {
+      void run(axios.post<Schedule10Response>(`${PAGES_PATH}${query}`, buildPageBody(pageForm)), {
         fallback: 'Schedule could not be saved.',
         onSuccess: (doc) => {
           applyDocument(doc)
@@ -302,7 +302,7 @@ const Schedule10: FC = () => {
       setActionError(SCH10_MESSAGES.staleRecord)
       return
     }
-    run(
+    void run(
       axios.put<Schedule10Response>(
         `${PAGES_PATH}/${String(stored.pageId)}${query}`,
         buildPageBody(pageForm, stored.revisionCount),
@@ -327,7 +327,7 @@ const Schedule10: FC = () => {
       return
     }
     clearBanners()
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule10Response>(`${PAGES_PATH}/${String(page.pageId)}/copy${query}`),
@@ -348,7 +348,7 @@ const Schedule10: FC = () => {
     const axios = apiService.getAxiosInstance()
     const base = `${PAGES_PATH}/${String(page.pageId)}/road-details`
     if (roadPanelMode === 'new') {
-      run(axios.post<Schedule10Response>(`${base}${query}`, buildRoadDetailBody(roadForm)), {
+      void run(axios.post<Schedule10Response>(`${base}${query}`, buildRoadDetailBody(roadForm)), {
         fallback: 'Schedule could not be saved.',
         onSuccess: (doc) => {
           applyDocument(doc)
@@ -363,7 +363,7 @@ const Schedule10: FC = () => {
       setActionError(SCH10_MESSAGES.staleRecord)
       return
     }
-    run(
+    void run(
       axios.put<Schedule10Response>(
         `${base}/${String(stored.roadDetailId)}${query}`,
         buildRoadDetailBody(roadForm, stored.revisionCount),
@@ -393,22 +393,25 @@ const Schedule10: FC = () => {
     clearBanners()
     const axios = apiService.getAxiosInstance()
     if (target.kind === 'page') {
-      run(axios.delete<Schedule10Response>(`${PAGES_PATH}/${String(target.page.pageId)}${query}`), {
-        fallback: 'Unable to delete record.',
-        onSuccess: (doc) => {
-          applyDocument(doc)
-          if (openPageId === target.page.pageId) {
-            closePagePanel()
-          }
+      void run(
+        axios.delete<Schedule10Response>(`${PAGES_PATH}/${String(target.page.pageId)}${query}`),
+        {
+          fallback: 'Unable to delete record.',
+          onSuccess: (doc) => {
+            applyDocument(doc)
+            if (openPageId === target.page.pageId) {
+              closePagePanel()
+            }
+          },
         },
-      })
+      )
       return
     }
     const pageId = search.pageId
     if (pageId === undefined) {
       return
     }
-    run(
+    void run(
       axios.delete<Schedule10Response>(
         `${PAGES_PATH}/${String(pageId)}/road-details/${String(target.detail.roadDetailId)}${query}`,
       ),
@@ -429,7 +432,7 @@ const Schedule10: FC = () => {
       return
     }
     clearBanners()
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule10CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),

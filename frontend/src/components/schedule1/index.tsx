@@ -260,7 +260,7 @@ const Schedule1: FC = () => {
       return
     }
     clearBanners() // drop any prior banners incl. a now-stale Check Status result
-    save<Schedule1Response>(buildRequest(data, form), {
+    void save<Schedule1Response>(buildRequest(data, form), {
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
         setData(doc)
@@ -283,7 +283,7 @@ const Schedule1: FC = () => {
     }
     setConfirmDeleteOpen(false)
     clearBanners() // the deleted schedule's check result / save banner are stale
-    remove<{ message?: { text?: string } }>({
+    void remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 1.',
       // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
       // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, landing on
@@ -340,7 +340,7 @@ const Schedule1: FC = () => {
     clearBanners() // don't leave a stale Save success banner beside a new check result
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The body carries the screen (#359); nothing is persisted (AD-5).
-    checkStatus<CheckStatusResponse>(
+    void checkStatus<CheckStatusResponse>(
       {
         fallback: 'Unable to check status.',
         onSuccess: (result) => {
@@ -372,13 +372,13 @@ const Schedule1: FC = () => {
       setConfirmNavOpen(true)
       return
     }
-    navigate({ to: '/schedule-1/other-costs' })
+    void navigate({ to: '/schedule-1/other-costs' })
   }
 
   // Confirmed via the navigation Modal: discard unsaved edits and open Other Costs.
   const openOtherCosts = () => {
     setConfirmNavOpen(false)
-    navigate({ to: '/schedule-1/other-costs' })
+    void navigate({ to: '/schedule-1/other-costs' })
   }
 
   if (loadState) return loadState

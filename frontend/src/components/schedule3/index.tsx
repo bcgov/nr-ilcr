@@ -255,7 +255,7 @@ const Schedule3: FC = () => {
     }
     clearBanners() // drop any prior banners incl. a now-stale Check Status result
     setSaveWarnings([])
-    save<Schedule3Response>(buildRequest(data, form), {
+    void save<Schedule3Response>(buildRequest(data, form), {
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
         setData(doc)
@@ -281,7 +281,7 @@ const Schedule3: FC = () => {
     setConfirmDeleteOpen(false)
     clearBanners() // the deleted schedule's check result / save banner are stale
     setSaveWarnings([])
-    remove<{ message?: { text?: string } }>({
+    void remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 3.',
       // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
       // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, which lands
@@ -342,7 +342,7 @@ const Schedule3: FC = () => {
     setSaveWarnings([])
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The body carries the screen (#359); nothing is persisted (AD-5).
-    checkStatus<CheckStatusResponse>(
+    void checkStatus<CheckStatusResponse>(
       {
         fallback: 'Unable to check status.',
         onSuccess: (result) => {
@@ -372,7 +372,7 @@ const Schedule3: FC = () => {
       setPendingRoute(route)
       return
     }
-    navigate({ to: route })
+    void navigate({ to: route })
   }
 
   // Confirmed via the "Leave Schedule 3" Modal: discard unsaved edits and open the pending sub-page.
@@ -382,7 +382,7 @@ const Schedule3: FC = () => {
     }
     const route = pendingRoute
     setPendingRoute(null)
-    navigate({ to: route })
+    void navigate({ to: route })
   }
 
   if (loadState) return loadState
