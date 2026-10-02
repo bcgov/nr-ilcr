@@ -242,12 +242,31 @@ h5.schedule-10__detail-heading {
   justify-content: center;
 }
 
-// Sized to the two words it can ever hold. Left to itself the combo takes the text input's
-// intrinsic ~20-character width, which is most of a `max-content` column — far wider than `Yes`
-// needs. The budget: 1rem of leading padding, the word, and the 4rem `.cds--list-box__field`
-// reserves for the clear and chevron icons.
+// The CELL keeps the 7.5rem the haul grid was aligned on (#440, PRs #495/#496): this column is
+// `max-content` and shared with `End Haul Details:` / `Overland Details:`, so holding the cell's
+// width holds the column, and the headings beside it, exactly where they were.
+.schedule-10__haul-eng-cell {
+  min-inline-size: 7.5rem;
+}
+
+// The menu itself is sized to `Yes` / `No` and the chevron alone, now that it has no clear button
+// (below): 1rem of leading padding, the word, and the end padding that keeps the chevron clear of it
+// (the chevron sits 0.75rem from the edge and is 1.5rem wide). It sits at the cell's start edge.
 .schedule-10__haul-eng-combo {
-  inline-size: 7.5rem;
+  inline-size: 5.5rem;
+}
+
+.schedule-10__haul-eng-combo .cds--list-box .cds--text-input {
+  padding-inline-end: 2.75rem;
+}
+
+// Yes or No only, never blank: legacy's `pageDtlECIncludeCosts` is a two-item menu with no empty
+// choice, and the column is NOT NULL. Carbon's ComboBox offers a clear button whenever a value is
+// selected, so it is hidden on this one control (a cleared value already falls back to `No` in
+// `RoadDetailFields`). The width above is unchanged, so the column this menu shares with the haul
+// row labels, and the headings beside it, keep their alignment.
+.schedule-10__haul-eng-combo .cds--list-box__selection {
+  display: none;
 }
 
 // The Yes/No menu's own label is hidden, because the printed one is the span to its left (#440
