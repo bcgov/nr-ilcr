@@ -65,7 +65,7 @@
         <checkstyle.failsOnError>true</checkstyle.failsOnError>
         <checkstyle.includeTestSourceDirectory>false</checkstyle.includeTestSourceDirectory>
         <cyclonedx.skip>false</cyclonedx.skip>
-        <commons-lang3.version>3.20.0</commons-lang3.version>
+        <commons-lang3.version>3.21.0</commons-lang3.version>
         <jasperreports.version>7.0.8</jasperreports.version>
         <sonar.organization>bcgov-sonarcloud</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
@@ -559,7 +559,7 @@
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
                 <artifactId>spotless-maven-plugin</artifactId>
-                <version>3.10.2</version>
+                <version>3.10.3</version>
                 <configuration>
                     <java>
                         <googleJavaFormat>
