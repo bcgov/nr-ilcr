@@ -16,7 +16,9 @@ describe('useIdleTimeout', () => {
     renderHook(() => useIdleTimeout(onIdle, 1000, true))
 
     expect(onIdle).not.toHaveBeenCalled()
-    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     expect(onIdle).toHaveBeenCalledTimes(1)
   })
 
@@ -24,12 +26,20 @@ describe('useIdleTimeout', () => {
     const onIdle = vi.fn()
     renderHook(() => useIdleTimeout(onIdle, 1000, true))
 
-    act(() => vi.advanceTimersByTime(700))
-    act(() => window.dispatchEvent(new Event('keydown')))
-    act(() => vi.advanceTimersByTime(700)) // 1400ms elapsed, but only 700ms since activity
+    act(() => {
+      vi.advanceTimersByTime(700)
+    })
+    act(() => {
+      window.dispatchEvent(new Event('keydown'))
+    })
+    act(() => {
+      vi.advanceTimersByTime(700)
+    }) // 1400ms elapsed, but only 700ms since activity
     expect(onIdle).not.toHaveBeenCalled()
 
-    act(() => vi.advanceTimersByTime(300)) // now 1000ms since the last activity
+    act(() => {
+      vi.advanceTimersByTime(300)
+    }) // now 1000ms since the last activity
     expect(onIdle).toHaveBeenCalledTimes(1)
   })
 
@@ -39,13 +49,19 @@ describe('useIdleTimeout', () => {
 
     // Another tab of the same session sees activity and pushes the shared stamp forward. This tab
     // never fired an activity event of its own, but must honour the shared stamp and not sign out.
-    act(() => vi.advanceTimersByTime(700))
+    act(() => {
+      vi.advanceTimersByTime(700)
+    })
     act(() => localStorage.setItem(STORAGE_KEY, String(Date.now())))
 
-    act(() => vi.advanceTimersByTime(400)) // this tab's original 1000ms deadline passes
+    act(() => {
+      vi.advanceTimersByTime(400)
+    }) // this tab's original 1000ms deadline passes
     expect(onIdle).not.toHaveBeenCalled()
 
-    act(() => vi.advanceTimersByTime(600)) // 1000ms since the cross-tab activity
+    act(() => {
+      vi.advanceTimersByTime(600)
+    }) // 1000ms since the cross-tab activity
     expect(onIdle).toHaveBeenCalledTimes(1)
   })
 
@@ -59,7 +75,9 @@ describe('useIdleTimeout', () => {
     renderHook(() => useIdleTimeout(onIdle, 1000, true))
     // markActive on mount refreshes the stamp, so mount alone doesn't sign out...
     expect(onIdle).not.toHaveBeenCalled()
-    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     expect(onIdle).toHaveBeenCalledTimes(1)
   })
 
@@ -67,7 +85,9 @@ describe('useIdleTimeout', () => {
     const onIdle = vi.fn()
     renderHook(() => useIdleTimeout(onIdle, 1000, false))
 
-    act(() => vi.advanceTimersByTime(5000))
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
     expect(onIdle).not.toHaveBeenCalled()
   })
 })

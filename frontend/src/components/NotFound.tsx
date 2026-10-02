@@ -7,7 +7,7 @@ import PageTitle from '@/components/core/PageTitle'
 const NotFound: FC = () => {
   const navigate = useNavigate()
   const buttonClicked = () => {
-    navigate({
+    void navigate({
       to: '/',
     })
   }

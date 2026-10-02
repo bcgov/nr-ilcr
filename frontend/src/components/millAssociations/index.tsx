@@ -172,7 +172,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
     setSelectedMill(null)
     clearNotifications()
     if (user) {
-      loadAssignments(user.userGuid)
+      void loadAssignments(user.userGuid)
       // The mill list is load-bearing (Add and the Mill Status join): a mount-time failure has just
       // had its banner cleared above, so this is the retry that keeps the panel from opening dead.
       if (mills.length === 0) loadMills()

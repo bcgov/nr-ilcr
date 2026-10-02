@@ -156,7 +156,7 @@ const Schedule2: FC = () => {
       return
     }
     clearBanners() // drop any prior banners incl. a now-stale Check Status result
-    save<Schedule2Response>(buildRequest(data, form), {
+    void save<Schedule2Response>(buildRequest(data, form), {
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
         setData(doc)
@@ -177,7 +177,7 @@ const Schedule2: FC = () => {
     }
     setConfirmDeleteOpen(false)
     clearBanners() // the deleted schedule's check result / save banner are stale
-    remove<{ message?: { text?: string } }>({
+    void remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 2.',
       // Schedule 2 never 404s: with the summary gone, a re-GET returns the 200 empty EDITABLE
       // document (no revisionCount). Reload it so the meta row / form reflect reality and the
@@ -235,7 +235,7 @@ const Schedule2: FC = () => {
     clearBanners() // don't leave a stale Save success banner beside a new check result
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // The body carries the screen (#359); nothing is persisted (AD-5).
-    checkStatus<CheckStatusResponse>(
+    void checkStatus<CheckStatusResponse>(
       {
         fallback: 'Unable to check status.',
         onSuccess: (result) => {

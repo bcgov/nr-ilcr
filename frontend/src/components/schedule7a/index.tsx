@@ -390,7 +390,7 @@ const Schedule7a: FC = () => {
       return
     }
     setAddErrors({})
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, buildBody(addForm)),
@@ -484,17 +484,20 @@ const Schedule7a: FC = () => {
         bridge: buildBody(form, bridge.revisionCount),
       })),
     }
-    run(apiService.getAxiosInstance().put<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, body), {
-      fallback: 'Schedule could not be saved.',
-      onSuccess: (doc) => {
-        applyDocument(doc)
-        // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
-        // them all to "untouched" and re-derives them from the echoed document.
-        setRowForms({})
-        setRowCommitted({})
-        setRowErrors({})
+    void run(
+      apiService.getAxiosInstance().put<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, body),
+      {
+        fallback: 'Schedule could not be saved.',
+        onSuccess: (doc) => {
+          applyDocument(doc)
+          // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
+          // them all to "untouched" and re-derives them from the echoed document.
+          setRowForms({})
+          setRowCommitted({})
+          setRowErrors({})
+        },
       },
-    })
+    )
   }
 
   const handleDelete = () => {
@@ -504,7 +507,7 @@ const Schedule7a: FC = () => {
     const id = confirmDeleteId
     setConfirmDeleteId(null)
     clearBanners()
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .delete<Schedule7aResponse>(`${BRIDGES_PATH}/${String(id)}${query}`),
@@ -529,7 +532,7 @@ const Schedule7a: FC = () => {
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation. Read-only (BR-08) — mutates nothing.
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule7aCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),

@@ -679,7 +679,7 @@ const Schedule4: FC = () => {
     // What is being sent is committed by definition — this also covers a Save clicked from a field
     // whose blur has not landed yet.
     setPanelCommitted(panelCategories)
-    save<Schedule4Response>(buildRequest(), {
+    void save<Schedule4Response>(buildRequest(), {
       suffix: '/locations',
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
@@ -747,7 +747,7 @@ const Schedule4: FC = () => {
     // which the hook's fixed `?millId&year` query can't express, so the request is built here with the
     // verbatim URL (AC7: URL unchanged). onSuccess then re-GETs the document — PRESERVED as-is — so
     // the list reflects the removed family.
-    run<{ message?: { text?: string } }>(
+    void run<{ message?: { text?: string } }>(
       apiService
         .getAxiosInstance()
         .delete<{ message?: { text?: string } }>(
@@ -759,7 +759,9 @@ const Schedule4: FC = () => {
           setSaveMessage(resp?.message?.text ?? null)
           setPanelMode('closed')
           // Re-read the document so the list reflects the removed family (delete returns only a message).
-          run(
+          // RETURNED, not void: run() awaits a promise onSuccess returns, so the in-flight lock
+          // (`saving`) holds until this re-GET settles — one locked operation (#292, PR #542 review).
+          return run(
             apiService
               .getAxiosInstance()
               .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`),

@@ -400,14 +400,16 @@ const Schedule8: FC = () => {
     // By-id DELETE; the id/revision travels in the path. Schedule 8 is list-shaped, so (unlike the
     // single-doc pages) it re-GETs after delete — DELETE returns only a message and the list must
     // refresh. The re-GET stays hand-rolled at the call site (Story 29.6 per-page empty-state).
-    remove<{ message?: { text?: string } }>({
+    void remove<{ message?: { text?: string } }>({
       suffix: `/pages/${target.id}`,
       fallback: 'Unable to delete page.',
       onSuccess: (resp) => {
         setSaveMessage(resp?.message?.text ?? null)
         setPanelMode('closed')
         // Delete returns only a message — re-read the document so the list reflects the removal.
-        run(
+        // RETURNED, not void: run() awaits a promise onSuccess returns, so the in-flight lock
+        // (`saving`) holds until this re-GET settles — one locked operation (#292, PR #542 review).
+        return run(
           apiService
             .getAxiosInstance()
             .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`),

@@ -292,7 +292,7 @@ const Schedule7b: FC = () => {
       return
     }
     setAddErrors({})
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, buildBody(addForm)),
@@ -382,16 +382,19 @@ const Schedule7b: FC = () => {
         culvert: buildBody(form, culvert.revisionCount),
       })),
     }
-    run(apiService.getAxiosInstance().put<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, body), {
-      fallback: 'Schedule could not be saved.',
-      onSuccess: (doc) => {
-        applyDocument(doc)
-        // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
-        // them all to "untouched" and re-derives them from the echoed document.
-        setRowForms({})
-        setRowErrors({})
+    void run(
+      apiService.getAxiosInstance().put<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, body),
+      {
+        fallback: 'Schedule could not be saved.',
+        onSuccess: (doc) => {
+          applyDocument(doc)
+          // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
+          // them all to "untouched" and re-derives them from the echoed document.
+          setRowForms({})
+          setRowErrors({})
+        },
       },
-    })
+    )
   }
 
   const handleDelete = () => {
@@ -401,7 +404,7 @@ const Schedule7b: FC = () => {
     const id = confirmDeleteId
     setConfirmDeleteId(null)
     clearBanners()
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .delete<Schedule7bResponse>(`${CULVERTS_PATH}/${String(id)}${query}`),
@@ -431,7 +434,7 @@ const Schedule7b: FC = () => {
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation. Read-only (BR-07) — mutates nothing.
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule7bCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),

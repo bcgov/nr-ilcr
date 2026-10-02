@@ -321,7 +321,7 @@ const Schedule9: FC = () => {
       return
     }
     setAddErrors({})
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule9Response>(`${RECORDS_PATH}${query}`, buildBody(addForm)),
@@ -365,7 +365,7 @@ const Schedule9: FC = () => {
       }
       return
     }
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .put<Schedule9Response>(
@@ -386,7 +386,7 @@ const Schedule9: FC = () => {
     const id = confirmDeleteId
     setConfirmDeleteId(null)
     clearBanners()
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .delete<Schedule9Response>(`${RECORDS_PATH}/${String(id)}${query}`),
@@ -440,7 +440,7 @@ const Schedule9: FC = () => {
     // ordinal), including rows on other paginator pages. The Add draft is never sent.
     const body: Schedule9CheckRequest = { records: forms.map(({ form }) => checkEntry(form)) }
     const submittedSnapshotVersion = checkSnapshotVersionRef.current
-    run(
+    void run(
       apiService
         .getAxiosInstance()
         .post<Schedule9CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body),

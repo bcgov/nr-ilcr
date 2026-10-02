@@ -49,7 +49,7 @@ describe('useScheduleMutations', () => {
 
     let successData: any = null
     act(() => {
-      result.current.save(
+      void result.current.save(
         { data: 'payload' },
         {
           fallback: 'Failed',
@@ -88,7 +88,7 @@ describe('useScheduleMutations', () => {
 
     let successData: any = null
     act(() => {
-      result.current.remove({
+      void result.current.remove({
         fallback: 'Failed',
         onSuccess: (data) => {
           successData = data
@@ -123,7 +123,7 @@ describe('useScheduleMutations', () => {
 
     let successData: any = null
     act(() => {
-      result.current.checkStatus({
+      void result.current.checkStatus({
         fallback: 'Failed',
         onSuccess: (data) => {
           successData = data
@@ -156,7 +156,7 @@ describe('useScheduleMutations', () => {
     )
 
     act(() => {
-      result.current.checkStatus(
+      void result.current.checkStatus(
         { fallback: 'Failed', onSuccess: () => undefined },
         { location: { id: null, name: null } },
       )
