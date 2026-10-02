@@ -104,3 +104,15 @@ describe('shared Carbon overrides: the side-nav close button', () => {
     expect(source).not.toContain('rgba(255, 255, 255, 0.16)')
   })
 })
+
+describe('shared Carbon overrides: an invalid ComboBox is outlined like a TextInput', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/styles/_overrides.scss'), 'utf8')
+
+  // Source tripwire, like the rules above: jsdom compiles no CSS. The rule draws the red outline on
+  // the combo's INPUT, because the wrapper's own outline sits under the input and never shows.
+  test('outlines the input of an invalid, unfocused combo box in the error colour', () => {
+    expect(source).toMatch(
+      /--list-box\[data-invalid\]:not\(\s*\.#\{variables\.\$bcgov-prefix\}--combo-box--invalid--focused\s*\)\s*\.#\{variables\.\$bcgov-prefix\}--text-input:not\(:focus\)\s*\{\s*outline: 2px solid var\(--cds-support-error, #da1e28\);\s*outline-offset: -2px;/,
+    )
+  })
+})

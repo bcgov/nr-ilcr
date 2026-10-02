@@ -36,7 +36,10 @@
     button-tokens.$button-tokens,
     light-button-overrides.$light-button-token-overrides
   );
-  $tag-theme-tokens: utilities.merge(tag-tokens.$tag-tokens, light-tag-overrides.$light-tag-token-overrides);
+  $tag-theme-tokens: utilities.merge(
+    tag-tokens.$tag-tokens,
+    light-tag-overrides.$light-tag-token-overrides
+  );
   $notification-theme-tokens: utilities.merge(
     notification-tokens.$notification-tokens,
     light-notification-overrides.$light-notification-token-overrides
@@ -54,7 +57,10 @@
     button-tokens.$button-tokens,
     dark-button-overrides.$dark-button-token-overrides
   );
-  $tag-theme-tokens: utilities.merge(tag-tokens.$tag-tokens, dark-tag-overrides.$dark-tag-token-overrides);
+  $tag-theme-tokens: utilities.merge(
+    tag-tokens.$tag-tokens,
+    dark-tag-overrides.$dark-tag-token-overrides
+  );
   $notification-theme-tokens: utilities.merge(
     notification-tokens.$notification-tokens,
     dark-notification-overrides.$dark-notification-token-overrides
@@ -156,6 +162,22 @@
 .#{variables.$bcgov-prefix}--list-box__field,
 .#{variables.$bcgov-prefix}--search {
   --cds-layout-size-height-local: 3rem;
+}
+
+// An invalid ComboBox is outlined red like an invalid TextInput (#359 group C). Carbon draws the
+// combo's red outline on the `.cds--list-box` wrapper with a -2px offset, inside the box, where the
+// input (which fills the box and paints its own background) covers it; a TextInput carries the
+// outline on the input itself, so it shows. Measured in the running app: the invalid wrapper computed
+// `outline: rgb(218, 30, 40) solid` while its input computed a transparent outline, so the field
+// showed only the error icon. Drawing the same outline on the combo's input makes it visible. Focus
+// keeps Carbon's own focus ring, as on a TextInput (`:not(:focus)`, and Carbon's
+// `--invalid--focused` class while the menu is open).
+.#{variables.$bcgov-prefix}--list-box[data-invalid]:not(
+    .#{variables.$bcgov-prefix}--combo-box--invalid--focused
+  )
+  .#{variables.$bcgov-prefix}--text-input:not(:focus) {
+  outline: 2px solid var(--cds-support-error, #da1e28);
+  outline-offset: -2px;
 }
 
 // Carbon's DatePicker does not consume the layout height token, hardcoding height in @carbon/styles.
@@ -347,7 +369,8 @@
   fill: var(--cds-link-primary) !important;
 }
 
-.#{variables.$bcgov-prefix}--side-nav__link--current .#{variables.$bcgov-prefix}--side-nav__link-text {
+.#{variables.$bcgov-prefix}--side-nav__link--current
+  .#{variables.$bcgov-prefix}--side-nav__link-text {
   font-weight: 400;
 }
 

@@ -3,7 +3,9 @@ import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Respon
 import {
   BALLAST_ZEROED_FIELDS,
   MASK_DIGITS,
+  ROAD_FIELD_ORDER,
   SCH10_MESSAGES,
+  applyBallastMethodReset,
   ballastForcesMaterialNa,
   ballastMaterialRequired,
   ballastZeroesFigures,
@@ -14,11 +16,14 @@ import {
   formFromPage,
   formFromRoadDetail,
   isTflLocated,
+  pageBannerEntries,
+  pageBannerEntry,
   previewCostPerVolumePerLength,
   previewMaterialTotal,
   previewStabilizingCostPerLength,
   previewSubGradeCostPerLength,
   previewSubGradeTotal,
+  roadBannerEntries,
   supplyBlocksFor,
   validatePage,
   validateRoadDetail,
@@ -262,10 +267,12 @@ describe('validatePage', () => {
     expect(validatePage(formFromPage(tsaPage))).toEqual({})
   })
 
+  // Re-grounded for #359 group C: a blank required field carries the inline `Value Required`; the
+  // legacy line (`Region is required.`) is the banner's — see the banner tests below.
   test('requires region and the TSA-or-TFL selection', () => {
     const errors = validatePage(emptyPageForm())
-    expect(errors.forestRegionCode).toBe(SCH10_MESSAGES.regionRequired)
-    expect(errors.tsaOrTfl).toBe(SCH10_MESSAGES.tsaOrTflRequired)
+    expect(errors.forestRegionCode).toBe(SCH10_MESSAGES.valueRequired)
+    expect(errors.tsaOrTfl).toBe(SCH10_MESSAGES.valueRequired)
   })
 
   test('caps the division at twenty characters', () => {
@@ -300,28 +307,27 @@ describe('validatePage', () => {
 })
 
 describe('validateRoadDetail required fields', () => {
-  test('names each missing required field with its own message', () => {
+  // Re-grounded for #359 group C: every missing required field carries the inline `Value Required`
+  // (its legacy line is the banner's), and a blank road flags Type too — legacy's `typeMandatory`.
+  test('marks each missing required field, Type included when Code is blank', () => {
     const errors = validateRoadDetail(emptyRoadDetailForm())
-    expect(errors.roadName).toBe(SCH10_MESSAGES.roadNameRequired)
-    expect(errors.roadLifetimeCode).toBe(SCH10_MESSAGES.roadTypeRequired)
-    expect(errors.becbiogeoCatalogueId).toBe(SCH10_MESSAGES.becZoneRequired)
-    expect(errors.relSoilMoistRgmClsCode).toBe(SCH10_MESSAGES.rsmrClassRequired)
-    expect(errors.stBallastMethodCode).toBe(SCH10_MESSAGES.ballastMethodRequired)
+    expect(errors).toEqual({
+      roadName: SCH10_MESSAGES.valueRequired,
+      roadLifetimeCode: SCH10_MESSAGES.valueRequired,
+      becbiogeoCatalogueId: SCH10_MESSAGES.valueRequired,
+      relSoilMoistRgmClsCode: SCH10_MESSAGES.valueRequired,
+      stBallastMethodCode: SCH10_MESSAGES.valueRequired,
+      stBallastMaterialCode: SCH10_MESSAGES.valueRequired,
+    })
   })
 
   test('requires a material type when the method is C', () => {
     const form = { ...formFromRoadDetail(detail), stBallastMaterialCode: '' }
-    expect(validateRoadDetail(form).stBallastMaterialCode).toBe(
-      SCH10_MESSAGES.materialCodeTypeRequired,
-    )
+    expect(validateRoadDetail(form).stBallastMaterialCode).toBe(SCH10_MESSAGES.valueRequired)
   })
 
-  test('does not require a material type for method D', () => {
-    const form = {
-      ...formFromRoadDetail(detail),
-      stBallastMethodCode: 'D',
-      stBallastMaterialCode: '',
-    }
+  test.each(['N', 'D'])('does not require a material type for method %s', (method) => {
+    const form = { ...emptyRoadDetailForm(), stBallastMethodCode: method }
     expect(validateRoadDetail(form).stBallastMaterialCode).toBeUndefined()
   })
 
@@ -845,5 +851,93 @@ describe('the numeric rule table stays complete (SonarQube refactor guard)', () 
         'stTtTransfer',
       ].sort(),
     )
+  })
+})
+
+// #359 group C change log: the banner's lines, verbatim legacy, in legacy order.
+describe('legacy validation banner lines', () => {
+  test('a blank road reports the six required lines in the panelGrid row order', () => {
+    const lines = roadBannerEntries(validateRoadDetail(emptyRoadDetailForm())).map((e) => e.line)
+    expect(lines).toEqual([
+      'Road Name is required.',
+      'Ballast Method Code: Value is required.',
+      'Road Type: Value is required.',
+      'BEC Zone: Value is required.',
+      'RSMR Class is required.',
+      'Material Code Type: Value is required.',
+    ])
+  })
+
+  test('a range error keeps its own text, ranked by its grid position', () => {
+    const form = { ...emptyRoadDetailForm(), sgLength: '101', stBallastMethodCode: 'N' }
+    const lines = roadBannerEntries(validateRoadDetail(form)).map((e) => e.line)
+    expect(lines.slice(0, 2)).toEqual([
+      'Road Name is required.',
+      SCH10_MESSAGES.rangeZeroToOneHundred,
+    ])
+    // N needs no Type, so no Material Code Type line.
+    expect(lines).not.toContain('Material Code Type: Value is required.')
+  })
+
+  test('every road field has a place in the legacy order', () => {
+    const fields = Object.keys(emptyRoadDetailForm()).filter((key) => key !== 'becbiogeoLabel')
+    expect([...ROAD_FIELD_ORDER].sort()).toEqual(fields.sort())
+  })
+
+  test('a blank page reports its required lines, after a bad period, in source order', () => {
+    const form = { ...emptyPageForm(), constructionPeriod: 'bad' }
+    expect(pageBannerEntries(validatePage(form)).map((e) => e.line)).toEqual([
+      SCH10_MESSAGES.periodInvalid,
+      'Region is required.',
+      'TSA or TFL is required.',
+    ])
+  })
+
+  test('a passing field has no entry', () => {
+    expect(pageBannerEntry('forestRegionCode', undefined)).toBeNull()
+  })
+})
+
+describe('Code change reset (legacy onStabilizingRoadBallastMethodCodeChange)', () => {
+  const filled = {
+    ...emptyRoadDetailForm(),
+    stLength: '3.000',
+    stSurfaceWidth: '6.5',
+    stDepth: '0.3',
+    stDistanceToSource: '12.4',
+    stActualCost: '100',
+    stTtTransfer: '7',
+    stOtherTransfer: '200',
+    stBallastMaterialCode: 'GR',
+  }
+
+  test.each(['N', 'D'])('%s blanks the dimensions and costs and sets Type to NA', (code) => {
+    expect(applyBallastMethodReset(filled, code)).toMatchObject({
+      stLength: '',
+      stSurfaceWidth: '',
+      stDepth: '',
+      stDistanceToSource: '',
+      stActualCost: '',
+      stOtherTransfer: '',
+      stBallastMaterialCode: 'NA',
+      stTtTransfer: '7',
+    })
+  })
+
+  test('C blanks the dimensions, pre-fills both costs with 0 and blanks Type', () => {
+    expect(applyBallastMethodReset(filled, 'C')).toMatchObject({
+      stLength: '',
+      stSurfaceWidth: '',
+      stDepth: '',
+      stDistanceToSource: '',
+      stActualCost: '0',
+      stOtherTransfer: '0',
+      stBallastMaterialCode: '',
+      stTtTransfer: '7',
+    })
+  })
+
+  test('a change to a blank code resets nothing', () => {
+    expect(applyBallastMethodReset(filled, '')).toBe(filled)
   })
 })

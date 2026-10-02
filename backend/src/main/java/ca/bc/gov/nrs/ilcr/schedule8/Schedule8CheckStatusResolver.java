@@ -2,7 +2,9 @@ package ca.bc.gov.nrs.ilcr.schedule8;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import java.util.List;
@@ -27,7 +29,8 @@ public class Schedule8CheckStatusResolver {
   private final MessageSource messageSource;
 
   /**
-   * Evaluate and resolve the whole schedule for a validated mill/year — the all-pages sweep.
+   * Evaluate and resolve the whole SAVED schedule for a validated mill/year — the all-pages sweep.
+   * The stored-data path: the report-level sweep's entry point.
    *
    * <p><strong>The caller MUST validate the mill/year context first</strong> (AD-4, {@code
    * MillContextService.validateMillYearActive}). This method does not, and the failure mode is
@@ -42,12 +45,36 @@ public class Schedule8CheckStatusResolver {
    * @param year the reporting year
    * @return the verdict with every message's verbatim text populated
    */
-  public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
-    return resolve(schedule8Service.checkStatus(millId, year));
+  public Schedule8CheckStatusResponse checkStatusStored(long millId, int year) {
+    return resolve(schedule8Service.checkStatusStored(millId, year));
   }
 
   /**
-   * Evaluate and resolve one page only (the S14 single-page scope).
+   * Evaluate and resolve the whole schedule against the SCREEN — the all-pages endpoint's entry
+   * point (#359).
+   *
+   * <p>Differs from {@link #checkStatusStored} only in its source: the body's open page panel is
+   * overlaid onto the stored page with the same id before the identical rules run, so an overlaid
+   * page label carries the ON-SCREEN values. Named apart so a caller cannot reach for the wrong one
+   * by autocomplete; a sweep that read a screen, or an endpoint that ignored one, would both fail
+   * silently.
+   *
+   * <p>The same mill/year precondition applies as for {@link #checkStatusStored}: the CALLER must
+   * have validated the context first (AD-4).
+   *
+   * @param millId the mill id (context already validated by the caller)
+   * @param year the reporting year
+   * @param request the page panel on screen, if any
+   * @return the verdict with every message's verbatim text populated
+   */
+  public Schedule8CheckStatusResponse checkStatus(
+      long millId, int year, Schedule8CheckRequest request) {
+    return resolve(schedule8Service.checkStatus(millId, year, request));
+  }
+
+  /**
+   * Evaluate and resolve one page only (the S14 single-page scope), against the SCREEN: the body's
+   * open sample panel is overlaid onto the page's stored samples (#359).
    *
    * <p><strong>The caller MUST validate the mill/year context first</strong> (AD-4, {@code
    * MillContextService.validateMillYearActive}). This method does not, and the failure mode is
@@ -61,10 +88,12 @@ public class Schedule8CheckStatusResolver {
    * @param millId the mill id (context already validated by the caller)
    * @param year the reporting year
    * @param pageId the page to check
+   * @param request the sample panel on screen, if any
    * @return the verdict for that page, with resolved text
    */
-  public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
-    return resolve(schedule8Service.checkStatusPage(millId, year, pageId));
+  public Schedule8CheckStatusResponse checkStatusPage(
+      long millId, int year, int pageId, Schedule8PageCheckRequest request) {
+    return resolve(schedule8Service.checkStatusPage(millId, year, pageId, request));
   }
 
   /**

@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule10.api.Schedule10Api;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
@@ -197,9 +198,11 @@ public class Schedule10Controller implements Schedule10Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule10CheckStatusResponse> checkStatus(
-      String millId, String year, Authentication authentication) {
+      String millId, String year, Schedule10CheckRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return ResponseEntity.ok(checkStatusResolver.checkStatus(context.millId(), context.year()));
+    // The body carries the open page panel or road editor (#359); the resolver overlays it.
+    return ResponseEntity.ok(
+        checkStatusResolver.checkStatus(context.millId(), context.year(), request));
   }
 
   private EditableStatuses mayEdit(Authentication authentication) {

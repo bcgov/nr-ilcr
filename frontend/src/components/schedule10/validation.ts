@@ -11,12 +11,15 @@ import type {
   ConstructionPageRequest,
   MaterialCompositionRequest,
   RoadDetailRequest,
+  Schedule10CheckPageEntry,
+  Schedule10CheckRoadEntry,
   StabilizingRequest,
   SubGradeRequest,
 } from '@/interfaces/Schedule10Request'
 import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
 import { TFL_SENTINEL } from '@/utils/codes'
 import { utf8Length } from '@/utils/forms'
+import type { BannerEntry } from '@/utils/legacyValidationBanner'
 import { numStrFixed, parseDecimalInput, roundCost } from '@/utils/number'
 
 export { numStrFixed, parseDecimalInput, roundCost }
@@ -54,6 +57,9 @@ const PERCENTAGE = { min: 0, max: 100 }
 
 // Verbatim from the backend bundle so an advisory message is indistinguishable from the server's.
 export const SCH10_MESSAGES = {
+  // The inline text under a blank required field (#359 group C change log), as on Schedules 4, 7A
+  // and 9. The banner carries the legacy line for the same field instead (see REQUIRED_LINES below).
+  valueRequired: 'Value Required',
   regionRequired: 'Region is required.',
   tsaOrTflRequired: 'TSA or TFL is required.',
   roadNameRequired: 'Road Name is required.',
@@ -185,10 +191,14 @@ export type RoadDetailErrors = Partial<Record<keyof RoadDetailFormValues, string
 export const isTflLocated = (tsaOrTfl: string): boolean =>
   tsaOrTfl.trim().toUpperCase() === TFL_SENTINEL
 
-/** Ballast method `C` is the branch that requires a material code; a blank method lands there too. */
+/**
+ * Legacy's `typeMandatory` defaults to true and only methods `N` and `D` clear it
+ * (`RoadConstructionReportDetailType:160,1101-1122`), so a material type is required for every
+ * other method — a blank one included.
+ */
 export const ballastMaterialRequired = (methodCode: string): boolean => {
   const code = methodCode.trim().toUpperCase()
-  return code === '' || code === 'C'
+  return code !== 'N' && code !== 'D'
 }
 
 /**
@@ -366,10 +376,10 @@ export function validatePage(form: PageFormValues): PageErrors {
   const errors: PageErrors = {}
 
   if (form.forestRegionCode.trim() === '') {
-    errors.forestRegionCode = SCH10_MESSAGES.regionRequired
+    errors.forestRegionCode = SCH10_MESSAGES.valueRequired
   }
   if (form.tsaOrTfl.trim() === '') {
-    errors.tsaOrTfl = SCH10_MESSAGES.tsaOrTflRequired
+    errors.tsaOrTfl = SCH10_MESSAGES.valueRequired
   }
 
   const division = form.divisionName.trim()
@@ -398,11 +408,11 @@ export function validatePage(form: PageFormValues): PageErrors {
   return errors
 }
 
-/** Every road-detail field whose only rule is "must not be blank", with the server's own message. */
-const REQUIRED_ROAD_DETAIL_FIELDS: readonly (readonly [keyof RoadDetailFormValues, string])[] = [
-  ['roadLifetimeCode', SCH10_MESSAGES.roadTypeRequired],
-  ['becbiogeoCatalogueId', SCH10_MESSAGES.becZoneRequired],
-  ['relSoilMoistRgmClsCode', SCH10_MESSAGES.rsmrClassRequired],
+/** Every road-detail field whose only rule is "must not be blank". */
+const REQUIRED_ROAD_DETAIL_FIELDS: readonly (keyof RoadDetailFormValues)[] = [
+  'roadLifetimeCode',
+  'becbiogeoCatalogueId',
+  'relSoilMoistRgmClsCode',
 ]
 
 /**
@@ -461,24 +471,35 @@ const ROAD_DETAIL_NUMERICS: readonly NumericCheck[] = [
 /**
  * The road name: required, and capped at ROAD_NAME_MAX in BOTH characters and bytes.
  *
- * Blank and over-length answer with the SAME message, because that is what the server answers with —
- * `invalidCodeValue` belongs to the code-backed controls and reads nonsensically beside a free-text
- * name box ("A valid value must be selected from the list").
+ * Blank is a missing required field (`Value Required` inline). Over-length answers with the server's
+ * own text for it, which is the required text — `invalidCodeValue` belongs to the code-backed
+ * controls and reads nonsensically beside a free-text name box.
  */
 const roadNameError = (form: RoadDetailFormValues): RoadDetailErrors => {
   const roadName = form.roadName.trim()
+  if (roadName === '') {
+    return { roadName: SCH10_MESSAGES.valueRequired }
+  }
   const tooLong = roadName.length > ROAD_NAME_MAX || utf8Length(roadName) > ROAD_NAME_MAX
-  return roadName === '' || tooLong ? { roadName: SCH10_MESSAGES.roadNameRequired } : {}
+  return tooLong ? { roadName: SCH10_MESSAGES.roadNameRequired } : {}
 }
 
-/** Ballast method is required, and its `C` branch (which a BLANK code also lands in) needs a material. */
+/**
+ * Ballast method is required, and a material type is required unless the method is `N` or `D` — a
+ * BLANK method included, so a blank road flags both (legacy's `typeMandatory`).
+ */
 const ballastErrors = (form: RoadDetailFormValues): RoadDetailErrors => {
+  const errors: RoadDetailErrors = {}
   if (form.stBallastMethodCode.trim() === '') {
-    return { stBallastMethodCode: SCH10_MESSAGES.ballastMethodRequired }
+    errors.stBallastMethodCode = SCH10_MESSAGES.valueRequired
   }
-  const needsMaterial =
-    ballastMaterialRequired(form.stBallastMethodCode) && form.stBallastMaterialCode.trim() === ''
-  return needsMaterial ? { stBallastMaterialCode: SCH10_MESSAGES.materialCodeTypeRequired } : {}
+  if (
+    ballastMaterialRequired(form.stBallastMethodCode) &&
+    form.stBallastMaterialCode.trim() === ''
+  ) {
+    errors.stBallastMaterialCode = SCH10_MESSAGES.valueRequired
+  }
+  return errors
 }
 
 /** Advisory validation for one road detail. */
@@ -487,9 +508,9 @@ export function validateRoadDetail(form: RoadDetailFormValues): RoadDetailErrors
 
   Object.assign(errors, roadNameError(form), ballastErrors(form))
 
-  for (const [key, message] of REQUIRED_ROAD_DETAIL_FIELDS) {
+  for (const key of REQUIRED_ROAD_DETAIL_FIELDS) {
     if (form[key].trim() === '') {
-      errors[key] = message
+      errors[key] = SCH10_MESSAGES.valueRequired
     }
   }
 
@@ -508,6 +529,164 @@ export function validateRoadDetail(form: RoadDetailFormValues): RoadDetailErrors
 
   return errors
 }
+
+// ---- The legacy validation banner (#359 group C change log) ---------------------------------------
+//
+// Save and Check Status list each failing field's line at the top, verbatim legacy, in LEGACY order;
+// a field's change adds or removes only its own line (the accumulating banner of Schedules 4, 7A and
+// 9). A blank required field reports its legacy required text here, while `Value Required` sits
+// under the field; every other error (range, format, length) reports its inline text.
+
+/**
+ * The page panel's fields in legacy source order (`schedule10.xhtml:138-286`: Division, Period,
+ * Region, TSA or TFL, Supply Block, TFL).
+ */
+export const PAGE_FIELD_ORDER: readonly (keyof PageFormValues)[] = [
+  'divisionName',
+  'constructionPeriod',
+  'forestRegionCode',
+  'tsaOrTfl',
+  'supplyBlock',
+  'tflNumberCode',
+]
+
+/**
+ * The road editor's fields in legacy order. JSF validates in component-tree order, and legacy's road
+ * form is one 6-column `p:panelGrid` read row by row, left to right (`schedule10.xhtml:439-1490`):
+ * Road Information, Sub-Grade, Additional Stabilizing on each row — which is why Code comes second.
+ * The rows ASM Code, Soil Moisture Code and Boulder Area occupied were removed (LD-1/2/3). Then the
+ * closing grid (`:1493-1670`: engineering costs, End Haul, Overland) and Comments last.
+ */
+export const ROAD_FIELD_ORDER: readonly (keyof RoadDetailFormValues)[] = [
+  'roadName',
+  'sgLength',
+  'stBallastMethodCode',
+  'roadLifetimeCode',
+  'sgSurfaceWidth',
+  'stLength',
+  'becbiogeoCatalogueId',
+  'sgActualCost',
+  'stSurfaceWidth',
+  'relSoilMoistRgmClsCode',
+  'sgTtTransfer',
+  'stBallastMaterialCode',
+  'sgOtherTransfer',
+  'stDepth',
+  'sideSlopePct',
+  'stDistanceToSource',
+  'lessBridges',
+  'stActualCost',
+  'lessCulverts',
+  'stTtTransfer',
+  'solidRockPct',
+  'lessLandings',
+  'stOtherTransfer',
+  'rippableRockPct',
+  'lessEndHaul',
+  'coarsePct',
+  'lessOverland',
+  'finePct',
+  'lessOtherEng',
+  'organicPct',
+  'detailedEngineeringCostInd',
+  'endHaulDistance',
+  'endHaulVolume',
+  'overlandDistance',
+  'overlandVolume',
+  'comments',
+]
+
+/** The legacy banner line of each required page field (`requiredMessage`, `:194` and `:223`). */
+const PAGE_REQUIRED_LINES: Partial<Record<keyof PageFormValues, string>> = {
+  forestRegionCode: SCH10_MESSAGES.regionRequired,
+  tsaOrTfl: SCH10_MESSAGES.tsaOrTflRequired,
+}
+
+/**
+ * The legacy banner line of each required road field: a `requiredMessage` where the XHTML declares
+ * one (Road Name `:474`, RSMR Class `:752`), else JSF's `{label}: Value is required.` (Code `:528`,
+ * Road Type `:562`, BEC Zone `:664`, Type `:807`).
+ */
+const ROAD_REQUIRED_LINES: Partial<Record<keyof RoadDetailFormValues, string>> = {
+  roadName: SCH10_MESSAGES.roadNameRequired,
+  stBallastMethodCode: SCH10_MESSAGES.ballastMethodRequired,
+  roadLifetimeCode: SCH10_MESSAGES.roadTypeRequired,
+  becbiogeoCatalogueId: SCH10_MESSAGES.becZoneRequired,
+  relSoilMoistRgmClsCode: SCH10_MESSAGES.rsmrClassRequired,
+  stBallastMaterialCode: SCH10_MESSAGES.materialCodeTypeRequired,
+}
+
+const bannerEntry = <K extends string>(
+  scope: string,
+  order: readonly K[],
+  requiredLines: Partial<Record<K, string>>,
+  field: K,
+  message: string | undefined,
+): BannerEntry | null => {
+  if (message === undefined) {
+    return null
+  }
+  const required = message === SCH10_MESSAGES.valueRequired ? requiredLines[field] : undefined
+  return { key: `${scope}:${field}`, rank: order.indexOf(field), line: required ?? message }
+}
+
+/** One page field's banner entry, or null when it has no error (its change, or the full list). */
+export const pageBannerEntry = (
+  field: keyof PageFormValues,
+  message: string | undefined,
+): BannerEntry | null => bannerEntry('page', PAGE_FIELD_ORDER, PAGE_REQUIRED_LINES, field, message)
+
+/** One road field's banner entry, or null when it has no error (its change, or the full list). */
+export const roadBannerEntry = (
+  field: keyof RoadDetailFormValues,
+  message: string | undefined,
+): BannerEntry | null => bannerEntry('road', ROAD_FIELD_ORDER, ROAD_REQUIRED_LINES, field, message)
+
+/** Every banner entry for a blocked page panel, in legacy order — what Save / Check Status show. */
+export const pageBannerEntries = (errors: PageErrors): BannerEntry[] =>
+  PAGE_FIELD_ORDER.flatMap((field) => pageBannerEntry(field, errors[field]) ?? [])
+
+/** Every banner entry for a blocked road editor, in legacy order — what Save / Check Status show. */
+export const roadBannerEntries = (errors: RoadDetailErrors): BannerEntry[] =>
+  ROAD_FIELD_ORDER.flatMap((field) => roadBannerEntry(field, errors[field]) ?? [])
+
+/**
+ * Legacy's reset on a change of Additional Stabilizing Code
+ * (`RoadConstructionReportDetailType.onStabilizingRoadBallastMethodCodeChange`, :1101-1122): the
+ * four dimensions are always cleared; `N` or `D` blank the actual cost and other transfer and set the
+ * type to `NA`; any other method pre-fills both costs with `0` and blanks the type. A change TO a
+ * blank code resets nothing — legacy's required check fails before its listener runs.
+ */
+export const applyBallastMethodReset = (
+  form: RoadDetailFormValues,
+  methodCode: string,
+): RoadDetailFormValues => {
+  if (methodCode.trim() === '') {
+    return form
+  }
+  const forcesNa = ballastForcesMaterialNa(methodCode)
+  return {
+    ...form,
+    stLength: '',
+    stSurfaceWidth: '',
+    stDepth: '',
+    stDistanceToSource: '',
+    stActualCost: forcesNa ? '' : '0',
+    stOtherTransfer: forcesNa ? '' : '0',
+    stBallastMaterialCode: forcesNa ? BALLAST_MATERIAL_NA : '',
+  }
+}
+
+/** The fields a Code change can reset — re-judged with it when they currently show an error. */
+export const BALLAST_RESET_FIELDS: readonly (keyof RoadDetailFormValues)[] = [
+  'stBallastMaterialCode',
+  'stLength',
+  'stSurfaceWidth',
+  'stDepth',
+  'stDistanceToSource',
+  'stActualCost',
+  'stOtherTransfer',
+]
 
 const blankToNull = (raw: string): string | null => (raw.trim() === '' ? null : raw.trim())
 const numberOrNull = (raw: string): number | null => parseDecimalInput(raw)
@@ -625,6 +804,56 @@ export const buildRoadDetailBody = (
   comments: blankToNull(form.comments),
   ...(revisionCount === undefined ? {} : { revisionCount }),
 })
+
+/**
+ * The Check Status entry for the open page panel (#359): the page as it is ON SCREEN, built by Save's
+ * own body builder so the TSA-or-TFL branch is resolved exactly as a save would resolve it. A blank
+ * selector is sent as null rather than Save's `''`. The check does not report a blank selector (the
+ * server takes a null TSA down its TFL branch), but none reaches it from the UI: Save's validator
+ * requires the selector and gates the request while the panel is in edit mode.
+ */
+export const buildPageCheckEntry = (
+  form: PageFormValues,
+  pageId: number,
+): Schedule10CheckPageEntry => {
+  const body = buildPageBody(form)
+  return {
+    pageId,
+    divisionName: body.divisionName,
+    constructionPeriod: body.constructionPeriod,
+    tsaOrTfl: blankToNull(body.tsaOrTfl),
+    supplyBlock: body.supplyBlock,
+    tflNumberCode: body.tflNumberCode,
+  }
+}
+
+/**
+ * The Check Status entry for the open road editor (#359): every field the road rules read, taken
+ * from the body Save itself would send (`buildRoadDetailBody`), so the figures — ballast method
+ * `N`'s zeroing included — can never drift from Save's. No revision token: the check writes nothing.
+ * Blank text Save sends as `''` (road name, RSMR class, ballast method) is sent as null.
+ */
+export const buildRoadCheckEntry = (
+  form: RoadDetailFormValues,
+  pageId: number,
+  roadDetailId: number,
+): Schedule10CheckRoadEntry => {
+  const body = buildRoadDetailBody(form)
+  return {
+    pageId,
+    roadDetailId,
+    roadName: blankToNull(body.roadName),
+    becbiogeoCatalogueId: body.becbiogeoCatalogueId,
+    relSoilMoistRgmClsCode: blankToNull(body.relSoilMoistRgmClsCode),
+    sideSlopePct: body.sideSlopePct,
+    subGrade: body.subGrade,
+    stabilizing: {
+      ...body.stabilizing,
+      ballastMethodCode: blankToNull(body.stabilizing.ballastMethodCode),
+    },
+    materialComposition: body.materialComposition,
+  }
+}
 
 /**
  * The derived figures the legacy screen recomputed on every blur, so the reporter sees the effect of

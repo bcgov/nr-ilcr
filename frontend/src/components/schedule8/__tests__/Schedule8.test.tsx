@@ -54,6 +54,16 @@ const selectOption = async (dropdown: string, option: RegExp | string) => {
   await userEvent.click(await screen.findByRole('option', { name: option }))
 }
 
+// The validation banner's lines in order (#359 group C): the subtitle of every "Action failed"
+// notification on screen, one per failing field.
+const bannerLines = () =>
+  Array.from(document.querySelectorAll('.cds--inline-notification'))
+    .filter(
+      (box) =>
+        box.querySelector('.cds--inline-notification__title')?.textContent === 'Action failed',
+    )
+    .map((box) => box.querySelector('.cds--inline-notification__subtitle')?.textContent)
+
 const URL = 'http://localhost:3000/api/v1/schedule8'
 const PAGES_URL = `${URL}/pages`
 const CHECK_URL = `${URL}/check-status`
@@ -275,9 +285,9 @@ describe('Schedule8 page level', () => {
     await userEvent.type(screen.getByLabelText('Phone'), '250555')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(
-      screen.getByText('Phone must be a complete 10-digit number (e.g. 250-555-1212).'),
-    ).toBeInTheDocument()
+    // #359 group C: the rebuild's phone text, inline AND as the banner's only line.
+    expect(bannerLines()).toEqual(['Phone must be a complete 10-digit number (e.g. 250-555-1212).'])
+    expect(screen.getByLabelText('Phone')).toHaveAttribute('aria-invalid', 'true')
     expect(put).not.toHaveBeenCalled()
   })
 
@@ -300,19 +310,89 @@ describe('Schedule8 page level', () => {
     expect(put).not.toHaveBeenCalled()
   })
 
-  test('Copy opens a prefilled editor (create path)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  // Re-grounded for #359 Part 3 on legacy source: copyReport → save() → insert
+  // (`Schedule8MB.java:207-213,242-248`). The copy is written at once — header fields only, never the
+  // samples — and the editor opens on it in edit mode. It no longer prefills an unsaved panel.
+  test('Copy saves the copy at once and opens it in edit (legacy copyReport)', async () => {
+    const copied: Page = { ...fullPage, id: 8003, sampleCount: 0, samples: [] }
+    let body: Record<string, unknown> | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(doc({ pages: [fullPage, emptyPage, copied], message: savedMsg }))
+      }),
+    )
     renderSchedule8()
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
 
-    expect(screen.getByText('Copy Page')).toBeInTheDocument()
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(body).toEqual({
+      id: null,
+      revisionCount: null,
+      license: 'LIC1',
+      supportCentre: 'SC1',
+      region: 'R1',
+      becZone: 'BZ1',
+      tsaNumber: 'TSA1',
+      tflNumber: null,
+      supplyBlock: 'A',
+      division: 'North',
+      contact: 'Jane Roe',
+      phone: '250-555-1212',
+      cuttingPermit: 'CP1',
+      comments: 'seed comment',
+    })
+    // The editor is open on the NEW page, in edit mode.
+    expect(screen.getByText(/^Edit Page — Page # 3/)).toBeInTheDocument()
     expect(screen.getByLabelText('License')).toHaveValue('LIC1')
-    // The seeded code (SC1) resolves to its option description in the combobox input value.
-    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveValue(
-      'Support Centre 1',
+    expect(screen.getByRole('button', { name: /TtT Samples \(0\)/i })).toBeInTheDocument()
+    expect(screen.queryByText('Copy Page')).not.toBeInTheDocument()
+  })
+
+  // The reply names no saved id, so the copy is the ONE new id in it. When another session added a
+  // page meanwhile there are two, and opening either could put someone else's record (and its lock
+  // token) in the editor — so the list and message refresh, but nothing opens.
+  test('a Copy reply with more than one new page refreshes the list but opens nothing', async () => {
+    const copied: Page = { ...fullPage, id: 8003, sampleCount: 0, samples: [] }
+    const foreign: Page = { ...emptyPage, id: 8004, cuttingPermit: 'OTHER' }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, () =>
+        HttpResponse.json(
+          doc({ pages: [fullPage, emptyPage, copied, foreign], message: savedMsg }),
+        ),
+      ),
     )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(screen.getByText(/Page # 3 -TSA/)).toBeInTheDocument()
+    expect(screen.getByText(/Page # 4 -TSA/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('License')).not.toBeInTheDocument()
+  })
+
+  test('a rejected Copy shows the error and creates nothing', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, () =>
+        HttpResponse.json({ detail: 'Copy was refused.' }, { status: 400 }),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+
+    expect(await screen.findByText('Copy was refused.')).toBeInTheDocument()
+    // No editor opened on an unsaved copy, and the list is unchanged.
+    expect(screen.queryByLabelText('License')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Page # 3/)).not.toBeInTheDocument()
   })
 
   test('Check Status (all pages) renders the per-page / per-sample results', async () => {
@@ -804,9 +884,11 @@ describe('Schedule8 sample level', () => {
     await userEvent.type(screen.getByLabelText('Grapple %'), '50')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
+    // #359 group C: the total's line is in the banner as well as under the Total.
     expect(
-      await screen.findByText('Skidding/Yarding percentages can not total more than 100%.'),
-    ).toBeInTheDocument()
+      await screen.findAllByText('Skidding/Yarding percentages can not total more than 100%.'),
+    ).toHaveLength(2)
+    expect(bannerLines()).toEqual(['Skidding/Yarding percentages can not total more than 100%.'])
     expect(put).not.toHaveBeenCalled()
   })
 
@@ -946,6 +1028,8 @@ describe('Schedule8 sample level', () => {
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
   }, 15000)
 
+  // Re-grounded for #359 group C on legacy source: NA passes `required` and then fails
+  // `notApplicableTypeValidator` (`schedule8EditDetail.xhtml:372`), whose own text it now shows.
   test('a nonzero Other % reveals the Other Skid Type block and requires a non-NA skid type', async () => {
     const put = vi.fn()
     server.use(
@@ -961,10 +1045,11 @@ describe('Schedule8 sample level', () => {
     await userEvent.type(screen.getByLabelText('Contract ID'), 'C-O')
     await userEvent.type(screen.getByLabelText('Other %'), '100')
 
-    // NA is treated as blank → still required.
+    // NA is not a valid choice while Other % is nonzero.
     await selectOption('Skid Type', 'Not Applicable')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
-    expect(await screen.findAllByText('Value Required')).not.toHaveLength(0)
+    expect(bannerLines()).toEqual(['A valid value must be selected from the list.'])
+    expect(screen.getAllByText('A valid value must be selected from the list.')).toHaveLength(2)
     expect(put).not.toHaveBeenCalled()
   })
 
@@ -1306,9 +1391,11 @@ describe('Schedule8 additions/deductions level', () => {
     await selectOption('Additions — Cost Type', 'Fixed')
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
+    // #359 group C: the rebuild's range text, inline AND as the banner's only line.
     expect(
-      await screen.findByText('Entered rate must be between 0 and 9,999,999.99.'),
-    ).toBeInTheDocument()
+      await screen.findAllByText('Entered rate must be between 0 and 9,999,999.99.'),
+    ).toHaveLength(2)
+    expect(bannerLines()).toEqual(['Entered rate must be between 0 and 9,999,999.99.'])
     expect(post).not.toHaveBeenCalled()
   })
 
@@ -2256,5 +2343,988 @@ describe('Schedule8 open-row freeze', () => {
       expect(within(rowsOf(table)[0]).getByRole('button', { name })).toBeDisabled()
       expect(within(rowsOf(table)[1]).getByRole('button', { name })).toBeEnabled()
     }
+  })
+})
+
+// #359 Part 3: Check Status carries the open editor ON SCREEN. The all-pages check sends the open
+// EXISTING page panel (legacy built a new page outside the checked list); the single-page check
+// sends the open sample panel, a NEW sample included (legacy's Add put it into the checked list).
+describe('Schedule8 Check Status evaluates the screen (#359)', () => {
+  const MET = {
+    outcome: 'MET',
+    messages: [
+      {
+        key: 'scheduleRequirementsMetMsg',
+        text: 'All requirements for this schedule have been met',
+      },
+    ],
+    pages: [],
+  }
+  const MET_TEXT = 'All requirements for this schedule have been met'
+
+  /** Records every body POSTed to `url`; answers MET unless a response is supplied. */
+  const captureCheck = (
+    url: string,
+    respond: () => Response | Promise<Response> = () => HttpResponse.json(MET),
+  ) => {
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post(url, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return respond()
+      }),
+    )
+    return bodies
+  }
+
+  /** A check response held open until `release` is called, then answered by `answer`. */
+  const heldCheck = (url: string, answer: () => Response) => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const bodies = captureCheck(url, async () => {
+      await gate
+      return answer()
+    })
+    return { bodies, release: () => release() }
+  }
+
+  const checkButton = () => screen.getByRole('button', { name: /check status/i })
+
+  const openPage8001 = async () => {
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await screen.findByLabelText('Contact')
+  }
+
+  const openSampleLevel = async () => {
+    renderSchedule8('/schedule-8?pageId=8001')
+    await screen.findByRole('button', { name: /add new sample/i })
+  }
+
+  beforeEach(() => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  })
+
+  describe('all pages', () => {
+    test('with no panel open, page is null', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toEqual([{ page: null }])
+    })
+
+    test('the open existing page is sent as typed — a cleared field is null; samples are never sent', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      await openPage8001()
+      await userEvent.clear(screen.getByLabelText('Contact'))
+      await userEvent.click(checkButton())
+
+      await waitFor(() => {
+        expect(bodies).toHaveLength(1)
+      })
+      expect(bodies[0]).toEqual({
+        page: {
+          id: 8001,
+          division: 'North',
+          contact: null,
+          phone: '250-555-1212',
+          tsaNumber: 'TSA1',
+          tflNumber: null,
+          supplyBlock: 'A',
+          cuttingPermit: 'CP1',
+        },
+      })
+    })
+
+    test('an unsaved new page is not sent, and its blank required fields do not gate the check', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+      await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
+      await userEvent.type(screen.getByLabelText('Contact'), 'Unsaved')
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toEqual([{ page: null }])
+    })
+
+    // Re-grounded for #359 group C (2026-10-02) on legacy source: Check Status is `process="@this"`
+    // (`schedule8.xhtml:42-48`), so no field gates it — it was gated on Save's validator before. It
+    // re-rendered only the messages, so the field judged on leave stays red under its result.
+    test('a blank License does not gate the check: the request is sent and no Save line shows', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      await openPage8001()
+      await userEvent.clear(screen.getByLabelText('License'))
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toHaveLength(1)
+      expect(screen.queryByText(/before saving/)).not.toBeInTheDocument()
+      expect(bannerLines()).toEqual([])
+      expect(screen.getByLabelText('License')).toHaveAttribute('aria-invalid', 'true')
+    })
+
+    test('a page edit clears a shown verdict', async () => {
+      captureCheck(CHECK_URL)
+      await openPage8001()
+      await userEvent.click(checkButton())
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+
+      await userEvent.type(screen.getByLabelText('Contact'), 'x')
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+    })
+
+    test('a late answer for a screen that has since changed is dropped', async () => {
+      const held = heldCheck(CHECK_URL, () => HttpResponse.json(MET))
+      await openPage8001()
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(held.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Contact'), 'x')
+      held.release()
+
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+    })
+
+    test('a late FAILURE for a superseded screen is dropped too', async () => {
+      const held = heldCheck(CHECK_URL, () =>
+        HttpResponse.json({ detail: 'Check failed late' }, { status: 500 }),
+      )
+      await openPage8001()
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(held.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Contact'), 'x')
+      held.release()
+
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText('Check failed late')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('single page (samples)', () => {
+    test('with no panel open, sample is null', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toEqual([{ sample: null }])
+    })
+
+    test('the open existing sample is sent as typed — blank is null, a typed 0 stays 0', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await userEvent.clear(screen.getByLabelText('Cut Block'))
+      const coniferous = screen.getByLabelText('Coniferous Volume (m³)')
+      await userEvent.clear(coniferous)
+      await userEvent.type(coniferous, '0')
+      await userEvent.clear(screen.getByLabelText('Deciduous Volume (m³)'))
+      await userEvent.click(checkButton())
+
+      await waitFor(() => {
+        expect(bodies).toHaveLength(1)
+      })
+      expect(bodies[0]).toEqual({
+        sample: {
+          id: 8101,
+          contractId: 'C-1',
+          cutBlock: null,
+          groundBasePct: 100,
+          grapplePct: 0,
+          skylinePct: 0,
+          highleadPct: 0,
+          helicopterPct: 0,
+          otherSkiddingPct: 0,
+          skylineSlopeDistance: null,
+          skylineSupportNumber: null,
+          supportAvgDistance: null,
+          coniferousVolume: 0,
+          deciduousVolume: null,
+          originalRate: 10,
+        },
+      })
+    })
+
+    test('an open NEW sample is sent with id null, and its result renders without an id', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001, () =>
+        // The server omits null members, so the appended sample's result carries no `id` key.
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          pages: [
+            {
+              id: 8001,
+              pageNumber: 1,
+              pageLabel: 'Page # 1  -TSA: TSA1 -CP: CP1',
+              met: false,
+              issues: [],
+              samples: [
+                {
+                  id: 8101,
+                  sampleNumber: 1,
+                  sampleLabel: 'Sample # 1 - C-1',
+                  met: true,
+                  issues: [],
+                },
+                {
+                  sampleNumber: 2,
+                  sampleLabel: 'Sample # 2 - NEW-1',
+                  met: false,
+                  issues: [
+                    {
+                      field: 'Cut Block',
+                      message: { key: 'missingRequiredFieldMsg', text: 'Value Required' },
+                    },
+                    {
+                      field: 'Actual Harvested',
+                      message: {
+                        key: 'invalidLowerRangeZeroErrorMsg',
+                        text: 'Total value must be greater than 0.',
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      )
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+      await userEvent.type(screen.getByLabelText('Contract ID'), 'NEW-1')
+      await userEvent.type(screen.getByLabelText('Ground Base %'), '0')
+      await userEvent.click(checkButton())
+
+      expect(
+        await screen.findByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 2 - NEW-1 — Cut Block'),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Page # 1 -TSA: TSA1 -CP: CP1 — Sample # 2 - NEW-1 — Actual Harvested'),
+      ).toBeInTheDocument()
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0]).toEqual({
+        sample: {
+          id: null,
+          contractId: 'NEW-1',
+          cutBlock: null,
+          groundBasePct: 0,
+          grapplePct: null,
+          skylinePct: null,
+          highleadPct: null,
+          helicopterPct: null,
+          otherSkiddingPct: null,
+          skylineSlopeDistance: null,
+          skylineSupportNumber: null,
+          supportAvgDistance: null,
+          coniferousVolume: null,
+          deciduousVolume: null,
+          originalRate: null,
+        },
+      })
+    })
+
+    // Re-grounded for #359 group C (2026-10-02) on legacy source: Check Status is `process="@this"`
+    // (`schedule8Detail.xhtml:57-63`), so Contract ID — required at Save only — never gates it.
+    test('a blank Contract ID does not gate the check: the new sample is sent, no Save line shows', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+      await userEvent.click(checkButton())
+
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0]).toMatchObject({ sample: { id: null, contractId: null } })
+      expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+      expect(screen.queryByText(/before saving/)).not.toBeInTheDocument()
+      expect(bannerLines()).toEqual([])
+    })
+
+    test('a sample edit clears a shown verdict', async () => {
+      captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await userEvent.click(checkButton())
+      expect(await screen.findByText(MET_TEXT)).toBeInTheDocument()
+
+      await userEvent.type(screen.getByLabelText('Cut Block'), 'x')
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+    })
+
+    test('a late answer for a screen that has since changed is dropped, success or failure', async () => {
+      const held = heldCheck(PAGE_CHECK_8001, () => HttpResponse.json(MET))
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(held.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Cut Block'), 'x')
+      held.release()
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
+
+      const failing = heldCheck(PAGE_CHECK_8001, () =>
+        HttpResponse.json({ detail: 'Check failed late' }, { status: 500 }),
+      )
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(failing.bodies).toHaveLength(1)
+      })
+      await userEvent.type(screen.getByLabelText('Cut Block'), 'y')
+      failing.release()
+      await waitFor(() => {
+        expect(checkButton()).toBeEnabled()
+      })
+      expect(screen.queryByText('Check failed late')).not.toBeInTheDocument()
+    })
+  })
+
+  // Legacy `Schedule8DetailMB.copyReport` → save(): the sample fields are written at once as a NEW
+  // sample — never its additions or deductions — and the editor opens on the copy in edit mode.
+  describe('sample Copy saves at once', () => {
+    test('Copy fires the create, shows the success message and opens the copy in edit', async () => {
+      const copied: Sample = {
+        ...sample8101,
+        id: 8102,
+        additions: [],
+        deductions: [],
+        additionCount: 0,
+        deductionCount: 0,
+      }
+      let body: Record<string, unknown> | null = null
+      server.use(
+        http.put(SAMPLES_8001, async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>
+          return HttpResponse.json(
+            doc({
+              pages: [{ ...fullPage, sampleCount: 2, samples: [sample8101, copied] }, emptyPage],
+              message: savedMsg,
+            }),
+          )
+        }),
+      )
+      await openSampleLevel()
+
+      await userEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expect(body).toEqual({
+        id: null,
+        revisionCount: null,
+        contractId: 'C-1',
+        cutBlock: 'CB-1',
+        groundBasePct: 100,
+        grapplePct: 0,
+        skylinePct: 0,
+        highleadPct: 0,
+        helicopterPct: 0,
+        otherSkiddingPct: 0,
+        skylineSlopeDistance: null,
+        skylineSupportNumber: null,
+        supportAvgDistance: null,
+        cycleTime: null,
+        distance: null,
+        uphillDirection: false,
+        waterDumpDestination: false,
+        skidTypeCode: null,
+        coniferousVolume: 1000,
+        deciduousVolume: 500,
+        originalRate: 10,
+      })
+      expect(screen.getByText('Edit Sample — Sample # 2 - C-1')).toBeInTheDocument()
+      expect(screen.getByLabelText('Contract ID')).toHaveValue('C-1')
+      expect(screen.getByRole('button', { name: /Additions \(0\)/ })).toBeInTheDocument()
+      expect(screen.queryByText('Copy Sample')).not.toBeInTheDocument()
+    })
+
+    test('a Copy reply with more than one new sample refreshes the list but opens nothing', async () => {
+      const copied: Sample = { ...sample8101, id: 8102, additions: [], deductions: [] }
+      const foreign: Sample = { ...sample8101, id: 8103, contractId: 'OTHER' }
+      server.use(
+        http.put(SAMPLES_8001, () =>
+          HttpResponse.json(
+            doc({
+              pages: [
+                { ...fullPage, sampleCount: 3, samples: [sample8101, copied, foreign] },
+                emptyPage,
+              ],
+              message: savedMsg,
+            }),
+          ),
+        ),
+      )
+      await openSampleLevel()
+
+      await userEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+      expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+      expect(screen.getByText('Sample # 3 - OTHER')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Contract ID')).not.toBeInTheDocument()
+    })
+
+    test('a rejected Copy shows the error and creates nothing', async () => {
+      server.use(
+        http.put(SAMPLES_8001, () =>
+          HttpResponse.json({ detail: 'Sample copy was refused.' }, { status: 400 }),
+        ),
+      )
+      await openSampleLevel()
+
+      await userEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+      expect(await screen.findByText('Sample copy was refused.')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Contract ID')).not.toBeInTheDocument()
+      expect(screen.queryByText(/Sample # 2/)).not.toBeInTheDocument()
+    })
+  })
+})
+
+// #359 group C change log (2026-10-02): Save lists every failing field verbatim at the top, in legacy
+// document order; a field is judged when it is left changed (a dropdown on selection) and the banner
+// accumulates; Check Status validates nothing and sends each field's last VALID value.
+describe('Schedule8 validation matches legacy (#359 group C)', () => {
+  const MET = {
+    outcome: 'MET',
+    messages: [{ key: 'scheduleRequirementsMetMsg', text: 'All requirements met' }],
+    pages: [],
+  }
+
+  const captureCheck = (url: string) => {
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post(url, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(MET)
+      }),
+    )
+    return bodies
+  }
+
+  /** Records every PUT / POST to `url`. */
+  const captureWrite = (method: 'put' | 'post', url: string) => {
+    const write = vi.fn()
+    server.use(
+      http[method](url, () => {
+        write()
+        return HttpResponse.json(doc({ message: savedMsg }))
+      }),
+    )
+    return write
+  }
+
+  const save = () => userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+  const checkButton = () => screen.getByRole('button', { name: /check status/i })
+
+  /** Type into a field, then leave it (Tab) — the JSF `onchange` moment. */
+  const typeAndLeave = async (label: string, text: string) => {
+    const input = screen.getByLabelText(label)
+    await userEvent.clear(input)
+    if (text !== '') await userEvent.type(input, text)
+    await userEvent.tab()
+  }
+
+  /** True when `first` comes before `second` in the document. */
+  const precedes = (first: Element, second: Element) =>
+    (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+
+  beforeEach(() => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+  })
+
+  describe('page editor', () => {
+    const openNewPage = async () => {
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+      await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
+    }
+
+    const openPage8001 = async () => {
+      renderSchedule8()
+      await screen.findByText(/Page # 1/)
+      await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+      await screen.findByLabelText('Contact')
+    }
+
+    test('Save lists every missing required field verbatim, in legacy order, with Value Required inline', async () => {
+      const put = captureWrite('put', PAGES_URL)
+      await openNewPage()
+      await save()
+
+      // schedule8EditReport.xhtml: License :40, Support Centre :128, Region :156,
+      // BioGeoClimatic Zone :184 (legacy's spelling), TSA or TFL :208.
+      expect(bannerLines()).toEqual([
+        'License: Value is required.',
+        'Support Centre: Value is required.',
+        'Region: Value is required.',
+        'BioGeoClimatic Zone: Value is required.',
+        'TSA or TFL: Value is required.',
+      ])
+      expect(screen.getAllByText('Value Required')).toHaveLength(5)
+      expect(screen.queryByText(/before saving/)).not.toBeInTheDocument()
+      expect(put).not.toHaveBeenCalled()
+    })
+
+    test('a TFL # that can never resolve fails Save with the legacy validator text', async () => {
+      const put = captureWrite('put', PAGES_URL)
+      await openPage8001()
+      await selectOption('TSA or TFL', 'TFL')
+      await typeAndLeave('TFL', 'x1')
+      await save()
+
+      expect(bannerLines()).toEqual(['Entered TFL number is not valid for Interior Regions.'])
+      expect(put).not.toHaveBeenCalled()
+    })
+
+    test('a field is judged when left changed, not while typing; lines accumulate; Save replaces them', async () => {
+      await openNewPage()
+
+      // Typing alone judges nothing.
+      await userEvent.type(screen.getByLabelText('Phone'), '250')
+      expect(bannerLines()).toEqual([])
+      expect(screen.getByLabelText('Phone')).not.toHaveAttribute('aria-invalid')
+
+      // Leaving it changed judges THAT field.
+      await userEvent.tab()
+      expect(bannerLines()).toEqual([
+        'Phone must be a complete 10-digit number (e.g. 250-555-1212).',
+      ])
+      expect(screen.getByLabelText('Phone')).toHaveAttribute('aria-invalid', 'true')
+
+      // A second failing field adds its line, in legacy order (License comes before Phone).
+      await typeAndLeave('License', 'L')
+      await typeAndLeave('License', '')
+      expect(bannerLines()).toEqual([
+        'License: Value is required.',
+        'Phone must be a complete 10-digit number (e.g. 250-555-1212).',
+      ])
+      expect(screen.getByText('Value Required')).toBeInTheDocument()
+
+      // Passing removes only that field's line.
+      await typeAndLeave('Phone', '2505551212')
+      expect(bannerLines()).toEqual(['License: Value is required.'])
+
+      // Save replaces the banner with the full list.
+      await save()
+      expect(bannerLines()).toEqual([
+        'License: Value is required.',
+        'Support Centre: Value is required.',
+        'Region: Value is required.',
+        'BioGeoClimatic Zone: Value is required.',
+        'TSA or TFL: Value is required.',
+      ])
+    })
+
+    test('focusing and leaving a field without a change judges nothing', async () => {
+      await openNewPage()
+      await userEvent.click(screen.getByLabelText('License'))
+      await userEvent.tab()
+
+      expect(bannerLines()).toEqual([])
+      expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+    })
+
+    test('a dropdown is judged on selection', async () => {
+      await openPage8001()
+      // Blank it with the combo's own clear control: a selection, judged at once.
+      const tsaField = screen
+        .getByRole('combobox', { name: 'TSA or TFL' })
+        .closest('.schedule-8__field') as HTMLElement
+      await userEvent.click(within(tsaField).getByRole('button', { name: 'Clear selected item' }))
+
+      expect(bannerLines()).toEqual(['TSA or TFL: Value is required.'])
+    })
+
+    test('Check Status sends a field’s last VALID value while it holds invalid text', async () => {
+      const bodies = captureCheck(CHECK_URL)
+      await openPage8001()
+
+      // Opened with 250-555-1212; a partial phone never reached legacy's model.
+      await typeAndLeave('Phone', '250')
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(bodies).toHaveLength(1)
+      })
+      expect(bodies[0]).toMatchObject({ page: { phone: '250-555-1212' } })
+
+      // A valid value left in the field becomes the last valid one.
+      await typeAndLeave('Phone', '6045550000')
+      await typeAndLeave('Phone', '604')
+      await userEvent.click(checkButton())
+      await waitFor(() => {
+        expect(bodies).toHaveLength(2)
+      })
+      expect(bodies[1]).toMatchObject({ page: { phone: '604-555-0000' } })
+      // Check Status shows only its own messages.
+      expect(bannerLines()).toEqual([])
+    })
+
+    test('Save’s success message renders at the top of the page, above the page list', async () => {
+      server.use(http.put(PAGES_URL, () => HttpResponse.json(doc({ message: savedMsg }))))
+      await openPage8001()
+      await save()
+
+      const success = await screen.findByText('Data saved successfully')
+      expect(precedes(success, screen.getByText('Page Summary'))).toBe(true)
+      expect(screen.getAllByText('Data saved successfully')).toHaveLength(1)
+    })
+  })
+
+  describe('sample editor', () => {
+    const openSampleLevel = async () => {
+      renderSchedule8('/schedule-8?pageId=8001')
+      await screen.findByRole('button', { name: /add new sample/i })
+    }
+
+    test('Save lists every failing field verbatim, in legacy document order', async () => {
+      const put = captureWrite('put', SAMPLES_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+
+      await userEvent.type(screen.getByLabelText('Slope Distance (m)'), 'asdf')
+      await userEvent.type(screen.getByLabelText('Support Number'), 'x')
+      await userEvent.type(screen.getByLabelText('Support Avg Distance (m)'), 'y')
+      await userEvent.type(screen.getByLabelText('Helicopter %'), '10')
+      await userEvent.type(screen.getByLabelText('Distance (km)'), 'dd')
+      await userEvent.type(screen.getByLabelText('Other %'), '5')
+      await selectOption('Skid Type', 'Not Applicable')
+      await userEvent.type(screen.getByLabelText('Coniferous Volume (m³)'), 'abc')
+      await userEvent.type(screen.getByLabelText('Deciduous Volume (m³)'), 'def')
+      await userEvent.type(screen.getByLabelText('Original TtT Rate'), 'r')
+      await save()
+
+      // schedule8EditDetail.xhtml labels: Contract ID :13, Slope Distance :160, Support Number :186,
+      // Support Avg Dist :212, Distance :267, CycleTime :293, Direction :322, Dump Destination :346,
+      // Other :372 (NA → notApplicableTypeValidator), Coniferous :443, Deciduous :465,
+      // Original TtT Rate :502.
+      expect(bannerLines()).toEqual([
+        'Contract ID: Value is required.',
+        "Slope Distance: 'asdf' is not a number pattern.",
+        "Support Number: 'x' is not a number pattern.",
+        "Support Avg Dist: 'y' is not a number pattern.",
+        "Distance: 'dd' is not a number pattern.",
+        'CycleTime: Value is required.',
+        'Direction: Value is required.',
+        'Dump Destination: Value is required.',
+        'A valid value must be selected from the list.',
+        "Coniferous: 'abc' is not a number pattern.",
+        "Deciduous: 'def' is not a number pattern.",
+        "Original TtT Rate: 'r' is not a number pattern.",
+      ])
+      // Blank required fields carry Value Required inline: Contract ID, Cycle Time, Direction, Dump.
+      expect(screen.getAllByText('Value Required')).toHaveLength(4)
+      expect(screen.queryByText(/before saving/)).not.toBeInTheDocument()
+      expect(put).not.toHaveBeenCalled()
+    }, 30000)
+
+    test('a blank skid type while Other % is nonzero reads "Other: Value is required."', async () => {
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
+      await userEvent.type(screen.getByLabelText('Contract ID'), 'C-O')
+      await userEvent.type(screen.getByLabelText('Other %'), '5')
+      await save()
+
+      expect(bannerLines()).toEqual(['Other: Value is required.'])
+    })
+
+    test('a field is judged when left changed, not while typing; lines accumulate; Save replaces them', async () => {
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+
+      await userEvent.type(screen.getByLabelText('Slope Distance (m)'), 'asdf')
+      expect(bannerLines()).toEqual([])
+      expect(screen.getByLabelText('Slope Distance (m)')).not.toHaveAttribute('aria-invalid')
+
+      await userEvent.tab()
+      expect(bannerLines()).toEqual(["Slope Distance: 'asdf' is not a number pattern."])
+      expect(screen.getByLabelText('Slope Distance (m)')).toHaveAttribute('aria-invalid', 'true')
+
+      await typeAndLeave('Contract ID', '')
+      expect(bannerLines()).toEqual([
+        'Contract ID: Value is required.',
+        "Slope Distance: 'asdf' is not a number pattern.",
+      ])
+
+      await typeAndLeave('Slope Distance (m)', '120')
+      expect(bannerLines()).toEqual(['Contract ID: Value is required.'])
+
+      await typeAndLeave('Cycle Time (min)', 'z')
+      await save()
+      expect(bannerLines()).toEqual([
+        'Contract ID: Value is required.',
+        "CycleTime: 'z' is not a number pattern.",
+      ])
+    })
+
+    test('the skid type is judged on selection', async () => {
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await typeAndLeave('Other %', '5')
+      expect(bannerLines()).toEqual([])
+
+      await selectOption('Skid Type', 'Not Applicable')
+      expect(bannerLines()).toEqual(['A valid value must be selected from the list.'])
+
+      await selectOption('Skid Type', 'Horse')
+      expect(bannerLines()).toEqual([])
+    })
+
+    test('Check Status sends each field’s last VALID value while it holds invalid text', async () => {
+      const bodies = captureCheck(PAGE_CHECK_8001)
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+
+      // Opened with Ground Base 100 and Coniferous 1000.
+      await typeAndLeave('Ground Base %', '150')
+      await typeAndLeave('Coniferous Volume (m³)', 'abc')
+      await typeAndLeave('Deciduous Volume (m³)', '700')
+      await userEvent.click(checkButton())
+
+      await waitFor(() => {
+        expect(bodies).toHaveLength(1)
+      })
+      expect(bodies[0]).toMatchObject({
+        sample: { groundBasePct: 100, coniferousVolume: 1000, deciduousVolume: 700 },
+      })
+      expect(bannerLines()).toEqual([])
+    })
+
+    test('Save’s success message renders at the top of the level, above the samples', async () => {
+      server.use(http.put(SAMPLES_8001, () => HttpResponse.json(doc({ message: savedMsg }))))
+      await openSampleLevel()
+      await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+      await save()
+
+      const success = await screen.findByText('Data saved successfully')
+      expect(precedes(success, screen.getByText(/Samples \(1\)/))).toBe(true)
+      expect(screen.getAllByText('Data saved successfully')).toHaveLength(1)
+    })
+  })
+
+  describe('additions / deductions', () => {
+    const openRates = async () => {
+      renderSchedule8('/schedule-8?pageId=8001&sampleId=8101')
+      await screen.findByText(/Additions \/ Deductions — Sample # 1 - C-1/i)
+    }
+
+    test('Add Additions checks only its own form, with its verbatim lines at the top', async () => {
+      const post = captureWrite('post', RATES_8101)
+      await openRates()
+      await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
+
+      // schedule8AdditionsAndDeductions.xhtml :87, :112, :124.
+      expect(bannerLines()).toEqual([
+        'Additions: Value is required.',
+        '$/m3: Value is required.',
+        'Cost type: Value is required.',
+      ])
+      expect(screen.getAllByText('Value Required')).toHaveLength(3)
+      expect(screen.getByLabelText('Deductions — $/m³')).not.toHaveAttribute('aria-invalid')
+      expect(post).not.toHaveBeenCalled()
+    })
+
+    test('Add Deductions checks only its own form, with its verbatim lines at the top', async () => {
+      const post = captureWrite('post', RATES_8101)
+      await openRates()
+      await userEvent.click(screen.getByRole('button', { name: /add deductions/i }))
+
+      // schedule8AdditionsAndDeductions.xhtml :311, :335, :346.
+      expect(bannerLines()).toEqual([
+        'Deductions: Value is required.',
+        '$/m3: Value is required.',
+        'Cost type: Value is required.',
+      ])
+      expect(screen.getAllByText('Value Required')).toHaveLength(3)
+      expect(screen.getByLabelText('Additions — $/m³')).not.toHaveAttribute('aria-invalid')
+      expect(post).not.toHaveBeenCalled()
+    })
+
+    test('Save checks both drafts, neither blocking the other, and lists both forms’ lines', async () => {
+      const post = captureWrite('post', RATES_8101)
+      await openRates()
+      await userEvent.type(screen.getByLabelText('Additions — $/m³'), '7')
+      await userEvent.type(screen.getByLabelText('Deductions — $/m³'), 'x')
+      await save()
+
+      expect(bannerLines()).toEqual([
+        'Additions: Value is required.',
+        'Cost type: Value is required.',
+        'Deductions: Value is required.',
+        "$/m3: 'x' is not a number pattern.",
+        'Cost type: Value is required.',
+      ])
+      expect(post).not.toHaveBeenCalled()
+    })
+  })
+})
+
+// #359 group C review (2026-10-02): legacy's model only ever held a value that passed the field's
+// own converter, `required` and validators (each ran in the field's change listener), Check Status
+// re-rendered only the messages, and the number boxes carried legacy's ranges and grouping commas.
+describe('Schedule8 Check Status sends legacy’s model (#359 group C review)', () => {
+  const MET = {
+    outcome: 'MET',
+    messages: [{ key: 'scheduleRequirementsMetMsg', text: 'All requirements met' }],
+    pages: [],
+  }
+
+  const captureCheck = (url: string) => {
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post(url, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(MET)
+      }),
+    )
+    return bodies
+  }
+
+  const checkButton = () => screen.getByRole('button', { name: /check status/i })
+
+  const typeAndLeave = async (label: string, text: string) => {
+    const input = screen.getByLabelText(label)
+    await userEvent.clear(input)
+    if (text !== '') await userEvent.type(input, text)
+    await userEvent.tab()
+  }
+
+  const clearCombo = async (name: string) => {
+    const field = screen
+      .getByRole('combobox', { name })
+      .closest('.schedule-8__field') as HTMLElement
+    await userEvent.click(within(field).getByRole('button', { name: 'Clear selected item' }))
+  }
+
+  const openPage = async (pages: Page[] = [fullPage, emptyPage]) => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ pages }))))
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await screen.findByLabelText('Contact')
+  }
+
+  const openSample8101 = async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule8('/schedule-8?pageId=8001')
+    await screen.findByRole('button', { name: /add new sample/i })
+    await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+  }
+
+  test('a cleared required page field sends its stored value', async () => {
+    const bodies = captureCheck(CHECK_URL)
+    await openPage()
+    await clearCombo('TSA or TFL')
+    await userEvent.click(checkButton())
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toMatchObject({ page: { tsaNumber: 'TSA1', supplyBlock: 'A' } })
+  })
+
+  test('a value the editor clears itself becomes the last valid one (no value two changes old)', async () => {
+    const bodies = captureCheck(CHECK_URL)
+    const tflPage: Page = { ...fullPage, tsaNumber: 'TFL', tflNumber: '18', supplyBlock: null }
+    await openPage([tflPage, emptyPage])
+
+    // Switching to a TSA clears the TFL #; switching back leaves it blank in legacy's model too.
+    await selectOption('TSA or TFL', 'TSA 1')
+    await selectOption('TSA or TFL', 'TFL')
+    await typeAndLeave('TFL', 'x1')
+    await userEvent.click(checkButton())
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toMatchObject({ page: { tsaNumber: 'TFL', tflNumber: null } })
+  })
+
+  test('a cleared Contract ID sends the stored one', async () => {
+    const bodies = captureCheck(PAGE_CHECK_8001)
+    await openSample8101()
+    await typeAndLeave('Contract ID', '')
+    await userEvent.click(checkButton())
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toMatchObject({ sample: { contractId: 'C-1' } })
+  })
+
+  test('Check Status keeps the red fields and inline text, and replaces the banner lines', async () => {
+    captureCheck(PAGE_CHECK_8001)
+    await openSample8101()
+    await typeAndLeave('Slope Distance (m)', 'asdf')
+    await typeAndLeave('Contract ID', '')
+    expect(bannerLines()).toHaveLength(2)
+
+    await userEvent.click(checkButton())
+
+    expect(await screen.findByText('All requirements met')).toBeInTheDocument()
+    expect(bannerLines()).toEqual([])
+    expect(screen.getByLabelText('Slope Distance (m)')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Contract ID')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText("Slope Distance: 'asdf' is not a number pattern.")).toBeInTheDocument()
+    expect(screen.getByText('Value Required')).toBeInTheDocument()
+  })
+
+  test('the page editor keeps its red fields under a Check Status result too', async () => {
+    captureCheck(CHECK_URL)
+    await openPage()
+    await typeAndLeave('Phone', '250')
+    await userEvent.click(checkButton())
+
+    expect(await screen.findByText('All requirements met')).toBeInTheDocument()
+    expect(bannerLines()).toEqual([])
+    expect(screen.getByLabelText('Phone')).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  test('grouping commas are numbers: no error, and the number is sent without them', async () => {
+    const bodies = captureCheck(PAGE_CHECK_8001)
+    await openSample8101()
+    await typeAndLeave('Coniferous Volume (m³)', '1,200')
+    await typeAndLeave('Support Number', '1,500')
+    expect(bannerLines()).toEqual([])
+    await userEvent.click(checkButton())
+
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect(bodies[0]).toMatchObject({
+      sample: { coniferousVolume: 1200, skylineSupportNumber: 1500 },
+    })
+  })
+
+  test('the Skyline and Helicopter boxes carry legacy’s ranges', async () => {
+    await openSample8101()
+    await typeAndLeave('Slope Distance (m)', '100000')
+    await typeAndLeave('Support Number', '10,000')
+    await typeAndLeave('Support Avg Distance (m)', '100000')
+    await typeAndLeave('Distance (km)', '1000000')
+    await typeAndLeave('Cycle Time (min)', '-1')
+
+    expect(bannerLines()).toEqual([
+      'Entered distance must be between 0 and 99,999.',
+      'Entered number must be between 0 and 9,999.',
+      'Entered distance must be between 0 and 99,999.9.',
+      'Entered distance must be between 0 and 999,999.9.',
+      'Entered time must be between 0 and 999,999.9.',
+    ])
   })
 })

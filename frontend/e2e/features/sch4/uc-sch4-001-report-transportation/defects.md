@@ -364,7 +364,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
         (`schedule8/index.tsx:222`) exactly like Schedule 4's, but legacy `schedule8.xhtml` never raised the
         confirm there — only its Additions-and-Deductions sub-page did, and `RatesPage.tsx` honours that. So
         Schedule 8 matches legacy and must be left alone. `schedule10.xhtml` used the confirm too, but
-        Schedule 10 is not implemented.
+        Schedule 10 was not yet implemented when this entry was written.
   - **Is it a defect?** Yes — confirmed. Legacy raised the prompt on all five Schedule 4 paths, Story 10.5's AC
     requires it verbatim, and every other page already implements it. This is behaviour lost in the rebuild.
   - **Ticket:** [bcgov/nr-ilcr#324](https://github.com/bcgov/nr-ilcr/issues/324).
@@ -580,8 +580,8 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     `{label}: Value is required.` (`common/validation.properties:11`). The rebuild had skipped that and
     answered "requirements met" over an invalid panel. The fix gates Check Status on `validateLocationForm`
     over the open panel, names each failing field in legacy's wording (on Save too), and sends the panel
-    (`{location: {id, name}}`) so the check judges the name on screen. #359 stays OPEN for Schedules 8
-    and 10 (group C).
+    (`{location: {id, name}}`) so the check judges the name on screen. #359 then stayed OPEN for Schedules 8
+    and 10, until group C (2026-10-01), its last part.
     - **Closure evidence:**
       - Run command: `cd frontend/e2e && npx playwright test --grep "@sch4"`, then `--grep "@check-status-unsaved"`
       - Date: 2026-09-29, re-run after the per-field and all-or-nothing follow-ups and a merge of main

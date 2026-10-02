@@ -16,8 +16,10 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Acceptance test — {@code POST /api/v1/schedule10/check-status}.
@@ -32,6 +34,34 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule10/check-status";
   private static final ObjectMapper MAPPER = new ObjectMapper();
+
+  /** No editor open: the stored verdict (#359). */
+  private static final String NO_EDITOR = "{\"page\":null,\"road\":null}";
+
+  /** A POST for the 2021 schedule of {@code millId}, carrying {@code body}. */
+  private static MockHttpServletRequestBuilder check(String millId, String body) {
+    return post(ENDPOINT)
+        .param("millId", millId)
+        .param("year", "2021")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(body)
+        .with(csrf());
+  }
+
+  private Integer pageRevision(int pageId) {
+    return jdbc.queryForObject(
+        "SELECT REVISION_COUNT FROM THE.ROAD_CONSTRUCTION_REPRT WHERE ROAD_CONSTRUCTION_REPRT_ID = ?",
+        Integer.class,
+        pageId);
+  }
+
+  private Integer roadRevision(int roadDetailId) {
+    return jdbc.queryForObject(
+        "SELECT REVISION_COUNT FROM THE.ROAD_CONSTRUCTION_REPRT_DTL"
+            + " WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
+        Integer.class,
+        roadDetailId);
+  }
 
   @Autowired private JdbcTemplate jdbc;
 
@@ -103,7 +133,7 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
     List<String> before = fingerprint(719L);
 
     mockMvc
-        .perform(post(ENDPOINT).param("millId", "719").param("year", "2021").with(csrf()))
+        .perform(check("719", NO_EDITOR))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(jsonPath("$.messages", hasSize(1)))
@@ -124,7 +154,7 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
 
     String body =
         mockMvc
-            .perform(post(ENDPOINT).param("millId", "720").param("year", "2021").with(csrf()))
+            .perform(check("720", NO_EDITOR))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.outcome", is("ISSUES")))
             // No banner on the failing branch.
@@ -185,7 +215,7 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
   void emptyScheduleIsVacuouslyMet() throws Exception {
     // Mill 715 is a valid active context with zero pages (Story 11.1's fixture, read-only here).
     mockMvc
-        .perform(post(ENDPOINT).param("millId", "715").param("year", "2021").with(csrf()))
+        .perform(check("715", NO_EDITOR))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(jsonPath("$.pages", hasSize(0)));
@@ -203,7 +233,7 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
     List<String> before = fingerprint(718L);
 
     mockMvc
-        .perform(post(ENDPOINT).param("millId", "718").param("year", "2021").with(csrf()))
+        .perform(check("718", NO_EDITOR))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")));
 
@@ -214,9 +244,180 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("the mill/year guards apply to Check Status too")
   void contextGuardsApply() throws Exception {
-    mockMvc.perform(post(ENDPOINT).with(csrf())).andExpect(status().isBadRequest());
     mockMvc
-        .perform(post(ENDPOINT).param("millId", "999999").param("year", "2021").with(csrf()))
-        .andExpect(status().isNotFound());
+        .perform(
+            post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).content(NO_EDITOR).with(csrf()))
+        .andExpect(status().isBadRequest());
+    mockMvc.perform(check("999999", NO_EDITOR)).andExpect(status().isNotFound());
+  }
+
+  /** Mill 719's stored road 8960 as the open road editor sends it, with the given edits. */
+  private static String road8960(String name, String sideSlope) {
+    return """
+        {"page":null,
+         "road":{"pageId":8950,"roadDetailId":8960,"roadName":%s,"becbiogeoCatalogueId":8801,
+                 "relSoilMoistRgmClsCode":"1","sideSlopePct":%s,
+                 "subGrade":{"length":12.500,"surfaceWidth":6.5},
+                 "stabilizing":{"ballastMethodCode":"N","ballastMaterialCode":"NA"},
+                 "materialComposition":{"solidRockPct":10,"rippableRockPct":20,"coarsePct":40,
+                                        "finePct":20,"organicPct":10}}}
+        """
+        .formatted(name, sideSlope);
+  }
+
+  @Test
+  @DisplayName("#359 page level: an unsaved Division clear on a MET schedule is reported")
+  void pageLevelBodyDisagreeingWithOracleWins() throws Exception {
+    List<String> before = fingerprint(719L);
+    Integer revision = pageRevision(8950);
+    String body =
+        """
+        {"page":{"pageId":8950,"divisionName":null,"constructionPeriod":"2021-09",
+                 "tsaOrTfl":"01","supplyBlock":"01A","tflNumberCode":null},
+         "road":null}
+        """;
+
+    String response =
+        mockMvc
+            .perform(check("719", body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.outcome", is("ISSUES")))
+            // The page label carries the ON-SCREEN period, not the stored 2021-06.
+            .andExpect(
+                jsonPath(
+                    "$.pages[0].pageLabel", is("Page 1, Period: 2021-09, TSA: 01, SB: 01A, TFL:-")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(issueTexts(MAPPER.readTree(response)))
+        .containsExactly(
+            "Page 1, Period: 2021-09, TSA: 01, SB: 01A, TFL:- Division: Value Required");
+    assertThat(pageRevision(8950)).as("nothing is persisted").isEqualTo(revision);
+    assertThat(fingerprint(719L)).as("check status must mutate nothing").isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("#359 page level: an unsaved TSA-to-TFL switch with TFL # blank reports TFL #")
+  void pageLevelSwitchToTflReportsTflNumber() throws Exception {
+    String body =
+        """
+        {"page":{"pageId":8950,"divisionName":"Complete Division","constructionPeriod":"2021-06",
+                 "tsaOrTfl":"TFL","supplyBlock":"01A","tflNumberCode":null},
+         "road":null}
+        """;
+
+    String response =
+        mockMvc
+            .perform(check("719", body))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(issueTexts(MAPPER.readTree(response)))
+        .containsExactly("Page 1, Period: 2021-06, TSA: null, SB: -, TFL:- TFL #: Value Required");
+  }
+
+  @Test
+  @DisplayName(
+      "#359 page level: stored-missing Division and Period typed on screen clear their lines")
+  void pageLevelUnsavedFixClearsTheLines() throws Exception {
+    List<String> before = fingerprint(720L);
+    String body =
+        """
+        {"page":{"pageId":8951,"divisionName":"Typed Division","constructionPeriod":"2021-05",
+                 "tsaOrTfl":"01","supplyBlock":"01A","tflNumberCode":null},
+         "road":null}
+        """;
+
+    String response =
+        mockMvc
+            .perform(check("720", body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.outcome", is("ISSUES")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    List<String> texts = issueTexts(MAPPER.readTree(response));
+    assertThat(texts)
+        .noneMatch(text -> text.endsWith(" Division: Value Required"))
+        .noneMatch(text -> text.endsWith(" Period Surveyed: Value Required"))
+        // The page's road lines are prefixed with the on-screen label.
+        .anyMatch(
+            text ->
+                text.startsWith("Page 1, Period: 2021-05, TSA: 01, SB: 01A, TFL:-, Road #")
+                    && text.endsWith("Material Type Total (%): Total value must be equal to 100."));
+    assertThat(fingerprint(720L)).as("check status must mutate nothing").isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("#359 road level: an unsaved Side Slope 120 and rename on a MET schedule are judged")
+  void roadLevelBodyDisagreeingWithOracleWins() throws Exception {
+    List<String> before = fingerprint(719L);
+    Integer revision = roadRevision(8960);
+
+    String response =
+        mockMvc
+            .perform(check("719", road8960("\"Renamed Road\"", "120")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.outcome", is("ISSUES")))
+            .andExpect(
+                jsonPath("$.pages[0].roadDetails[0].roadDetailLabel", is("Road #1, Renamed Road")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(issueTexts(MAPPER.readTree(response)))
+        .containsExactly(
+            "Page 1, Period: 2021-06, TSA: 01, SB: 01A, TFL:-, Road #1, Renamed Road Side Slope (%):"
+                + " Entered value must be between 0 and 100.");
+    assertThat(roadRevision(8960)).as("nothing is persisted").isEqualTo(revision);
+    assertThat(fingerprint(719L)).as("check status must mutate nothing").isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("#359 road level: an unsaved Road Name clear is reported; the unedited road is MET")
+  void roadLevelNameClearIsReported() throws Exception {
+    mockMvc
+        .perform(check("719", road8960("\"Complete Road\"", "25")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("MET")));
+
+    String response =
+        mockMvc
+            .perform(check("719", road8960("null", "25")))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(issueTexts(MAPPER.readTree(response)))
+        .containsExactly(
+            "Page 1, Period: 2021-06, TSA: 01, SB: 01A, TFL:- Road Name: Value Required");
+  }
+
+  @Test
+  @DisplayName("#359: a new page or road (no id) is not evaluated")
+  void newPageOrRoadIsNotEvaluated() throws Exception {
+    String body =
+        """
+        {"page":{"pageId":null,"divisionName":null,"constructionPeriod":null,"tsaOrTfl":null},
+         "road":{"pageId":8950,"roadDetailId":null,"roadName":null}}
+        """;
+
+    mockMvc
+        .perform(check("719", body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("MET")));
+  }
+
+  @Test
+  @DisplayName("#359: a POST with no body is a clean 400, never a 500")
+  void bodilessPostIsBadRequest() throws Exception {
+    mockMvc
+        .perform(post(ENDPOINT).param("millId", "719").param("year", "2021").with(csrf()))
+        .andExpect(status().isBadRequest());
   }
 }

@@ -19,8 +19,10 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
@@ -270,12 +272,17 @@ class Schedule8ControllerTest {
                                     "Skidding/Yarding",
                                     new MessageInfo(
                                         "skiddingYardingEqualsCentPercent", null))))))));
-    when(schedule8Service.checkStatus(MILL_ID, YEAR)).thenReturn(raw);
+    // #359: the open page panel rides through to the SCREEN path untouched.
+    Schedule8CheckRequest request =
+        new Schedule8CheckRequest(
+            new Schedule8CheckRequest.PageEntry(
+                8001, "Div", null, "250", "TSA5", null, "B", "cp1"));
+    when(schedule8Service.checkStatus(MILL_ID, YEAR, request)).thenReturn(raw);
     when(messageSource.getMessage(anyString(), isNull(), anyString(), any(Locale.class)))
         .thenReturn("resolved text");
 
     ResponseEntity<Schedule8CheckStatusResponse> response =
-        controller.checkStatus(MILL_ID, YEAR, authentication);
+        controller.checkStatus(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
@@ -290,6 +297,9 @@ class Schedule8ControllerTest {
     assertEquals(1, page.samples().get(0).sampleNumber());
     assertEquals("Sample # 1 - C1", page.samples().get(0).sampleLabel());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
+    // The SCREEN path with the very body posted — never the stored one.
+    verify(schedule8Service).checkStatus(MILL_ID, YEAR, request);
+    verify(schedule8Service, never()).checkStatusStored(anyLong(), anyInt());
   }
 
   @Test
@@ -301,14 +311,20 @@ class Schedule8ControllerTest {
             List.of(
                 new Schedule8PageCheckResult(
                     8001, 2, "Page # 2  -TSA: TSA5 -CP:  - ", true, List.of(), List.of())));
-    when(schedule8Service.checkStatusPage(MILL_ID, YEAR, 8001)).thenReturn(raw);
+    // #359: the open sample panel rides through to the SCREEN path untouched.
+    Schedule8PageCheckRequest request =
+        new Schedule8PageCheckRequest(
+            new Schedule8PageCheckRequest.SampleEntry(
+                null, "C9", null, 100, null, null, null, null, null, null, null, null, 1, 0, null));
+    when(schedule8Service.checkStatusPage(MILL_ID, YEAR, 8001, request)).thenReturn(raw);
 
     ResponseEntity<Schedule8CheckStatusResponse> response =
-        controller.checkStatusPage(MILL_ID, YEAR, 8001, authentication);
+        controller.checkStatusPage(MILL_ID, YEAR, 8001, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
     assertEquals("MET", response.getBody().outcome());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
+    verify(schedule8Service).checkStatusPage(MILL_ID, YEAR, 8001, request);
   }
 }

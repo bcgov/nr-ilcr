@@ -10,7 +10,16 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, ArrowLeft, Close, Edit, Save, TrashCan, View } from '@carbon/icons-react'
+import {
+  Add,
+  ArrowLeft,
+  CheckmarkOutline,
+  Close,
+  Edit,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import type {
   ConstructionPage,
   RoadDetail,
@@ -34,10 +43,14 @@ type RoadDetailPageProps = {
   readonly onOpenDetail: (detail: RoadDetail) => void
   readonly onCloseForm: () => void
   readonly onSave: () => void
+  /** Checks the WHOLE schedule, carrying the open road editor (#359). */
+  readonly onCheckStatus: () => void
   readonly onRequestDelete: (detail: RoadDetail) => void
   readonly onBack: () => void
   readonly onChange: (key: keyof RoadDetailFormValues, value: string) => void
   readonly onMask: (key: MaskedField) => void
+  readonly onEnter: (key: keyof RoadDetailFormValues) => void
+  readonly onLeave: (key: keyof RoadDetailFormValues, changed?: boolean) => void
 }
 
 const EMPTY_LIST = 'No records found.'
@@ -59,10 +72,13 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
   onOpenDetail,
   onCloseForm,
   onSave,
+  onCheckStatus,
   onRequestDelete,
   onBack,
   onChange,
   onMask,
+  onEnter,
+  onLeave,
 }) => {
   const controlsDisabled = !editable || saving
   const readOnly = panelMode === 'view'
@@ -78,6 +94,17 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
       <div className="schedule-10__actions">
         <Button kind="primary" disabled={controlsDisabled} renderIcon={Add} onClick={onOpenNew}>
           Add Road
+        </Button>
+        {/* Legacy's one Check Status button had no render condition (`schedule10.xhtml:52-55`), so it
+            showed at this level too; it sits after Add Road as the page level's sits after Add New
+            Page, under the same disabled rule. */}
+        <Button
+          kind="tertiary"
+          renderIcon={CheckmarkOutline}
+          disabled={controlsDisabled}
+          onClick={onCheckStatus}
+        >
+          Check Status
         </Button>
         {/* Back is never disabled, including for a caller who may not edit — a read-only reporter
             must be able to leave the level. */}
@@ -153,6 +180,8 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               readOnly={readOnly}
               onChange={onChange}
               onMask={onMask}
+              onEnter={onEnter}
+              onLeave={onLeave}
               // The Add panel has no stored row, so nothing was submitted for it to differ from.
               originals={
                 panelMode === 'new' || openDetail === undefined

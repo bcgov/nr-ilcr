@@ -82,9 +82,19 @@ export function useScheduleMutations<TCheckResult>({
    * screen: legacy's Check Status describes the screen rather than the saved record (issue #359).
    * Such an endpoint REQUIRES the body (a POST without one is a 400), and the body's shape is that
    * schedule's own {@code Schedule*CheckRequest}: every row, or only the open panel, depending on
-   * what the page shows. Omit it only for an endpoint that still judges the saved record. Schedule 5
-   * is a special case: legacy's own Schedule 5 screen judges the saved record, and it sends a body
-   * only because the business area ruled it should match the others (#476).
+   * what the page shows. The server overlays the body onto the stored document and evaluates the
+   * result with the same rules the stored check uses; nothing is persisted. A blank on screen is sent
+   * as null, never 0, and the page gates the request on Save's own validator while an editable panel
+   * is open. Omit the body only for an endpoint that still judges the saved record. Schedule 5 is a
+   * special case: legacy's own Schedule 5 screen judges the saved record, and it sends a body only
+   * because the business area ruled it should match the others (#476).
+   *
+   * <p>Schedules 8 and 10 send only the open editor, and only where legacy's check could see it.
+   * Schedule 8's all-pages check carries the open EXISTING page panel (a new page is not sent), and
+   * its single-page check, which posts directly from the sample view, carries the open sample panel,
+   * a NEW sample included. Schedule 10, which posts through {@code useScheduleBanners.run}, carries
+   * the open existing page panel at the page level or the open existing road editor at the road
+   * level, and checks the whole schedule from either.
    *
    * <p>{@code stillWanted}, when given, is asked as the response lands. If it answers {@code false},
    * the result is dropped, success or failure alike, so a check superseded by a later edit never

@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule8.api;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
@@ -202,27 +204,46 @@ public interface Schedule8Api {
       Authentication authentication);
 
   /**
-   * Check Status — all-pages sweep (Story 14.6, BR-07). Read-only (AD-5), mutates nothing, no
-   * request body. Returns 200 with a per-page → per-sample → per-field breakdown: {@code outcome =
-   * "MET"} only when every page (and its samples) passes, else {@code "ISSUES"}. Same no-summary
+   * Check Status — all-pages sweep (Story 14.6, BR-07). Read-only (AD-5), mutates nothing, needs no
+   * revision token. Returns 200 with a per-page → per-sample → per-field breakdown: {@code outcome
+   * = "MET"} only when every page (and its samples) passes, else {@code "ISSUES"}. Same no-summary
    * context guards as the read (400/404/409/403, {@code VIEW_SCHEDULE}).
+   *
+   * <p>{@code request} carries the page panel currently ON SCREEN, if one is open (#359). It is
+   * overlaid onto the stored page with the same id, so an unsaved edit moves the verdict, as it did
+   * in legacy; samples are always the stored ones. A new page (null id) and an id matching nothing
+   * stored are ignored. With {@code page} null the stored schedule is evaluated alone. The body is
+   * REQUIRED — an absent one is a clean 400 — but its members are unvalidated, because reporting
+   * missing values is the check's whole job.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param request the open page panel, if any
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
    * @return 200 with the {@link Schedule8CheckStatusResponse}
    */
   @PostMapping("/check-status")
   ResponseEntity<Schedule8CheckStatusResponse> checkStatus(
-      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule8CheckRequest request,
+      Authentication authentication);
 
   /**
    * Check Status — single page scope (Story 14.6, S14/BR-09). Read-only; validates only {@code
    * pageId}'s samples. Same result shape as the sweep, scoped to the one page.
    *
+   * <p>{@code request} carries the sample panel currently ON SCREEN, if one is open (#359). It is
+   * overlaid onto the page's stored sample with the same id; a new sample (null id), or an id
+   * matching no stored sample under the page, is evaluated as the page's next sample, as legacy's
+   * Add put it into the checked list. The page header is always the stored one. With {@code sample}
+   * null the stored page is evaluated alone. The body is REQUIRED — an absent one is a clean 400 —
+   * but its members are unvalidated.
+   *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
    * @param pageId the page to check
+   * @param request the open sample panel, if any
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
    * @return 200 with the {@link Schedule8CheckStatusResponse} scoped to the page
    */
@@ -231,5 +252,6 @@ public interface Schedule8Api {
       @RequestParam long millId,
       @RequestParam int year,
       @PathVariable int pageId,
+      @Valid @RequestBody Schedule8PageCheckRequest request,
       Authentication authentication);
 }

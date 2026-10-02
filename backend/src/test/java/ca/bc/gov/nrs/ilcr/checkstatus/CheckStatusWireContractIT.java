@@ -279,14 +279,34 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
             "514",
             "2021",
             SCHEDULE7B_514_SCREEN),
-        new Anchor("schedule8-600-2021", "/api/v1/schedule8/check-status", "600", "2021"),
-        new Anchor("schedule8-601-2021", "/api/v1/schedule8/check-status", "601", "2021"),
-        new Anchor("schedule8-602-2021", "/api/v1/schedule8/check-status", "602", "2021"),
+        new Anchor(
+            "schedule8-600-2021",
+            "/api/v1/schedule8/check-status",
+            "600",
+            "2021",
+            // Since #359 this endpoint takes the open page panel; none open.
+            "{\"page\":null}"),
+        new Anchor(
+            "schedule8-601-2021",
+            "/api/v1/schedule8/check-status",
+            "601",
+            "2021",
+            // Since #359 this endpoint takes the open page panel; none open.
+            "{\"page\":null}"),
+        new Anchor(
+            "schedule8-602-2021",
+            "/api/v1/schedule8/check-status",
+            "602",
+            "2021",
+            // Since #359 this endpoint takes the open page panel; none open.
+            "{\"page\":null}"),
         new Anchor(
             "schedule8-603-2021-page-8976",
             "/api/v1/schedule8/pages/8976/check-status",
             "603",
-            "2021"),
+            "2021",
+            // Since #359 this endpoint takes the open sample panel; none open.
+            "{\"sample\":null}"),
         new Anchor(
             "schedule9-703-2021",
             "/api/v1/schedule9/check-status",
@@ -300,8 +320,20 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
             "2021",
             // V20260815: 704 stores no records.
             "{\"records\":[]}"),
-        new Anchor("schedule10-720-2021", "/api/v1/schedule10/check-status", "720", "2021"),
-        new Anchor("schedule10-715-2021", "/api/v1/schedule10/check-status", "715", "2021"),
+        new Anchor(
+            "schedule10-720-2021",
+            "/api/v1/schedule10/check-status",
+            "720",
+            "2021",
+            // Since #359 this endpoint takes the open page panel or road editor; none open.
+            "{\"page\":null,\"road\":null}"),
+        new Anchor(
+            "schedule10-715-2021",
+            "/api/v1/schedule10/check-status",
+            "715",
+            "2021",
+            // Since #359 this endpoint takes the open page panel or road editor; none open.
+            "{\"page\":null,\"road\":null}"),
         new Anchor("schedule11-617-2021", "/api/v1/schedule11/check-status", "617", "2021"),
         new Anchor("schedule11-613-2021", "/api/v1/schedule11/check-status", "613", "2021"));
   }

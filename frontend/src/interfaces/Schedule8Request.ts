@@ -59,3 +59,46 @@ export interface Schedule8RateRequest {
   readonly costTypeCode: string
   readonly itemDescription: string | null
 }
+
+// The all-pages Check Status body, mirroring the backend Schedule8CheckRequest (#359): the page panel
+// currently ON SCREEN, overlaid by the server onto the stored page with the same id. Only an EXISTING
+// page is sent (legacy built a new page outside the checked list); null when no such panel is open.
+// Samples are never sent — they are edited on another view, so the server reads them from storage.
+// A blank field is sent as null, never as a placeholder: reporting it is the check's purpose.
+export interface Schedule8CheckRequest {
+  readonly page: {
+    readonly id: number
+    readonly division: string | null
+    readonly contact: string | null
+    readonly phone: string | null
+    readonly tsaNumber: string | null
+    readonly tflNumber: string | null
+    readonly supplyBlock: string | null
+    readonly cuttingPermit: string | null
+  } | null
+}
+
+// The single-page Check Status body, mirroring the backend Schedule8PageCheckRequest (#359): the
+// sample panel currently ON SCREEN under that page. A NEW sample is sent too, with id null — legacy's
+// Add put the unsaved row straight into the checked list, so the server appends it as the page's next
+// sample. null when no panel is open. The page header is never sent (read-only on this view). Null
+// stays null: a blank figure is reported as missing, never coerced to 0.
+export interface Schedule8PageCheckRequest {
+  readonly sample: {
+    readonly id: number | null
+    readonly contractId: string | null
+    readonly cutBlock: string | null
+    readonly groundBasePct: number | null
+    readonly grapplePct: number | null
+    readonly skylinePct: number | null
+    readonly highleadPct: number | null
+    readonly helicopterPct: number | null
+    readonly otherSkiddingPct: number | null
+    readonly skylineSlopeDistance: number | null
+    readonly skylineSupportNumber: number | null
+    readonly supportAvgDistance: number | null
+    readonly coniferousVolume: number | null
+    readonly deciduousVolume: number | null
+    readonly originalRate: number | null
+  } | null
+}

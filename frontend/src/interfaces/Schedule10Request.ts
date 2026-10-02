@@ -89,3 +89,49 @@ export interface RoadDetailRequest {
   readonly comments: string | null
   readonly revisionCount?: number
 }
+
+/**
+ * The Check Status body — the page panel or road editor currently ON SCREEN, mirroring the backend
+ * `Schedule10CheckRequest` (#359). The server overlays it onto the stored document; nothing is
+ * persisted.
+ *
+ * Only an EXISTING page or road is sent: legacy built a new one outside the checked list, so an
+ * unsaved new page or road is never evaluated. Both members are `null` when no such editor is open,
+ * and the stored document is then evaluated alone.
+ *
+ * ⚠ `null` means "no usable value on screen" and MUST stay null — a blank figure is reported as
+ * missing, so coercing it to `0` would turn a missing value into a pass.
+ */
+export interface Schedule10CheckRequest {
+  readonly page: Schedule10CheckPageEntry | null
+  readonly road: Schedule10CheckRoadEntry | null
+}
+
+/** The open page panel: the fields the page rules read, plus the period for the page label. */
+export interface Schedule10CheckPageEntry {
+  readonly pageId: number
+  readonly divisionName: string | null
+  readonly constructionPeriod: string | null
+  readonly tsaOrTfl: string | null
+  readonly supplyBlock: string | null
+  readonly tflNumberCode: string | null
+}
+
+/**
+ * The open road editor: every field the road rules read. The nested shapes are the write bodies'
+ * (built by the same code, so ballast method `N` sends the figures Save would), minus the derived
+ * totals the server recomputes. A blank ballast method is `null` here rather than Save's `''`.
+ */
+export interface Schedule10CheckRoadEntry {
+  readonly pageId: number
+  readonly roadDetailId: number
+  readonly roadName: string | null
+  readonly becbiogeoCatalogueId: number | null
+  readonly relSoilMoistRgmClsCode: string | null
+  readonly sideSlopePct: number | null
+  readonly subGrade: SubGradeRequest | null
+  readonly stabilizing: Omit<StabilizingRequest, 'ballastMethodCode'> & {
+    readonly ballastMethodCode: string | null
+  }
+  readonly materialComposition: MaterialCompositionRequest | null
+}

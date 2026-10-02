@@ -34,6 +34,13 @@ type RoadDetailFieldsProps = {
   readonly readOnly: boolean
   readonly onChange: (key: keyof RoadDetailFormValues, value: string) => void
   readonly onMask: (key: MaskedField) => void
+  /** A text field took focus; the caller remembers its value to compare on leave (#359 group C). */
+  readonly onEnter: (key: keyof RoadDetailFormValues) => void
+  /**
+   * A field was left; `changed` is a combo box's report that its value differs from the one it had
+   * on focus. Judging is the caller's (#359 group C).
+   */
+  readonly onLeave: (key: keyof RoadDetailFormValues, changed?: boolean) => void
   /**
    * The Licensee's submitted values for this road detail, already flattened onto the form's field
    * names by {@code roadDetailOriginals} (Story 16.2, BR-04). Null at Draft.
@@ -100,6 +107,8 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
   readOnly,
   onChange,
   onMask,
+  onEnter,
+  onLeave,
   originals,
 }) => {
   // Legacy renders an indicator beside ~27 of these fields. It renders NONE on the derived totals,
@@ -186,6 +195,8 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           invalid={Boolean(errors[key])}
           invalidText={errors[key] ?? ''}
           onChange={(event) => onChange(key, event.target.value)}
+          onFocus={() => onEnter(key)}
+          onBlur={() => onLeave(key)}
         />
         {indicator(key, label, false)}
       </Field>
@@ -232,7 +243,11 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           invalid={Boolean(errors[key])}
           invalidText={errors[key] ?? ''}
           onValueChange={(raw) => onChange(key, raw)}
-          onBlur={() => onMask(key)}
+          onFocus={() => onEnter(key)}
+          onBlur={() => {
+            onLeave(key)
+            onMask(key)
+          }}
         />
         {indicator(key, name)}
       </Field>
@@ -269,6 +284,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           invalid={Boolean(errors[key])}
           invalidText={errors[key]}
           onSelect={(code) => onChange(key, code)}
+          onLeaveChanged={() => onLeave(key, true)}
         />
         {indicator(key, name, false)}
       </Field>
@@ -316,7 +332,11 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           invalid={Boolean(errors[key])}
           invalidText={errors[key] ?? ''}
           onValueChange={(raw) => onChange(key, raw)}
-          onBlur={() => onMask(key)}
+          onFocus={() => onEnter(key)}
+          onBlur={() => {
+            onLeave(key)
+            onMask(key)
+          }}
         />
         {indicator(key, accessibleName)}
       </div>
@@ -528,6 +548,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
               // Legacy's menu offers no blank choice and the column is NOT NULL, so clearing
               // returns the field to its default rather than to a value Save could not send.
               onSelect={(code) => onChange('detailedEngineeringCostInd', code === '' ? 'N' : code)}
+              onLeaveChanged={() => onLeave('detailedEngineeringCostInd', true)}
             />
           )}
           {/* The assembler serves this key (`YES_NO` format) and the first cut of the wiring
@@ -585,6 +606,8 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
               invalid={Boolean(errors.comments)}
               invalidText={errors.comments ?? ''}
               onChange={(event) => onChange('comments', event.target.value)}
+              onFocus={() => onEnter('comments')}
+              onBlur={() => onLeave('comments')}
             />
             {/* The road detail's comments carry an indicator like its other fields — text, so the
                 comparison is `equals` rather than by rounded value (PR #452 review). */}
@@ -597,9 +620,9 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
         There is NO standing "A material Type is required for this Additional Stabilizing code."
         line here any more (#440 item 8). It was an advance warning for a rule the form already
         enforces where the issue asks for it — on the field: `validateRoadDetail` marks the `Type`
-        combo invalid with the server's own `Material Code Type: Value is required.` the moment Save
-        is pressed on a `C` (or blank) ballast method. Legacy prints nothing in advance either; its
-        `pageDtlASType` simply carries `required="#{...typeMandatory}"` and reports on submit.
+        combo invalid (and the banner carries `Material Code Type: Value is required.`) whenever the
+        ballast method is anything but `N` or `D`, a blank one included. Legacy prints nothing in
+        advance either; its `pageDtlASType` carries `required="#{...typeMandatory}"`.
       */}
       {!readOnly && figuresZeroed && (
         <p className="schedule-10__hint">

@@ -12,7 +12,9 @@
 # therefore cannot be produced here any more, so neither the false-GREEN (S21) nor the false-RED (S22) the
 # divergence described is reachable on Schedule 11. That is a DEVIATION from legacy, which evaluated its
 # unsaved in-memory model (`Schedule11MB.java:154-176`) — recorded as the story's deviation (C) — and it is
-# the Schedule 11 instance of DIV-5 CLOSED; #359 stays open for the other schedules.
+# the Schedule 11 instance of DIV-5 CLOSED. #359 fixed the other schedules and closes with group C
+# (2026-10-01); Schedule 11 is deliberately left as is unless the business or the BA raise it in manual
+# testing.
 #
 # So these are now GREEN scenarios of the ruled behaviour: the change greys Check Status (with its reason),
 # the Save re-enables it, and the verdict then describes what was saved. Both arms are kept because they

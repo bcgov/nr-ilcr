@@ -119,7 +119,9 @@ export interface CheckFieldIssue {
 // no verdict is ever stored (the Check Status sweep evaluates live), so there is no older shape to
 // fall back from — same contract as Schedule 10's required `pageLabel`.
 export interface SampleCheckResult {
-  readonly id: number | null
+  // ABSENT (not null) for an unsaved new sample the single-page check appended from the open panel
+  // (#359): the server omits null members, so key a result by its sampleNumber, never by id alone.
+  readonly id?: number | null
   readonly sampleNumber: number
   readonly sampleLabel: string
   readonly met: boolean

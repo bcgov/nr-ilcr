@@ -4,7 +4,7 @@ import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
 import type Schedule8Options from '@/interfaces/Schedule8Options'
 import type { CodeOption } from '@/interfaces/Schedule8Options'
-import type { Schedule8PageRequest } from '@/interfaces/Schedule8Request'
+import type { Schedule8CheckRequest, Schedule8PageRequest } from '@/interfaces/Schedule8Request'
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -43,14 +43,18 @@ import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import CodeComboBox from '@/components/core/CodeComboBox'
+import ScheduleBanners from '@/components/core/ScheduleBanners'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
+import type { BannerEntry } from '@/utils/legacyValidationBanner'
 import {
+  PAGE_BANNER,
   emptyPageForm,
   isTflSelected,
   seedPageForm,
   validatePageForm,
   type PageForm,
 } from './validation'
+import { useJudgedForm } from './useJudgedForm'
 import CheckStatusResult from './CheckStatusResult'
 import SamplePage from './SamplePage'
 import RatesPage from './RatesPage'
@@ -60,7 +64,7 @@ import './index.scss'
 // message.text / ProblemDetail.detail — never hardcoded (AD-8).
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 
-type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
+type PanelMode = 'closed' | 'new' | 'edit' | 'view'
 // The three-level tree: the page list/editor, then a page's samples, then a sample's additions/
 // deductions. The level is derived from the URL search (pageId, sampleId) so browser Back steps back.
 type NavView =
@@ -112,9 +116,8 @@ const Schedule8: FC = () => {
     actionError: saveError,
     checkResult,
     setMessage: setSaveMessage,
-    setActionError: setSaveError,
     setCheckResult,
-    clearBanners,
+    clearBanners: clearHookBanners,
     resetBanners,
     run,
     save,
@@ -126,6 +129,42 @@ const Schedule8: FC = () => {
     year,
     isCurrent,
   })
+
+  // Check Status describes one exact screen snapshot (#359). Incremented synchronously whenever that
+  // snapshot changes, so an older response cannot repaint a verdict for values no longer on screen.
+  const checkSnapshotVersionRef = useRef(0)
+
+  const invalidateCheckResult = () => {
+    checkSnapshotVersionRef.current += 1
+    setCheckResult(null)
+  }
+
+  // The validation banner, one keyed line per failing field in legacy order (#359 group C change
+  // log, 2026-10-02). Save REPLACES it with the full list; leaving a changed field adds or removes
+  // only its own line. Check Status validates nothing (legacy's buttons are `process="@this"`).
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  const editor = useJudgedForm<PageForm>({
+    initial: emptyPageForm,
+    validate: validatePageForm,
+    scheme: PAGE_BANNER,
+    setBanner: setBannerEntries,
+    // Switching TSA-or-TFL clears the half it no longer uses (see the TSA-or-TFL selector).
+    dependents: (field) => (field === 'tsaNumber' ? ['tflNumber', 'supplyBlock'] : []),
+  })
+  const form = editor.form
+
+  /**
+   * Clears the success/failure/check-status banners, the validation banner and the editor's red
+   * fields, and supersedes any check still in flight — so the validation banner and the red fields
+   * never disagree. Called before every action: opening the editor, Save (which then re-marks what
+   * it finds), Check Status, Copy, Delete and opening the samples.
+   */
+  const clearBanners = () => {
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+    setBannerEntries([])
+    editor.clearErrors()
+  }
 
   // Sample/rates level from the URL (pageId, sampleId); navigate updates it.
   const search = scheduleRoute.useSearch()
@@ -154,10 +193,8 @@ const Schedule8: FC = () => {
   const [isLoading, setIsLoading] = useState(!contextMissing)
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
-  const [form, setForm] = useState<PageForm>(() => emptyPageForm())
   const [editId, setEditId] = useState<number | null>(null)
   const [revision, setRevision] = useState<number | null>(null)
-  const [showErrors, setShowErrors] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Page | null>(null)
   // Set to a page id when the user clicks TtT Samples with unsaved page edits (nav-away confirm).
   const [confirmSamplesPageId, setConfirmSamplesPageId] = useState<number | null>(null)
@@ -170,6 +207,7 @@ const Schedule8: FC = () => {
     setErrorDetail(null)
     // Drop the banners AND release the in-flight lock (Story 29.6 reset) on a mill/year change.
     resetBanners()
+    setBannerEntries([])
     setPanelMode('closed')
     /* eslint-enable @eslint-react/set-state-in-effect */
     let active = true
@@ -223,96 +261,135 @@ const Schedule8: FC = () => {
   const openNew = () => {
     clearBanners()
     setPanelMode('new')
-    setForm(emptyPageForm())
+    editor.seed(emptyPageForm())
     setEditId(null)
     setRevision(null)
-    setShowErrors(false)
   }
 
-  const openEditOrView = (page: Page, mode: 'edit' | 'view') => {
+  const openEditOrView = (target: Page, mode: 'edit' | 'view') => {
     clearBanners()
     setPanelMode(mode)
-    setForm(seedPageForm(page))
-    setEditId(page.id)
-    setRevision(page.revisionCount)
-    setShowErrors(false)
+    editor.seed(seedPageForm(target))
+    setEditId(target.id)
+    setRevision(target.revisionCount)
   }
 
-  const openCopy = (page: Page) => {
-    clearBanners()
-    setPanelMode('copy')
-    setForm(seedPageForm(page))
-    setEditId(null)
-    setRevision(null)
-    setShowErrors(false)
+  // Closing the panel takes its values off screen, so a verdict that included them is cleared, and
+  // so are its validation lines and red fields.
+  const closePanel = () => {
+    setPanelMode('closed')
+    setBannerEntries([])
+    editor.clearErrors()
+    invalidateCheckResult()
   }
 
-  const closePanel = () => setPanelMode('closed')
-
-  const setField = (field: keyof PageForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { value } = event.target
-    setForm((prev) => ({ ...prev, [field]: value }))
+  // Every page-editor edit goes through here: it changes the screen a shown verdict describes. The
+  // red box and its inline text are NOT re-judged while typing: like legacy (and Schedule 10) a field
+  // is judged when it is left after a change, a dropdown on selection.
+  const setValue = (field: keyof PageForm, value: string) => {
+    editor.write({ ...editor.formRef.current, [field]: value })
+    invalidateCheckResult()
   }
 
   const setComments = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const { value } = event.target
-    setForm((prev) => ({ ...prev, comments: value }))
+    setValue('comments', event.target.value)
   }
 
-  const buildRequest = (): Schedule8PageRequest => {
-    const tfl = isTflSelected(form)
+  // The page write body for `source`; a null id is a create (Add New Page, and Copy).
+  const buildRequest = (
+    source: PageForm,
+    id: number | null,
+    revisionCount: number | null,
+  ): Schedule8PageRequest => {
+    const tfl = isTflSelected(source)
     return {
-      id: panelMode === 'edit' ? editId : null,
-      revisionCount: panelMode === 'edit' ? (revision ?? 0) : null,
-      license: form.license.trim(),
-      supportCentre: form.supportCentre.trim(),
-      region: form.region.trim(),
-      becZone: form.becZone.trim(),
-      tsaNumber: blankToNull(form.tsaNumber),
-      tflNumber: tfl ? blankToNull(form.tflNumber) : null,
-      supplyBlock: tfl ? null : blankToNull(form.supplyBlock),
-      division: blankToNull(form.division),
-      contact: blankToNull(form.contact),
-      phone: blankToNull(form.phone),
-      cuttingPermit: blankToNull(form.cuttingPermit),
-      comments: blankToNull(form.comments),
+      id,
+      revisionCount,
+      license: source.license.trim(),
+      supportCentre: source.supportCentre.trim(),
+      region: source.region.trim(),
+      becZone: source.becZone.trim(),
+      tsaNumber: blankToNull(source.tsaNumber),
+      tflNumber: tfl ? blankToNull(source.tflNumber) : null,
+      supplyBlock: tfl ? null : blankToNull(source.supplyBlock),
+      division: blankToNull(source.division),
+      contact: blankToNull(source.contact),
+      phone: blankToNull(source.phone),
+      cuttingPermit: blankToNull(source.cuttingPermit),
+      comments: blankToNull(source.comments),
     }
   }
 
-  const handleSave = () => {
-    if (saving || panelMode === 'closed' || panelMode === 'view') return
-    const validation = validatePageForm(form)
-    if (Object.keys(validation).length > 0) {
-      setShowErrors(true)
-      setSaveError('Please correct the highlighted fields before saving.')
-      return
-    }
+  /**
+   * Copy saves at once, as legacy did (`Schedule8MB.java:207-213,242-248`: copyReport, then save(),
+   * then an insert): the header fields are written as a NEW page, never its samples, then the success
+   * message shows and the editor opens on the copy in edit mode. A rejected write shows its error and
+   * opens nothing, so no unsaved copy ever exists on screen.
+   */
+  const copyPage = (page: Page) => {
+    if (saving || !data?.editable) return
     clearBanners()
-    // Page ids present before the save — used to find a freshly created page (new/copy) in the reply.
+    // Page ids present before the write. The reply names no saved id, so the copy is identified as
+    // the ONE new id in it; the client's list may be stale, so if another session added a page
+    // meanwhile there are several and none can be told apart from someone else's record.
     const prevIds = new Set(data.pages.map((p) => p.id))
-    // List-shaped write: PUT the /pages list endpoint (no by-id suffix — the id/revision travels in the
-    // body). run()'s isCurrent() guard drops the echo if mill/year changed mid-flight (Story 29.6).
-    void save<Schedule8Response>(buildRequest(), {
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void save<Schedule8Response>(buildRequest(seedPageForm(page), null, null), {
       suffix: '/pages',
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
         setData(doc)
         setSaveMessage(doc.message?.text ?? null)
-        // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
-        // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
-        const saved =
-          panelMode === 'edit' && editId !== null
-            ? doc.pages.find((p) => p.id === editId)
-            : doc.pages.find((p) => p.id != null && !prevIds.has(p.id))
-        if (saved && saved.id != null) {
+        // Ambiguous (zero or several new ids): the list and message refresh, but nothing opens.
+        const added = doc.pages.filter((p) => p.id != null && !prevIds.has(p.id))
+        const copy = added.length === 1 ? added[0] : undefined
+        if (copy?.id != null) {
           setPanelMode('edit')
-          setEditId(saved.id)
-          setRevision(saved.revisionCount ?? 0)
-        } else {
-          setPanelMode('closed')
+          editor.seed(seedPageForm(copy))
+          setEditId(copy.id)
+          setRevision(copy.revisionCount ?? 0)
         }
       },
     })
+  }
+
+  const handleSave = () => {
+    if (saving || panelMode === 'closed' || panelMode === 'view') return
+    clearBanners()
+    // Save judges the whole editor and REPLACES the banner with each failing field's legacy line.
+    if (Object.keys(editor.validateAll()).length > 0) {
+      return
+    }
+    // Page ids present before the save — used to find a freshly created page in the reply.
+    const prevIds = new Set(data.pages.map((p) => p.id))
+    // List-shaped write: PUT the /pages list endpoint (no by-id suffix — the id/revision travels in the
+    // body). run()'s isCurrent() guard drops the echo if mill/year changed mid-flight (Story 29.6).
+    const editing = panelMode === 'edit'
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void save<Schedule8Response>(
+      buildRequest(form, editing ? editId : null, editing ? (revision ?? 0) : null),
+      {
+        suffix: '/pages',
+        fallback: 'Schedule could not be saved.',
+        onSuccess: (doc) => {
+          setData(doc)
+          setSaveMessage(doc.message?.text ?? null)
+          // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
+          // one new id — refreshing the optimistic-lock token so a follow-up save doesn't 409.
+          const saved =
+            panelMode === 'edit' && editId !== null
+              ? doc.pages.find((p) => p.id === editId)
+              : doc.pages.find((p) => p.id != null && !prevIds.has(p.id))
+          if (saved && saved.id != null) {
+            setPanelMode('edit')
+            setEditId(saved.id)
+            setRevision(saved.revisionCount ?? 0)
+          } else {
+            setPanelMode('closed')
+          }
+        },
+      },
+    )
   }
 
   const handleDelete = () => {
@@ -345,6 +422,30 @@ const Schedule8: FC = () => {
     })
   }
 
+  // The Check Status body (#359): the open panel as it is on screen, but only for an EXISTING page —
+  // legacy's Add built a new page outside the checked list (`Schedule8MB.java:193-198`), so an unsaved
+  // new page is never evaluated. Cutting Permit is carried for the page label, not checked. A field
+  // failing Save's check for it contributes its last valid value, as legacy's model did (its Check
+  // Status processed no field).
+  const buildCheckRequest = (): Schedule8CheckRequest => {
+    if (panelMode === 'closed' || panelMode === 'new' || editId === null) {
+      return { page: null }
+    }
+    const body = buildRequest(editor.modelSnapshot(), editId, null)
+    return {
+      page: {
+        id: editId,
+        division: body.division,
+        contact: body.contact,
+        phone: body.phone,
+        tsaNumber: body.tsaNumber,
+        tflNumber: body.tflNumber,
+        supplyBlock: body.supplyBlock,
+        cuttingPermit: body.cuttingPermit,
+      },
+    }
+  }
+
   const handleCheckStatus = () => {
     if (saving) return
     // The single `saving` lock (shared with save/delete via run()) gates re-entrancy — Schedule 8 had
@@ -354,11 +455,26 @@ const Schedule8: FC = () => {
     // but this HANDLER deliberately still guards `saving` alone: adding an editability guard here is
     // a cross-page change and is recorded as deferred work, not an oversight. Nothing is at risk in
     // the meantime — the endpoint is VIEW_SCHEDULE-gated, read-only, and mutates nothing.
-    clearBanners()
-    void checkStatus<Schedule8CheckStatusResponse>({
-      fallback: 'Unable to check status.',
-      onSuccess: setCheckResult,
-    })
+    //
+    // No field is validated: legacy's Check Status buttons are `process="@this"`
+    // (`schedule8.xhtml:42-48,157-163`), so the check always runs. They re-rendered only the messages
+    // area (`update=":schedule8Form:messages"`), so the banner gives way to the check's result while
+    // the editor's red fields and inline texts stay as they were.
+    checkSnapshotVersionRef.current += 1
+    clearHookBanners()
+    setBannerEntries([])
+    const submittedSnapshotVersion = checkSnapshotVersionRef.current
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void checkStatus<Schedule8CheckStatusResponse>(
+      {
+        fallback: 'Unable to check status.',
+        onSuccess: setCheckResult,
+        // A response — success OR failure — for a superseded snapshot describes a panel no longer on
+        // screen, so it is dropped.
+        stillWanted: () => checkSnapshotVersionRef.current === submittedSnapshotVersion,
+      },
+      buildCheckRequest(),
+    )
   }
 
   const openSamples = (pageId: number) => {
@@ -500,7 +616,8 @@ const Schedule8: FC = () => {
   // ---- Page level (list + editor). ---------------------------------------------------------------
   const readOnly = panelMode === 'view'
   const panelOpen = panelMode !== 'closed'
-  const errors = showErrors && !readOnly ? validatePageForm(form) : {}
+  // The red fields as Save / a field's leave last judged them; a View panel marks nothing.
+  const errors: Record<string, string> = readOnly ? {} : editor.errors
   const tflActive = isTflSelected(form)
   // The page being edited/viewed (has an id); its samples open from inside the panel.
   const panelPage = editId !== null ? data.pages.find((p) => p.id === editId) : undefined
@@ -558,10 +675,8 @@ const Schedule8: FC = () => {
       )
     }
     // When a formatter is supplied it also normalizes entry live (e.g. phone → 222-222-2222).
-    const onChange = opts.format
-      ? (event: React.ChangeEvent<HTMLInputElement>) =>
-          setForm((prev) => ({ ...prev, [field]: opts.format!(event.target.value) }))
-      : setField(field)
+    const onChange = (event: React.ChangeEvent<HTMLInputElement>) =>
+      setValue(field, opts.format ? opts.format(event.target.value) : event.target.value)
     return (
       <div className="schedule-8__field">
         <TextInput
@@ -573,6 +688,8 @@ const Schedule8: FC = () => {
           // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
           value={opts.format ? opts.format(form[field]) : form[field]}
           onChange={onChange}
+          onFocus={() => editor.enter(field)}
+          onBlur={() => editor.leave(field)}
           invalid={Boolean(errors[field])}
           invalidText={errors[field]}
         />
@@ -587,7 +704,12 @@ const Schedule8: FC = () => {
     field: keyof PageForm,
     label: string,
     items: CodeOption[],
-    opts: { disabled?: boolean; onChange?: (code: string) => void; className?: string } = {},
+    opts: {
+      disabled?: boolean
+      // The values a selection writes, when it rewrites more than its own field.
+      next?: (code: string) => PageForm
+      className?: string
+    } = {},
   ) => {
     const current = form[field]
     if (readOnly) {
@@ -616,9 +738,14 @@ const Schedule8: FC = () => {
           titleText={label}
           items={itemList}
           selectedCode={current}
-          onSelect={(code) =>
-            opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
-          }
+          onSelect={(code) => {
+            editor.select(
+              field,
+              opts.next ? opts.next(code) : { ...editor.formRef.current, [field]: code },
+            )
+            invalidateCheckResult()
+          }}
+          onLeaveChanged={() => editor.leave(field, true)}
           disabled={opts.disabled}
           invalid={Boolean(errors[field])}
           invalidText={errors[field]}
@@ -666,7 +793,7 @@ const Schedule8: FC = () => {
                         size="sm"
                         renderIcon={Copy}
                         disabled={!editable || saving || isOpen}
-                        onClick={() => openCopy(page)}
+                        onClick={() => copyPage(page)}
                       >
                         Copy
                       </Button>
@@ -701,7 +828,6 @@ const Schedule8: FC = () => {
                 data.pages.findIndex((p) => p.id === editId),
               )}`
             : 'Edit Page')}
-        {panelMode === 'copy' && 'Copy Page'}
         {panelMode === 'view' && 'View Page'}
       </h3>
 
@@ -719,16 +845,15 @@ const Schedule8: FC = () => {
         {dropdownField('becZone', 'Biogeoclimatic Zone', options?.becZones ?? [])}
         {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems, {
           className: 'schedule-8__tsa-tfl',
-          onChange: (code) =>
-            setForm((prev) => {
-              const next = { ...prev, tsaNumber: code }
-              if (code === 'TFL') {
-                next.supplyBlock = ''
-              } else {
-                next.tflNumber = ''
-              }
-              return next
-            }),
+          next: (code) => {
+            const next = { ...editor.formRef.current, tsaNumber: code }
+            if (code === 'TFL') {
+              next.supplyBlock = ''
+            } else {
+              next.tflNumber = ''
+            }
+            return next
+          },
         })}
         {/* TFL is a free-text 2-char code (legacy ILCRTflNumberValidator, ILCR-161: NOT restricted to
             the TFL_NUMBER_CODE table), enabled only when the TSA-or-TFL selector holds 'TFL'. */}
@@ -777,15 +902,6 @@ const Schedule8: FC = () => {
         </div>
       )}
 
-      {/* Save feedback shown in the panel (next to Save) so it's visible where the user is acting —
-          the panel opens below the table, far from the page-top notifications. */}
-      {saveMessage && (
-        <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
-      )}
-      {saveError && (
-        <InlineNotification kind="error" lowContrast title="Action failed" subtitle={saveError} />
-      )}
-
       <div className="schedule-8__panel-actions">
         {!readOnly && (
           <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
@@ -815,13 +931,15 @@ const Schedule8: FC = () => {
             subtitle={optionsError}
           />
         )}
-        {/* When the editor panel is open its own copy (above Save) carries the save feedback. */}
-        {!panelOpen && saveMessage && (
-          <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
-        )}
-        {!panelOpen && saveError && (
-          <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
-        )}
+        {/* Every result renders here at the top, as on Schedule 10 (#359 group C): Save's success
+            or failure, then the validation banner's lines, then the Check Status result. */}
+        <ScheduleBanners
+          keyPrefix="page"
+          message={saveMessage}
+          actionError={saveError}
+          validationEntries={bannerEntries}
+          checkResult={null}
+        />
         {checkResult && (
           <Column sm={4} md={8} lg={16} className="schedule-8__check">
             <CheckStatusResult result={checkResult} />

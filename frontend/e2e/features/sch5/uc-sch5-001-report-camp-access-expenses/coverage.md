@@ -75,7 +75,8 @@ against. S24 and S25 went green **with not one assertion, step or fixture edited
 companion was **replaced, not retired**: its old premise (the button is unavailable mid-edit) is what
 #476 removed, so it now pins the case S24 and S25 cannot reach — an unsaved NEW camp, which is clean
 against its empty baseline and would be dropped by any send keyed on dirtiness rather than on the
-panel being open. **#359 is still open for Schedules 1, 2, 4 and 11.**
+panel being open. **#359 was then still open for Schedules 1, 2, 4 and 11.** Groups A–C have since fixed the others (group
+C, 2026-10-01, is the last part); Schedule 11 is deliberately left as is under ruling D7(a).
 
 **S16–S19 added 2026-09-10** as one `render-states.feature`, following the per-domain convention
 (sch1/sch2/sch3/sch4/sch11 all group their guard and read-only slices in a file of that name). Three
