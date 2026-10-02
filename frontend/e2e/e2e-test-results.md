@@ -87,9 +87,9 @@ four are accessibility findings.
 | Test | Use case | Finding | Ticket |
 |---|---|---|---|
 | A hovered row keeps its action labels readable | Schedule 4 | Row-hover contrast (A2) | [#428](https://github.com/bcgov/nr-ilcr/issues/428) and siblings, see A2 |
-| The Add panel's validation errors reach assistive technology | Schedule 6 | Validation errors not announced (A1) | none yet |
+| The Add panel's validation errors reach assistive technology | Schedule 6 | Validation errors not announced (A1) | [#546](https://github.com/bcgov/nr-ilcr/issues/546) |
 | The read-only schedule has no WCAG 2.1 AA violations | Schedule 6 | Locked comment counter (A6) | [#502](https://github.com/bcgov/nr-ilcr/issues/502) |
-| The validation-error state announces its errors to assistive technology | Schedule 11 | Validation errors not announced (A1) | none yet |
+| The validation-error state announces its errors to assistive technology | Schedule 11 | Validation errors not announced (A1) | [#546](https://github.com/bcgov/nr-ilcr/issues/546) |
 
 The A-numbers refer to [Accessibility Findings](accessibility-findings.md).
 

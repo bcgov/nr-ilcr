@@ -78,7 +78,7 @@ The VER entries stay on this page permanently — that is what the register is f
 
 ## 2. Bugs / regressions
 
-### BUG-1 — validation errors are not announced to screen readers — OPEN (app-wide, already tracked)
+### BUG-1 — validation errors are not announced to screen readers — OPEN (app-wide, ticketed #546)
 
 **Not Schedule 6's defect, and not new.** When a field is rejected, Carbon's text input points assistive
 technology at an error message it never actually announces. A screen-reader user presses **Add Report**,
@@ -93,6 +93,12 @@ dump.
 **Confirmed present on Schedule 6** by the accessibility sweep of the Add panel's error state
 (2026-09-18), on the Volume field. Recorded here so this UC's own ledger is complete; **the fix belongs
 to the app-wide item, not to this story.**
+
+**Ticket:** [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546) — "Screen-reader users are never told when a field fails validation — the red error text appears but is not announced (app-wide)" (raised 2026-10-02). It cites this page's
+failing scan as its second reproduction.
+
+**Status:** OPEN — confirmed and triaged by raising a ticket. Dev to fix app-wide under #546; QA
+re-verifies and closes this entry when the fix lands.
 
 **Test:** `accessibility.feature` `@discovered-bug` — deliberately RED, and excluded from
 `npm run test:gate`. It goes green on its own when the app-wide fix lands.
