@@ -1,11 +1,13 @@
 # ILCR Accessibility Findings (WCAG 2.1 AA)
 
+**Last updated:** 2026-10-02
+
 **Audience:** the ILCR product owner, BA/QA, and the team taking over the application. You do not need to
 know the codebase to read this page.
 
-> **Snapshot dated 2026-10-02.** This page reflects the findings and ticket states as of that date,
+> **This is a dated snapshot.** This page reflects the findings and ticket states as of that date,
 > measured against `main` at commit `208882bd`. It is the most up-to-date picture at that point, not a
-> permanent record. Tickets move after this date, so check the linked issue for its current state.
+> permanent record. Tickets move after this date, so check the linked issue for its current state. When you refresh this page, update the **Last updated** date and the commit.
 
 This page is the single summary of what accessibility testing found in the modernized ILCR application,
 what has been fixed, and what is still open. The detailed evidence for each finding stays in the

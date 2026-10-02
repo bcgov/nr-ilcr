@@ -1,12 +1,14 @@
 # ILCR End-to-End (E2E) Test Results
 
+**Last updated:** 2026-10-02
+
 **Audience:** the ILCR product owner, BA/QA, and the team taking over the application. You do not need to
 know the codebase to read this page.
 
-> **Snapshot dated 2026-10-02.** This page records the full suite run of that date against `main` at
+> **This is a dated snapshot.** This page records the full suite run of that date against `main` at
 > commit `208882bd`. It is the most up-to-date picture at that point, not a permanent record. To get
 > current numbers, re-run the suite (section 6). The per-use-case `coverage.md` files carry their own
-> dated counts.
+> dated counts. When you refresh this page, update the **Last updated** date and the commit.
 
 This page is the single summary of the E2E suite's results. How the suite is built and run is in the
 [E2E README](README.md). The accessibility results are summarised separately in
