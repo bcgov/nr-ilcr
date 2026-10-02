@@ -429,12 +429,12 @@ const Schedule10: FC = () => {
   const judgeRoadFieldAndDependents = (key: keyof RoadDetailFormValues) => {
     // A field this change also rewrote (the Code reset, the surface-width mirror) is re-judged with
     // it when it already shows an error, so no line outlives the value it described.
-    const rewritten: readonly (keyof RoadDetailFormValues)[] =
-      key === 'stBallastMethodCode'
-        ? BALLAST_RESET_FIELDS
-        : key === 'sgSurfaceWidth'
-          ? ['stSurfaceWidth']
-          : []
+    let rewritten: readonly (keyof RoadDetailFormValues)[] = []
+    if (key === 'stBallastMethodCode') {
+      rewritten = BALLAST_RESET_FIELDS
+    } else if (key === 'sgSurfaceWidth') {
+      rewritten = ['stSurfaceWidth']
+    }
     judgeRoadFields([key, ...rewritten.filter((field) => roadErrors[field] !== undefined)])
   }
 

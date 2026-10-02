@@ -275,7 +275,7 @@ const SamplePage: FC<SamplePageProps> = ({
         // Ambiguous (zero or several new ids): the list and message refresh, but nothing opens.
         const added = pageSamples.filter((s) => s.id != null && !prevIds.has(s.id))
         const copy = added.length === 1 ? added[0] : undefined
-        if (copy && copy.id != null) {
+        if (copy?.id != null) {
           setPanelMode('edit')
           editor.seed(seedSampleForm(copy))
           setEditId(copy.id)

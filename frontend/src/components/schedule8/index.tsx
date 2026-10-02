@@ -333,7 +333,8 @@ const Schedule8: FC = () => {
     // the ONE new id in it; the client's list may be stale, so if another session added a page
     // meanwhile there are several and none can be told apart from someone else's record.
     const prevIds = new Set(data.pages.map((p) => p.id))
-    save<Schedule8Response>(buildRequest(seedPageForm(page), null, null), {
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void save<Schedule8Response>(buildRequest(seedPageForm(page), null, null), {
       suffix: '/pages',
       fallback: 'Schedule could not be saved.',
       onSuccess: (doc) => {
@@ -342,7 +343,7 @@ const Schedule8: FC = () => {
         // Ambiguous (zero or several new ids): the list and message refresh, but nothing opens.
         const added = doc.pages.filter((p) => p.id != null && !prevIds.has(p.id))
         const copy = added.length === 1 ? added[0] : undefined
-        if (copy && copy.id != null) {
+        if (copy?.id != null) {
           setPanelMode('edit')
           editor.seed(seedPageForm(copy))
           setEditId(copy.id)
@@ -364,7 +365,8 @@ const Schedule8: FC = () => {
     // List-shaped write: PUT the /pages list endpoint (no by-id suffix — the id/revision travels in the
     // body). run()'s isCurrent() guard drops the echo if mill/year changed mid-flight (Story 29.6).
     const editing = panelMode === 'edit'
-    save<Schedule8Response>(
+    // `run` catches and reports every failure itself, so the returned promise never rejects.
+    void save<Schedule8Response>(
       buildRequest(form, editing ? editId : null, editing ? (revision ?? 0) : null),
       {
         suffix: '/pages',
