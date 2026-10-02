@@ -21,6 +21,12 @@ type ScheduleBannersProps = {
    * Check Status errors below do, since legacy listed each failing field as its own message.
    */
   readonly validationErrors?: readonly string[]
+  /**
+   * The same banner with a stable key per line (`BannerEntry.key`, one per field), for a page whose
+   * lines come and go mid-list as fields are judged: each box keeps its own identity, so removing one
+   * line never hands its state to the next. Rendered after `validationErrors`.
+   */
+  readonly validationEntries?: readonly { readonly key: string; readonly line: string }[]
   readonly checkResult: CheckResult | null
   /** Per-row "requirements met" lines, for the schedules whose API emits them. */
   readonly rowMessages?: readonly MessageInfo[]
@@ -40,6 +46,7 @@ const ScheduleBanners: FC<ScheduleBannersProps> = ({
   message,
   actionError,
   validationErrors = [],
+  validationEntries = [],
   checkResult,
   rowMessages,
   keyPrefix,
@@ -56,6 +63,14 @@ const ScheduleBanners: FC<ScheduleBannersProps> = ({
         kind="error"
         title="Action failed"
         subtitle={line}
+      />
+    ))}
+    {validationEntries.map((entry) => (
+      <NotificationColumn
+        key={`${keyPrefix}-validation-${entry.key}`}
+        kind="error"
+        title="Action failed"
+        subtitle={entry.line}
       />
     ))}
     {checkResult && (

@@ -6,7 +6,6 @@ import type { CodeOption } from '@/interfaces/Schedule8Options'
 import { useState } from 'react'
 import {
   Button,
-  InlineNotification,
   Modal,
   Table,
   TableBody,
@@ -20,8 +19,18 @@ import {
 import { Add, ArrowLeft, Close, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
-import { emptyRateForm, fmt, toNum, validateRateForm, type RateForm } from './validation'
+import type { BannerEntry } from '@/utils/legacyValidationBanner'
+import {
+  emptyRateForm,
+  fmt,
+  rateBanner,
+  toNum,
+  validateRateForm,
+  type RateForm,
+} from './validation'
+import { useJudgedForm } from './useJudgedForm'
 import CodeComboBox from '@/components/core/CodeComboBox'
+import LevelBanners from './LevelBanners'
 
 // Client-only confirm chrome, verbatim from the legacy bundle (confirmDeleteMsg intent).
 const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to continue?'
@@ -30,6 +39,11 @@ const NAV_UNSAVED = 'Unsaved data will be lost. Are you sure to continue?'
 
 const sumRates = (rows: RateRow[]): number =>
   rows.reduce((total, r) => total + (r.costingRate ?? 0), 0)
+
+const ADDITION_BANNER = rateBanner('addition')
+const DEDUCTION_BANNER = rateBanner('deduction')
+
+type RateEditor = ReturnType<typeof useJudgedForm<RateForm>>
 
 interface RatesPageProps {
   millId: number
@@ -67,10 +81,26 @@ const RatesPage: FC<RatesPageProps> = ({
   onBack,
   onDocUpdate,
 }) => {
-  const [addForm, setAddForm] = useState<RateForm>(() => emptyRateForm())
-  const [dedForm, setDedForm] = useState<RateForm>(() => emptyRateForm())
-  const [showAddErrors, setShowAddErrors] = useState(false)
-  const [showDedErrors, setShowDedErrors] = useState(false)
+  // The validation banner both add forms write into, one keyed line per failing field (#359 group C
+  // change log, 2026-10-02): the Additions form's lines first, then the Deductions form's. Each Add
+  // replaces only its own form's lines — legacy's Add processed only its own panel
+  // (`schedule8AdditionsAndDeductions.xhtml:147-148,366-367`) — and leaving a changed field adds or
+  // removes only that field's line.
+  const [bannerEntries, setBannerEntries] = useState<readonly BannerEntry[]>([])
+  const addition = useJudgedForm<RateForm>({
+    initial: emptyRateForm,
+    validate: validateRateForm,
+    scheme: ADDITION_BANNER,
+    setBanner: setBannerEntries,
+  })
+  const deduction = useJudgedForm<RateForm>({
+    initial: emptyRateForm,
+    validate: validateRateForm,
+    scheme: DEDUCTION_BANNER,
+    setBanner: setBannerEntries,
+  })
+  const addForm = addition.form
+  const dedForm = deduction.form
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -124,52 +154,53 @@ const RatesPage: FC<RatesPageProps> = ({
       .finally(() => setBusy(false))
   }
 
-  const handleAddAddition = () => {
-    if (busy) return
-    const validation = validateRateForm(addForm)
-    if (Object.keys(validation).length > 0) {
-      setShowAddErrors(true)
-      return
-    }
-    void submitRate(addForm).then((ok) => {
-      if (ok) {
-        setAddForm(emptyRateForm())
-        setShowAddErrors(false)
-      }
-    })
+  /**
+   * Check ONE add form, as its legacy Add did (`process="@this addAdditionsPnl"`, :148, and
+   * `addDeductionsPnl`, :367): its own lines in the banner are replaced with what it finds, the other
+   * form's red fields and lines stay as they are. True when the form passed.
+   */
+  const checkRateForm = (editor: RateEditor): boolean => {
+    setMessage(null)
+    setError(null)
+    return Object.keys(editor.validateAll(true)).length === 0
   }
 
-  const handleAddDeduction = () => {
-    if (busy) return
-    const validation = validateRateForm(dedForm)
-    if (Object.keys(validation).length > 0) {
-      setShowDedErrors(true)
-      return
-    }
-    void submitRate(dedForm).then((ok) => {
+  const addRate = (editor: RateEditor) => {
+    if (busy || !checkRateForm(editor)) return
+    void submitRate(editor.formRef.current).then((ok) => {
       if (ok) {
-        setDedForm(emptyRateForm())
-        setShowDedErrors(false)
+        editor.seed(emptyRateForm())
       }
     })
   }
 
   // Save = commit any typed-but-not-yet-Added draft row(s), then return to the sample. An invalid
-  // draft blocks the exit and surfaces its inline errors (never silently discarded). With nothing
-  // pending it just returns (each Added row already persisted).
+  // draft blocks the exit and surfaces its errors (never silently discarded). With nothing pending it
+  // just returns (each Added row already persisted).
+  //
+  // Both drafts are checked, neither blocking the other, and the banner is REPLACED with every
+  // failing line of both — Additions first, then Deductions — as legacy's Save processed both tables
+  // at once (`process="AdditionsDT DeductionsDT @this"`, `schedule8AdditionsAndDeductions.xhtml:62`).
+  // Legacy's tables were editable rows; here the rows are read-only and the drafts are what Save
+  // commits, so the drafts are what it checks, with their own (add-row) labels.
   const handleSave = () => {
     if (busy) return
-    if (isAddDirty && Object.keys(validateRateForm(addForm)).length > 0) {
-      setShowAddErrors(true)
-      return
-    }
-    if (isDedDirty && Object.keys(validateRateForm(dedForm)).length > 0) {
-      setShowDedErrors(true)
+    // The forms as last written — a field's leave in the same click may have just written one.
+    const addDraft = addition.formRef.current
+    const dedDraft = deduction.formRef.current
+    const addDirty = dirty(addDraft)
+    const dedDirty = dirty(dedDraft)
+    setBannerEntries([])
+    addition.clearErrors()
+    deduction.clearErrors()
+    const addOk = !addDirty || checkRateForm(addition)
+    const dedOk = !dedDirty || checkRateForm(deduction)
+    if (!addOk || !dedOk) {
       return
     }
     const pending: Promise<boolean>[] = []
-    if (isAddDirty) pending.push(submitRate(addForm))
-    if (isDedDirty) pending.push(submitRate(dedForm))
+    if (addDirty) pending.push(submitRate(addDraft))
+    if (dedDirty) pending.push(submitRate(dedDraft))
     if (pending.length === 0) {
       onBack()
       return
@@ -203,18 +234,15 @@ const RatesPage: FC<RatesPageProps> = ({
     kind: 'addition' | 'deduction',
     label: string,
     rows: RateRow[],
-    form: RateForm,
-    setForm: (updater: (prev: RateForm) => RateForm) => void,
-    errors: Record<string, string>,
-    onAdd: () => void,
+    editor: RateEditor,
     costItems: CodeOption[],
   ) => {
-    const setField = (field: keyof RateForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
-      const { value } = event.target
-      setForm((prev) => ({ ...prev, [field]: value }))
-    }
+    const { form, errors } = editor
+    // Typing is not judged; a field is judged when it is left changed, a dropdown on selection.
+    const setField = (field: keyof RateForm) => (event: React.ChangeEvent<HTMLInputElement>) =>
+      editor.write({ ...editor.formRef.current, [field]: event.target.value })
     const setCode = (field: keyof RateForm) => (code: string) =>
-      setForm((prev) => ({ ...prev, [field]: code }))
+      editor.select(field, { ...editor.formRef.current, [field]: code })
     // Resolve a stored cost-item code to its name for the table cell (falls back to the raw code).
     const costItemName = (code: number | null) =>
       costItems.find((o) => o.code === String(code))?.description ?? fmt(code)
@@ -230,7 +258,8 @@ const RatesPage: FC<RatesPageProps> = ({
               selectedCode={form.costItemCode}
               invalid={Boolean(errors.costItemCode)}
               invalidText={errors.costItemCode}
-              onSelect={(code) => setCode('costItemCode')(code)}
+              onSelect={setCode('costItemCode')}
+              onLeaveChanged={() => editor.leave('costItemCode', true)}
             />
             <TextInput
               id={`${kind}-costingRate`}
@@ -239,6 +268,8 @@ const RatesPage: FC<RatesPageProps> = ({
               inputMode="numeric"
               value={form.costingRate}
               onChange={setField('costingRate')}
+              onFocus={() => editor.enter('costingRate')}
+              onBlur={() => editor.leave('costingRate')}
               invalid={Boolean(errors.costingRate)}
               invalidText={errors.costingRate}
             />
@@ -249,7 +280,8 @@ const RatesPage: FC<RatesPageProps> = ({
               selectedCode={form.costTypeCode}
               invalid={Boolean(errors.costTypeCode)}
               invalidText={errors.costTypeCode}
-              onSelect={(code) => setCode('costTypeCode')(code)}
+              onSelect={setCode('costTypeCode')}
+              onLeaveChanged={() => editor.leave('costTypeCode', true)}
             />
             <TextInput
               id={`${kind}-itemDescription`}
@@ -258,10 +290,18 @@ const RatesPage: FC<RatesPageProps> = ({
               maxLength={30}
               value={form.itemDescription}
               onChange={setField('itemDescription')}
+              onFocus={() => editor.enter('itemDescription')}
+              onBlur={() => editor.leave('itemDescription')}
               invalid={Boolean(errors.itemDescription)}
               invalidText={errors.itemDescription}
             />
-            <Button kind="primary" size="sm" disabled={busy} renderIcon={Add} onClick={onAdd}>
+            <Button
+              kind="primary"
+              size="sm"
+              disabled={busy}
+              renderIcon={Add}
+              onClick={() => addRate(editor)}
+            >
               Add {label}
             </Button>
           </div>
@@ -368,33 +408,10 @@ const RatesPage: FC<RatesPageProps> = ({
         <h3 className="schedule-8__heading">Additions / Deductions — {sampleTitle}</h3>
       </div>
 
-      {message && (
-        <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
-      )}
-      {error && (
-        <InlineNotification kind="error" lowContrast title="Action failed" subtitle={error} />
-      )}
+      <LevelBanners message={message} error={error} entries={bannerEntries} />
 
-      {rateTable(
-        'addition',
-        'Additions',
-        additions,
-        addForm,
-        setAddForm,
-        showAddErrors ? validateRateForm(addForm) : {},
-        handleAddAddition,
-        additionCostItems,
-      )}
-      {rateTable(
-        'deduction',
-        'Deductions',
-        deductions,
-        dedForm,
-        setDedForm,
-        showDedErrors ? validateRateForm(dedForm) : {},
-        handleAddDeduction,
-        deductionCostItems,
-      )}
+      {rateTable('addition', 'Additions', additions, addition, additionCostItems)}
+      {rateTable('deduction', 'Deductions', deductions, deduction, deductionCostItems)}
 
       {/* Save commits any typed-but-not-yet-Added draft then returns; Cancel discards (confirming only
           when there is a draft). Read-only shows a single Close (nothing to save). */}
