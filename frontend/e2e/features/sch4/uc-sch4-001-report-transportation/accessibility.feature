@@ -5,9 +5,10 @@
 # editable sub-page, the read-only View of all three, and the context-suppressed state.
 #
 # ONE SCAN PER SCENARIO on purpose. A scenario that scanned several surfaces in sequence would stop at the
-# first violation and silently skip the rest — and three of these surfaces ARE red (DIV-7 x2 and BUG-1, below),
-# so the scans after them would have been lost. Sub-pages are a URL STATE of the same route, so each scan is
-# taken after driving there, which is also how a reporter reaches them.
+# first violation and silently skip the rest — and when this was written three of these surfaces WERE red
+# (DIV-7 x2, since resolved, and BUG-1, below), so the scans after them would have been lost. Sub-pages
+# are a URL STATE of the same route, so each scan is taken after driving there, which is also how a
+# reporter reaches them.
 #
 # THE POINTER IS PARKED before every scan (pages/common/axe.ts). axe measures the composited background, so
 # a row the mouse happens to rest on is measured hovered — which made the result depend on which control the
@@ -60,16 +61,17 @@ Feature: Schedule 4 — accessibility
     When I open Schedule 4
     Then the "Schedule 4 read-only list" view has no WCAG 2.1 AA accessibility violations
 
-  # The SAME defect as DIV-7 below, in View mode: opening the read-only panel highlights its row, and the
-  # only action left enabled on it — "View" (#0f62fe on the #d0e2ff highlight, 3.81:1) — fails 1.4.3. Copy
-  # and Delete are disabled here, and axe skips disabled controls, so this state reports one node where the
-  # Draft panel reports three. Both flip green together when the highlight is removed.
+  # DIV-7 — RESOLVED 2026-10-02, now a regression guard (see the DIV-7 block below for the full story).
+  # When written, opening the read-only panel highlighted its row and the only action left enabled on it —
+  # "View" (#0f62fe on the #d0e2ff highlight, 3.81:1) — failed 1.4.3. Since #514 the open row is frozen and
+  # View is disabled while it is open, and axe skips disabled controls, so this scan passes. No assertion
+  # was edited; only the @discovered-divergence tag and the title marker came off.
   #
   # It surfaced only after the pointer-parking fix (pages/common/axe.ts): the scan used to measure the View
   # button while the mouse was still resting on it, and a hovered ghost button gets its own background, which
   # passes. The resting state — what a reporter actually looks at — does not.
-  @p1 @S18 @discovered-divergence
-  Scenario: The read-only location panel keeps its row action accessible [DISCOVERED DIVERGENCE — the same editing-row highlight; defects.md DIV-7 / issue #319]
+  @p1 @S18
+  Scenario: The read-only location panel keeps its row action accessible
     Given the Schedule 4 read-only anchor "verified"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4
@@ -94,11 +96,14 @@ Feature: Schedule 4 — accessibility
     And the "Schedule 4 context-suppressed state" view has no WCAG 2.1 AA accessibility violations
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-7 — DELIBERATELY RED. See this UC's defects.md (DIV-7) and issue #319. The HIGHLIGHT ITSELF is the
-  # divergence: legacy highlighted the edited row on NO schedule, and only Schedules 4 and 8 do it here. The
-  # fix is to remove it, which clears the contrast failure below along with it.
+  # DIV-7 — RESOLVED 2026-10-02 (was DELIBERATELY RED). Now a regression guard. See this UC's defects.md
+  # (DIV-7). The business reversed the "remove the highlight" decision (#319, closed) and kept it; #514 then
+  # froze the row that is open in the editor, disabling its Edit / Copy / Delete while it is open. Disabled
+  # controls are exempt from WCAG 1.4.3 and axe skips them, so this scan has passed since #514. No assertion
+  # was edited; only the @discovered-divergence tag and the title marker came off. The BA's remaining
+  # visibility request for the highlighted row is #437 (not a WCAG failure).
   #
-  # Opening a location panel highlights that row in the list — `.schedule-4__row--editing td
+  # Original finding, for the record — opening a location panel highlights that row in the list — `.schedule-4__row--editing td
   # { background-color: var(--cds-highlight) }` (components/schedule4/index.scss:40), compositing to
   # #d0e2ff — and the highlight drops ALL THREE of that row's ghost action labels below WCAG 1.4.3:
   #   Edit   #0f62fe on #d0e2ff -> 3.81:1  (needs 4.5:1)
@@ -108,8 +113,8 @@ Feature: Schedule 4 — accessibility
   # hover artefact. The same list scans CLEAN with no panel open (the first scenario above passes), so it is
   # specific to the editing-row highlight — the state a reporter is in the whole time they edit a location.
   # ---------------------------------------------------------------------------------------------------
-  @p1 @discovered-divergence
-  Scenario: The open Edit panel keeps its row actions accessible [DISCOVERED DIVERGENCE — the editing-row highlight should not exist; defects.md DIV-7 / issue #319]
+  @p1
+  Scenario: The open Edit panel keeps its row actions accessible
     Given the Schedule 4 anchor "a11y-panel" is an editable Draft with no locations
     And the Schedule 4 location "E2E A11y Panel" is already saved with:
       | category          | distance | volume | cost |

@@ -510,7 +510,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Status:** **CLOSED (not a defect).** Found 2026-08-17, closed 2026-08-20 on the evidence above.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/delete.feature` (S10, green).
 
-- **DIV-7 - Schedules 4 and 8 highlight the row being edited; the old system highlighted it nowhere.**
+- **DIV-7 - CLOSED 2026-10-02: Schedules 4 and 8 highlight the row being edited; the old system highlighted it nowhere. The business kept the highlight (#319 reversed), and its contrast failure is gone since #514.**
   - **What's wrong:** opening a row for editing (a location in Schedule 4, a report row in Schedule 8) turns
     that row's background blue. The legacy app never highlighted the selected row on any schedule, and no other
     schedule in the new app does either - Schedule 5 has the same list-plus-edit-panel interaction and applies
@@ -534,12 +534,17 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     persisted for as long as the record stayed open. No separate contrast fix is needed once the highlight goes.
   - **Ticket:** [bcgov/nr-ilcr#319](https://github.com/bcgov/nr-ilcr/issues/319).
   - **Priority / env:** p1 - local seeded DB - Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to remove the highlight when capacity allows; QA re-verifies and
-    closes this entry then. Two `@discovered-divergence` accessibility tests are RED because of this highlight and go
-    green together once it is removed, at which point their tags come off.
+  - **Status:** CLOSED 2026-10-02 — accepted as an intended difference, not removed. The business reversed the
+    "remove the highlight" decision: #319 was closed with the highlight kept. The contrast failure then went
+    away through #514, which freezes the row open in the editor: its Edit / Copy / Delete (and View, read-only)
+    are disabled while it is open, and disabled controls are exempt from WCAG 1.4.3, so axe skips them. Both
+    scans have passed since #514 (2026-09-29 and the full run on 2026-10-02). The BA's remaining request — make
+    the highlighted row's text and buttons stand out more — is [bcgov/nr-ilcr#437](https://github.com/bcgov/nr-ilcr/issues/437),
+    a visibility change rather than a WCAG failure.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/accessibility.feature`
     ("The open Edit panel keeps its row actions accessible" and "The read-only location panel keeps its row
-    action accessible", both `@discovered-divergence`).
+    action accessible"). Their `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off
+    2026-10-02, with no assertion edited, so both now run in `npm run test:gate` as regression guards.
 
 - **DIV-8 — Check Status judges the SAVED locations and ignores unsaved edits in the open panel (APP-WIDE,
   11 of 12 schedules).**

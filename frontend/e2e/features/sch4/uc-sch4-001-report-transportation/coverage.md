@@ -141,7 +141,7 @@ See GAP-1.
 | NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | DIV-6 (CLOSED, not a defect) |
 | NAV-005 row-delete confirm text | NAV-005 | `CONFIRM_DELETE_ROW` in `SubPage.tsx` | subpage-rows `@S11 @p0` | covered | — |
 | Existing Locations table lists category + sub-page COUNT COLUMNS | Story 10.5 AC1 / Story 10.7 AC1 — **both corrected 2026-08-20** | not rendered, and never was: legacy painted Location Name + one Action column (`schedule4.xhtml:50-104`) | counts covered where they exist (CNT-001, the panel's sub-page links) | not-applicable | SPEC-2 (closed) |
-| WCAG 2.1 AA on every Schedule 4 surface | NFR1, Story 10.7 AC2 | — | accessibility `@a11y` ×9 | covered (3 red) | DIV-7, BUG-1 |
+| WCAG 2.1 AA on every Schedule 4 surface | NFR1, Story 10.7 AC2 | — | accessibility `@a11y` ×9 | covered (1 red) | BUG-1 (DIV-7 closed 2026-10-02) |
 | WCAG 2.1 AA on the VALIDATION-ERROR state | NFR1, Story 10.7 AC2 | Carbon `TextInput` `invalid` wiring (app-wide) | — | deferred | GAP-4 |
 | Viewer/role-denied branch | BR-03 (actor lacks edit rights) | `permissions.hasPermission(auth,'EDIT_SCHEDULE')` — both roles currently grant it, and mock auth stamps one authority per process | — | blocked | GAP-1 |
 
@@ -191,7 +191,12 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 | Parallel stress ×3 | `--repeat-each=5` (twice at default workers, once at `--workers=4`) | **512 / 514 each run — 1,542 executions, 6 failures, ALL at the entry point (app-shell paint, Home's first fetch, one Chrome launch >60 s), never the same test twice, and ZERO data-contention failures.** Two genuine readiness waits were stabilised as a result (see `defects.md`); the rest is this box's dev-mode Vite server saturating under ~24 concurrent browsers for 20+ min. Reported as measured rather than retried away or timeout-inflated — see the note below. |
 
 > ### Suite state — the ONE place this is recorded
-> **75 scenarios / 92 tests after Scenario-Outline expansion: 87 expected-green + 5 deliberately-red.**
+> **75 scenarios / 92 tests after Scenario-Outline expansion: 91 expected-green + 1 deliberately-red.**
+> **Re-measured 2026-10-02** after the DIV-7 pair's `@discovered-divergence` tags came off: `npm run bddgen`, then
+> `npx playwright test --list --project=chromium` gives 92 `features/sch4` tests, and with
+> `--grep "@discovered-bug|@discovered-divergence"` exactly 1 (BUG-1, the hovered row). Confirming run the same
+> day, `--grep "@sch4.*@a11y|@a11y.*@sch4"` on the local real-data stack: 8 of 9 scans pass, the 1 red is BUG-1.
+> The 2026-09-28/29 record below is kept as written.
 > Counted from the generated specs on **2026-09-28** (#359 group B: `npm run bddgen`, then
 > `npx playwright test --list --project=chromium --grep @sch4` → 92 chromium tests; 5 scenarios carry a
 > `@discovered-*` tag) after `check-status-unsaved.feature` came back as two green `@S33 @S34` scenarios.
@@ -206,17 +211,12 @@ named rather than absorbed — three of them counting against coverage, GAP-3 cl
 > tags had already been retired in the feature files, so the tables disagreed with the suite they described.
 > Re-measure with `npx playwright test --list --project=chromium` and edit **this block only**.
 
-The 5 deliberate reds (2 `@discovered-divergence` + 3 `@discovered-bug`), grouped by the
-`defects.md` entry each is named in. Three rows, because some entries are red in more than one scenario —
-the inline `×n` is a scenario count (absent means ×1), and those counts sum to 5. All 5 are plain
-`Scenario`s; none expands through `Examples`. (Was 8 until DIV-3's three went green with #324 on
-2026-09-22 — the Suite-state block above is the dated record and was NOT re-measured; re-measure with the
-`--list` command there before quoting a total.)
+The 1 deliberate red (`@discovered-bug`), measured 2026-10-02 as recorded in the Suite-state block above.
+It is a plain `Scenario`, not an `Examples` row. (Was 5 until BUG-4 ×2 was fixed on 2026-09-25 and DIV-7 ×2
+was closed on 2026-10-02; was 8 before DIV-3's three went green with #324 on 2026-09-22.)
 
 | Red | Entry | What it tracks |
 |---|---|---|
-| update `@S02` ×2 | BUG-4 | a category cleared to fully-empty is silently discarded (data loss) |
-| accessibility ×2 | DIV-7 | the editing-row highlight should not exist (legacy had none); it also fails contrast at 3.81:1, Draft and View |
 | accessibility ×1 | BUG-1 | app-wide: a hovered table row fails contrast (3.79:1) |
 
 **Retired, no longer reds** — kept here so a reader comparing against an older copy of this file can
@@ -229,6 +229,8 @@ see where they went:
 | render-states `@S18` | DIV-1 | 2026-08-24 (defect #293's code review) for Schedule 4; Schedule 8 followed 2026-09-14 (#464, `schedule8/index.tsx:837` + `SamplePage.tsx:670`), so #322 is closed |
 | nav-and-recompute `@S01 @S02` | DIV-4 | issue #291's fix (`6e86d7a`) — the panel shows the recomputed $/m³ without a reopen |
 | check-status `@S28` | DIV-2 | issue #326's fix (2026-09-18) named the field; the scenario was then REMOVED the same day when #465 (DIV-9) removed the cost finding it labelled — Vitest covers the labelling |
+| update `@S02` ×2 | BUG-4 | #335 (CLOSED 2026-09-25) — a category cleared to fully-empty is now stored as empty |
+| accessibility ×2 (open Edit panel; read-only panel) | DIV-7 | CLOSED 2026-10-02, not by removing the highlight: the business kept it (#319 reversed), and since #514 the open row's actions are disabled, so 1.4.3 no longer applies. Tags and markers off, no assertion edited. The remaining visibility request is #437 |
 | check-status-unsaved `@S33 @S34` | DIV-8 | REMOVED 2026-09-18, not fixed: #465 (DIV-9) left Schedule 4 with no saved state Check Status can flag. RE-AUTHORED 2026-09-28 as two GREEN scenarios (#359 group B: Check Status validates the open panel's on-screen entry first) — never a red in its new form |
 
 > ⚠️ **Every mutating scenario owns its own (mill, year)** — 50 of them, listed in
