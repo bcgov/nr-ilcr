@@ -24,7 +24,7 @@ This page is the single summary of the E2E suite's results. How the suite is bui
 | **Passed** | **629**, counting one test that passed on re-run (see below) |
 | **Failed, known and tracked** | **4**. All four are accessibility defects with a recorded disposition. They fail on purpose until the app is fixed. |
 | **Failed, new or unexplained** | **0** |
-| **Gate result** | **Pass.** Every test outside the known reds passed. `npm run test:gate` runs exactly that set. |
+| **Gate result** | **Pass.** Every test outside the 8 tests tagged as known reds passed. `npm run test:gate` runs exactly that set. |
 
 One Schedule 1 test ("No mill and reporting year selected suppresses the input form") timed out while
 the browser context was starting up. It passed when re-run on its own. That is a local load hiccup, not an
@@ -52,7 +52,7 @@ found). Both are linked below. The guides [`coverage-guide.md`](coverage-guide.m
 | UC-SCH1-001 | Schedule 1: Average Cost of Logging | 42 | 42 | 0 | [coverage](features/sch1/uc-sch1-001-enter-save/coverage.md) · [defects](features/sch1/uc-sch1-001-enter-save/defects.md) |
 | UC-SCH2-001 | Schedule 2: Purchased and Private Log Costs and Sales | 41 | 41 | 0 | [coverage](features/sch2/uc-sch2-001-report-costs/coverage.md) · [defects](features/sch2/uc-sch2-001-report-costs/defects.md) |
 | UC-SCH3-001 | Schedule 3: Administration Costs | 49 | 49 | 0 | [coverage](features/sch3/uc-sch3-001-report-admin-costs/coverage.md) · [defects](features/sch3/uc-sch3-001-report-admin-costs/defects.md) |
-| UC-SCH4-001 | Schedule 4: Special Log Transportation Costs | 92 | 91 | 1 | [coverage](features/sch4/uc-sch4-001-report-transportation/coverage.md) · [defects](features/sch4/uc-sch4-001-report-transportation/defects.md) |
+| UC-SCH4-001 | Schedule 4: Special Log Transportation Costs | 92 | 91 | 1 (see note) | [coverage](features/sch4/uc-sch4-001-report-transportation/coverage.md) · [defects](features/sch4/uc-sch4-001-report-transportation/defects.md) |
 | UC-SCH5-001 | Schedule 5: Camp and Access Expenses | 39 | 39 | 0 | [coverage](features/sch5/uc-sch5-001-report-camp-access-expenses/coverage.md) · [defects](features/sch5/uc-sch5-001-report-camp-access-expenses/defects.md) |
 | UC-SCH6-001 | Schedule 6: Road Management Costs | 39 | 37 | 2 | [coverage](features/sch6/uc-sch6-001-report-road-management-costs/coverage.md) · [defects](features/sch6/uc-sch6-001-report-road-management-costs/defects.md) |
 | UC-SCH11-001 | Schedule 11: Basic Silviculture Costs | 31 | 30 | 1 | [coverage](features/sch11/uc-sch11-001-report-costs/coverage.md) · [defects](features/sch11/uc-sch11-001-report-costs/defects.md) |
@@ -65,9 +65,16 @@ found). Both are linked below. The guides [`coverage-guide.md`](coverage-guide.m
 
 The Schedule 1 count includes the timed-out test after its passing re-run.
 
-**Note on UC-SEC-001.** Two Home accessibility scans are tagged as known reds but passed. That is a
-side effect of the local test setup, not a fix. See the A5 caution in
-[Accessibility Findings](accessibility-findings.md#4-what-the-automated-scans-cover-today).
+**Note on UC-SEC-001 and UC-SCH4-001: tagged tests that passed.** Across the suite, 8 tests are tagged
+as known reds (`@discovered-bug` / `@discovered-divergence`). Four failed as expected (section 3). The other
+four passed while still tagged:
+
+- **Home, 2 scans (A5).** This is a side effect of the local test setup, not a fix. See the A5 caution in
+  [Accessibility Findings](accessibility-findings.md#4-what-the-automated-scans-cover-today).
+- **Schedule 4, 2 editing-row scans (A4).** These have passed since #514. They are still tagged, and their
+  titles still point at #319, which was reversed. A4 is now tracked by #437.
+
+`npm run test:gate` leaves out all 8, so it does not currently catch a regression in these four.
 
 ---
 
