@@ -330,7 +330,9 @@ const Schedule8: FC = () => {
         setSaveMessage(resp?.message?.text ?? null)
         setPanelMode('closed')
         // Delete returns only a message — re-read the document so the list reflects the removal.
-        void run(
+        // RETURNED, not void: run() awaits a promise onSuccess returns, so the in-flight lock
+        // (`saving`) holds until this re-GET settles — one locked operation (#292, PR #542 review).
+        return run(
           apiService
             .getAxiosInstance()
             .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`),

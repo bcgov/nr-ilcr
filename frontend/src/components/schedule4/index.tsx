@@ -759,7 +759,9 @@ const Schedule4: FC = () => {
           setSaveMessage(resp?.message?.text ?? null)
           setPanelMode('closed')
           // Re-read the document so the list reflects the removed family (delete returns only a message).
-          void run(
+          // RETURNED, not void: run() awaits a promise onSuccess returns, so the in-flight lock
+          // (`saving`) holds until this re-GET settles — one locked operation (#292, PR #542 review).
+          return run(
             apiService
               .getAxiosInstance()
               .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`),
