@@ -349,7 +349,7 @@ export const FLD = {
   /**
    * NOT asserted by any scenario, and the preflight literal guard skips it: Carbon's `maxLength` stops the
    * keystroke, so the cap is unreachable from a browser. Kept as the pinned wording for the backend
-   * bean-validation test that should cover it — defects.md GAP-1, carried in `deferred-work.md`.
+   * bean-validation test that should cover it — defects.md GAP-1.
    */
   locationMaxLength: 'Location must be 30 characters or fewer.',
   enhancedRequired: 'Enhanced: Value is required.',

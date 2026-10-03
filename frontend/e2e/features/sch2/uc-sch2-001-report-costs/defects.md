@@ -202,11 +202,10 @@ at-rest state.
     `Schedule2AuthorizationIT`, `Schedule2WriteAuthorizationIT` and `Schedule2CheckStatusAuthorizationIT`.
   - **The legacy catalogue excluded the same item for a different reason** — it found no documented in-page
     behaviour for a direct-navigation bypass, so there was nothing to slice.
-  - **This is the cross-cutting deferral, not a Schedule 2 finding.** It is owned by `deferred-work.md`
-    → *"Deferred (cross-cutting): role-gated behaviour cannot be E2E-tested under single-role mock auth
-    (2026-08-12)"*, which lists this entry alongside `sch1` GAP-1, `sch11` GAP-6 and `sec` GAP-4. Do not
-    re-litigate it per page.
-  - **When it is done** (per that entry): QA authors E2E tests for these coverage gaps and runs them against
+  - **This is a cross-cutting gap, not a Schedule 2 finding.** Role-gated behaviour cannot be E2E-tested
+    under single-role mock auth on any page; the same gap is recorded as `sch1` GAP-1, `sch11` GAP-6 and
+    `sec` GAP-4. Do not re-litigate it per page.
+  - **When it is done:** QA authors E2E tests for these coverage gaps and runs them against
     the running app, once the role-specific behaviours are actually implemented — then this `Status:` moves.
   - **Status:** OPEN — `blocked` in coverage.md. A gate should treat this as **waived**, not failing.
   - **Test:** none today, by environment limitation rather than by choice.
@@ -286,24 +285,23 @@ at-rest state.
   - **Why:** sweeping it would re-find a single already-triaged, **app-wide** defect — Carbon's `TextInput`
     invalid state wires `aria-errormessage` to an element it never announces (axe rule
     `aria-valid-attr-value`, impact critical), so a field error never reaches assistive technology. It
-    affects every schedule page, is recorded in `deferred-work.md`, and is already carried as the standing
+    affects every schedule page, is tracked as [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546), and is already carried as the standing
     red in `features/sch11/uc-sch11-001-report-costs/accessibility.feature` (that UC's BUG-1).
-  - **Why a Coverage gap here, when Schedule 11 files it as a Bug.** The defect is owned by
-    `deferred-work.md` → *"Deferred (cross-cutting): validation errors are never announced to assistive
-    technology (app-wide WCAG 4.1.2)"*. Its original 2026-07-30 note specifically asked for a
+  - **Why a Coverage gap here, when Schedule 11 files it as a Bug.** The defect is app-wide and tracked as
+    [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546). Its original 2026-07-30 triage specifically asked for a
     deliberately-RED check **on Schedule 11**, so sch11 carries one and it stays. That is specific to
     Schedule 11 — not a claim that its red covers this page. Every other page, and every page from here on,
-    records the item as a Coverage gap pointing at that section instead.
+    records the item as a Coverage gap pointing at that ticket instead.
   - **What is genuinely NOT covered:** Schedule 2's validation-error state is **unswept**. A
     Schedule-2-specific accessibility problem in that state would not be caught today. This entry is the
     record of that, not a waiver.
-  - **Does it block the AC?** No. Story 3.4 AC2 is "zero violations **or** triaged exceptions" — the
-    `deferred-work.md` entry is that disposition, and Schedule 2's four swept renders are clean.
+  - **Does it block the AC?** No. Story 3.4 AC2 is "zero violations **or** triaged exceptions" — #546 is
+    that disposition, and Schedule 2's four swept renders are clean.
   - **When it is done:** remove `aria-valid-attr-value` from `KNOWN_A11Y_RULES` in `pages/common/axe.ts`.
     QA then authors and runs the `@a11y` sweep of the validation-error state on every page that skipped it,
     Schedule 2 included, and closes this gap — the fix is not proven on this page until it is swept here.
-  - **Status:** DEFERRED 2026-08-14 — owned by the cross-cutting `deferred-work.md` entry; nothing owed by
-    this story.
+  - **Status:** DEFERRED 2026-08-14 — pending the app-wide fix tracked as #546; nothing owed by this
+    story.
   - **Test:** four clean sweeps in `accessibility.feature`; the fifth state intentionally not swept.
 
 - **GAP-5 — CLOSED 2026-08-14, not pursued: a stale domain list in a CI workflow comment.**

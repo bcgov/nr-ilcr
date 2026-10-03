@@ -79,7 +79,7 @@ data 2026-09-29.
 
 - **VER-1 — A blank search lists nobody (S13).** Legacy listed every eligible user. The directory refuses
   a blank search, so the picker never sends one — deviation (B), Story 2.3; the lost "browse everyone"
-  affordance is tracked unowned in `deferred-work.md`. The journey proves no request is sent and no
+  affordance has no owner or ticket. The journey proves no request is sent and no
   message shows. *Note:* `epics.md` Story 23.1 still states the legacy behaviour.
 - **VER-2 — The no-match message is reworded (S07).** It reads "…granted the ILCR Submitter role."
   instead of "…granted either the AUDITOR or LICENSEE role in ADAM." — deviation (C): the legacy text
