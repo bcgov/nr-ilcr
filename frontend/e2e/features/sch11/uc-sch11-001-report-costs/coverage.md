@@ -47,8 +47,8 @@ deliberately left as is).
 Scenario-Outline expansion: 28 green + **3 deliberate REDs** — S21/S22 above, plus the pre-existing
 `@discovered-bug` tracking an app-wide accessibility defect (defects.md
 BUG-1 — Carbon's validation-error markup is never announced to assistive technology; it
-affects every schedule page and is already recorded in `deferred-work.md`, which asked for exactly this
-red check). A clean run is `npm run test:gate` (the script regenerates the features first and excludes
+affects every schedule page and is tracked as
+[bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546). A clean run is `npm run test:gate` (the script regenerates the features first and excludes
 every `@discovered-*` red).
 
 ## Re-grounding headline
@@ -192,7 +192,7 @@ pre-exists and must be restored). The `schedule11Cleanup` registry fails loud on
 | WCAG 2.1 AA — read-only page | NFR1 | as above | `accessibility.feature` `@p2` | covered | Zero violations. A structurally different tree (no Add panel, no Actions column) |
 | WCAG 2.1 AA — guard state | NFR1 | as above | `accessibility.feature` `@p2` | covered | Zero violations. The PageState notification that replaces the whole body |
 | WCAG 2.1 AA — Check Status result | NFR1; story AC7 names this state | as above | `check-status.feature` `@S04 @a11y @p1` | covered | Zero violations. A freshly-rendered notification set no other sweep sees. Carries `@a11y` so the documented accessibility-only run (`--grep @a11y`) includes this render state |
-| WCAG 2.1 AA — validation-error state | NFR1; story AC7; `deferred-work.md` | Carbon `TextInput` `invalid`/`invalidText` wiring (app-wide, not sch11 code) | `accessibility.feature` `@discovered-bug @p1` | **bug** | **RED — genuine critical violation** `aria-valid-attr-value` on `#add-location`: validation errors are never announced to assistive technology. Asserted from BOTH sides — the axe sweep, plus a direct (soft) live-region assertion, so the scenario cannot start passing if the app merely drops the offending attribute without adding an announcement technique. Pre-existing and app-wide (Schedules 1/2/3/4/8/11). defects.md BUG-1 |
+| WCAG 2.1 AA — validation-error state | NFR1; story AC7; #546 | Carbon `TextInput` `invalid`/`invalidText` wiring (app-wide, not sch11 code) | `accessibility.feature` `@discovered-bug @p1` | **bug** | **RED — genuine critical violation** `aria-valid-attr-value` on `#add-location`: validation errors are never announced to assistive technology. Asserted from BOTH sides — the axe sweep, plus a direct (soft) live-region assertion, so the scenario cannot start passing if the app merely drops the offending attribute without adding an announcement technique. Pre-existing and app-wide (Schedules 1/2/3/4/8/11). defects.md BUG-1 |
 
 **Status values:** `covered` · `covered (+ gap)` · `not-applicable` (legacy-only or unreachable by design) · `deferred` (see Coverage gaps) · `blocked` (env/auth can't reach the state) · `divergence` / `bug` (a genuinely-failing `@discovered-divergence` / `@discovered-bug` test — see this UC's `defects.md`).
 

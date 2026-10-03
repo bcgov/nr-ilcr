@@ -720,12 +720,12 @@ count does.
     that depends on the **track status** IS covered (both Submitted and Verified); only the
     role-dependent half is unreachable. The server-side gate itself exists and is covered by the
     backend's own `Schedule3AuthorizationIT` / `Schedule3WriteAuthorizationIT`.
-  - **This is the cross-cutting deferral, not a Schedule 3 finding.** It is owned by `deferred-work.md`
-    → *"Deferred (cross-cutting): role-gated behaviour cannot be E2E-tested under single-role mock auth
-    (2026-08-12)"*, which lists `sch1` GAP-1, `sch2` GAP-1, `sch3` GAP-1, `sch4` GAP-1, `sch11` GAP-6 and
-    `sec` GAP-4 — this entry is the same gap on this page. Do not re-litigate it per page.
+  - **This is a cross-cutting gap, not a Schedule 3 finding.** Role-gated behaviour cannot be E2E-tested
+    under single-role mock auth on any page; the same gap is recorded as `sch1` GAP-1, `sch2` GAP-1,
+    `sch4` GAP-1, `sch11` GAP-6 and `sec` GAP-4 — this entry is the same gap on this page. Do not
+    re-litigate it per page.
   - **RE-CHECKED AGAINST THE CODE AND THE RUNNING STACK 2026-08-26 — and the old reason no longer holds.**
-    That deferral's premise was that role behaviour is unreachable because mock auth stamps one authority
+    The cross-cutting gap's premise was that role behaviour is unreachable because mock auth stamps one authority
     and the two roles grant the same actions. Both halves have since changed, so do not repeat them:
     - **The roles DO diverge now.** `security/SchedulePermissions.java` grants `ADMIN` six actions
       (`VIEW_SCHEDULE`, `EDIT_SCHEDULE`, `MAINTAIN_CODE_TABLES`, `OPEN_REPORTING_YEAR`,
@@ -743,7 +743,7 @@ count does.
     - Role-gated behaviour that DOES exist is admin-surface, not schedule-surface (Administration nav is
       `adminOnly` in `routes/-navigation.ts:94`, and code-table writes 403 a submitter) — owned by the
       UC-CODE-001 / admin suites, not by this one.
-  - **When it is done** (per that entry): QA authors E2E tests for these coverage gaps and runs them
+  - **When it is done:** QA authors E2E tests for these coverage gaps and runs them
     against the running app, once a schedule-level role branch actually exists — then this `Status:`
     moves. The trigger to watch is `SchedulePermissions.ROLE_ACTIONS`: the day `EDIT_SCHEDULE` stops
     being granted to both roles, this becomes testable in a single run by switching the mock user, and it

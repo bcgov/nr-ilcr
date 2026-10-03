@@ -27,7 +27,7 @@ environment's mock auth stamps ONE authority per process, so a "viewer is denied
 from a browser. It is also not yet a branch that exists: `SchedulePermissions.ROLE_ACTIONS` still grants
 `ILCR_ADMIN` and `ILCR_SUBMITTER` the same two actions. The **Draft** half of that gate IS covered (S18, both
 non-Draft codes), and the endpoint-level `@PreAuthorize` guards are covered by the backend's own
-`Schedule4WriteAuthorizationIT`. Owned by the cross-cutting deferral in `deferred-work.md` (role-gated
+`Schedule4WriteAuthorizationIT`. It is the same cross-cutting gap recorded on every page (role-gated
 behaviour under single-role mock auth) — QA returns to it once the role-specific behaviours are implemented.
 See GAP-1.
 
@@ -166,10 +166,10 @@ The two counted gaps (each filed in `defects.md`, none of them an app fault). GA
 
 | Gap | Kind | Why it counts against coverage |
 |---|---|---|
-| GAP-1 | `blocked` | role-gated behaviour cannot be produced under single-role mock auth, and the two `ROLE_ACTIONS` sets do not yet diverge. Endpoint enforcement is covered by the backend's `Schedule4WriteAuthorizationIT`; owned by the cross-cutting deferral in `deferred-work.md`, so a gate should treat it as **waived**. |
+| GAP-1 | `blocked` | role-gated behaviour cannot be produced under single-role mock auth, and the two `ROLE_ACTIONS` sets do not yet diverge. Endpoint enforcement is covered by the backend's `Schedule4WriteAuthorizationIT`; it is the same cross-cutting gap recorded on every page, so a gate should treat it as **waived**. |
 | GAP-2 | `covered (unit)` | CLOSED 2026-09-24 — Schedule 4's five error-fallback strings are now asserted by six Vitest cases in `Schedule4.test.tsx` ([#332](https://github.com/bcgov/nr-ilcr/issues/332), the app-wide fallback sweep). Unit rather than E2E, as the entry always said: pure client-side branches, and Vitest gates in CI where this suite does not. |
 | GAP-3 | `covered` | CLOSED 2026-08-20 — the stale-token conflict is now covered by `concurrency.feature` `@p1 @S02` (the 409 renders verbatim AND the other session's value is asserted as the survivor). The earlier "needs two browser contexts" reason was wrong; one context plus one API save stages it. |
-| GAP-4 | `deferred` | the validation-error axe sweep is skipped by the project's cross-cutting convention (`deferred-work.md`, app-wide WCAG 4.1.2), so Schedule 4's error state is genuinely unswept. |
+| GAP-4 | `deferred` | the validation-error axe sweep is skipped by the project's cross-cutting convention (app-wide WCAG 4.1.2, #546), so Schedule 4's error state is genuinely unswept. |
 
 `@discovered-divergence` / `@discovered-bug` reds COUNT as covered — they map to their requirement and are
 deliberately red (never forced green; the red is the signal). **Gate result: PASS**, with all four gap ids

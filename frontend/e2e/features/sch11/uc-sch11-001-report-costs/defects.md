@@ -8,8 +8,9 @@ from another UC on trust.
 **Headline: one pre-existing app-wide accessibility bug (re-covered as a deliberate RED), and no
 Schedule-11 bugs.** 28 of 29 tests pass (26 scenarios; re-measured 2026-08-27, and
 [`coverage.md`](coverage.md) is the authoritative count); the single red is BUG-1 — a critical WCAG defect
-in Carbon's validation-error markup that affects every schedule page and is already tracked in
-`deferred-work.md`, which explicitly asked for it to be re-covered by a red check here. Schedule 11's own
+in Carbon's validation-error markup that affects every schedule page, now tracked as
+[bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546); its triage asked for it to be re-covered
+by a red check here. Schedule 11's own
 behaviour was correct on every path exercised, including the four legacy items the requirements could not
 pin down. Beyond that bug, what this log records is that **Schedule 11 was rebuilt rather than ported**, so
 **four** behaviours genuinely differ from the legacy Gherkin — DIV-1 through DIV-4 — and all four were
@@ -45,11 +46,11 @@ differences.
     **every schedule page carries it** (1/2/3/4/8/11). Nothing in Schedule 11 causes it, and it cannot be
     fixed here — it needs an app-wide decision (a visually-hidden `role="alert"` region fed on validation
     failure, or a Carbon version/config change).
-  - **WHAT HAPPENS NEXT: nothing, by this story.** It was triaged on 2026-07-30 into
-    `deferred-work.md`, which owns it and names the candidate fixes.
-    That note is what asked for the red check below. **No action is owed by Story 25.4.**
+  - **WHAT HAPPENS NEXT: nothing, by this story.** It was triaged on 2026-07-30 as an app-wide item, and
+    that triage is what asked for the red check below. It is now tracked as [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546).
+    **No action is owed by Story 25.4.**
   - **Does it block the AC?** No. The epic AC is "violations are zero, **or** each remaining violation is
-    triaged with a recorded disposition (NFR1)" — the `deferred-work.md` entry is that disposition.
+    triaged with a recorded disposition (NFR1)" — [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546) is that disposition.
   - **Ticket:** [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546) — "Screen-reader users are never told when a field fails validation — the red error text appears but is not announced (app-wide)". Raised 2026-10-02 so the
     finding is tracked where the ministry team can see it. The ticket re-verified the behaviour live on
     2026-10-02 (Mill 2121 - SESAME STREET / 2019): four red messages, all five `role="alert"` regions stay

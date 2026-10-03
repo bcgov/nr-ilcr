@@ -167,8 +167,8 @@ design** whenever a `@discovered-divergence` / `@discovered-bug` red is tracking
 working as intended, not a broken build. `test:gate` excludes those known reds and exits 0 when nothing new
 has broken, so it is the one that is safe to copy-paste and safe to automate.
 
-Which reds exist at any moment is recorded in each UC's `defects.md` (and, when the fix is someone else's,
-in `deferred-work.md`) — deliberately not listed here, so this file cannot go stale.
+Which reds exist at any moment is recorded in each UC's `defects.md`, with the GitHub issue that tracks
+each fix — deliberately not listed here, so this file cannot go stale.
 
 **Counting tests: measure, never increment.** Each UC's `coverage.md` carries exactly one *Suite state*
 block with its own numbers and the date they were measured; nothing else restates them. There is no
