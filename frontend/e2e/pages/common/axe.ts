@@ -31,7 +31,7 @@ const WCAG_2_1_AA_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
  * `aria-valid-attr-value` (impact: critical) — Carbon `TextInput`'s invalid state renders
  * `aria-errormessage` pointing at an element it never announces, so validation errors never reach
  * assistive technology. It is a `@carbon/react` wiring issue present in EVERY schedule page's
- * validation-error state, not a Schedule 11 fault; tracked in `deferred-work.md` and in
+ * validation-error state, not a Schedule 11 fault; tracked as bcgov/nr-ilcr#546 and in
  * `features/sch11/uc-sch11-001-report-costs/defects.md` BUG-1. Remove the id here the moment the app-wide
  * fix lands — the scan then goes green on its own and the `@discovered-bug` tag comes off with it.
  */

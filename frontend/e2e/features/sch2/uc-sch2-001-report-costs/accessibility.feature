@@ -17,7 +17,7 @@
 # Sweeping it would re-find one already-triaged, app-wide defect: Carbon `TextInput`'s invalid state wires
 # `aria-errormessage` to an element it never announces (axe rule `aria-valid-attr-value`, impact critical),
 # so a field error never reaches assistive technology. It is a `@carbon/react` issue present in EVERY
-# schedule page's validation-error state, already tracked in `deferred-work.md` and carried as the standing
+# schedule page's validation-error state, tracked as bcgov/nr-ilcr#546 and carried as the standing
 # red in `features/sch11/uc-sch11-001-report-costs/accessibility.feature` (BUG-1). One red per app-wide
 # defect is the tracking signal; a second copy per schedule would degrade it into noise. Recorded as a
 # Coverage gap in this UC's defects.md with that cross-reference, so the omission is explicit and

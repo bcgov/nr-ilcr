@@ -510,7 +510,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Status:** **CLOSED (not a defect).** Found 2026-08-17, closed 2026-08-20 on the evidence above.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/delete.feature` (S10, green).
 
-- **DIV-7 - Schedules 4 and 8 highlight the row being edited; the old system highlighted it nowhere.**
+- **DIV-7 - CLOSED 2026-10-02: Schedules 4 and 8 highlight the row being edited; the old system highlighted it nowhere. The business kept the highlight (#319 reversed), and its contrast failure is gone since #514.**
   - **What's wrong:** opening a row for editing (a location in Schedule 4, a report row in Schedule 8) turns
     that row's background blue. The legacy app never highlighted the selected row on any schedule, and no other
     schedule in the new app does either - Schedule 5 has the same list-plus-edit-panel interaction and applies
@@ -534,12 +534,17 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     persisted for as long as the record stayed open. No separate contrast fix is needed once the highlight goes.
   - **Ticket:** [bcgov/nr-ilcr#319](https://github.com/bcgov/nr-ilcr/issues/319).
   - **Priority / env:** p1 - local seeded DB - Chrome.
-  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to remove the highlight when capacity allows; QA re-verifies and
-    closes this entry then. Two `@discovered-divergence` accessibility tests are RED because of this highlight and go
-    green together once it is removed, at which point their tags come off.
+  - **Status:** CLOSED 2026-10-02 — accepted as an intended difference, not removed. The business reversed the
+    "remove the highlight" decision: #319 was closed with the highlight kept. The contrast failure then went
+    away through #514, which freezes the row open in the editor: its Edit / Copy / Delete (and View, read-only)
+    are disabled while it is open, and disabled controls are exempt from WCAG 1.4.3, so axe skips them. Both
+    scans have passed since #514 (2026-09-29 and the full run on 2026-10-02). The BA's remaining request — make
+    the highlighted row's text and buttons stand out more — is [bcgov/nr-ilcr#437](https://github.com/bcgov/nr-ilcr/issues/437),
+    a visibility change rather than a WCAG failure.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/accessibility.feature`
     ("The open Edit panel keeps its row actions accessible" and "The read-only location panel keeps its row
-    action accessible", both `@discovered-divergence`).
+    action accessible"). Their `@discovered-divergence` tags and `[DISCOVERED …]` title markers came off
+    2026-10-02, with no assertion edited, so both now run in `npm run test:gate` as regression guards.
 
 - **DIV-8 — Check Status judges the SAVED locations and ignores unsaved edits in the open panel (APP-WIDE,
   11 of 12 schedules).**
@@ -666,15 +671,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     backend's own `Schedule4WriteAuthorizationIT`.
   - **The DRAFT half of the same gate IS covered end-to-end** — S18 proves the read-only render on both
     non-Draft codes (Submitted and Verified), on both the location panel and a sub-page.
-  - **This is the cross-cutting deferral, not a Schedule 4 finding.** It is owned by `deferred-work.md`
-    → *"Deferred (cross-cutting): role-gated behaviour cannot be E2E-tested under single-role mock auth
-    (2026-08-12)"*, which lists this entry alongside `sch1` GAP-1, `sch2` GAP-1, `sch11` GAP-6 and `sec`
-    GAP-4. Do not re-litigate it per page. Note the role work is still in progress overall — FAM sign-in and
+  - **This is a cross-cutting gap, not a Schedule 4 finding.** Role-gated behaviour cannot be E2E-tested
+    under single-role mock auth on any page; the same gap is recorded as `sch1` GAP-1, `sch2` GAP-1,
+    `sch3` GAP-1, `sch11` GAP-6 and `sec` GAP-4. Do not re-litigate it per page. Note the role work is still in progress overall — FAM sign-in and
     the role switcher landed in upstream `2754399` (Stories 1.2/1.3), but the two `ROLE_ACTIONS` sets have not
     yet diverged — so it is too early to call the difference from legacy a divergence.
-  - **When it is done** (per that entry): QA authors E2E tests for these coverage gaps and runs them against
-    the running app, once the role-specific behaviours are actually implemented — then this `Status:` moves.
-    The legacy target behaviour QA will be covering is recorded in that cross-cutting entry.
+  - **When it is done:** QA authors E2E tests for these coverage gaps and runs them against the running
+    app, once the role-specific behaviours are actually implemented — then this `Status:` moves.
   - **Status:** OPEN — `blocked` in coverage.md. A gate should treat this as **waived**, not failing.
   - **Test:** none today, by environment limitation rather than by choice.
 
@@ -757,20 +760,19 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Why:** sweeping it would re-find a single already-triaged, **app-wide** defect — Carbon's `TextInput`
     invalid state wires `aria-errormessage` to an element it never announces (axe rule
     `aria-valid-attr-value`, impact critical), so a field error never reaches assistive technology. It
-    affects every schedule page, is recorded in `deferred-work.md`, and is already carried as the standing
+    affects every schedule page, is tracked as [bcgov/nr-ilcr#546](https://github.com/bcgov/nr-ilcr/issues/546), and is already carried as the standing
     red in `features/sch11/uc-sch11-001-report-costs/accessibility.feature` (that UC's BUG-1).
-  - **Why a Coverage gap here, when Schedule 11 files it as a Bug.** The defect is owned by
-    `deferred-work.md` → *"Deferred (cross-cutting): validation errors are never announced to assistive
-    technology (app-wide WCAG 4.1.2)"*, whose original note specifically asked for a deliberately-RED check
-    **on Schedule 11**. Every other page records the item as a Coverage gap pointing at that section instead
-    — logged so far as `sch2` GAP-4 and now this. Do not re-litigate it per page.
+  - **Why a Coverage gap here, when Schedule 11 files it as a Bug.** The defect is app-wide and tracked as
+    #546; its original triage specifically asked for a deliberately-RED check **on Schedule 11**. Every other
+    page records the item as a Coverage gap pointing at that ticket instead — logged so far as `sch2` GAP-4
+    and now this. Do not re-litigate it per page.
   - **What is genuinely NOT covered:** Schedule 4's validation-error state is **unswept**. A
     Schedule-4-specific accessibility problem in that state would not be caught today. This entry is the
     record of that, not a waiver.
-  - **Does it block the AC?** No. Story 10.7 AC2 is "zero violations **or** triaged exceptions" — the
-    `deferred-work.md` entry is that disposition, and Schedule 4's other seven swept renders are clean (the
+  - **Does it block the AC?** No. Story 10.7 AC2 is "zero violations **or** triaged exceptions" — #546 is
+    that disposition, and Schedule 4's other seven swept renders are clean (the
     two that are not are DIV-7 and BUG-1, filed with measurements).
-  - **Future action:** per that `deferred-work.md` entry — once the app-wide announcement fix lands, QA sweeps
+  - **Future action:** once the app-wide announcement fix (#546) lands, QA sweeps
     the validation-error state on every page that skipped it, including this one, and closes this gap.
   - **Status:** OPEN — `deferred`, pending the app-wide announcement fix. Found 2026-08-17, re-confirmed 2026-08-20.
   - **Test:** none today, by filing convention rather than by oversight.

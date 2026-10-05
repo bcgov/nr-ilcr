@@ -12,6 +12,15 @@ page objects. Scenarios are re-grounded from each use case's **Gherkin**: that G
 each screen must do (authored from the legacy app / the spec); here the routes, fields, and input
 values are pinned to the *new* app and the *seeded* DB.
 
+**Summary documents** (for the product owner, BA/QA and the team taking over the app):
+
+- [`e2e-test-results.md`](e2e-test-results.md): the latest full run, results by use case, known failing
+  tests and their tickets, and how much of the application the suite covers.
+- [`accessibility-findings.md`](accessibility-findings.md): every WCAG 2.1 AA finding, open or resolved,
+  with its ticket and evidence.
+- [`coverage-guide.md`](coverage-guide.md) and [`defects-guide.md`](defects-guide.md): how to read the
+  per-use-case `coverage.md` and `defects.md` files those summaries link to.
+
 ## Layout — organized by domain, then use case
 
 Every artifact lives under its **domain** (a short subject code, e.g. `<DOMAIN>`) and then its **use
@@ -158,8 +167,8 @@ design** whenever a `@discovered-divergence` / `@discovered-bug` red is tracking
 working as intended, not a broken build. `test:gate` excludes those known reds and exits 0 when nothing new
 has broken, so it is the one that is safe to copy-paste and safe to automate.
 
-Which reds exist at any moment is recorded in each UC's `defects.md` (and, when the fix is someone else's,
-in `deferred-work.md`) — deliberately not listed here, so this file cannot go stale.
+Which reds exist at any moment is recorded in each UC's `defects.md`, with the GitHub issue that tracks
+each fix — deliberately not listed here, so this file cannot go stale.
 
 **Counting tests: measure, never increment.** Each UC's `coverage.md` carries exactly one *Suite state*
 block with its own numbers and the date they were measured; nothing else restates them. There is no

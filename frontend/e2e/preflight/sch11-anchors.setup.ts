@@ -264,7 +264,7 @@ test('preflight: every pinned verbatim contract string is actually asserted by a
     'missingCostMessage()': missingCostMessage(MARKER.checkMissingActual, 'Actual'),
     // NOT listed, deliberately: FLD.locationMaxLength and FLD.commentsMaxLength. Carbon's `maxLength`
     // stops the keystroke, so neither cap is reachable from a browser at all — they belong as backend
-    // bean-validation cases (defects.md GAP-1/GAP-2, carried in deferred-work.md). They stay in the
+    // bean-validation cases (defects.md GAP-1/GAP-2). They stay in the
     // fixtures file as the pinned wording for whoever writes those tests.
   };
   const missing = Object.entries(pinned)

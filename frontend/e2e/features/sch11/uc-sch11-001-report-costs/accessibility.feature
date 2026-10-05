@@ -55,11 +55,11 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — accessibility
   # ==================================================================================================
   # DELIBERATE RED — do not "fix" this by weakening the assertion.
   #
-  # `deferred-work.md` records a CRITICAL app-wide WCAG 4.1.2 defect: Carbon `TextInput`'s invalid state
+  # bcgov/nr-ilcr#546 tracks a CRITICAL app-wide WCAG 4.1.2 defect: Carbon `TextInput`'s invalid state
   # renders `aria-invalid` + `aria-errormessage` with no announcement technique, so a validation error is
   # never announced to assistive technology. It was found by an axe scan of exactly this state during the
-  # earlier (since-removed) 25.4 attempt, and that note ends: "Re-cover it with a deliberately-RED
-  # accessibility check when the Schedule 11 E2E is (re-)developed." This is that check.
+  # earlier (since-removed) 25.4 attempt, and the triage note asked for it to be re-covered with a
+  # deliberately-RED accessibility check when the Schedule 11 E2E was (re-)developed. This is that check.
   #
   # It is expected to FAIL until the app-wide fix lands (a visually-hidden role=alert region, or a Carbon
   # change) — the defect is NOT Schedule 11's to fix, and the failure IS the tracking signal. `npm run
