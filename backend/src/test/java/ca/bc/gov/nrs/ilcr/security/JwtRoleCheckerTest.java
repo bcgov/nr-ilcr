@@ -41,7 +41,7 @@ class JwtRoleCheckerTest {
         .issuedAt(Instant.now())
         .expiresAt(Instant.now().plusSeconds(60))
         .subject("user")
-        .claim("custom:idp_name", idpName)
+        .claim("identity_provider", idpName)
         .build();
   }
 

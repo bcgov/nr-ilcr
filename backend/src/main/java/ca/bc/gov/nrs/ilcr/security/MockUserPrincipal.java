@@ -4,8 +4,9 @@ import org.springframework.security.core.AuthenticatedPrincipal;
 
 /**
  * The principal {@link MockPrincipalFilter} presents when security is off (AD-7) — a short display
- * name plus the directory GUID a real caller would carry as {@code custom:idp_user_id}. Never
- * constructed when security is on: with a real IdP the principal is a {@code Jwt}.
+ * name plus the directory GUID a real caller would carry as {@code idir_user_guid}/{@code
+ * bceid_user_guid}. Never constructed when security is on: with a real IdP the principal is a
+ * {@code Jwt}.
  *
  * <p><b>Why a type rather than the token's {@code details}.</b> The GUID first lived in {@code
  * Authentication.getDetails()}, which works but squats on a slot Spring Security gives an

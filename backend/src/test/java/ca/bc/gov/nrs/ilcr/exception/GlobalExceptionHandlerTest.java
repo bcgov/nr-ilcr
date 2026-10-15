@@ -2,7 +2,7 @@ package ca.bc.gov.nrs.ilcr.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
@@ -101,34 +101,36 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("audit actor for a real FAM Jwt is custom:idp_username, with the sub as fallback")
+  @DisplayName("audit actor for a CSS Jwt is its directory username, never the subject")
   void accessDeniedAuditActorFromRealJwtPrincipal() {
     // The production principal name comes from
-    // CognitoGroupsJwtAuthenticationConverter.auditUsername
-    // (custom:idp_username, else the sub UUID) — prove the audit actor tracks it, so a converter
-    // change can't silently start auditing under the opaque Cognito sub.
-    var converter = new CognitoGroupsJwtAuthenticationConverter();
+    // FamJwtAuthenticationConverter
+    // (the directory username, never the subject UUID) — prove the audit actor tracks it, so a
+    // converter
+    // change can't silently start auditing under the opaque Keycloak sub.
+    var converter = new FamJwtAuthenticationConverter();
     Jwt withUsername =
         Jwt.withTokenValue("t")
+            .claim("identity_provider", "azureidir")
             .header("alg", "none")
-            .claim("custom:idp_username", "IDIRJDOE")
-            .claim("sub", "cognito-uuid-123")
+            .claim("idir_username", "IDIRJDOE")
+            .claim("sub", "keycloak-uuid-123")
             .build();
     String line =
         GlobalExceptionHandler.deniedAuditMessage(
             converter.convert(withUsername),
             new MockHttpServletRequest("POST", "/api/v1/code-tables/UNIT_CODE/entries"),
             "Access Denied");
-    assertThat(line).contains("actor=IDIRJDOE").doesNotContain("cognito-uuid-123");
+    assertThat(line).contains("actor=IDIRJDOE").doesNotContain("keycloak-uuid-123");
 
     Jwt withoutUsername =
-        Jwt.withTokenValue("t").header("alg", "none").claim("sub", "cognito-uuid-123").build();
+        Jwt.withTokenValue("t").header("alg", "none").claim("sub", "keycloak-uuid-123").build();
     String fallback =
         GlobalExceptionHandler.deniedAuditMessage(
             converter.convert(withoutUsername),
             new MockHttpServletRequest("GET", "/api/v1/code-tables"),
             "Access Denied");
-    assertThat(fallback).contains("actor=cognito-uuid-123");
+    assertThat(fallback).contains("actor=anonymous").doesNotContain("keycloak-uuid-123");
   }
 
   @Test

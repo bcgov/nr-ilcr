@@ -595,9 +595,9 @@ class CheckStatusControllerTest {
   @Test
   @DisplayName("verify: a blank directory GUID is passed as null, not as an empty string")
   void verify_blankGuidBecomesNull() {
-    // JwtPrincipalUtil.getIdpUserId returns "" — never null — when custom:idp_user_id is absent,
-    // so without normalizing, the documented no-identity short-circuit was dead for real tokens
-    // and a pointless cross-reference lookup on an empty GUID ran instead.
+    // JwtPrincipalUtil.getIdpUserId returns "" — never null — when the directory GUID claim is
+    // absent, so without normalizing, the documented no-identity short-circuit was dead for real
+    // tokens and a pointless cross-reference lookup on an empty GUID ran instead.
     var mockAuth =
         new UsernamePasswordAuthenticationToken(new MockUserPrincipal("mockadmin", "  "), "n/a");
     when(millContextService.validateMillYearActive("764", "2021"))

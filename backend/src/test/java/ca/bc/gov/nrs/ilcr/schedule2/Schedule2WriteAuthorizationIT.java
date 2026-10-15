@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -30,14 +30,14 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2";
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
-        .jwt(j -> j.claim("cognito:groups", groups))
+        .jwt(j -> j.claim("identity_provider", "azureidir").claim("client_roles", groups))
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 
@@ -48,7 +48,7 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
       """;
 
   @Test
-  @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> PUT 403 problem+json")
+  @DisplayName("no EDIT_SCHEDULE (empty client_roles) -> PUT 403 problem+json")
   void put_noPermission_returns403() throws Exception {
     mockMvc
         .perform(
@@ -63,7 +63,7 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> DELETE 403 problem+json")
+  @DisplayName("no EDIT_SCHEDULE (empty client_roles) -> DELETE 403 problem+json")
   void delete_noPermission_returns403() throws Exception {
     mockMvc
         .perform(

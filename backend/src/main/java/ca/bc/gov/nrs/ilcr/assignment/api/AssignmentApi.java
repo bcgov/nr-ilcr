@@ -48,7 +48,7 @@ public interface AssignmentApi {
   /**
    * One submitter's mill assignments, by ascending mill id.
    *
-   * @param userGuid the submitter's directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the submitter's directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param includeEnded true to include assignments that have been ended
    * @param authentication the caller (must hold {@code MAINTAIN_USERS})
    * @return 200 with the submitter's assignments, empty when they hold none

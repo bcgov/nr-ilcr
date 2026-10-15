@@ -36,7 +36,7 @@ parameters:
     description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile). Raised for the embedded JasperReports 7 engine (Batik/OpenPDF/fonts add classpath + metaspace + native AWT footprint) per AD-16 "size the reporting path's pod CPU/Mem".
     value: "1Gi"
   - name: ILCR_DATASOURCE_ENABLED
-    description: Connect to the Oracle datasource. Set "false" for a data-less smoke deployment. Deployed pods always enforce Cognito (FAM) JWT auth — ILCR_SECURITY_ENABLED is hardcoded "true" below, not parameterized.
+    description: Connect to the Oracle datasource. Set "false" for a data-less smoke deployment. Deployed pods always enforce CSS (FAM) JWT auth — ILCR_SECURITY_ENABLED is hardcoded "true" below, not parameterized.
     value: "true"
   - name: LOG_LEVEL
     description: Application log level (debug|info|warn|error)
@@ -62,9 +62,6 @@ parameters:
   - name: ORACLEDB_PORT
     description: Oracle database TCPS port
     value: "1543"
-  - name: COGNITO_REGION
-    description: AWS region of the Cognito (FAM) user pool
-    value: ca-central-1
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -181,18 +178,16 @@ objects:
                       key: ORACLEDB_SERVICENAME
                 - name: ORACLEDB_KEYSTORE
                   value: /cert/jssecacerts
-                - name: COGNITO_REGION
-                  value: ${COGNITO_REGION}
-                - name: COGNITO_USER_POOL
+                - name: ILCR_OIDC_ISSUER_URI
                   valueFrom:
-                    secretKeyRef:
-                      name: ${NAME}-${ZONE}-${COMPONENT}
-                      key: COGNITO_USER_POOL
-                - name: COGNITO_CLIENT_ID
+                    configMapKeyRef:
+                      name: ${NAME}-${ZONE}-backend-auth
+                      key: ILCR_OIDC_ISSUER_URI
+                - name: ILCR_OIDC_CLIENT_ID
                   valueFrom:
-                    secretKeyRef:
-                      name: ${NAME}-${ZONE}-${COMPONENT}
-                      key: COGNITO_CLIENT_ID
+                    configMapKeyRef:
+                      name: ${NAME}-${ZONE}-backend-auth
+                      key: ILCR_OIDC_CLIENT_ID
                 - name: ORACLEDB_SECRET
                   valueFrom:
                     secretKeyRef:

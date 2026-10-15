@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Acceptance test — Story 24.3 (UC-CODE-001) Table Maintenance, security ON. Exercises the real
- * cognito:groups → role → action path: {@code MAINTAIN_CODE_TABLES} is ADMIN-only, so an {@code
+ * client_roles → role → action path: {@code MAINTAIN_CODE_TABLES} is ADMIN-only, so an {@code
  * ILCR_SUBMITTER} is denied 403 (S13) — the opposite of the schedule endpoints. Functional
  * read/write is driven with an admin JWT against the {@code ILCR_UNIT_CODE} seed (V20260812).
  */
@@ -38,8 +38,8 @@ class CodeTableIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/code-tables";
   private static final String UNIT_ENTRIES = ENDPOINT + "/UNIT_CODE/entries";
   private static final String CONTRACTUAL_ENTRIES = ENDPOINT + "/CONTRACTUAL_ITEM_CODE/entries";
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
 
@@ -47,7 +47,7 @@ class CodeTableIT extends AbstractOracleIT {
 
   private RequestPostProcessor groups(String... groups) {
     return jwt()
-        .jwt(j -> j.claim("cognito:groups", List.of(groups)))
+        .jwt(j -> j.claim("identity_provider", "azureidir").claim("client_roles", List.of(groups)))
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 

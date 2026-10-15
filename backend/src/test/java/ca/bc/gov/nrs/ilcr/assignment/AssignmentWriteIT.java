@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +30,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Acceptance test — licensee accounts and mill assignments (UC-USR-001/002), security ON. Runs the
- * real cognito:groups → role → action path, so the ADMIN-only gate, the verbatim legacy messages
- * and the audit-column discipline are all exercised as a caller meets them.
+ * real client_roles → role → action path, so the ADMIN-only gate, the verbatim legacy messages and
+ * the audit-column discipline are all exercised as a caller meets them.
  *
  * <p>Each test cleans up the rows it created so the JVM-wide container stays at its seeded baseline
  * for other IT classes.
@@ -59,13 +59,13 @@ class AssignmentWriteIT extends AbstractOracleIT {
   private static final String GUID_B = "WRITEIT2BBBBCCCCDDDDEEEEFFFF0002";
 
   /**
-   * The acting administrator's {@code custom:idp_username}, expected in the audit columns. A
-   * synthetic value — a real person's identifier must never be hardcoded.
+   * The acting administrator's {@code idir_username}, expected in the audit columns. A synthetic
+   * value — a real person's identifier must never be hardcoded.
    */
   private static final String ADMIN_USERNAME = "TESTADMN";
 
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
 
@@ -510,9 +510,10 @@ class AssignmentWriteIT extends AbstractOracleIT {
     return jwt()
         .jwt(
             j ->
-                j.claim("cognito:groups", List.of(groups))
-                    .claim("custom:idp_username", ADMIN_USERNAME)
-                    .claim("custom:idp_user_id", "ADMIN001BBBBCCCCDDDDEEEEFFFF0001"))
+                j.claim("identity_provider", "azureidir")
+                    .claim("client_roles", List.of(groups))
+                    .claim("idir_username", ADMIN_USERNAME)
+                    .claim("idir_user_guid", "ADMIN001BBBBCCCCDDDDEEEEFFFF0001"))
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 

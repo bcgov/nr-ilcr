@@ -115,21 +115,23 @@ public class AssignmentController implements AssignmentApi {
   }
 
   /**
-   * The acting administrator's identifier for the audit columns — the raw {@code
-   * custom:idp_username} claim, read without any fallback: every substitute identity (the 32-char
-   * directory GUID, the 36-char {@code sub}) overflows the 30-character audit columns and would
-   * fail as an opaque ORA-12899 deep inside the write, so a real token without the claim is refused
-   * here, where the broken identity contract can be named.
+   * The acting administrator's identifier for the audit columns — the directory username claim
+   * ({@code idir_username} or {@code bceid_username}), read without any fallback: every substitute
+   * identity (the 32-char directory GUID, the 36-char {@code sub}) overflows the 30-character audit
+   * columns and would fail as an opaque ORA-12899 deep inside the write, so a real token without
+   * the claim is refused here, where the broken identity contract can be named.
    *
    * <p>With security off there is no token, so the mock principal's name is used instead; that only
    * ever happens in local development.
    */
   private static String actingUser(Authentication authentication) {
     if (authentication instanceof JwtAuthenticationToken jwtAuth) {
-      String username = jwtAuth.getToken().getClaimAsString("custom:idp_username");
+      String username =
+          ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil.getAuditUsername(jwtAuth.getToken());
       if (StringUtils.isBlank(username)) {
         throw new IllegalStateException(
-            "token carries no custom:idp_username to stamp the audit columns");
+            "token carries no directory username (idir_username or bceid_username) to stamp"
+                + " the audit columns");
       }
       return username;
     }

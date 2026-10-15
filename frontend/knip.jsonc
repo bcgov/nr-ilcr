@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@5.82.1/schema.json",
+  "entry": ["src/main.tsx", "src/routes/**/*.tsx"],
+  // Knip 5 rewrites scoped Sass imports as relative paths; Vite/Sass validates these packages.
+  "ignoreUnresolved": ["^\\./@carbon/(react|type|styles|themes)(/|$)"],
+  "ignoreDependencies": [
+    "swagger-ui-express",
+    "rimraf",
+    "@types/node",
+    "@types/react",
+    "@types/react-dom",
+    "@testing-library/user-event",
+    // Imported by src/styles/_overrides.scss; the pinned scanner does not count these Sass imports.
+    "@bcgov-nr/nr-theme",
+  ],
+  "ignoreBinaries": ["rimraf"],
+}

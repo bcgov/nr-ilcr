@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -66,11 +66,11 @@ class SetToDraftIT extends AbstractOracleIT {
   private static final String ADMIN_GUID = "REVERSALAUDITOR11111222233334444";
 
   /**
-   * Deliberately different from {@link #ACTING_USER} and deliberately the 36-char Cognito UUID
+   * Deliberately different from {@link #ACTING_USER} and deliberately the 36-char Keycloak subject
    * shape that would overflow {@code UPDATE_USERID VARCHAR2(30)}, so stamping the subject instead
-   * of {@code custom:idp_username} fails loudly rather than silently agreeing.
+   * of {@code idir_username} fails loudly rather than silently agreeing.
    */
-  private static final String COGNITO_SUB = "99999999-8888-7777-6666-555555555555";
+  private static final String KEYCLOAK_SUB = "99999999-8888-7777-6666-555555555555";
 
   private static final String SEED_USER = "SEED";
 
@@ -101,26 +101,27 @@ class SetToDraftIT extends AbstractOracleIT {
       "This Mill is not active for the current Reporting Year. "
           + "Please select another mill from the Home Page.";
 
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   /**
    * Built through the PRODUCTION converter rather than {@code spring-security-test}'s bare {@code
-   * jwt()}, which constructs its own token and never calls {@link
-   * CognitoGroupsJwtAuthenticationConverter} — so the principal name would fall back to {@code sub}
-   * and the audit-stamp assertions would pass whichever claim the app actually read.
+   * jwt()}, which constructs its own token and never calls {@link FamJwtAuthenticationConverter} —
+   * so the principal name would fall back to {@code sub} and the audit-stamp assertions would pass
+   * whichever claim the app actually read.
    */
   private RequestPostProcessor admin() {
     Jwt token =
         Jwt.withTokenValue("set-to-draft-it-token")
             .header("alg", "none")
-            .subject(COGNITO_SUB)
-            .claim("custom:idp_user_id", ADMIN_GUID)
-            .claim("custom:idp_username", ACTING_USER)
-            .claim("cognito:groups", List.of("ILCR_ADMIN"))
+            .subject(KEYCLOAK_SUB)
+            .claim("idir_user_guid", ADMIN_GUID)
+            .claim("idir_username", ACTING_USER)
+            .claim("identity_provider", "azureidir")
+            .claim("client_roles", List.of("ILCR_ADMIN"))
             .build();
     return authentication(CONVERTER.convert(token));
   }

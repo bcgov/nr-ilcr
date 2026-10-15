@@ -96,6 +96,7 @@ jobs:
             -Dsonar.javascript.lcov.reportPaths=./coverage/lcov.info
           sonar_token: ${{ env.sonar_token }}
           dep_scan: warn
+          knip_config: frontend/knip.jsonc
           supply_scan: true
           triggers: ('frontend/')
 

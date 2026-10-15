@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Acceptance test — Story 24.1 (UC-RY-001) Open Reporting Year, security ON. Exercises the real
- * cognito:groups → role → action path: {@code OPEN_REPORTING_YEAR} is ADMIN-only, so an {@code
+ * client_roles → role → action path: {@code OPEN_REPORTING_YEAR} is ADMIN-only, so an {@code
  * ILCR_SUBMITTER} is denied 403 (S13). The recurring open path is driven against the shared seed (a
  * year already exists), proving an ACTIVE mill (990) gets a Draft/Draft report-status row for the
  * new year and a CLOSED mill (991) does not. It also proves an ACTIVE mill (992) without a
@@ -41,8 +41,8 @@ class ReportingYearIT extends AbstractOracleIT {
   private static final long ACTIVE_MILL = 990L;
   private static final long CLOSED_MILL = 991L;
   private static final long ACTIVE_MILL_WITHOUT_CURRENT_STATUS = 992L;
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
 
@@ -73,7 +73,7 @@ class ReportingYearIT extends AbstractOracleIT {
 
   private RequestPostProcessor groups(String... groups) {
     return jwt()
-        .jwt(j -> j.claim("cognito:groups", List.of(groups)))
+        .jwt(j -> j.claim("identity_provider", "azureidir").claim("client_roles", List.of(groups)))
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 
