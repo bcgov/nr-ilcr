@@ -24,9 +24,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 /**
  * Unit coverage for the Story 5.5 identity/role resolution in {@link MillContextController} — the
  * {@code isAdmin} flag and the {@code currentUserGuid()} branch that reads the raw {@code
- * custom:idp_user_id} claim off the {@code SecurityContext}. Mocked service + role checker; no
- * Spring container. (The scoped SQL and the HTTP path are proven by the Oracle ITs; this pins the
- * controller's caller-resolution logic — admin vs submitter, real Jwt vs the dev mock principal.)
+ * idir_user_guid}/{@code bceid_user_guid} claim off the {@code SecurityContext}. Mocked service +
+ * role checker; no Spring container. (The scoped SQL and the HTTP path are proven by the Oracle
+ * ITs; this pins the controller's caller-resolution logic — admin vs submitter, real Jwt vs the dev
+ * mock principal.)
  */
 @ExtendWith(MockitoExtension.class)
 class MillContextControllerTest {
@@ -51,7 +52,11 @@ class MillContextControllerTest {
   }
 
   private static Jwt jwtWithIdpUserId(String guid) {
-    return Jwt.withTokenValue("t").header("alg", "none").claim("custom:idp_user_id", guid).build();
+    return Jwt.withTokenValue("t")
+        .header("alg", "none")
+        .claim("identity_provider", "azureidir")
+        .claim("idir_user_guid", guid)
+        .build();
   }
 
   @Test
@@ -66,7 +71,7 @@ class MillContextControllerTest {
   }
 
   @Test
-  @DisplayName("submitter with a real Jwt → listMills(false, custom:idp_user_id)")
+  @DisplayName("submitter with a real Jwt → listMills(false, directory GUID claim)")
   void listMills_submitterJwt_passesResolvedGuid() {
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
     authenticate(jwtWithIdpUserId("SUBGUID"));

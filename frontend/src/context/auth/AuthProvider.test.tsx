@@ -24,7 +24,7 @@ describe('AuthProvider seam', () => {
     expect(screen.getByTestId('mock')).toBeInTheDocument()
   })
 
-  it('selects the real (Amplify) provider otherwise', () => {
+  it('selects the real OIDC provider otherwise', () => {
     isMockAuth.mockReturnValue(false)
     render(
       <AuthProvider>

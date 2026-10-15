@@ -29,32 +29,6 @@ jobs:
       backend_image: ${{ steps.images.outputs.backend_image }}
       frontend_image: ${{ steps.images.outputs.frontend_image }}
     steps:
-      # This job attaches no environment, so it sees only repository- and organization-level values.
-      # A value missing from the prod environment falls back to one of those silently, so none of
-      # these may exist there. Only emptiness is tested and only names are printed.
-      - name: Refuse repository-level deployment values
-        env:
-          ORACLEDB_HOST: ${{ secrets.ORACLEDB_HOST }}
-          ORACLEDB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
-          ORACLEDB_USERNAME: ${{ secrets.ORACLEDB_USERNAME }}
-          ORACLEDB_PASSWORD: ${{ secrets.ORACLEDB_PASSWORD }}
-          USER_POOLS_ID: ${{ secrets.USER_POOLS_ID }}
-          USER_POOLS_WEB_CLIENT_ID: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
-          COGNITO_REDIRECT_SIGN_IN: ${{ vars.COGNITO_REDIRECT_SIGN_IN }}
-          COGNITO_REDIRECT_SIGN_OUT: ${{ vars.COGNITO_REDIRECT_SIGN_OUT }}
-        run: |
-          set -euo pipefail
-          found=""
-          for name in ORACLEDB_HOST ORACLEDB_SERVICENAME ORACLEDB_USERNAME ORACLEDB_PASSWORD USER_POOLS_ID \
-                      USER_POOLS_WEB_CLIENT_ID COGNITO_REDIRECT_SIGN_IN COGNITO_REDIRECT_SIGN_OUT; do
-            if [[ -n "${!name:-}" ]]; then
-              found="$found $name"
-            fi
-          done
-          if [[ -n "$found" ]]; then
-            echo "::error::Set these only in the dev, test and prod environments, then delete the repository or organization copies:$found"
-            exit 1
-          fi
       - uses: actions/checkout@v7
         with:
           persist-credentials: false

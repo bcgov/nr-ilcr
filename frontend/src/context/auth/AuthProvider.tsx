@@ -8,9 +8,9 @@ type Props = {
 }
 
 /**
- * Single auth seam: the local mock provider or the real FAM/Cognito (Amplify) provider, chosen by
- * the runtime {@code isMockAuth()} gate. Deployed environments are never mock, so real users always
- * get the Amplify flow.
+ * Single auth seam: the local mock provider or the real FAM (CSS OIDC) provider, chosen by the
+ * runtime {@code isMockAuth()} gate. Deployed environments are never mock, so real users always get
+ * the OIDC flow.
  */
 export default function AuthProvider({ children }: Props) {
   if (isMockAuth()) {

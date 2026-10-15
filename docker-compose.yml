@@ -17,6 +17,9 @@ services:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-}
+      # Real CSS sign-in: read by the `openshift` profile's resource-server settings.
+      ILCR_OIDC_ISSUER_URI: ${ILCR_OIDC_ISSUER_URI:-}
+      ILCR_OIDC_CLIENT_ID: ${ILCR_OIDC_CLIENT_ID:-}
       # NR User Lookup (DL-27). Off by default; the credential is a Vault secret supplied through
       # an ignored local .env, never a literal here.
       ILCR_USER_LOOKUP_ENABLED: ${ILCR_USER_LOOKUP_ENABLED:-false}
@@ -37,6 +40,9 @@ services:
     container_name: frontend
     entrypoint: sh -c "npm ci --ignore-scripts && npm run dev"
     environment:
+      # The Vite dev server exposes VITE_* values, which env.ts uses when config.js leaves them blank.
+      VITE_OIDC_ISSUER_URI: ${ILCR_OIDC_ISSUER_URI:-}
+      VITE_OIDC_CLIENT_ID: ${ILCR_OIDC_CLIENT_ID:-}
       BACKEND_URL: http://backend:8080
       PORT: 3000
       NODE_ENV: development
@@ -59,6 +65,8 @@ services:
       PORT: 3000
       BACKEND_URL: http://backend:8080
       LOG_LEVEL: info
+      # The Caddyfile's Content-Security-Policy admits the issuer for discovery, token and refresh.
+      OIDC_ISSUER_URI: ${ILCR_OIDC_ISSUER_URI:-https://not-configured.invalid/auth/realms/standard}
     ports: ["3005:3000"]
     volumes: ["./frontend/Caddyfile:/etc/caddy/Caddyfile"]
     healthcheck:

@@ -41,6 +41,10 @@ jobs:
       CUTOFF: "1 week ago"
     runs-on: ubuntu-slim
     timeout-minutes: 10
+    # PR previews run in the dev namespace, whose values live only in the dev environment.
+    environment:
+      name: dev
+      deployment: false
     steps:
       - name: Clean up PR Deployments
         uses: bcgov/action-oc-runner@111868d1fc50db0a40417ba321d865ef5c931bbd # v1.7.0

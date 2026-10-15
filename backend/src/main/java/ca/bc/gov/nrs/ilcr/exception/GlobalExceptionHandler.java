@@ -383,9 +383,10 @@ public class GlobalExceptionHandler {
 
   /**
    * Builds the audited authorization-denial line (Story 5.4 AC4/FR2/DL-6): actor + the attempted
-   * action (HTTP method + path). The actor is the principal NAME (FAM {@code custom:idp_username},
-   * or the mock {@code dev-*}), never a token; NO request body, cost data, or token is included
-   * (NFR3/AD-11). Package-private + pure so the content is unit-tested without capturing logs.
+   * action (HTTP method + path). The actor is the principal NAME (the CSS {@code idir_username} or
+   * {@code bceid_username}, or the mock {@code dev-*}), never a token; NO request body, cost data,
+   * or token is included (NFR3/AD-11). Package-private + pure so the content is unit-tested without
+   * capturing logs.
    *
    * @param authentication the current authentication (may be null for an unauthenticated caller)
    * @param request the denied request

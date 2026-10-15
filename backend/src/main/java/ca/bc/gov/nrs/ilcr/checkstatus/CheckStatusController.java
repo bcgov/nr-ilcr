@@ -242,9 +242,9 @@ public class CheckStatusController implements CheckStatusApi {
    * both auditor columns in every environment the e2e suite runs against.
    *
    * <p>Blank is normalized to null: {@link JwtPrincipalUtil#getIdpUserId} returns {@code ""}, never
-   * null, when {@code custom:idp_user_id} is absent, so without this the documented
-   * no-directory-identity short-circuit would be dead for every real token and a pointless
-   * cross-reference lookup on an empty GUID would run instead.
+   * null, when {@code idir_user_guid}/{@code bceid_user_guid} is absent, so without this the
+   * documented no-directory-identity short-circuit would be dead for every real token and a
+   * pointless cross-reference lookup on an empty GUID would run instead.
    */
   private static String directoryGuid(Authentication authentication) {
     String guid = null;

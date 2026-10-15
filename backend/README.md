@@ -10,8 +10,8 @@ The backend starts with **no database and security off** by default, so it boots
 | Setting (env var) | Default | Effect |
 |---|---|---|
 | `ILCR_DATASOURCE_ENABLED` | `false` | `true` wires the Hikari datasources and Spring Data JDBC repositories |
-| `ILCR_SECURITY_ENABLED` | `false` | `true` validates FAM/Cognito ID tokens; `false` builds a mock principal from the `X-Mock-Groups` header |
-| `SPRING_PROFILES_ACTIVE` | none (`.env.example` and Compose set `local`, which has no profile-specific settings) | `oracle` composes a TCPS URL from `ORACLEDB_HOST`/`ORACLEDB_PORT`/`ORACLEDB_SERVICENAME` and turns the datasource on; `openshift` adds the Cognito issuer settings |
+| `ILCR_SECURITY_ENABLED` | `false` | `true` validates CSS (FAM) access tokens and needs `ILCR_OIDC_ISSUER_URI`/`ILCR_OIDC_CLIENT_ID`; `false` builds a mock principal from the `X-Mock-Groups` header |
+| `SPRING_PROFILES_ACTIVE` | none (`.env.example` and Compose set `local`, which has no profile-specific settings) | `oracle` composes a TCPS URL from `ORACLEDB_HOST`/`ORACLEDB_PORT`/`ORACLEDB_SERVICENAME` and turns the datasource on; `openshift` adds the CSS issuer and JWK-set settings |
 
 To run against an Oracle database with a plain JDBC URL (for example the seeded local image on port 1525), set:
 

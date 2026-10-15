@@ -260,9 +260,9 @@ public class ReportTrackTransitionService {
   /**
    * The report's licensee, as legacy recorded it ({@code SubmitReportDAO:405-410}): the caller's
    * {@code ILCR_MILL_USER_XREF} row for this mill, or NULLs when there is none. The directory GUID
-   * comes from the {@code custom:idp_user_id} claim of a real principal, or from the typed dev/e2e
-   * {@link MockUserPrincipal} &mdash; deliberately not from {@code getName()}, which is the short
-   * audit name.
+   * comes from the {@code idir_user_guid}/{@code bceid_user_guid} claim of a real principal, or
+   * from the typed dev/e2e {@link MockUserPrincipal} &mdash; deliberately not from {@code
+   * getName()}, which is the short audit name.
    */
   private Licensee resolveLicensee(Authentication authentication, long millId) {
     String userGuid = directoryGuid(authentication);

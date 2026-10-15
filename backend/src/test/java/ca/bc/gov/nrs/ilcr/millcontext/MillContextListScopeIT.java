@@ -29,17 +29,16 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * submitter with no associations sees an empty list (fail-closed). Admin's all-mills view is proven
  * in {@link MillContextListIT}.
  *
- * <p>Runs with security ON (app default). Identity is the raw {@code custom:idp_user_id} claim
- * (equals {@code ILCR_MILL_USER_XREF.USER_GUID}); the {@code jwt()} post-processor injects it.
- * Seeds its own {@code THE.ILCR_USER} + {@code THE.ILCR_MILL_USER_XREF} rows against the shared V2
- * mills (514 ACT, 515 ACT, 516 CLS, 517 ACT) and cleans them up, so it is order-independent of
- * other ITs.
+ * <p>Runs with security ON (app default). Identity is the CSS {@code idir_user_guid} claim (equals
+ * {@code ILCR_MILL_USER_XREF.USER_GUID}); the {@code jwt()} post-processor injects it. Seeds its
+ * own {@code THE.ILCR_USER} + {@code THE.ILCR_MILL_USER_XREF} rows against the shared V2 mills (514
+ * ACT, 515 ACT, 516 CLS, 517 ACT) and cleans them up, so it is order-independent of other ITs.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("Home mill list — per-user scoping (Story 5.5)")
 class MillContextListScopeIT extends AbstractOracleIT {
 
-  // 32 chars — the directory-GUID column width (custom:idp_user_id).
+  // 32 chars — the directory-GUID column width (idir_user_guid / bceid_user_guid).
   private static final String GUID = "SCOPEIT1BBBBCCCCDDDDEEEEFFFF0001";
   private static final String GUID_NONE = "SCOPEIT2BBBBCCCCDDDDEEEEFFFF0002";
   // A DIFFERENT submitter, used to prove cross-user isolation: a mill actively assigned to this
@@ -49,12 +48,12 @@ class MillContextListScopeIT extends AbstractOracleIT {
 
   private static final RequestPostProcessor SUBMITTER =
       jwt()
-          .jwt(j -> j.claim("custom:idp_user_id", GUID))
+          .jwt(j -> j.claim("identity_provider", "azureidir").claim("idir_user_guid", GUID))
           .authorities(new SimpleGrantedAuthority("SUBMITTER"));
 
   private static final RequestPostProcessor SUBMITTER_NO_ASSOC =
       jwt()
-          .jwt(j -> j.claim("custom:idp_user_id", GUID_NONE))
+          .jwt(j -> j.claim("identity_provider", "azureidir").claim("idir_user_guid", GUID_NONE))
           .authorities(new SimpleGrantedAuthority("SUBMITTER"));
 
   @MockitoBean private JwtDecoder jwtDecoder;

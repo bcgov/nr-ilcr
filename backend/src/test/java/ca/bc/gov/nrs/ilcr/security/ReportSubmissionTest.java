@@ -144,8 +144,9 @@ class ReportSubmissionTest {
     Jwt jwt =
         Jwt.withTokenValue("t")
             .header("alg", "none")
-            .claim("custom:idp_user_id", GUID)
-            .claim("cognito:groups", List.of("ILCR_ADMIN", "ILCR_SUBMITTER"))
+            .claim("identity_provider", "azureidir")
+            .claim("idir_user_guid", GUID)
+            .claim("client_roles", List.of("ILCR_ADMIN", "ILCR_SUBMITTER"))
             .build();
     return new UsernamePasswordAuthenticationToken(
         jwt,

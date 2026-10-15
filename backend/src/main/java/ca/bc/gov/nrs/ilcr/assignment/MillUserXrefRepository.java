@@ -49,7 +49,7 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * <p>Ordered by mill id ascending to match the legacy user-centric read, which sorted on the mill
    * key.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @return the submitter's assignment rows
    */
   @Query(
@@ -70,7 +70,7 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * of an ended row, and what makes toggling in place correct.
    *
    * @param millId the {@code ILCR_MILL_ID}
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @return the assignment row, or empty when the pair has no row
    */
   @Query(
@@ -92,7 +92,7 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * user repository so the {@code INACTIVE_DATE IS NULL ⇒ active} convention has a single owner —
    * this table's repository and {@link MillUserXrefEntity#isActive()}.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @return true when at least one assignment row has a null {@code INACTIVE_DATE}
    */
   @Query(
@@ -114,8 +114,8 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * legacy already-associated warning rather than letting it surface as a server error.
    *
    * @param millId the {@code ILCR_MILL_ID}
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
-   * @param user the acting administrator's {@code custom:idp_username}, for both audit pairs
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
+   * @param user the acting administrator's {@code idir_username}, for both audit pairs
    * @return the number of rows inserted, always 1
    */
   @Modifying
@@ -139,8 +139,8 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * both dates null would read as active.
    *
    * @param millId the {@code ILCR_MILL_ID}
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
-   * @param user the acting administrator's {@code custom:idp_username}, for both audit pairs
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
+   * @param user the acting administrator's {@code idir_username}, for both audit pairs
    * @return the number of rows inserted, always 1
    */
   @Modifying
@@ -162,9 +162,9 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * matches the legacy activate action exactly.
    *
    * @param millId the {@code ILCR_MILL_ID}
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param revisionCount the revision the caller last read, for the optimistic-lock check
-   * @param user the acting administrator's {@code custom:idp_username}
+   * @param user the acting administrator's {@code idir_username}
    * @return 1 when the row was updated, 0 when another write got there first
    */
   @Modifying
@@ -194,9 +194,9 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
    * in the database enforces that.
    *
    * @param millId the {@code ILCR_MILL_ID}
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param revisionCount the revision the caller last read, for the optimistic-lock check
-   * @param user the acting administrator's {@code custom:idp_username}
+   * @param user the acting administrator's {@code idir_username}
    * @return 1 when the row was updated, 0 when another write got there first
    */
   @Modifying

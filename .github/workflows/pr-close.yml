@@ -24,29 +24,40 @@ jobs:
       - id: zone
         run: echo "zone=$(( ${{ github.event.number }} % 50 ))" >> $GITHUB_OUTPUT
 
-  cleanup:
-    name: Cleanup and Image Promotion
-    needs: [init]
+  promotion:
+    name: Image Promotion
     uses: bcgov/quickstart-openshift-helpers/.github/workflows/.pr-close.yml@a11ad3d1b9288fb40757c4314a62eb86ff227931 # v1.2.1
     permissions:
       packages: write
-    secrets:
-      oc_namespace: ${{ secrets.oc_namespace }}
-      oc_token: ${{ secrets.oc_token }}
-      # Helper defaults oc_server to Silver; this repo is on Gold. Read the
-      # vars.OC_SERVER variable every other workflow uses, not the stale
-      # same-named secret, which predates the move to Gold.
-      oc_server: ${{ vars.OC_SERVER }}
     with:
-      cleanup: label
-      # Resources are labeled with three app values: ${NAME}-${ZONE} (init),
-      # ${NAME}-backend-${ZONE} and ${NAME}-frontend-${ZONE} (deploys).
-      # The default cleanup only deletes app=<repo>-<PR#>, so list all three.
-      cleanup_name: >-
-        ${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}
-        ${{ github.event.repository.name }}-backend-${{ needs.init.outputs.zone }}
-        ${{ github.event.repository.name }}-frontend-${{ needs.init.outputs.zone }}
       # database is promoted too so its `latest` tag stays current for
       # tag_fallback in pr-open builds. Its OpenShift objects live in the
       # tools namespace under app=<repo>-tools, so PR cleanup never touches them.
       packages: backend frontend database
+
+  # A `uses:` job cannot attach an environment, and the OpenShift values live only in the dev
+  # environment, so cleanup runs here rather than in the helper.
+  cleanup:
+    name: Cleanup PR OpenShift Resources
+    needs: [init]
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    environment:
+      name: dev
+      deployment: false
+    steps:
+      - name: Delete this PR's OpenShift resources
+        uses: bcgov/action-oc-runner@111868d1fc50db0a40417ba321d865ef5c931bbd # v1.7.0
+        with:
+          oc_namespace: ${{ secrets.oc_namespace }}
+          oc_token: ${{ secrets.oc_token }}
+          oc_server: ${{ vars.oc_server }}
+          commands: |
+            set -euo pipefail
+            REPO="${{ github.event.repository.name }}"
+            ZONE="${{ needs.init.outputs.zone }}"
+            # Resources are labeled with three app values: ${NAME}-${ZONE} (init),
+            # ${NAME}-backend-${ZONE} and ${NAME}-frontend-${ZONE} (deploys).
+            for name in "${REPO}-${ZONE}" "${REPO}-backend-${ZONE}" "${REPO}-frontend-${ZONE}"; do
+              oc delete all,cm,pvc,secret,networkpolicy -l "app=${name}" --ignore-not-found
+            done
