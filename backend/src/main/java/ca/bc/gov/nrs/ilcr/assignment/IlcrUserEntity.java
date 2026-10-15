@@ -10,9 +10,9 @@ import org.springframework.data.relational.core.mapping.Table;
  * account record (AD-3).
  *
  * <p>{@code userGuid} is the 32-char IDIR/BCeID directory GUID carried by the {@code
- * custom:idp_user_id} claim, so the same value keys this row, the signed-in identity, and the NR
- * User Lookup directory. Without that equality an assigned submitter would never match their own
- * assignment.
+ * idir_user_guid}/{@code bceid_user_guid} claim, so the same value keys this row, the signed-in
+ * identity, and the NR User Lookup directory. Without that equality an assigned submitter would
+ * never match their own assignment.
  *
  * <p>{@code activeInd} is deliberately NOT an authorization input. It never gates login or access —
  * access keys off an active row in {@code ILCR_MILL_USER_XREF} alone. The flag drives only the

@@ -143,16 +143,16 @@ class MillAssociationControllerTest {
   }
 
   @Test
-  @DisplayName("a token without custom:idp_username is refused HERE, not as an ORA-12899")
+  @DisplayName("a token without a directory username is refused HERE, not as an ORA-12899")
   void tokenWithoutUsernameIsRefusedAtTheBoundary() {
     for (String claim : new String[] {null, "", "   "}) {
       Authentication authentication = jwtAuthentication(claim);
 
       assertThatThrownBy(
               () -> controller.add(670L, new AssignSubmitterRequest(USER_GUID), authentication))
-          .as("custom:idp_username=%s", claim)
+          .as("idir_username=%s", claim)
           .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("custom:idp_username");
+          .hasMessageContaining("no directory username");
     }
     verify(service, never()).add(anyLong(), any(), any());
   }
@@ -248,9 +248,13 @@ class MillAssociationControllerTest {
   }
 
   private static Authentication jwtAuthentication(String idpUsername) {
-    Jwt.Builder jwt = Jwt.withTokenValue("t").header("alg", "none").claim("sub", "irrelevant");
+    Jwt.Builder jwt =
+        Jwt.withTokenValue("t")
+            .header("alg", "none")
+            .claim("sub", "irrelevant")
+            .claim("identity_provider", "azureidir");
     if (idpUsername != null) {
-      jwt.claim("custom:idp_username", idpUsername);
+      jwt.claim("idir_username", idpUsername);
     }
     return new JwtAuthenticationToken(jwt.build());
   }

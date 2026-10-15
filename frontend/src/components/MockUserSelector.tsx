@@ -4,7 +4,7 @@ import useAuth from '@/context/auth/useAuth'
 
 /**
  * Local-dev role switcher. Renders ONLY under the Mock auth provider ({@code mock} present) — the
- * real (Amplify) provider carries no role selector (role comes from the FAM JWT), so this is absent
+ * real OIDC provider carries no role selector (role comes from the FAM JWT), so this is absent
  * from deployed DEV/TEST/PROD builds. A live role-switcher in a real environment would be a
  * privilege-escalation hole.
  */

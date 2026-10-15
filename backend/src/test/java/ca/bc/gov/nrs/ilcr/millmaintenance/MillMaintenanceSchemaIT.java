@@ -42,7 +42,7 @@ class MillMaintenanceSchemaIT extends AbstractOracleIT {
         // Added for this surface: legacy stamps a provenance note on every imported row, and the
         // delivery audit trigger copies it into the shadow table.
         .containsEntry("COMMENTS", "VARCHAR2(4000)")
-        // 30 characters is what makes the raw custom:idp_username claim the only usable identity:
+        // 30 characters is what makes the raw idir_username claim the only usable identity:
         // the 32-char directory GUID and the 36-char subject both overflow it.
         .containsEntry("ENTRY_USERID", "VARCHAR2(30)")
         .containsEntry("UPDATE_USERID", "VARCHAR2(30)")

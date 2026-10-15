@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code GET /api/v1/me} with security OFF (the default local/test profile). The {@code
- * MockPrincipalFilter} seeds a principal so {@code /me} answers without a Cognito round-trip and
+ * MockPrincipalFilter} seeds a principal so {@code /me} answers without an SSO round-trip and
  * existing schedule tests keep working (AD-7). The mock role selector drives the backend principal
  * via {@code X-Mock-Groups}, so a dev can act as an admin locally.
  */

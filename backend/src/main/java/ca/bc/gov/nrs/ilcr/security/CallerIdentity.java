@@ -16,7 +16,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * claim-mapping regression fixed in one would have survived in the other.
  *
  * <ul>
- *   <li>A FAM {@code Jwt} principal: its {@code custom:idp_user_id} claim.
+ *   <li>A FAM {@code Jwt} principal: its {@code idir_user_guid}/{@code bceid_user_guid} claim.
  *   <li>The dev/UAT {@link MockUserPrincipal} (security off): the stand-in GUID {@code
  *       MockPrincipalFilter} gives it — not the principal NAME, which feeds the VARCHAR2(30) audit
  *       columns (a FAM GUID is 32 chars). Unreachable when deployed: that filter is not registered.

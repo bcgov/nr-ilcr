@@ -6,9 +6,9 @@ import java.time.LocalDate;
  * Wire shape for one dated submitter↔mill assignment (AD-12 pin, Story 2.1; Stories 2.2–2.4 derive
  * from it).
  *
- * <p>{@code userGuid} is the 32-char directory GUID carried by the {@code custom:idp_user_id}
- * claim, so it is the same value the signed-in identity and the directory lookup carry and an
- * assigned submitter matches their own assignment.
+ * <p>{@code userGuid} is the 32-char directory GUID carried by the {@code idir_user_guid}/{@code
+ * bceid_user_guid} claim, so it is the same value the signed-in identity and the directory lookup
+ * carry and an assigned submitter matches their own assignment.
  *
  * <p>{@code displayName} is resolved when the row is read, from the directory or the token, and is
  * deliberately not persisted anywhere: storing a copy would leave renamed users showing a stale
@@ -27,7 +27,7 @@ import java.time.LocalDate;
  * exists only because the assignment screens display a date; the time is preserved in the entity
  * and must never be written back from this shape.
  *
- * @param userGuid directory GUID ({@code custom:idp_user_id})
+ * @param userGuid directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
  * @param displayName name resolved at read time; null when the user no longer resolves
  * @param millId the mill id
  * @param millNumber the mill number, joined from {@code THE.MILL}

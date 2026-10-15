@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.sql.Timestamp;
 import java.util.List;
@@ -34,8 +34,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  *
  * <p>Security ON, which is required rather than incidental (the 17.1 trap): with security off there
  * is no token and so no directory GUID, and the auditor-recording arm would silently exercise the
- * NULL branch. The admin token carries {@code custom:idp_user_id} and is converted through the
- * production converter, so the audit name comes from {@code custom:idp_username}.
+ * NULL branch. The admin token carries {@code idir_user_guid}/{@code bceid_user_guid} and is
+ * converted through the production converter, so the audit name comes from {@code idir_username}.
  *
  * <p>Fixtures ({@code R__59}): 807 (happy path), 813 (no admin xref), 814 (zero locations) and 815
  * (a 1–10 verify on an S/S mill) are each verified here exactly once; 811 is the rollback arm and
@@ -77,14 +77,14 @@ class Schedule11VerifyIT extends AbstractOracleIT {
   /** The licensee R__59 records on 807 — a verify must leave it alone. */
   private static final String LICENSEE_GUID = "VERIFY11LICENSEE000111122223AA11";
 
-  /** The audit name, from {@code custom:idp_username} (30-char column). */
+  /** The audit name, from {@code idir_username} (30-char column). */
   private static final String ACTING_USER = "verify11admin";
 
   /** A 36-char {@code sub} that would overflow the audit column if the app ever stamped it. */
-  private static final String COGNITO_SUB = "26262626-3333-4444-5555-666666666666";
+  private static final String KEYCLOAK_SUB = "26262626-3333-4444-5555-666666666666";
 
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   private static final List<String> TABLES =
       List.of(
@@ -101,10 +101,11 @@ class Schedule11VerifyIT extends AbstractOracleIT {
     Jwt token =
         Jwt.withTokenValue("verify11-it-token")
             .header("alg", "none")
-            .subject(COGNITO_SUB)
-            .claim("custom:idp_user_id", ADMIN_GUID)
-            .claim("custom:idp_username", ACTING_USER)
-            .claim("cognito:groups", List.of("ILCR_ADMIN"))
+            .subject(KEYCLOAK_SUB)
+            .claim("idir_user_guid", ADMIN_GUID)
+            .claim("idir_username", ACTING_USER)
+            .claim("identity_provider", "azureidir")
+            .claim("client_roles", List.of("ILCR_ADMIN"))
             .build();
     return authentication(CONVERTER.convert(token));
   }

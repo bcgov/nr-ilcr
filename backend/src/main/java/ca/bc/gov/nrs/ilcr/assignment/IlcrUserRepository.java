@@ -26,7 +26,7 @@ public interface IlcrUserRepository extends Repository<IlcrUserEntity, String> {
    * "directory user with no ILCR account yet" case, which the write path provisions on first
    * activate or first mill assignment.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @return the account row, or empty when no account exists
    */
   @Query(
@@ -46,10 +46,10 @@ public interface IlcrUserRepository extends Repository<IlcrUserEntity, String> {
    * mill assignment creates it inactive. That asymmetry is preserved deliberately, so the value is
    * a parameter rather than a constant.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param roleName the legacy ILCR role to stamp
    * @param activeInd {@code "Y"} or {@code "N"}
-   * @param user the acting administrator's {@code custom:idp_username}, for both audit pairs
+   * @param user the acting administrator's {@code idir_username}, for both audit pairs
    * @return the number of rows inserted, always 1
    */
   @Modifying
@@ -72,9 +72,9 @@ public interface IlcrUserRepository extends Repository<IlcrUserEntity, String> {
    * <p>The flag is display and administrative state only — it gates neither login nor access — so
    * this write never changes what the user may do. Only the assignment rows do that.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param activeInd {@code "Y"} or {@code "N"}
-   * @param user the acting administrator's {@code custom:idp_username}
+   * @param user the acting administrator's {@code idir_username}
    * @return the number of rows updated; 0 when no account row exists
    */
   @Modifying

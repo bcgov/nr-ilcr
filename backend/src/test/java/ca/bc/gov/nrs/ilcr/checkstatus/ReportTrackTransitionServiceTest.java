@@ -192,13 +192,14 @@ class ReportTrackTransitionServiceTest {
   }
 
   @Test
-  @DisplayName("the licensee GUID comes from a real JWT's custom:idp_user_id claim")
+  @DisplayName("the licensee GUID comes from a real JWT's directory GUID claim")
   void happyPath_jwtPrincipal_resolvesGuidFromClaim() {
     Jwt jwt =
         Jwt.withTokenValue("t")
             .header("alg", "none")
-            .claim("custom:idp_user_id", GUID)
-            .claim("cognito:groups", List.of("ILCR_SUBMITTER"))
+            .claim("identity_provider", "bceidbusiness")
+            .claim("bceid_user_guid", GUID)
+            .claim("client_roles", List.of("ILCR_SUBMITTER"))
             .build();
     Authentication real =
         new UsernamePasswordAuthenticationToken(

@@ -38,15 +38,14 @@ jobs:
           ORACLEDB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
           ORACLEDB_USERNAME: ${{ secrets.ORACLEDB_USERNAME }}
           ORACLEDB_PASSWORD: ${{ secrets.ORACLEDB_PASSWORD }}
-          USER_POOLS_ID: ${{ secrets.USER_POOLS_ID }}
-          USER_POOLS_WEB_CLIENT_ID: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
-          COGNITO_REDIRECT_SIGN_IN: ${{ vars.COGNITO_REDIRECT_SIGN_IN }}
-          COGNITO_REDIRECT_SIGN_OUT: ${{ vars.COGNITO_REDIRECT_SIGN_OUT }}
+          ILCR_OIDC_ISSUER_URI: ${{ vars.ILCR_OIDC_ISSUER_URI }}
+          ILCR_OIDC_CLIENT_ID: ${{ vars.ILCR_OIDC_CLIENT_ID }}
+          ILCR_OIDC_SITEMINDER_LOGOUT_URL: ${{ vars.ILCR_OIDC_SITEMINDER_LOGOUT_URL }}
         run: |
           set -euo pipefail
           found=""
-          for name in ORACLEDB_HOST ORACLEDB_SERVICENAME ORACLEDB_USERNAME ORACLEDB_PASSWORD USER_POOLS_ID \
-                      USER_POOLS_WEB_CLIENT_ID COGNITO_REDIRECT_SIGN_IN COGNITO_REDIRECT_SIGN_OUT; do
+          for name in ORACLEDB_HOST ORACLEDB_SERVICENAME ORACLEDB_USERNAME ORACLEDB_PASSWORD \
+                      ILCR_OIDC_ISSUER_URI ILCR_OIDC_CLIENT_ID ILCR_OIDC_SITEMINDER_LOGOUT_URL; do
             if [[ -n "${!name:-}" ]]; then
               found="$found $name"
             fi

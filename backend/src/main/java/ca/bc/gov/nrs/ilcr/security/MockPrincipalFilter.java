@@ -95,7 +95,8 @@ public class MockPrincipalFilter extends OncePerRequestFilter {
               + roles.stream()
                   .map(role -> role.name().toLowerCase(Locale.ROOT))
                   .collect(Collectors.joining("-"));
-      // A typed principal carrying the GUID a real caller would hold as `custom:idp_user_id`.
+      // A typed principal carrying the GUID a real caller would hold as `idir_user_guid` or
+      // `bceid_user_guid`.
       // `MockUserPrincipal` documents why it is a type and not the token's `details`, and why
       // getName() must stay the short name rather than becoming the GUID.
       var principal = new MockUserPrincipal(name, userGuid);

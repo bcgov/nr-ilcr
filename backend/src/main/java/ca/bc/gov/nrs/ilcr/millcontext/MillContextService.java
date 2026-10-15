@@ -72,7 +72,7 @@ public class MillContextService {
    * <ul>
    *   <li><b>Admin</b> ({@code ILCR_ADMIN}) bypasses — tied to no mill (DL-22).
    *   <li><b>Real submitter</b> (a FAM {@code Jwt} principal): denied unless {@code
-   *       userHasActiveAssignment(millId, idp_user_id)}; a blank GUID is denied (fail-closed).
+   *       userHasActiveAssignment(millId, userGuid)}; a blank GUID is denied (fail-closed).
    *   <li><b>Mock principal</b> (security off — a non-{@code Jwt} token with no directory GUID):
    *       the check is skipped. Recorded AC6 exemption: the mock is dev-only and the startup guard
    *       forbids it in a deployed environment (FR1), so mill-scope enforcement is exercised by
@@ -109,14 +109,14 @@ public class MillContextService {
    * {@code ILCR_SUBMITTER} sees ONLY mills they are actively associated to (legacy {@code
    * getMills(userGuid)} → {@link MillContextRepository#findMillsForUser(String)}); closed
    * associated mills still appear (no status filter, S06). A submitter whose identity cannot be
-   * resolved — a blank {@code custom:idp_user_id}, e.g. the dev mock principal, which carries no
-   * directory GUID — sees an EMPTY list: fail-closed, never all-mills (a submitter must never see
-   * mills that aren't theirs). Replaces the Story 1.1 unfiltered read now that real identity exists
-   * (AR4).
+   * resolved — a blank {@code idir_user_guid}/{@code bceid_user_guid}, e.g. the dev mock principal,
+   * which carries no directory GUID — sees an EMPTY list: fail-closed, never all-mills (a submitter
+   * must never see mills that aren't theirs). Replaces the Story 1.1 unfiltered read now that real
+   * identity exists (AR4).
    *
    * @param isAdmin whether the caller holds {@code ILCR_ADMIN}
-   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID (blank if
-   *     unavailable)
+   * @param userGuid the caller's raw {@code idir_user_guid}/{@code bceid_user_guid} directory GUID
+   *     (blank if unavailable)
    * @return the caller-scoped mills, ordered by mill number ascending
    */
   public List<MillSummary> listMills(boolean isAdmin, String userGuid) {
@@ -148,10 +148,10 @@ public class MillContextService {
    *       empty set when they genuinely have none, which reads as an empty table / no-mills 404.
    *   <li><b>No identity</b>: the principal carries no directory GUID ({@link
    *       CallerIdentity#currentUserGuid}). NOT an empty scope. A blank or missing {@code
-   *       custom:idp_user_id} — a claim-mapping regression, a token from the wrong issuer — must
-   *       not masquerade as "a user with no mills", or it would fail closed as plausible,
-   *       user-specific empty results and nobody would notice. It is refused outright: 403, audited
-   *       by the AccessDenied handler like every other scope refusal.
+   *       idir_user_guid}/{@code bceid_user_guid} — a claim-mapping regression, a token from the
+   *       wrong issuer — must not masquerade as "a user with no mills", or it would fail closed as
+   *       plausible, user-specific empty results and nobody would notice. It is refused outright:
+   *       403, audited by the AccessDenied handler like every other scope refusal.
    * </ul>
    *
    * <p>Identity comes from the same reader the Home list uses ({@link CallerIdentity}), so the two

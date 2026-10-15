@@ -3,10 +3,10 @@ package ca.bc.gov.nrs.ilcr.userlookup.dto;
 /**
  * One directory candidate for the assignment picker (UC-USR-001).
  *
- * <p>{@code userGuid} is the directory GUID ({@code custom:idp_user_id}) — the exact value written
- * to {@code ILCR_USER.USER_GUID} and the mill xref, and the same value {@code CurrentUser.userGuid}
- * carries. It is never the Cognito {@code sub} and never the BCeID {@code businessGuid}; either
- * substitute would break the association join silently.
+ * <p>{@code userGuid} is the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid}) — the
+ * exact value written to {@code ILCR_USER.USER_GUID} and the mill xref, and the same value {@code
+ * CurrentUser.userGuid} carries. It is never the Keycloak {@code sub} and never the BCeID {@code
+ * businessGuid}; either substitute would break the association join silently.
  *
  * <p>A candidate is a lookup result only — holding one proves nothing about mill access or the
  * {@code ILCR_SUBMITTER} role. Authorization stays with the xref check.
