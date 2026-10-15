@@ -16,6 +16,18 @@ on:
         description: Container tag
         default: ${{ github.event.number }}
         type: string
+      backend_image:
+        description: Full backend image reference, optionally pinned by digest
+        default: ""
+        type: string
+      frontend_image:
+        description: Full frontend image reference, optionally pinned by digest
+        default: ""
+        type: string
+      source_ref:
+        description: Selected tested commit whose deployment templates should be used
+        default: ""
+        type: string
       triggers:
         description: Triggers for deployment
         default: ""
@@ -32,28 +44,128 @@ on:
 
 permissions: {}
 
+env:
+  OC_PROCESS_FLAGS: ${{ inputs.source_ref != '' && inputs.source_ref != github.sha && '--ignore-unknown-parameters' || '' }}
+
 jobs:
   init:
     name: Deploy (init)
-    environment: ${{ inputs.environment }}
+    environment:
+      name: ${{ inputs.environment }}
+      deployment: ${{ inputs.target != 'prod' }}
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
     runs-on: ubuntu-24.04
-    # Secret values go through env, never into `parameters`: the action pastes
-    # the parameters string verbatim into bash (`oc process ... ${parameters}`),
-    # so a quote or $(...) inside a secret would escape the quoting there.
-    env:
-      DB_USER: ${{ secrets.ORACLEDB_USERNAME }}
-      DB_PASS: ${{ secrets.ORACLEDB_PASSWORD }}
-      DB_HOST: ${{ secrets.ORACLEDB_HOST }}
-      DB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
-      COGNITO_POOL: ${{ secrets.USER_POOLS_ID }}
-      COGNITO_CLIENT: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
+    permissions:
+      contents: read
     steps:
+      # An environment secret replaces the inherited repository secret only when it exists. Without
+      # this check, a missing environment secret would fall back to the repository-level value of the
+      # same name. PR deploys use the dev environment.
+      - name: Validate OpenShift namespace
+        if: ${{ inputs.environment != '' }}
+        env:
+          DEPLOY_ENV: ${{ inputs.environment }}
+          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+        run: |
+          if [[ "$OC_NAMESPACE" != *-"$DEPLOY_ENV" ]]; then
+            echo "::error title=Wrong OpenShift namespace::OC_NAMESPACE must be the ${DEPLOY_ENV} namespace, ending in -${DEPLOY_ENV}."
+            exit 1
+          fi
+
+      # Release PROD has already refused repository-level copies of these, so a value here can only
+      # come from the prod environment. Fail rather than deploy PROD with any of them missing.
+      - name: Require PROD values
+        if: ${{ inputs.target == 'prod' }}
+        env:
+          ORACLEDB_HOST: ${{ secrets.ORACLEDB_HOST }}
+          ORACLEDB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
+          ORACLEDB_USERNAME: ${{ secrets.ORACLEDB_USERNAME }}
+          ORACLEDB_PASSWORD: ${{ secrets.ORACLEDB_PASSWORD }}
+          USER_POOLS_ID: ${{ secrets.USER_POOLS_ID }}
+          USER_POOLS_WEB_CLIENT_ID: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          for name in ORACLEDB_HOST ORACLEDB_SERVICENAME ORACLEDB_USERNAME ORACLEDB_PASSWORD USER_POOLS_ID USER_POOLS_WEB_CLIENT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::${name} must be set in the prod GitHub Environment"
+              exit 1
+            fi
+          done
+
+      # Check both images before anything rolls out, so a bad frontend reference cannot leave
+      # a new backend running beside the old frontend. PR deploys (dev) use their head-SHA tags.
+      - name: Validate release images
+        if: ${{ inputs.environment != '' && inputs.environment != 'dev' }}
+        env:
+          BACKEND_IMAGE: ${{ inputs.backend_image }}
+          FRONTEND_IMAGE: ${{ inputs.frontend_image }}
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+        run: |
+          for release in "backend=$BACKEND_IMAGE" "frontend=$FRONTEND_IMAGE"; do
+            component="${release%%=*}"
+            if [[ ! "${release#*=}" =~ ^"$IMAGE_REPOSITORY/$component"@sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::TEST and PROD require the repository's ${component} image pinned by SHA-256 digest."
+              exit 1
+            fi
+          done
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_ref || github.sha }}
+      - name: Stage init template
+        run: |
+          mkdir -p "$RUNNER_TEMP/deploy-templates"
+          cp common/openshift.init.yml "$RUNNER_TEMP/deploy-templates/init.yml"
+      - name: Configure application origin
+        id: origin
+        env:
+          DEPLOY_TARGET: ${{ inputs.target }}
+          DEPLOY_ENV: ${{ inputs.environment }}
+          APP_NAME: ${{ github.event.repository.name }}
+          APPS_DOMAIN: ${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}
+          VANITY_HOST: ${{ vars.VANITY_HOST }}
+          VANITY_TLS_CERTIFICATE: ${{ secrets.VANITY_TLS_CERTIFICATE }}
+          VANITY_TLS_KEY: ${{ secrets.VANITY_TLS_KEY }}
+          VANITY_TLS_CA_CERTIFICATE: ${{ secrets.VANITY_TLS_CA_CERTIFICATE }}
+        run: |
+          set -euo pipefail
+          if [[ "$DEPLOY_TARGET" == prod ]]; then
+            # The namespace check above then requires a -prod namespace.
+            if [[ "$DEPLOY_ENV" != prod ]]; then
+              echo "::error::PROD requires the prod GitHub Environment"
+              exit 1
+            fi
+            for setting in VANITY_HOST VANITY_TLS_CERTIFICATE VANITY_TLS_KEY VANITY_TLS_CA_CERTIFICATE; do
+              if [[ -z "${!setting}" ]]; then
+                echo "::error::${setting} must be configured in the prod GitHub Environment"
+                exit 1
+              fi
+            done
+            if [[ ! "$VANITY_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]]; then
+              echo "::error::VANITY_HOST must be a hostname without a scheme or path"
+              exit 1
+            fi
+            app_origin="https://$VANITY_HOST"
+          else
+            app_origin="https://$APP_NAME-$DEPLOY_TARGET.$APPS_DOMAIN"
+          fi
+          echo "app_origin=$app_origin" >> "$GITHUB_OUTPUT"
+      # Secret values go through env, never into `parameters`: the action pastes
+      # the parameters string verbatim into bash (`oc process ... ${parameters}`),
+      # so a quote or $(...) inside a secret would escape the quoting there.
       - uses: bcgov/action-deployer-openshift@e2d60eb9cacceb89c3b97d8dcf0a2c460eea5eab # v4.2.3
         id: deploy
+        env:
+          DB_USER: ${{ secrets.ORACLEDB_USERNAME }}
+          DB_PASS: ${{ secrets.ORACLEDB_PASSWORD }}
+          DB_HOST: ${{ secrets.ORACLEDB_HOST }}
+          DB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
+          COGNITO_POOL: ${{ secrets.USER_POOLS_ID }}
+          COGNITO_CLIENT: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
         with:
-          file: common/openshift.init.yml
+          file: ${{ runner.temp }}/deploy-templates/init.yml
           oc_namespace: ${{ secrets.OC_NAMESPACE }}
           oc_server: ${{ vars.OC_SERVER }}
           oc_token: ${{ secrets.OC_TOKEN }}
@@ -75,22 +187,31 @@ jobs:
             -p COGNITO_CLIENT_ID="$COGNITO_CLIENT"
             -p COGNITO_DOMAIN='${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}'
             -p COGNITO_OAUTH_SCOPES='${{ vars.COGNITO_OAUTH_SCOPES || 'openid' }}'
-            -p COGNITO_REDIRECT_SIGN_IN='${{ vars.COGNITO_REDIRECT_SIGN_IN || format('https://{0}-{1}.apps.gold.devops.gov.bc.ca', github.event.repository.name, inputs.target) }}'
-            -p COGNITO_REDIRECT_SIGN_OUT='${{ vars.COGNITO_REDIRECT_SIGN_OUT || format('https://{0}-{1}.apps.gold.devops.gov.bc.ca/logout', github.event.repository.name, inputs.target) }}'
+            -p COGNITO_REDIRECT_SIGN_IN='${{ vars.COGNITO_REDIRECT_SIGN_IN || steps.origin.outputs.app_origin }}'
+            -p COGNITO_REDIRECT_SIGN_OUT='${{ vars.COGNITO_REDIRECT_SIGN_OUT || format('{0}/logout', steps.origin.outputs.app_origin) }}'
+            $OC_PROCESS_FLAGS
+          debug: false
           triggers: ${{ inputs.triggers }}
 
   deploy:
     name: Deploy (${{ matrix.name }})
-    environment: ${{ inputs.environment }}
+    environment:
+      name: ${{ inputs.environment }}
+      deployment: ${{ inputs.target != 'prod' }}
     needs: [init]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     timeout-minutes: 15
     strategy:
+      # Roll out the backend before the frontend: one leg at a time in matrix order, and
+      # fail-fast cancels the queued frontend leg if the backend leg fails.
+      max-parallel: 1
+      fail-fast: true
       matrix:
         name: [backend, frontend]
         include:
           - name: backend
-            file: backend/openshift.deploy.yml
             # Oracle host/servicename are environment-scoped SECRETS, passed
             # through the init job above (env-scoped secrets don't resolve in
             # this matrix — GitHub evaluates it before the environment
@@ -100,16 +221,45 @@ jobs:
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
               -p ILCR_DATASOURCE_ENABLED="${{ vars.ILCR_DATASOURCE_ENABLED || 'true' }}"
           - name: frontend
-            file: frontend/openshift.deploy.yml
-            parameters: -p IMAGE_TAG="${{ inputs.tag }}"
-              -p COGNITO_DOMAIN="${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}"
+            parameters: -p COGNITO_DOMAIN="$COGNITO_DOMAIN"
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
+    env:
+      IMAGE_REF: ${{ matrix.name == 'backend' && (inputs.backend_image || format('ghcr.io/{0}/backend:{1}', github.repository, inputs.tag)) || (inputs.frontend_image || format('ghcr.io/{0}/frontend:{1}', github.repository, inputs.tag)) }}
+      VANITY_HOST: ${{ vars.VANITY_HOST }}
+      APPS_DOMAIN: ${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}
+      COGNITO_DOMAIN: ${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}
     steps:
+      # Each job resolves its environment secrets separately; see the init job.
+      - name: Validate OpenShift namespace
+        if: ${{ inputs.environment != '' }}
+        env:
+          DEPLOY_ENV: ${{ inputs.environment }}
+          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+        run: |
+          if [[ "$OC_NAMESPACE" != *-"$DEPLOY_ENV" ]]; then
+            echo "::error title=Wrong OpenShift namespace::OC_NAMESPACE must be the ${DEPLOY_ENV} namespace, ending in -${DEPLOY_ENV}."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_ref || github.sha }}
+      - name: Stage deployment templates
+        env:
+          COMPONENT: ${{ matrix.name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/deploy-templates"
+          cp "$COMPONENT/openshift.deploy.yml" "$RUNNER_TEMP/deploy-templates/$COMPONENT.yml"
+          if [[ "$COMPONENT" == frontend ]]; then
+            cp frontend/openshift.route.yml "$RUNNER_TEMP/deploy-templates/route.yml"
+            cp frontend/openshift.vanity-route.yml "$RUNNER_TEMP/deploy-templates/vanity-route.yml"
+          fi
       - uses: bcgov/action-deployer-openshift@e2d60eb9cacceb89c3b97d8dcf0a2c460eea5eab # v4.2.3
         id: deploy
         with:
-          file: ${{ matrix.file }}
+          file: ${{ runner.temp }}/deploy-templates/${{ matrix.name }}.yml
           oc_namespace: ${{ secrets.OC_NAMESPACE }}
           oc_server: ${{ vars.OC_SERVER }}
           oc_token: ${{ secrets.OC_TOKEN }}
@@ -117,8 +267,49 @@ jobs:
           lite_mode: ${{ github.event_name == 'pull_request' }}
           parameters: -p ZONE="${{ inputs.target }}"
             -p NAME="${{ github.event.repository.name }}"
+            -p IMAGE_REF="$IMAGE_REF"
+            -p ROLLOUT_TRIGGER="${{ github.run_id }}-${{ github.run_attempt }}"
             ${{ matrix.parameters }}
+            $OC_PROCESS_FLAGS
           triggers: ${{ inputs.triggers }}
+
+      - name: Default Route (non-PROD)
+        if: ${{ matrix.name == 'frontend' && inputs.target != 'prod' }}
+        uses: bcgov/action-deployer-openshift@e2d60eb9cacceb89c3b97d8dcf0a2c460eea5eab # v4.2.3
+        with:
+          file: ${{ runner.temp }}/deploy-templates/route.yml
+          oc_namespace: ${{ secrets.OC_NAMESPACE }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_token: ${{ secrets.OC_TOKEN }}
+          overwrite: true
+          debug: false
+          parameters:
+            -p NAME="${{ github.event.repository.name }}"
+            -p ZONE="${{ inputs.target }}"
+            -p DOMAIN="$APPS_DOMAIN"
+          triggers: ${{ inputs.triggers }}
+      - name: Vanity Route (PROD)
+        if: ${{ matrix.name == 'frontend' && inputs.target == 'prod' }}
+        uses: bcgov/action-deployer-openshift@e2d60eb9cacceb89c3b97d8dcf0a2c460eea5eab # v4.2.3
+        env:
+          VANITY_TLS_CERTIFICATE: ${{ secrets.VANITY_TLS_CERTIFICATE }}
+          VANITY_TLS_KEY: ${{ secrets.VANITY_TLS_KEY }}
+          VANITY_TLS_CA_CERTIFICATE: ${{ secrets.VANITY_TLS_CA_CERTIFICATE }}
+        with:
+          file: ${{ runner.temp }}/deploy-templates/vanity-route.yml
+          oc_namespace: ${{ secrets.OC_NAMESPACE }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_token: ${{ secrets.OC_TOKEN }}
+          overwrite: true
+          debug: false
+          parameters:
+            -p NAME="${{ github.event.repository.name }}"
+            -p ZONE="${{ inputs.target }}"
+            -p VANITY_HOST="$VANITY_HOST"
+            -p VANITY_TLS_CERTIFICATE="$VANITY_TLS_CERTIFICATE"
+            -p VANITY_TLS_KEY="$VANITY_TLS_KEY"
+            -p VANITY_TLS_CA_CERTIFICATE="$VANITY_TLS_CA_CERTIFICATE"
+            $OC_PROCESS_FLAGS
 
   # Shared Oracle in the TOOLS namespace, deployed only after the backend and
   # frontend so app deploys never wait on it. One instance serves every zone
@@ -131,23 +322,27 @@ jobs:
   # so OC_NAMESPACE_TOOLS, OC_TOKEN_TOOLS and TOOLS_ORACLEDB_PASSWORD are
   # repo-level secrets (via `secrets: inherit`).
   deploy-database:
+    if: ${{ inputs.target != 'prod' }}
     name: Deploy (database)
     needs: [deploy]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     timeout-minutes: 15
-    env:
-      DB_PASS: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
-      NS_TOOLS: ${{ secrets.OC_NAMESPACE_TOOLS }}
     steps:
       # The template's NetworkPolicy needs the license plate to admit the
       # product's dev/test namespaces; derive it instead of adding a secret.
       - name: Derive license plate
+        env:
+          NS_TOOLS: ${{ secrets.OC_NAMESPACE_TOOLS }}
         run: |
           LICENSE_PLATE="${NS_TOOLS%-tools}"
           echo "::add-mask::$LICENSE_PLATE"
           echo "LICENSE_PLATE=$LICENSE_PLATE" >> $GITHUB_ENV
       - uses: bcgov/action-deployer-openshift@e2d60eb9cacceb89c3b97d8dcf0a2c460eea5eab # v4.2.3
         id: deploy
+        env:
+          DB_PASS: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
         with:
           file: database/openshift.deploy.yml
           oc_namespace: ${{ secrets.OC_NAMESPACE_TOOLS }}

@@ -1,0 +1,34 @@
+---
+# Default cluster-hostname route for DEV previews and TEST only.
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: nr-ilcr-frontend-route
+parameters:
+  - name: NAME
+    value: nr-ilcr
+  - name: ZONE
+    required: true
+  - name: DOMAIN
+    value: apps.gold.devops.gov.bc.ca
+  - name: COMPONENT
+    value: frontend
+objects:
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      labels:
+        app: ${NAME}-${ZONE}
+      name: ${NAME}-${ZONE}-${COMPONENT}
+      annotations:
+        haproxy.router.openshift.io/timeout: 300s
+        router.openshift.io/cookie-same-site: Lax
+    spec:
+      host: ${NAME}-${ZONE}.${DOMAIN}
+      to:
+        kind: Service
+        name: ${NAME}-${ZONE}-${COMPONENT}
+        weight: 100
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
