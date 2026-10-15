@@ -218,7 +218,7 @@ Every endpoint and the permission it requires is listed in [`docs/api-inventory.
 ## OpenShift Status
 
 - **Environments.** Pull requests that touch deployable paths deploy a sandbox (zone = PR number mod 50). Merges to `main` deploy to TEST.
-- **PROD is not yet enabled.** The PROD pipeline (deploy, Sysdig monitor, image promotion) is commented out in `.github/workflows/merge.yml` until the `prod` GitHub environment has its own `ORACLEDB_*` secrets. Restore those jobs to open PROD.
+- **PROD requires a manual tested-tag release.** Merges deploy TEST and record immutable image digests. `ORACLEDB_*` and `USER_POOLS_*` live only in the `dev`, `test` and `prod` environments, never at repository level, because a value missing from an environment silently falls back to the repository one; PR deploys use `dev`. Release PROD fails before deploying if any of them exists at repository or organization level or `prod` lacks one.
 - **Security is always on.** Deployed pods always enforce FAM/Cognito JWT authentication: `ILCR_SECURITY_ENABLED` is hard-coded `"true"` in `backend/openshift.deploy.yml`.
 - **Datasource.** `ILCR_DATASOURCE_ENABLED` defaults to `true`. It can be set to `false` with a **repository-level** GitHub variable for a data-less smoke deployment. The deploy matrix reads it before the environment attaches, so an environment-scoped value is ignored.
 - **Fail-closed guard.** The backend also refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data.

@@ -5,10 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - '*.md'
-      - '.github/**'
       - '.github/graphics/**'
-      - '!.github/workflows/**'
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}
@@ -24,21 +21,39 @@ jobs:
       pull-requests: read
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
+      backend_image: ${{ steps.images.outputs.backend_image }}
+      frontend_image: ${{ steps.images.outputs.frontend_image }}
+      capture_attempt: ${{ steps.images.outputs.capture_attempt }}
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # PR images are built once; synchronize the PR with main before merging.
+      # Capture their immutable digests before TEST, and release exactly that pair.
       # Get PR number for squash merges to main
       - id: pr
         uses: bcgov/action-get-pr@28b0adf8e4d40720d41f9c87356ce24b0a4bd6af # v0.3.1
+      - name: Resolve candidate image digests
+        id: images
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.pr }}
+        run: node .github/scripts/release-images.mjs capture
+
   # TEST deploys run on every merge and fail visibly if misconfigured.
   deploy-test:
     name: TEST Deploys (${{ needs.init.outputs.pr }})
     needs: [init]
+    permissions:
+      contents: read
     uses: ./.github/workflows/reusable-deploy.yml
     secrets: inherit
     with:
       environment: test
       target: test
       tag: ${{ needs.init.outputs.pr }}
+      backend_image: ${{ needs.init.outputs.backend_image }}
+      frontend_image: ${{ needs.init.outputs.frontend_image }}
 
   tests:
     name: Tests
@@ -51,63 +66,48 @@ jobs:
     with:
       target: test
 
-  # ── PROD pipeline: commented out until the prod environment is ready ──
-  # It still lacks prod-scoped ORACLEDB_* secrets and would silently fall
-  # back to the repo-level TEST database values. Once those are set, restore
-  # the jobs below and add deploy-prod + promote back to the results job's
-  # `needs` list.
-  #
-  # deploy-prod:
-  #   name: PROD Deploys (${{ needs.init.outputs.pr }})
-  #   needs: [tests, init]
-  #   uses: ./.github/workflows/reusable-deploy.yml
-  #   secrets: inherit
-  #   with:
-  #     environment: prod
-  #     target: prod
-  #     tag: ${{ needs.init.outputs.pr }}
-  #
-  # # Sync Sysdig email alerts for PROD. No-ops cleanly if SYSDIG_API_TOKEN is
-  # # unset or monitoring/alerts/ is empty — adoption is gradual. Alert
-  # # templates live in monitoring/alerts/ in this repo; add or remove files
-  # # there to customize the alert set.
-  # monitor-prod:
-  #   name: Sysdig Monitor (PROD)
-  #   needs: [deploy-prod]
-  #   runs-on: ubuntu-24.04
-  #   environment: prod
-  #   permissions:
-  #     contents: read
-  #   timeout-minutes: 5
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #     - uses: bcgov/actions/sysdig-monitor@4ad61a784f1c17765b03d8d6de9737c1d3f4c0f2 # v0.5.0
-  #       with:
-  #         sysdig_api_token: ${{ secrets.SYSDIG_API_TOKEN }}
-  #         oc_namespace: ${{ secrets.oc_namespace }}
-  #         app: ${{ github.event.repository.name }}
-  #
-  # promote:
-  #   name: Promote Images
-  #   needs: [deploy-prod, init]
-  #   runs-on: ubuntu-slim
-  #   permissions:
-  #     packages: write
-  #   strategy:
-  #     matrix:
-  #       package: [backend, frontend]
-  #   timeout-minutes: 1
-  #   steps:
-  #     - uses: shrink/actions-docker-registry-tag@e6aaef25c595b6e0edd18bf4c7dbfea3abd43299 # v5
-  #       with:
-  #         registry: ghcr.io
-  #         repository: ${{ github.repository }}/${{ matrix.package }}
-  #         target: ${{ needs.init.outputs.pr }}
-  #         tags: prod
+  release-candidate:
+    name: Record tested release candidate
+    needs: [init, tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Record tested images
+        env:
+          CAPTURE_ATTEMPT: ${{ needs.init.outputs.capture_attempt }}
+          BACKEND_IMAGE: ${{ needs.init.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.init.outputs.frontend_image }}
+        run: node .github/scripts/release-images.mjs record "$RUNNER_TEMP/release-candidate.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-candidate-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-candidate.json
+          if-no-files-found: error
+      - name: Show how to release this commit
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "### Ready for PROD"
+            echo
+            echo "This commit passed TEST. To release it, tag it with the next version:"
+            echo
+            echo '```bash'
+            echo "git fetch origin && git tag v1.0.0 $RELEASE_SHA && git push origin v1.0.0"
+            echo '```'
+            echo
+            echo "Or use **Releases → Draft a new release**: type the new tag, set **Target** to this commit, and publish."
+            echo
+            echo "Then open **Actions → Release PROD → Run workflow**, keep branch \`main\`, and enter the tag."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   results:
     name: Merge Results
-    needs: [init, deploy-test, tests]
+    needs: [init, deploy-test, tests, release-candidate]
     if: always()
     runs-on: ubuntu-slim
     timeout-minutes: 1

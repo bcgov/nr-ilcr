@@ -1,0 +1,56 @@
+---
+# PROD-only custom-hostname Route for the frontend. This is the only public
+# frontend Route deployed to PROD; the default Gold cluster Route is applied
+# only to DEV previews and TEST.
+#
+# This template is deployed separately because OpenShift templates cannot
+# conditionally emit an object. Certificate material is supplied from GitHub
+# Environment secrets at deploy time and must never be committed.
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: nr-ilcr-frontend-vanity-route
+parameters:
+  - name: NAME
+    description: App name prefix used by the main deployment
+    value: nr-ilcr
+  - name: ZONE
+    description: Deployment zone; expected to be prod
+    required: true
+  - name: VANITY_HOST
+    description: Custom public hostname, for example ilcr.nrs.gov.bc.ca
+    required: true
+  - name: VANITY_TLS_CERTIFICATE
+    description: PEM leaf/server certificate for VANITY_HOST
+    required: true
+  - name: VANITY_TLS_KEY
+    description: PEM private key matching VANITY_TLS_CERTIFICATE
+    required: true
+  - name: VANITY_TLS_CA_CERTIFICATE
+    description: PEM CA chain in issuer order
+    required: true
+objects:
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: ${NAME}-${ZONE}-frontend-vanity
+      labels:
+        app: ${NAME}-${ZONE}
+        app.kubernetes.io/name: ${NAME}-frontend
+        app.kubernetes.io/instance: ${ZONE}
+      annotations:
+        haproxy.router.openshift.io/timeout: 300s
+        router.openshift.io/cookie-same-site: Lax
+    spec:
+      host: ${VANITY_HOST}
+      to:
+        kind: Service
+        name: ${NAME}-${ZONE}-frontend
+      port:
+        targetPort: http
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+        certificate: ${VANITY_TLS_CERTIFICATE}
+        key: ${VANITY_TLS_KEY}
+        caCertificate: ${VANITY_TLS_CA_CERTIFICATE}

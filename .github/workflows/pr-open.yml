@@ -51,19 +51,40 @@ jobs:
           build_args: |
             BUILDKIT_INLINE_CACHE=1
 
+  # Release-control tests run inside the PR Results gate, as in LEXIS's backend-tests job.
+  release-tests:
+    name: Release Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify release controls
+        run: node --test .github/scripts/release-images.test.mjs
+
   deploys:
+    permissions:
+      contents: read
     name: Deploys (${{ github.event.number }})
     needs: [builds, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets: inherit
     with:
+      # PR previews read the dev environment, never repository-level deployment values.
+      environment: dev
       target: ${{ needs.init.outputs.zone }}
       tag: ${{ github.event.pull_request.head.sha }}
       # database/ included so a database-only PR still deploys (deploy-database
       # reuses this list) and runs the test stage — otherwise the new image is
       # built but never rolled out or exercised, and the documented tools-DB
       # recovery (delete the deployment, re-run) silently no-ops.
-      triggers: ('backend/', 'frontend/', 'common/', 'database/', '.github/workflows/')
+      triggers: ('backend/', 'frontend/', 'common/', 'database/', '.github/workflows/', '.github/scripts/')
 
   tests:
      name: Tests
@@ -83,7 +104,7 @@ jobs:
   # ==========================================================================
   results:
     name: PR Results
-    needs: [init, builds, deploys, tests]
+    needs: [init, builds, release-tests, deploys, tests]
     if: always()
     runs-on: ubuntu-slim
     timeout-minutes: 1

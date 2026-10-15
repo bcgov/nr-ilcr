@@ -1,0 +1,166 @@
+name: Release PROD
+run-name: Release ${{ inputs.release_tag }} to PROD by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag to release, e.g. v1.0.0. Tag a main commit whose Merge run passed TEST first; that run's summary shows how.
+        required: true
+        type: string
+
+concurrency:
+  group: ilcr-prod-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  prepare:
+    name: Verify tested release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
+      backend_image: ${{ steps.images.outputs.backend_image }}
+      frontend_image: ${{ steps.images.outputs.frontend_image }}
+    steps:
+      # This job attaches no environment, so it sees only repository- and organization-level values.
+      # A value missing from the prod environment falls back to one of those silently, so none of
+      # these may exist there. Only emptiness is tested and only names are printed.
+      - name: Refuse repository-level deployment values
+        env:
+          ORACLEDB_HOST: ${{ secrets.ORACLEDB_HOST }}
+          ORACLEDB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
+          ORACLEDB_USERNAME: ${{ secrets.ORACLEDB_USERNAME }}
+          ORACLEDB_PASSWORD: ${{ secrets.ORACLEDB_PASSWORD }}
+          USER_POOLS_ID: ${{ secrets.USER_POOLS_ID }}
+          USER_POOLS_WEB_CLIENT_ID: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
+          COGNITO_REDIRECT_SIGN_IN: ${{ vars.COGNITO_REDIRECT_SIGN_IN }}
+          COGNITO_REDIRECT_SIGN_OUT: ${{ vars.COGNITO_REDIRECT_SIGN_OUT }}
+        run: |
+          set -euo pipefail
+          found=""
+          for name in ORACLEDB_HOST ORACLEDB_SERVICENAME ORACLEDB_USERNAME ORACLEDB_PASSWORD USER_POOLS_ID \
+                      USER_POOLS_WEB_CLIENT_ID COGNITO_REDIRECT_SIGN_IN COGNITO_REDIRECT_SIGN_OUT; do
+            if [[ -n "${!name:-}" ]]; then
+              found="$found $name"
+            fi
+          done
+          if [[ -n "$found" ]]; then
+            echo "::error::Set these only in the dev, test and prod environments, then delete the repository or organization copies:$found"
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check the release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+            echo "::error::Enter a Git tag name such as v1.0.0"
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+            echo "::error::Tag $RELEASE_TAG does not exist. Tag the main commit to release (its Merge run summary shows how), then run Release PROD again."
+            exit 1
+          fi
+      - name: Resolve successful TEST run
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node .github/scripts/release-images.mjs resolve
+      # The resolve step accepted this tag's format and its tested main commit.
+      - name: Record validated release tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.release.outputs.run_id }}
+          name: release-candidate-${{ steps.release.outputs.run_attempt }}
+          path: ${{ runner.temp }}/release-candidate
+      - name: Validate tested image manifest
+        id: images
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          TEST_RUN_ID: ${{ steps.release.outputs.run_id }}
+          TEST_RUN_ATTEMPT: ${{ steps.release.outputs.run_attempt }}
+        run: node .github/scripts/release-images.mjs validate "$RUNNER_TEMP/release-candidate/release-candidate.json"
+
+  deploy-prod:
+    name: PROD Deploy (${{ inputs.release_tag }})
+    needs: [prepare]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-deploy.yml
+    secrets: inherit
+    with:
+      environment: prod
+      target: prod
+      # Only the backend APP_VERSION label; both images are pinned by digest.
+      tag: ${{ needs.prepare.outputs.tag }}
+      backend_image: ${{ needs.prepare.outputs.backend_image }}
+      frontend_image: ${{ needs.prepare.outputs.frontend_image }}
+      source_ref: ${{ needs.prepare.outputs.sha }}
+
+  # Sync Sysdig email alerts for PROD. No-ops cleanly if SYSDIG_API_TOKEN is
+  # unset; alert templates live in monitoring/alerts/.
+  monitor-prod:
+    name: Sysdig Monitor (PROD)
+    needs: [deploy-prod, prepare]
+    runs-on: ubuntu-24.04
+    environment:
+      name: prod
+      deployment: false
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: bcgov/actions/sysdig-monitor@4ad61a784f1c17765b03d8d6de9737c1d3f4c0f2 # v0.5.0
+        with:
+          sysdig_api_token: ${{ secrets.SYSDIG_API_TOKEN }}
+          oc_namespace: ${{ secrets.OC_NAMESPACE }}
+          app: nr-ilcr
+
+  record-deployment:
+    name: Record released commit
+    needs: [prepare, deploy-prod]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment:
+      name: prod
+      deployment: false
+    permissions:
+      deployments: write
+    steps:
+      - name: Record release result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          DEPLOYMENT_STATE: ${{ needs.deploy-prod.result == 'success' && 'success' || 'failure' }}
+          VANITY_HOST: ${{ vars.VANITY_HOST }}
+        run: |
+          deployment_id="$(jq -n --arg ref "$RELEASE_SHA" \
+            '{ref: $ref, environment: "prod", production_environment: true, auto_merge: false, required_contexts: []}' \
+            | gh api --method POST "repos/$GITHUB_REPOSITORY/deployments" --input - --jq .id)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses" \
+            -f state="$DEPLOYMENT_STATE" \
+            -f log_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -f environment_url="https://$VANITY_HOST" \
+            -f description="Manual tagged release; see run summary for tested image digests" \
+            --silent

@@ -1,6 +1,12 @@
 apiVersion: template.openshift.io/v1
 kind: Template
 parameters:
+  - name: ROLLOUT_TRIGGER
+    description: Deployment run and attempt; refresh mounted runtime configuration
+    value: ""
+  - name: IMAGE_REF
+    description: Full container image reference; tested releases use a sha256 digest
+    required: true
   - name: NAME
     description: Module name
     required: true
@@ -10,23 +16,6 @@ parameters:
   - name: ZONE
     description: Deployment zone, e.g. pr-### or prod
     required: true
-  - name: IMAGE_TAG
-    description: Image tag to use
-    required: true
-  # PR deploys pass the immutable head SHA as IMAGE_TAG, so every push changes
-  # the pod spec and forces a rollout (the mutable PR-number tag would leave
-  # `oc apply` seeing an unchanged Deployment and keep serving the stale image
-  # despite imagePullPolicy: Always). Test deploys (merge.yml) use the
-  # PR-number tag, which is unique per merge, so the spec changes there too.
-  - name: REGISTRY
-    description: Container registry to import from
-    value: ghcr.io
-  - name: ORG_NAME
-    description: Organization name
-    value: bcgov
-  - name: DOMAIN
-    description: OpenShift apps domain. Override when Gold is provisioned.
-    value: apps.gold.devops.gov.bc.ca
   - name: MIN_REPLICAS
     description: The minimum amount of replicas for the horizontal pod autoscaler.
     value: "3"
@@ -60,6 +49,8 @@ objects:
         type: RollingUpdate
       template:
         metadata:
+          annotations:
+            app.openshift.io/rollout-trigger: ${ROLLOUT_TRIGGER}
           labels:
             app: ${NAME}-${ZONE}
             deployment: ${NAME}-${ZONE}-${COMPONENT}
@@ -76,7 +67,7 @@ objects:
                     topologyKey: kubernetes.io/hostname
           initContainers:
             - name: wait-for-backend
-              image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
+              image: ${IMAGE_REF}
               command:
                 - /bin/sh
                 - -c
@@ -107,7 +98,7 @@ objects:
                   mountPath: /tmp/caddy
           containers:
             - name: ${NAME}
-              image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
+              image: ${IMAGE_REF}
               imagePullPolicy: Always
               ports:
                 - name: http
@@ -207,21 +198,6 @@ objects:
           targetPort: 3000
       selector:
         deployment: ${NAME}-${ZONE}-${COMPONENT}
-  - apiVersion: route.openshift.io/v1
-    kind: Route
-    metadata:
-      labels:
-        app: ${NAME}-${ZONE}
-      name: ${NAME}-${ZONE}-${COMPONENT}
-    spec:
-      host: ${NAME}-${ZONE}.${DOMAIN}
-      to:
-        kind: Service
-        name: ${NAME}-${ZONE}-${COMPONENT}
-        weight: 100
-      tls:
-        termination: edge
-        insecureEdgeTerminationPolicy: Redirect
   - apiVersion: autoscaling/v2
     kind: HorizontalPodAutoscaler
     metadata:
