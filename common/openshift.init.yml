@@ -14,8 +14,7 @@ parameters:
     description: Oracle database password
     required: true
   # Stable, non-secret password: the keystore holds only the Oracle server's
-  # public cert, and a rotating value would desync from the keystore already
-  # built on the PVC (the app would fail to open it after a redeploy).
+  # public cert, and the init container rebuilds it on every pod start.
   - name: ORACLEDB_KEYSTORE_SECRET
     description: Password for the Oracle keystore built by the backend init container
     value: changeit
