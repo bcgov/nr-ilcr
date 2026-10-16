@@ -96,8 +96,8 @@ objects:
                       matchLabels:
                         deployment: ${NAME}-${ZONE}-${COMPONENT}
                     topologyKey: kubernetes.io/hostname
-          # Fetches the Oracle TCPS cert into a keystore on the api-cert PVC
-          # before the app starts. Connecting out to the Oracle host is also
+          # Fetches the Oracle TCPS cert into a keystore on the per-pod api-cert
+          # volume before the app starts. Connecting out to the Oracle host is also
           # what triggers the namespace firewall rule for database egress.
           initContainers:
             - name: ${NAME}-init
@@ -266,10 +266,9 @@ objects:
             - name: report-swap
               emptyDir:
                 sizeLimit: 512Mi
-            # Oracle keystore written by the init container, read by the app
+            # Per pod, as in nr-lexis: a failed fetch can't hide behind an older keystore.
             - name: api-cert
-              persistentVolumeClaim:
-                claimName: ${NAME}-${ZONE}-${COMPONENT}-api-cert
+              emptyDir: {}
             - name: init-tmp
               emptyDir: {}
   - apiVersion: v1
@@ -320,20 +319,6 @@ objects:
               value: 50
               periodSeconds: 60
           selectPolicy: Max
-  # PVC for the Oracle keystore (per-ZONE so PR previews are isolated)
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      labels:
-        app: ${NAME}-${ZONE}
-      name: ${NAME}-${ZONE}-${COMPONENT}-api-cert
-    spec:
-      accessModes:
-        - ReadWriteMany
-      resources:
-        requests:
-          storage: 50Mi
-      storageClassName: netapp-file-standard
   - apiVersion: policy/v1
     kind: PodDisruptionBudget
     metadata:
