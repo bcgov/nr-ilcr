@@ -1,0 +1,241 @@
+name: Reusable E2E
+
+# Full playwright-bdd suite (frontend/e2e). Each shard runs the stack on its
+# runner, since mock auth only works on localhost, against the shared tools
+# Oracle reached through `oc port-forward`.
+#
+# reset-db → shards → report. reset-db wipes the tools database (ephemeral by
+# design) and runs the `setup` preflight once, while the data is still at rest.
+# The shards then share the database, which the fullyParallel suite already
+# handles. The caller's e2e-tools-oracle group covers all three jobs. Gate is
+# `npm run test:gate` (see frontend/e2e/README.md).
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  reset-db:
+    name: Reset database
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        name: Checkout
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/tools-oracle
+        with:
+          oc-server: ${{ vars.OC_SERVER }}
+          oc-token: ${{ secrets.OC_TOKEN_TOOLS }}
+          oc-namespace: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          name: ${{ github.event.repository.name }}
+
+      - uses: actions/setup-java@v6
+        name: Setup Java
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Reset database (snapshot clone or Flyway)
+        env:
+          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          NAME: ${{ github.event.repository.name }}
+        run: bash .github/scripts/e2e-db-reset.sh
+
+      # Same backend as the shards (see there).
+      - name: Start backend
+        working-directory: backend
+        env:
+          SERVER_PORT: "8080"
+          SPRING_PROFILES_ACTIVE: local
+          ILCR_SECURITY_ENABLED: "false"
+          ILCR_DATASOURCE_ENABLED: "true"
+          SPRING_DATASOURCE_URL: jdbc:oracle:thin:@//localhost:1525/ILCR
+          LOG_LEVEL: INFO
+        run: |
+          export SPRING_DATASOURCE_USERNAME="$DB_USER"
+          export SPRING_DATASOURCE_PASSWORD="$DB_PASS"
+          mvn -B -ntp spring-boot:run > "$RUNNER_TEMP/backend.log" 2>&1 &
+          npx --yes wait-on@9.5.1 -t 300000 http-get://localhost:8080/api/health \
+            || { tail -n 100 "$RUNNER_TEMP/backend.log"; exit 1; }
+
+      - uses: actions/setup-node@v7
+        name: Setup Node
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/e2e/package-lock.json
+
+      # Its "at rest" checks must run before any shard writes, so it runs once
+      # here: API calls straight to the backend, plus the Python DB helper.
+      - name: Preflight (setup project)
+        working-directory: frontend/e2e
+        env:
+          CI: "true"
+          E2E_BASE_URL: http://localhost:8080
+        run: |
+          npm ci
+          npm run setup:python
+          export ORACLE_DSN="$DB_USER/$DB_PASS@localhost:1525/ILCR"
+          npm run test:gate -- --project=setup --workers=4 --reporter=list
+
+  shards:
+    name: Shard (${{ matrix.index }}/${{ matrix.total }})
+    needs: reset-db
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # finish every shard so the merged report is complete
+      matrix:
+        include:
+          - index: 1
+            total: 4
+          - index: 2
+            total: 4
+          - index: 3
+            total: 4
+          - index: 4
+            total: 4
+    steps:
+      - uses: actions/checkout@v7
+        name: Checkout
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/tools-oracle
+        with:
+          oc-server: ${{ vars.OC_SERVER }}
+          oc-token: ${{ secrets.OC_TOKEN_TOOLS }}
+          oc-namespace: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          name: ${{ github.event.repository.name }}
+
+      - uses: actions/setup-java@v6
+        name: Setup Java
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Start backend
+        working-directory: backend
+        env:
+          SERVER_PORT: "8080"
+          # Never `openshift`: DeployedSecurityGuard rejects security off with
+          # the datasource on, which is only safe on a runner.
+          SPRING_PROFILES_ACTIVE: local
+          ILCR_SECURITY_ENABLED: "false"
+          ILCR_DATASOURCE_ENABLED: "true"
+          SPRING_DATASOURCE_URL: jdbc:oracle:thin:@//localhost:1525/ILCR
+          LOG_LEVEL: INFO
+        run: |
+          export SPRING_DATASOURCE_USERNAME="$DB_USER"
+          export SPRING_DATASOURCE_PASSWORD="$DB_PASS"
+          mvn -B -ntp spring-boot:run > "$RUNNER_TEMP/backend.log" 2>&1 &
+          npx --yes wait-on@9.5.1 -t 300000 http-get://localhost:8080/api/health \
+            || { tail -n 100 "$RUNNER_TEMP/backend.log"; exit 1; }
+
+      - uses: actions/setup-node@v7
+        name: Setup Node
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend/e2e/package-lock.json
+
+      - name: Start frontend (localhost, mock auth)
+        working-directory: frontend
+        env:
+          BACKEND_URL: http://localhost:8080
+        run: |
+          npm ci
+          npm run dev -- --port 3000 &
+          npx --yes wait-on@9.5.1 -t 120000 http://localhost:3000
+
+      - name: Install e2e dependencies
+        working-directory: frontend/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run setup:python
+
+      - name: Run suite shard (gate)
+        working-directory: frontend/e2e
+        env:
+          CI: "true"
+        # `setup` already ran in reset-db, hence --no-deps. Blob reports are
+        # merged by the report job. ORACLE_DSN feeds scripts/sch1_db_restore.py.
+        run: |
+          export ORACLE_DSN="$DB_USER/$DB_PASS@localhost:1525/ILCR"
+          npm run test:gate -- --project=smoke --project=chromium --no-deps --workers=4 \
+            --shard=${{ matrix.index }}/${{ matrix.total }} --reporter=blob,list
+
+      # The backend logs to a file, so surface its errors and keep the log.
+      - name: Backend log (on failure)
+        if: failure()
+        run: |
+          grep -nE ' (WARN|ERROR) |ORA-[0-9]{5}' "$RUNNER_TEMP/backend.log" | tail -n 200 || true
+          cp "$RUNNER_TEMP/backend.log" "$RUNNER_TEMP/backend-shard-${{ matrix.index }}.log" || true
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        name: upload backend log
+        with:
+          name: e2e-backend-log-${{ matrix.index }}
+          path: ${{ runner.temp }}/backend-shard-${{ matrix.index }}.log
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        if: (! cancelled())
+        name: upload blob report
+        with:
+          name: blob-report-${{ matrix.index }}
+          path: ./frontend/e2e/blob-report
+          retention-days: 1
+          if-no-files-found: error # a missing blob would leave the report incomplete
+
+  report:
+    name: Report
+    needs: shards
+    # Merge whatever the shards produced, pass or fail.
+    if: (! cancelled()) && needs.shards.result != 'skipped'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        name: Checkout
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        name: Setup Node
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/e2e/package-lock.json
+
+      - name: Install e2e dependencies
+        working-directory: frontend/e2e
+        run: npm ci
+
+      - uses: actions/download-artifact@v8
+        name: download blob reports
+        with:
+          pattern: blob-report-*
+          path: ./frontend/e2e/all-blob-reports
+          merge-multiple: true
+
+      - name: Merge into one HTML report
+        working-directory: frontend/e2e
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - uses: actions/upload-artifact@v7
+        name: upload results
+        with:
+          name: playwright-report
+          path: ./frontend/e2e/playwright-report
+          retention-days: 7

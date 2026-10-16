@@ -1,0 +1,74 @@
+name: Tools Oracle port-forward
+description: >-
+  Logs in to the tools namespace, exports the e2e database credentials as
+  DB_USER/DB_PASS, and forwards localhost:1525 to the tools Oracle for the
+  rest of the job.
+
+inputs:
+  oc-server:
+    description: OpenShift API server
+    required: true
+  oc-token:
+    description: Service-account token for the tools namespace
+    required: true
+  oc-namespace:
+    description: The tools namespace
+    required: true
+  name:
+    description: Repository name; the database is deployment/<name>-tools-database
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Pinned and checksummed: the job using it holds the tools-namespace token.
+    - name: Install oc
+      shell: bash
+      env:
+        OC_VERSION: 4.22.18
+        OC_SHA256: 07751676809553e012448cdb3a755ffa7b11d7e25b8a6cc60a5a62a9f4b18159
+      run: |
+        tarball="$RUNNER_TEMP/oc.tar.gz"
+        curl -sSfL -o "$tarball" \
+          "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/$OC_VERSION/openshift-client-linux-$OC_VERSION.tar.gz"
+        echo "$OC_SHA256  $tarball" | sha256sum -c -
+        sudo tar -xzf "$tarball" -C /usr/local/bin oc
+
+    - name: Port-forward the tools-namespace Oracle
+      shell: bash
+      env:
+        OC_SERVER: ${{ inputs.oc-server }}
+        OC_TOKEN: ${{ inputs.oc-token }}
+        OC_NAMESPACE: ${{ inputs.oc-namespace }}
+        NAME: ${{ inputs.name }}
+        REPO: ${{ github.repository }}
+      run: |
+        # Retry: one login per job, five jobs per run, and the API can blip.
+        for i in 1 2 3; do
+          oc login --token="$OC_TOKEN" --server="$OC_SERVER" && break
+          [ "$i" -lt 3 ] || exit 1
+          echo "oc login failed; retrying in 15s..."
+          sleep 15
+        done
+        # Only the throwaway e2e Oracle built from database/; never anything else.
+        image=$(oc -n "$OC_NAMESPACE" get deploy "$NAME-tools-database" -o jsonpath='{.spec.template.spec.containers[0].image}')
+        if [[ "$OC_NAMESPACE" != *-tools || "$image" != "ghcr.io/$REPO/database"[:@]* ]]; then
+          echo "::error::Target is not the throwaway e2e database; refusing."
+          exit 1
+        fi
+        # A first boot creates the ILCR PDB and can take several minutes.
+        oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=600s
+        # Credentials come from the database's own Secret. tr drops a stray
+        # CR/LF so every later login sends exactly the same bytes.
+        DB_USER=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_USER}' | base64 -d | tr -d '\r\n')
+        DB_PASS=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_PASSWORD}' | base64 -d | tr -d '\r\n')
+        echo "::add-mask::$DB_PASS"
+        echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
+        echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
+        # Respawn a dropped tunnel; it would otherwise show up as test timeouts.
+        ( while true; do
+            oc -n "$OC_NAMESPACE" port-forward "svc/$NAME-tools-database" 1525:1521 || true
+            sleep 2
+          done ) &
+        timeout 120 bash -c 'until (echo > /dev/tcp/127.0.0.1/1525) 2>/dev/null; do sleep 2; done'
+        echo "Oracle listener reachable on localhost:1525"
