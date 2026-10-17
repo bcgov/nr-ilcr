@@ -18,4 +18,3 @@ USER 65532:65532
 # MaxRAMPercentage is taken from the container memory limit (cgroup), set as
 # MEMORY_LIMIT in openshift.deploy.yml — resize there, not here.
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50", "-Djava.security.properties=/app/tls-legacy.security", "-jar", "/app/app.jar"]
-
