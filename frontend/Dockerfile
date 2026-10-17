@@ -49,3 +49,4 @@ USER 1001
 # Startup
 ENTRYPOINT ["/usr/bin/caddy"]
 CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+

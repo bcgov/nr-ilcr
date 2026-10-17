@@ -19,3 +19,4 @@ USER oracle
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["sh", "-c", "${ORACLE_BASE}/healthcheck.sh >/dev/null || exit 1"]
 
 ENTRYPOINT ["container-entrypoint.sh"]
+
