@@ -52,7 +52,8 @@ jobs:
     name: Deploy (init)
     environment:
       name: ${{ inputs.environment }}
-      deployment: ${{ inputs.target != 'prod' }}
+      # Environment for its secrets only; deployment-result records the rollout.
+      deployment: false
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
     runs-on: ubuntu-26.04
@@ -197,7 +198,8 @@ jobs:
     name: Deploy (${{ matrix.name }})
     environment:
       name: ${{ inputs.environment }}
-      deployment: ${{ inputs.target != 'prod' }}
+      # Environment for its secrets only; deployment-result records the rollout.
+      deployment: false
     needs: [init]
     runs-on: ubuntu-26.04
     permissions:
@@ -310,6 +312,31 @@ jobs:
             -p VANITY_TLS_KEY="$VANITY_TLS_KEY"
             -p VANITY_TLS_CA_CERTIFICATE="$VANITY_TLS_CA_CERTIFICATE"
             $OC_PROCESS_FLAGS
+
+  # One deployment record per rollout. init and both deploy legs attach the
+  # environment only for its secrets: recording on each of them showed every
+  # deploy three times on the PR timeline. Skipped when the triggers matched
+  # nothing (nothing was rolled out) and for PROD, which Release PROD records
+  # against the tagged commit itself.
+  deployment-result:
+    name: Record deployment result
+    needs: [init, deploy]
+    if: ${{ !cancelled() && inputs.target != 'prod' && needs.init.outputs.triggered != 'false' }}
+    environment:
+      name: ${{ inputs.environment }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Fail incomplete deployments
+        if: ${{ needs.init.result != 'success' || needs.deploy.result != 'success' }}
+        run: |
+          echo "Init deployment result: ${{ needs.init.result }}"
+          echo "Backend/frontend deployment result: ${{ needs.deploy.result }}"
+          exit 1
+
+      - name: Confirm deployment
+        run: echo "Init, backend and frontend deployments succeeded."
 
   # Shared Oracle in the TOOLS namespace, deployed only after the backend and
   # frontend so app deploys never wait on it. One instance serves every zone
