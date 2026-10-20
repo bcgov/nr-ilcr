@@ -22,7 +22,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: bcgov/action-test-and-analyse-java@7c7309721cae054b3e837c723afa4efb4b1a256d # v1.1.0
@@ -68,7 +68,7 @@ jobs:
       contents: read
       checks: write
       security-events: write
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Covers all four commands below — npm ci, lint, format:check AND a coverage run — not the tests
     # alone. Raised from 5 after PR #317 was cancelled at 4m58s with zero test failures: the same job
     # had passed at 3m22s one commit earlier, so the 5-minute budget was already two thirds spent and

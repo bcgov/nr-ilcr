@@ -18,7 +18,7 @@ permissions: {}
 jobs:
   integration-tests:
     name: Integration
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Covers the deployed-env probe below PLUS the backend *IT suite (moved
     # here from analysis.yml): Testcontainers Oracle pull + start + 115 IT
     # classes.
@@ -104,7 +104,7 @@ jobs:
     # (plain `npm test` exits 1 by design on the known @discovered-* reds —
     # see e2e/README.md).
     name: E2E
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     concurrency:
       group: e2e-tools-oracle
