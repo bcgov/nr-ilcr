@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   reset-db:
     name: Reset database
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -97,7 +97,7 @@ jobs:
   shards:
     name: Shard (${{ matrix.index }}/${{ matrix.total }})
     needs: reset-db
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false # finish every shard so the merged report is complete
@@ -221,7 +221,7 @@ jobs:
     needs: shards
     # Merge whatever the shards produced, pass or fail.
     if: (! cancelled()) && needs.shards.result != 'skipped'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

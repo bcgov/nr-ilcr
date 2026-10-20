@@ -102,7 +102,7 @@ jobs:
   # ZAP job uses) — 20 VUs for 5 minutes against each of backend/frontend.
   load-tests:
     name: Load Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:
       matrix:
@@ -124,7 +124,7 @@ jobs:
     if: ${{ vars.ENABLE_ZAP_SCAN == 'true' }}
     permissions:
       issues: write
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: ZAP Scan
         uses: zaproxy/action-full-scan@3c58388149901b9a03b7718852c5ba889646c27c # v0.13.0
