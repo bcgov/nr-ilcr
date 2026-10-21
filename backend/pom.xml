@@ -66,7 +66,7 @@
         <checkstyle.includeTestSourceDirectory>false</checkstyle.includeTestSourceDirectory>
         <cyclonedx.skip>false</cyclonedx.skip>
         <commons-lang3.version>3.21.0</commons-lang3.version>
-        <jasperreports.version>7.0.8</jasperreports.version>
+        <jasperreports.version>7.1.0</jasperreports.version>
         <sonar.organization>bcgov-sonarcloud</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.java.checkstyle.reportPaths>target/checkstyle-result.xml</sonar.java.checkstyle.reportPaths>
