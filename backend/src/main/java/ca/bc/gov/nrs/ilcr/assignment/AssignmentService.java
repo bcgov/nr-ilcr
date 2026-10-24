@@ -97,7 +97,7 @@ public class AssignmentService {
    * <p>Each row's mill is resolved individually; a row whose mill has vanished still renders, with
    * its mill number and name absent rather than the whole list failing.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param includeEnded whether to include assignments that have been ended
    * @return the submitter's assignments
    */
@@ -215,7 +215,7 @@ public class AssignmentService {
    * deviation — the legacy screen only acted on listed users). Deactivating one does NOT: a
    * mistyped GUID must not mint a phantom inactive account, so that answers not-found.
    *
-   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param userGuid the directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
    * @param active true to flag the account active
    * @param actingUser the acting administrator's username, for the audit columns
    * @return the account and the message describing what happened

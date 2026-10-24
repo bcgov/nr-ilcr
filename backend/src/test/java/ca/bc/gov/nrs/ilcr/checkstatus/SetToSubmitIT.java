@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -64,7 +64,7 @@ class SetToSubmitIT extends AbstractOracleIT {
 
   private static final String ACTING_USER = "reversaladmin";
   private static final String ADMIN_GUID = "REVERSALAUDITOR11111222233334444";
-  private static final String COGNITO_SUB = "99999999-8888-7777-6666-555555555555";
+  private static final String KEYCLOAK_SUB = "99999999-8888-7777-6666-555555555555";
   private static final String SEED_USER = "SEED";
 
   /** Legacy reused the submit text — there is no "verification reversed" message to port. */
@@ -90,8 +90,8 @@ class SetToSubmitIT extends AbstractOracleIT {
       "This Mill is not active for the current Reporting Year. "
           + "Please select another mill from the Home Page.";
 
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -100,10 +100,11 @@ class SetToSubmitIT extends AbstractOracleIT {
     Jwt token =
         Jwt.withTokenValue("set-to-submit-it-token")
             .header("alg", "none")
-            .subject(COGNITO_SUB)
-            .claim("custom:idp_user_id", ADMIN_GUID)
-            .claim("custom:idp_username", ACTING_USER)
-            .claim("cognito:groups", List.of("ILCR_ADMIN"))
+            .subject(KEYCLOAK_SUB)
+            .claim("idir_user_guid", ADMIN_GUID)
+            .claim("idir_username", ACTING_USER)
+            .claim("identity_provider", "azureidir")
+            .claim("client_roles", List.of("ILCR_ADMIN"))
             .build();
     return authentication(CONVERTER.convert(token));
   }

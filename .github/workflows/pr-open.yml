@@ -2,6 +2,7 @@ name: PR
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: ${{ github.event.number }}
@@ -72,11 +73,12 @@ jobs:
     permissions:
       contents: read
     name: Deploys (${{ github.event.number }})
+    if: (! github.event.pull_request.draft)
     needs: [builds, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets: inherit
     with:
-      # PR previews read the dev environment, never repository-level deployment values.
+      # PR previews deploy with the dev environment's values.
       environment: dev
       target: ${{ needs.init.outputs.zone }}
       tag: ${{ github.event.pull_request.head.sha }}

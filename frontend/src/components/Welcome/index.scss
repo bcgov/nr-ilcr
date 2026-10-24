@@ -1,0 +1,190 @@
+@use 'sass:math';
+
+@use '../../styles/variables' as vars;
+@use '@bcgov-nr/nr-theme/design-tokens/colors.scss' as colors;
+@use '@carbon/react/scss/breakpoint' as *;
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/type/scss/scale' as scale;
+
+// Matches CSP's welcome screen. The narrowest the white column may get while
+// still holding the button row side by side: exactly the inset, the two
+// buttons and the gap between them (2.5 + 18 + 1 + 18 + 2.5). Above 1344px the
+// even split is wider than this and wins.
+$panel-min-inline-size: 42rem;
+
+// BCID_H_rgb_pos.png is padded artwork: the wordmark occupies 708x188 of an
+// 848x327 canvas, leaving a transparent border of ~70px on all four sides. So
+// the <img> box is sized past the 156px the design shows the mark at, then
+// pulled back by that border on the two edges that set its position, and the
+// gap below it is measured from the mark rather than from the box.
+$logo-mark-inline-size: 9.75rem; // 156px, the mark as the design shows it
+$logo-box-inline-size: math.div($logo-mark-inline-size, math.div(708, 848));
+$logo-border: math.div($logo-box-inline-size - $logo-mark-inline-size, 2);
+
+.welcome-page {
+  display: flex;
+  // A minimum, so a window too short to hold the panel content grows and
+  // scrolls to it rather than pushing the buttons outside the page. The photo
+  // is kept from inflating this — see __photo.
+  min-block-size: 100vh;
+
+  // The <Theme> wrapper paints g10's grey `background` with a single class
+  // that loads after this one; the design calls for white. Qualifying with that
+  // class outweighs it regardless of stylesheet order.
+  &.#{vars.$bcgov-prefix}--g10 {
+    background-color: colors.$white;
+  }
+
+  &__panel {
+    display: flex;
+    // An even split with the photo, as the design has it — but never so narrow
+    // that the button row has to wrap, which an even split alone would do on
+    // anything under 1344px.
+    flex: 1 1 50%;
+    flex-direction: column;
+    align-items: flex-start;
+    min-inline-size: $panel-min-inline-size;
+    // Every child aligns on this inset: logo, headings and the button row.
+    padding: $spacing-08;
+  }
+
+  &__logo {
+    display: block;
+    inline-size: $logo-box-inline-size;
+    block-size: auto;
+    margin-block: (-$logo-border) ($spacing-12 - $logo-border);
+    margin-inline-start: -$logo-border;
+  }
+
+  &__heading {
+    font-size: scale.type-scale(13);
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: 0;
+    color: var(--#{vars.$bcgov-prefix}-text-primary);
+    margin-block-end: $spacing-05;
+  }
+
+  &__subheading {
+    font-size: scale.type-scale(7);
+    font-weight: 400;
+    line-height: 1.25;
+    // The BC Gov blue the design uses.
+    color: colors.$blue-60;
+    margin-block-end: $spacing-12;
+  }
+
+  &__notice {
+    margin-block-end: $spacing-06;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-05;
+  }
+
+  // Carbon sizes a button to its content; the design instead gives both the
+  // same fixed width, which is also what pins the icon — absolutely positioned
+  // by Carbon at the end padding — to the far edge. Qualifying with Carbon's
+  // own class outweighs its single-class rule regardless of stylesheet order.
+  &__action.#{vars.$bcgov-prefix}--btn {
+    inline-size: 18rem;
+    max-inline-size: 100%;
+
+    // Both are a step up from Carbon's defaults (14px label, 16px icon).
+    font-size: scale.type-scale(3);
+    // Carbon reserves 63px of end padding for the icon, which is enough to wrap
+    // "Log in with Business BCeID" onto a second line inside a button this
+    // wide. Reserve just the icon and its two 16px gutters instead.
+    padding-inline-end: calc(#{$spacing-05} * 2 + 1.25rem);
+
+    .#{vars.$bcgov-prefix}--btn__icon {
+      inline-size: 1.25rem;
+      block-size: 1.25rem;
+      // Carbon centres the icon with an offset computed for a 16px box, so a
+      // larger one has to re-centre itself.
+      inset-block-start: 50%;
+      margin-block-start: 0;
+      transform: translateY(-50%);
+    }
+  }
+
+  // A frame rather than the image itself. An <img> in a flex row reports a
+  // hypothetical cross size from its intrinsic aspect ratio and its used
+  // width, and on a container whose own cross size is indefinite that is what
+  // sizes the row — so the photo would grow the page past the viewport.
+  // Taking the image out of flow leaves the frame contributing nothing, so the
+  // row's height comes from the panel and the 100vh minimum, and the image
+  // fills whatever that turns out to be.
+  &__photo {
+    position: relative;
+    flex: 1 1 50%;
+    min-inline-size: 0;
+    overflow: hidden;
+
+    img {
+      position: absolute;
+      inset: 0;
+      inline-size: 100%;
+      block-size: 100%;
+      // Anchor the top edge, so what a wide viewport crops is foreground at the
+      // bottom rather than the sky and the far ridge.
+      object-fit: cover;
+      object-position: center top;
+    }
+  }
+
+  // Too narrow for the panel's minimum to leave the photo a usable width: give
+  // the panel a share of the space instead, and let the button row stack once
+  // it no longer fits side by side.
+  @include breakpoint-down(lg) {
+    &__panel {
+      flex: 0 1 60%;
+      min-inline-size: 0;
+    }
+
+    &__heading {
+      font-size: scale.type-scale(11);
+    }
+
+    &__subheading {
+      font-size: scale.type-scale(6);
+      margin-block-end: $spacing-11;
+    }
+  }
+
+  // One column: the photo would be a sliver at this width, and the sign-in
+  // choice is the only thing on the page that has to be reachable.
+  @include breakpoint-down(md) {
+    &__panel {
+      flex: 1 1 auto;
+      padding: $spacing-07 $spacing-06;
+    }
+
+    &__logo {
+      margin-block-end: $spacing-09 - $logo-border;
+    }
+
+    &__heading {
+      font-size: scale.type-scale(9);
+    }
+
+    &__subheading {
+      font-size: scale.type-scale(5);
+      margin-block-end: $spacing-09;
+    }
+
+    &__actions {
+      align-self: stretch;
+    }
+
+    &__action.#{vars.$bcgov-prefix}--btn {
+      inline-size: 100%;
+    }
+
+    &__photo {
+      display: none;
+    }
+  }
+}

@@ -106,7 +106,7 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
    * mill is selectable — avoiding a list-then-404 the new-app "selectable" definition would
    * otherwise create.
    *
-   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID
+   * @param userGuid the caller's raw {@code idir_user_guid}/{@code bceid_user_guid} directory GUID
    * @return the actively-associated, selectable mills as {@link MillSummary}, mill number ascending
    */
   default List<MillSummary> findMillsForUser(String userGuid) {
@@ -142,7 +142,7 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
    * no mill); this method is never consulted for them.
    *
    * @param millId the mill id the caller is trying to reach
-   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID
+   * @param userGuid the caller's raw {@code idir_user_guid}/{@code bceid_user_guid} directory GUID
    * @return true when an active {@code ILCR_MILL_USER_XREF} row exists for the pair
    */
   @Query(

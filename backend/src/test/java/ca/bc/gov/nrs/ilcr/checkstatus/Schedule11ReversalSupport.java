@@ -4,7 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
+import ca.bc.gov.nrs.ilcr.security.FamJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import java.util.Map;
@@ -23,10 +23,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * by-key reads their before/after assertions compare.
  *
  * <p>Security ON with a token converted through the production converter, so the audit name comes
- * from {@code custom:idp_username} and the directory GUID from {@code custom:idp_user_id} (the 17.1
- * trap). Neither reversal writes an identity pair, so the GUID matters here only as the thing a
- * legacy-style LICENSEE write would have recorded: {@code R__62} xrefs this admin to mill 824,
- * whose seeded LICENSEE pair names someone else.
+ * from {@code idir_username} and the directory GUID from {@code idir_user_guid}/{@code
+ * bceid_user_guid} (the 17.1 trap). Neither reversal writes an identity pair, so the GUID matters
+ * here only as the thing a legacy-style LICENSEE write would have recorded: {@code R__62} xrefs
+ * this admin to mill 824, whose seeded LICENSEE pair names someone else.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 abstract class Schedule11ReversalSupport extends AbstractOracleIT {
@@ -59,11 +59,11 @@ abstract class Schedule11ReversalSupport extends AbstractOracleIT {
   /** The auditor {@code R__62} records on 823 and 824. */
   static final String AUDITOR_GUID = "REVERSE11AUDITOR000111122223AAA1";
 
-  /** The audit name, from {@code custom:idp_username} (30-char column). */
+  /** The audit name, from {@code idir_username} (30-char column). */
   static final String ACTING_USER = "reverse11admin";
 
-  private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
-      new CognitoGroupsJwtAuthenticationConverter();
+  private static final FamJwtAuthenticationConverter CONVERTER =
+      new FamJwtAuthenticationConverter();
 
   private static final List<String> TABLES =
       List.of(
@@ -81,9 +81,10 @@ abstract class Schedule11ReversalSupport extends AbstractOracleIT {
         Jwt.withTokenValue("reverse11-it-token")
             .header("alg", "none")
             .subject("26262626-5555-4444-5555-666666666666")
-            .claim("custom:idp_user_id", ADMIN_GUID)
-            .claim("custom:idp_username", ACTING_USER)
-            .claim("cognito:groups", List.of("ILCR_ADMIN"))
+            .claim("idir_user_guid", ADMIN_GUID)
+            .claim("idir_username", ACTING_USER)
+            .claim("identity_provider", "azureidir")
+            .claim("client_roles", List.of("ILCR_ADMIN"))
             .build();
     return authentication(CONVERTER.convert(token));
   }

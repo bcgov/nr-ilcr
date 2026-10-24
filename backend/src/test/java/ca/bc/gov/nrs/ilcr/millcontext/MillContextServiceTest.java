@@ -79,7 +79,11 @@ class MillContextServiceTest {
 
   private void authenticateJwtWithGuid(String guid) {
     Jwt jwt =
-        Jwt.withTokenValue("t").header("alg", "none").claim("custom:idp_user_id", guid).build();
+        Jwt.withTokenValue("t")
+            .header("alg", "none")
+            .claim("identity_provider", "azureidir")
+            .claim("idir_user_guid", guid)
+            .build();
     SecurityContext ctx = SecurityContextHolder.createEmptyContext();
     ctx.setAuthentication(new JwtAuthenticationToken(jwt));
     SecurityContextHolder.setContext(ctx);
@@ -111,7 +115,7 @@ class MillContextServiceTest {
   @Test
   void validateMillAccess_submitterBlankGuid_isDenied_failClosed() {
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
-    authenticateJwtWithGuid("   "); // no resolvable custom:idp_user_id
+    authenticateJwtWithGuid("   "); // no resolvable directory GUID claim
     // Strict Mockito proves the xref is never consulted — blank guid is denied before the query.
     assertThrows(AccessDeniedException.class, () -> service.validateMillAccess(514L));
   }
@@ -165,8 +169,8 @@ class MillContextServiceTest {
   @Test
   void callerMillScope_submitter_isTheirAssociatedMillIds() {
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
-    authenticateJwtWithGuid("GUID-1");
-    when(repository.findMillsForUser("GUID-1"))
+    authenticateJwtWithGuid("GUID1");
+    when(repository.findMillsForUser("GUID1"))
         .thenReturn(
             List.of(
                 new MillSummary(514L, "5140", "A", "ACT"),
@@ -178,8 +182,8 @@ class MillContextServiceTest {
   @Test
   void callerMillScope_submitterWithNoMills_isAnEmptyScope_notUnscoped() {
     when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
-    authenticateJwtWithGuid("GUID-2");
-    when(repository.findMillsForUser("GUID-2")).thenReturn(List.of());
+    authenticateJwtWithGuid("GUID2");
+    when(repository.findMillsForUser("GUID2")).thenReturn(List.of());
 
     // Optional.of(empty set), NOT Optional.empty(): "nothing" must never read as "everything".
     assertEquals(Optional.of(Set.of()), service.callerMillScope());
@@ -279,7 +283,7 @@ class MillContextServiceTest {
 
   @Test
   void listMills_submitterBlankOrNullGuid_returnsEmpty_failClosed() {
-    // No resolvable identity (e.g. the dev mock principal, no custom:idp_user_id): EMPTY, never
+    // No resolvable identity (e.g. the dev mock principal, no directory GUID claim): EMPTY, never
     // all.
     // Strict Mockito proves no repository read happens (no findAllMills / findMillsForUser stub).
     assertTrue(service.listMills(false, "   ").isEmpty());

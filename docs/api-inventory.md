@@ -6,7 +6,7 @@ When you add or change an endpoint, update this page in the same pull request.
 ## How access is decided
 
 - **Authentication.** Every `/api/v1` endpoint requires a signed-in caller. Deployed environments validate the
-  FAM / AWS Cognito ID token. Locally, with `ILCR_SECURITY_ENABLED=false`, the caller is a mock principal built
+  CSS (FAM) access token. Locally, with `ILCR_SECURITY_ENABLED=false`, the caller is a mock principal built
   from the `X-Mock-Groups` header.
 - **Permission action.** Most endpoints also check a permission action with
   `@PreAuthorize("@permissions.hasPermission(authentication, '<ACTION>')")`. The bracketed names below are those

@@ -10,7 +10,7 @@ package ca.bc.gov.nrs.ilcr.assignment.dto;
  * a first mill assignment are created at {@code "N"} for that reason, and real data contains such
  * users. Consumers must not treat this flag as a lockout.
  *
- * @param userGuid directory GUID ({@code custom:idp_user_id})
+ * @param userGuid directory GUID ({@code idir_user_guid}/{@code bceid_user_guid})
  * @param activeInd {@code "Y"} or {@code "N"}; display and administrative state only
  * @param roleName the legacy ILCR role name held against the account
  * @param revisionCount optimistic-lock token

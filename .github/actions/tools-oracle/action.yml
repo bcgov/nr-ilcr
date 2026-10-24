@@ -1,15 +1,15 @@
 name: Tools Oracle port-forward
 description: >-
-  Logs in to the tools namespace, exports the e2e database credentials as
-  DB_USER/DB_PASS, and forwards localhost:1525 to the tools Oracle for the
-  rest of the job.
+  Logs in to the tools namespace with a short-lived pipeline token, exports
+  the e2e database credentials as DB_USER/DB_PASS, and forwards
+  localhost:1525 to the tools Oracle for the rest of the job.
 
 inputs:
   oc-server:
     description: OpenShift API server
     required: true
   oc-token:
-    description: Service-account token for the tools namespace
+    description: github-deployer token for the tools namespace; it is only used to request a pipeline token
     required: true
   oc-namespace:
     description: The tools namespace
@@ -43,11 +43,33 @@ runs:
         NAME: ${{ inputs.name }}
         REPO: ${{ github.repository }}
       run: |
-        # Retry: one login per job, five jobs per run, and the API can blip.
+        # OC_TOKEN is a github-deployer token, which may only request tokens for the pipeline
+        # service account. Swap it for a 25-minute pipeline token, as the deployer and oc-runner
+        # actions do, with TLS verified. Retry: one login per job, five jobs per run, and the API
+        # can blip.
+        token_url="$OC_SERVER/api/v1/namespaces/$OC_NAMESPACE/serviceaccounts/pipeline/token"
+        response="$RUNNER_TEMP/pipeline-token.json"
         for i in 1 2 3; do
-          oc login --token="$OC_TOKEN" --server="$OC_SERVER" > /dev/null && break
-          [ "$i" -lt 3 ] || exit 1
-          echo "oc login failed; retrying in 15s..."
+          code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$response" -w '%{http_code}' \
+            -X POST "$token_url" \
+            -H "Authorization: Bearer $OC_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"spec":{"expirationSeconds":1500}}') || code=000
+          PIPELINE_TOKEN=""
+          if [[ "$code" == 20[01] ]]; then
+            PIPELINE_TOKEN=$(jq -r '.status.token // empty' "$response" 2>/dev/null) || PIPELINE_TOKEN=""
+          fi
+          rm -f "$response"
+          if [[ -n "$PIPELINE_TOKEN" ]]; then
+            echo "::add-mask::$PIPELINE_TOKEN"
+            oc login --token="$PIPELINE_TOKEN" --server="$OC_SERVER" > /dev/null && break
+          elif [[ "$code" == 40[134] ]]; then
+            # Wrong token, missing token-requester binding or namespace: another try cannot fix it.
+            echo "::error::The pipeline token request was refused (HTTP $code)."
+            exit 1
+          fi
+          [ "$i" -lt 3 ] || { echo "::error::Could not log in to the tools namespace."; exit 1; }
+          echo "Pipeline token request or oc login failed (HTTP $code); retrying in 15s..."
           sleep 15
         done
         # Only the throwaway e2e Oracle built from database/; never anything else.

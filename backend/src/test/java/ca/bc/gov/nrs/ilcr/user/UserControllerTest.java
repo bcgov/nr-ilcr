@@ -60,10 +60,10 @@ class UserControllerTest {
         new JwtAuthenticationToken(
             jwt(
                 Map.of(
-                    "sub", "ignored-when-idp-user-id-present",
-                    "custom:idp_user_id", "REALGUIDAAAABBBBCCCCDDDD00000009",
-                    "custom:idp_display_name", "Casey, Terry L",
-                    "custom:idp_name", "idir",
+                    "sub", "ignored-when-directory-guid-present",
+                    "idir_user_guid", "REALGUIDAAAABBBBCCCCDDDD00000009",
+                    "display_name", "Casey, Terry L",
+                    "identity_provider", "idir",
                     "email", "  terry.casey@gov.bc.ca  ")),
             List.of(new SimpleGrantedAuthority("SUBMITTER"))));
 
@@ -73,8 +73,8 @@ class UserControllerTest {
     assertEquals("Casey, Terry L", me.displayName());
     // trimToNull is applied, so the padding above must not survive.
     assertEquals("terry.casey@gov.bc.ca", me.email());
-    // Note the normalisation: JwtPrincipalUtil.getProvider upper-cases the claim, so a lower-case
-    // `idir` in the token is reported as `IDIR`. Pinned here because the SPA reads this field.
+    // Note the normalisation: JwtPrincipalUtil.getProvider reports the CSS `idir` (or `azureidir`)
+    // provider as `IDIR`. Pinned here because the SPA reads this field.
     assertEquals("IDIR", me.identityProvider());
     assertEquals(List.of("ILCR_SUBMITTER"), me.roles());
   }
@@ -89,7 +89,7 @@ class UserControllerTest {
 
     CurrentUser me = controller.me().getBody();
 
-    // No custom:idp_user_id, so the subject is the identity; no name claims, so it is also shown.
+    // No directory GUID, so the subject is the identity; no name claims, so it is also shown.
     assertEquals("SUBJECTONLYAAAABBBBCCCCDDDD00001", me.userGuid());
     assertEquals("SUBJECTONLYAAAABBBBCCCCDDDD00001", me.displayName());
     assertNull(me.email());

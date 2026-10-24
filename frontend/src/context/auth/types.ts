@@ -38,10 +38,13 @@ export type AuthContextValue = {
   isAuthenticated: boolean
   isLoading: boolean
   hasRole: (role: string) => boolean
-  signIn: () => void | Promise<void>
+  /** Starts sign-in; the real provider sends `provider` to CSS as an identity-provider hint. */
+  signIn: (provider?: LoginProvider) => void | Promise<void>
   signOut: () => void | Promise<void>
   /** Only defined under the Mock provider (local dev); absent in real builds. */
   mock?: MockRoleSwitch
   /** Only defined under the real provider in local dev; absent in every deployed build. */
   devRoleSwitch?: DevRoleSwitch
 }
+
+export type LoginProvider = 'idir' | 'business-bceid'

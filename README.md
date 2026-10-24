@@ -8,11 +8,11 @@ ILCR collects annual logging cost information from forestry licensees to support
 - **Both roles** print schedules and run the Mill Information and Mill Status reports; submitters see only their
   own mills. The data extract is for Ministry staff only.
 
-The application keeps the existing Oracle `THE` database as its unchanged system of record and signs users in through FAM (AWS Cognito).
+The application keeps the existing Oracle `THE` database as its unchanged system of record and signs users in through modern FAM / BC Gov CSS.
 
 ## Stack
 
-- Frontend: React 19, TypeScript, Vite, TanStack Router, IBM Carbon with the BC Gov NR theme, aws-amplify (FAM/Cognito)
+- Frontend: React 19, TypeScript, Vite, TanStack Router, IBM Carbon with the BC Gov NR theme, oidc-client-ts (FAM/CSS)
 - Backend: Java 21, Spring Boot 4.1.1, Maven, executable JVM JAR, Spring Security OAuth2 resource server, Spring Data JDBC + Hikari against Oracle `THE`, embedded JasperReports 7
 - Tests: JUnit + Testcontainers Oracle (backend), Vitest + Testing Library + MSW (frontend), Playwright + playwright-bdd + axe (`frontend/e2e`)
 - Local platform: direct Maven/npm runs or Docker Compose with backend, frontend, optional Caddy, and sanitized Oracle env wiring
@@ -118,48 +118,23 @@ The recommended, zero-import workaround is to leverage your Windows host's trust
    ```
    Docker Compose will automatically detect this variable and mount your local Windows Maven cache into the container's `/root/.m2` path, bypassing the certificate handshake issues completely!
 
-### Authentication (FAM/Cognito) — local testing
+### Authentication (modern FAM / CSS)
 
-The SPA has two auth modes, selected at runtime by `public/amplify-config.js` (loaded before the
-bundle). The repo default is **mock**; deployed environments mount a per-env ConfigMap over it. See
-`src/context/auth/` (the `AuthProvider` seam) and `src/config/auth/amplify-initializer.ts`.
+The SPA uses a public OIDC client with PKCE and signed CSS access tokens. Runtime configuration
+comes from `frontend/public/config.js`, replaced by a ConfigMap in deployed environments.
+Local mock mode is enabled only with `mockUser: true` on localhost and backend security off.
 
-**Mock mode (default — no Cognito).** `npm run dev` with the backend running (security off by
-default) signs you in automatically. Use the **"Mock user"** dropdown in the header to switch
-`ILCR_ADMIN` ↔ `ILCR_SUBMITTER` — it switches both the nav/route-guards **and** the backend mock
-principal (via the `X-Mock-Groups` header), so it exercises role gating end to end. This is the
-fastest path for manual testing.
+For real login, configure the environment's `ILCR_OIDC_ISSUER_URI` and `ILCR_OIDC_CLIENT_ID`
+(GitHub Environment variables in `dev`, `test` and `prod`), set frontend `mockUser: false`, and
+enable backend security with the `openshift` profile's SSO configuration. Register
+`https://<host>/authCallback` as the CSS client's redirect URI and `https://<host>/` as its
+post-logout redirect URI.
 
-**Real FAM/Cognito login (Hosted UI).**
-
-1. Frontend — copy the example config over the default (do **not** commit it; the repo default must
-   stay `mockUser: true`):
-   ```bash
-   cd frontend
-   cp amplify-config.local.example.js public/amplify-config.js
-   npm run dev            # then hard-refresh the browser (public/ files load at page load)
-   ```
-2. Backend — run with security on so `/api/v1/me` validates the real ID token:
-   ```bash
-   cd backend
-   ILCR_SECURITY_ENABLED=true COGNITO_REGION=ca-central-1 \
-   COGNITO_USER_POOL=ca-central-1_UpeAqsYt4 COGNITO_CLIENT_ID=352pis0ark86dam7ht1jlp9uj5 \
-   SPRING_PROFILES_ACTIVE=oracle,openshift ./mvnw spring-boot:run
-   ```
-3. Open `http://localhost:3000` → FAM Hosted UI → sign in (IDIR/BCeID) → back to the app with your
-   real role. Confirm the exact `cognitoDomain` with the FAM admin if the Hosted UI does not load.
-
-**Dev-only testing aids (real session, local dev only — `import.meta.env.DEV`, tree-shaken from every
-deployed build):**
-
-- **"View as (dev)"** header dropdown — overrides the role the SPA uses (nav + route guards) so you
-  can test both roles without re-logging-in. It is **frontend-only**: the backend still enforces your
-  real token, so admin APIs still `403` if your account isn't really in that group.
-- A **"viewing as" warning banner** appears whenever an override is active, naming your real role.
-- A **Sign out** button (header, Logout icon) runs the Cognito/loginproxy logout chain on a real
-  session; hidden in mock mode.
-
-When done with real login: `git checkout -- frontend/public/amplify-config.js`.
+Signed-out visitors land on a welcome page with **Log in with IDIR** and **Log in with Business
+BCeID**. The choice goes to CSS as an identity-provider hint (`azureidir` or `bceidbusiness`), and
+after sign-in the visitor returns to the page they first asked for. Until Business BCeID is
+provisioned on ILCR's CSS clients, its button shows a notice instead of signing in, because CSS
+would answer the hint with an IDIR sign-in.
 
 ## Frontend Shared Conventions
 
@@ -218,12 +193,58 @@ Every endpoint and the permission it requires is listed in [`docs/api-inventory.
 ## OpenShift Status
 
 - **Environments.** Pull requests that touch deployable paths deploy a sandbox (zone = PR number mod 50). Merges to `main` deploy to TEST.
-- **PROD requires a manual tested-tag release.** Merges deploy TEST and record immutable image digests. `ORACLEDB_*` and `USER_POOLS_*` live only in the `dev`, `test` and `prod` environments, never at repository level, because a value missing from an environment silently falls back to the repository one; PR deploys use `dev`. Release PROD fails before deploying if any of them exists at repository or organization level or `prod` lacks one.
-- **Security is always on.** Deployed pods always enforce FAM/Cognito JWT authentication: `ILCR_SECURITY_ENABLED` is hard-coded `"true"` in `backend/openshift.deploy.yml`.
-- **Datasource.** `ILCR_DATASOURCE_ENABLED` defaults to `true`. It can be set to `false` with a **repository-level** GitHub variable for a data-less smoke deployment. The deploy matrix reads it before the environment attaches, so an environment-scoped value is ignored.
+- **PROD requires a manual tested-tag release.** Merges deploy TEST and record immutable image digests.
+- **Security is always on.** Deployed pods always enforce FAM/CSS access-token authentication: `ILCR_SECURITY_ENABLED` is hard-coded `"true"` in `backend/openshift.deploy.yml`.
+- **Datasource.** `ILCR_DATASOURCE_ENABLED` defaults to `true`. Set it to `false` in an environment for a data-less smoke deployment.
 - **Fail-closed guard.** The backend also refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data.
 
 The NR User Lookup directory search (`ILCR_USER_LOOKUP_ENABLED`, DL-27) is a separate switch and ships `false` in every environment. Only its non-secret half is wired in `backend/openshift.deploy.yml` — the service-account credential (`ILCR_USER_LOOKUP_CLIENT_ID` / `_SECRET`) is a per-environment Vault secret that does not exist yet, and a `secretKeyRef` to a missing Secret would fail the pod, so it lands with the DL-27 onboarding work. The backend refuses to start with the flag on and any of the four values blank, so the switch and the credential cannot drift apart. While the flag is off the endpoint is not routed at all and `GET /api/v1/users/lookup` answers 404.
+
+### GitHub settings
+
+Deployment settings live in the `dev`, `test` and `prod` GitHub Environments. PR deploys, PR cleanup and the scheduled PR purge use `dev`. Every deploy job fails unless `OC_NAMESPACE` ends in `-<environment>`, and each environment's issuer must be its own SSO realm.
+
+Each OpenShift token is a token for that namespace's `github-deployer` service account, as in LEXIS. Every job uses it only to request a 25-minute token for the `pipeline` service account, and does its work with that.
+
+**Repository secrets.** The analysis jobs attach no environment.
+
+| Secret | Description |
+|---|---|
+| `SONAR_TOKEN_BACKEND`, `SONAR_TOKEN_FRONTEND` | SonarCloud analysis |
+
+**`tools` environment.** The shared e2e Oracle runs in the tools namespace, which PR and merge runs share. The e2e reset and shard jobs and `Deploy (database)` attach this environment. It needs no branch rule, because PR runs use it.
+
+| Name | Kind | Description |
+|---|---|---|
+| `OC_NAMESPACE_TOOLS` | Secret | Tools namespace, ending in `-tools` |
+| `OC_TOKEN_TOOLS` | Secret | `github-deployer` token for that namespace |
+| `TOOLS_ORACLEDB_PASSWORD` | Secret | Password of the shared e2e Oracle |
+| `OC_SERVER` | Variable | OpenShift API server URL |
+
+**Environment secrets** (each of `dev`, `test` and `prod` unless noted)
+
+| Secret | Description |
+|---|---|
+| `OC_NAMESPACE` | That environment's namespace, ending in `-dev`, `-test` or `-prod` |
+| `OC_TOKEN` | `github-deployer` token for that namespace |
+| `ORACLEDB_HOST` | Oracle hostname only. The backend builds the TCPS URL itself, so no `jdbc:`, `//` or port |
+| `ORACLEDB_SERVICENAME` | Oracle service name only |
+| `ORACLEDB_USERNAME`, `ORACLEDB_PASSWORD` | Oracle credentials |
+| `VANITY_TLS_CERTIFICATE`, `VANITY_TLS_KEY`, `VANITY_TLS_CA_CERTIFICATE` | `prod` only: PEM certificate, key and issuer chain for `VANITY_HOST` |
+| `SYSDIG_API_TOKEN` | `prod` only, optional: Sysdig alert sync |
+
+**Environment variables** (each of `dev`, `test` and `prod` unless noted)
+
+| Variable | Description |
+|---|---|
+| `OC_SERVER` | OpenShift API server URL |
+| `ILCR_OIDC_ISSUER_URI` | CSS realm issuer: `dev.loginproxy` in `dev`, `test.loginproxy` in `test`, `loginproxy.gov.bc.ca` in `prod` |
+| `ILCR_OIDC_CLIENT_ID` | CSS public client ID (`resource` in the installation JSON) |
+| `VANITY_HOST` | `prod` only: PROD hostname without scheme or path |
+| `ILCR_OIDC_SITEMINDER_LOGOUT_URL` | Optional: SiteMinder `logoff.cgi` URL; defaults to `logontest7` outside PROD and `logon7` in PROD |
+| `ILCR_DATASOURCE_ENABLED` | Optional: `false` for a data-less smoke deployment |
+
+The SPA uses `https://<host>/authCallback` as its redirect URI and `https://<host>/` as its post-logout redirect URI. Both must be registered on the environment's CSS client.
 
 ## Verification
 

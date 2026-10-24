@@ -33,9 +33,8 @@ on:
         default: ""
         type: string
 
-    # Secrets come via `secrets: inherit` so environment-scoped values
-    # (test/prod) resolve correctly; a `uses:` job cannot set `environment:`,
-    # so explicitly passed secrets would only ever see repo-level values.
+    # Secrets come via `secrets: inherit`: a `uses:` job cannot set `environment:`,
+    # so each job below attaches the environment and reads its own values.
 
     outputs:
       triggered:
@@ -60,9 +59,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      # An environment secret replaces the inherited repository secret only when it exists. Without
-      # this check, a missing environment secret would fall back to the repository-level value of the
-      # same name. PR deploys use the dev environment.
       - name: Validate OpenShift namespace
         if: ${{ inputs.environment != '' }}
         env:
@@ -73,26 +69,6 @@ jobs:
             echo "::error title=Wrong OpenShift namespace::OC_NAMESPACE must be the ${DEPLOY_ENV} namespace, ending in -${DEPLOY_ENV}."
             exit 1
           fi
-
-      # Release PROD has already refused repository-level copies of these, so a value here can only
-      # come from the prod environment. Fail rather than deploy PROD with any of them missing.
-      - name: Require PROD values
-        if: ${{ inputs.target == 'prod' }}
-        env:
-          ORACLEDB_HOST: ${{ secrets.ORACLEDB_HOST }}
-          ORACLEDB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
-          ORACLEDB_USERNAME: ${{ secrets.ORACLEDB_USERNAME }}
-          ORACLEDB_PASSWORD: ${{ secrets.ORACLEDB_PASSWORD }}
-          USER_POOLS_ID: ${{ secrets.USER_POOLS_ID }}
-          USER_POOLS_WEB_CLIENT_ID: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
-        run: |
-          set -euo pipefail
-          for name in ORACLEDB_HOST ORACLEDB_SERVICENAME ORACLEDB_USERNAME ORACLEDB_PASSWORD USER_POOLS_ID USER_POOLS_WEB_CLIENT_ID; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::${name} must be set in the prod GitHub Environment"
-              exit 1
-            fi
-          done
 
       # Check both images before anything rolls out, so a bad frontend reference cannot leave
       # a new backend running beside the old frontend. PR deploys (dev) use their head-SHA tags.
@@ -111,6 +87,43 @@ jobs:
             fi
           done
 
+      # common/openshift.init.yml pastes these values into JavaScript string
+      # literals in the frontend config.js, and a template cannot escape them,
+      # so every value that reaches that file must match a strict pattern.
+      - name: Validate SSO configuration
+        env:
+          APP_ENV: ${{ inputs.environment || 'dev' }}
+          OIDC_ISSUER_URI: ${{ vars.ILCR_OIDC_ISSUER_URI }}
+          OIDC_CLIENT_ID: ${{ vars.ILCR_OIDC_CLIENT_ID }}
+          OIDC_SITEMINDER_LOGOUT_URL: ${{ vars.ILCR_OIDC_SITEMINDER_LOGOUT_URL }}
+        run: |
+          if [[ ! "$OIDC_ISSUER_URI" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/(auth/)?realms/[A-Za-z0-9._-]+$ ]] ||
+             [[ ! "$OIDC_CLIENT_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::ILCR_OIDC_ISSUER_URI and ILCR_OIDC_CLIENT_ID must identify the provisioned CSS client"
+            exit 1
+          fi
+          # Optional: blank selects the logontest7/logon7 default in the frontend.
+          if [[ -n "$OIDC_SITEMINDER_LOGOUT_URL" ]] &&
+             [[ ! "$OIDC_SITEMINDER_LOGOUT_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?$ ]]; then
+            echo "::error::ILCR_OIDC_SITEMINDER_LOGOUT_URL must be an https URL without a query or fragment"
+            exit 1
+          fi
+          if [[ ! "$APP_ENV" =~ ^(dev|test|prod)$ ]]; then
+            echo "::error::The deployment environment must be dev, test or prod"
+            exit 1
+          fi
+          # Each environment trusts only its own SSO realm, so a fallen-back or copied issuer cannot
+          # make PROD accept DEV or TEST tokens.
+          case "$APP_ENV" in
+            prod) sso_host=loginproxy.gov.bc.ca ;;
+            test) sso_host=test.loginproxy.gov.bc.ca ;;
+            *) sso_host=dev.loginproxy.gov.bc.ca ;;
+          esac
+          if [[ "$OIDC_ISSUER_URI" != "https://$sso_host/"* ]]; then
+            echo "::error::ILCR_OIDC_ISSUER_URI must be the $APP_ENV SSO realm on $sso_host"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -119,40 +132,31 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/deploy-templates"
           cp common/openshift.init.yml "$RUNNER_TEMP/deploy-templates/init.yml"
-      - name: Configure application origin
-        id: origin
+      - name: Validate PROD settings
+        if: ${{ inputs.target == 'prod' }}
         env:
-          DEPLOY_TARGET: ${{ inputs.target }}
           DEPLOY_ENV: ${{ inputs.environment }}
-          APP_NAME: ${{ github.event.repository.name }}
-          APPS_DOMAIN: ${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}
           VANITY_HOST: ${{ vars.VANITY_HOST }}
           VANITY_TLS_CERTIFICATE: ${{ secrets.VANITY_TLS_CERTIFICATE }}
           VANITY_TLS_KEY: ${{ secrets.VANITY_TLS_KEY }}
           VANITY_TLS_CA_CERTIFICATE: ${{ secrets.VANITY_TLS_CA_CERTIFICATE }}
         run: |
           set -euo pipefail
-          if [[ "$DEPLOY_TARGET" == prod ]]; then
-            # The namespace check above then requires a -prod namespace.
-            if [[ "$DEPLOY_ENV" != prod ]]; then
-              echo "::error::PROD requires the prod GitHub Environment"
-              exit 1
-            fi
-            for setting in VANITY_HOST VANITY_TLS_CERTIFICATE VANITY_TLS_KEY VANITY_TLS_CA_CERTIFICATE; do
-              if [[ -z "${!setting}" ]]; then
-                echo "::error::${setting} must be configured in the prod GitHub Environment"
-                exit 1
-              fi
-            done
-            if [[ ! "$VANITY_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]]; then
-              echo "::error::VANITY_HOST must be a hostname without a scheme or path"
-              exit 1
-            fi
-            app_origin="https://$VANITY_HOST"
-          else
-            app_origin="https://$APP_NAME-$DEPLOY_TARGET.$APPS_DOMAIN"
+          # The namespace check above then requires a -prod namespace.
+          if [[ "$DEPLOY_ENV" != prod ]]; then
+            echo "::error::PROD requires the prod GitHub Environment"
+            exit 1
           fi
-          echo "app_origin=$app_origin" >> "$GITHUB_OUTPUT"
+          for setting in VANITY_HOST VANITY_TLS_CERTIFICATE VANITY_TLS_KEY VANITY_TLS_CA_CERTIFICATE; do
+            if [[ -z "${!setting}" ]]; then
+              echo "::error::${setting} must be configured in the prod GitHub Environment"
+              exit 1
+            fi
+          done
+          if [[ ! "$VANITY_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]]; then
+            echo "::error::VANITY_HOST must be a hostname without a scheme or path"
+            exit 1
+          fi
       # Secret values go through env, never into `parameters`: the action pastes
       # the parameters string verbatim into bash (`oc process ... ${parameters}`),
       # so a quote or $(...) inside a secret would escape the quoting there.
@@ -163,20 +167,12 @@ jobs:
           DB_PASS: ${{ secrets.ORACLEDB_PASSWORD }}
           DB_HOST: ${{ secrets.ORACLEDB_HOST }}
           DB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
-          COGNITO_POOL: ${{ secrets.USER_POOLS_ID }}
-          COGNITO_CLIENT: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
         with:
           file: ${{ runner.temp }}/deploy-templates/init.yml
           oc_namespace: ${{ secrets.OC_NAMESPACE }}
           oc_server: ${{ vars.OC_SERVER }}
           oc_token: ${{ secrets.OC_TOKEN }}
           overwrite: true
-          # Cognito redirect fallbacks must match FAM's registration EXACTLY
-          # (Cognito string-matches; see FAM repo oidc_clients_ilcr.tf):
-          # sign-in has NO trailing slash, and dev PR hosts (nr-ilcr-0..49)
-          # register only the plain <app>/logout. test/prod also register the
-          # chain-prefixed logout — set env-scoped COGNITO_REDIRECT_SIGN_OUT
-          # there for full federated (SiteMinder/Keycloak) logout.
           parameters:
             -p ZONE='${{ inputs.target }}'
             -p NAME='${{ github.event.repository.name }}'
@@ -184,12 +180,10 @@ jobs:
             -p SPRING_DATASOURCE_PASSWORD="$DB_PASS"
             -p ORACLEDB_HOST="$DB_HOST"
             -p ORACLEDB_SERVICENAME="$DB_SERVICENAME"
-            -p COGNITO_USER_POOL="$COGNITO_POOL"
-            -p COGNITO_CLIENT_ID="$COGNITO_CLIENT"
-            -p COGNITO_DOMAIN='${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}'
-            -p COGNITO_OAUTH_SCOPES='${{ vars.COGNITO_OAUTH_SCOPES || 'openid' }}'
-            -p COGNITO_REDIRECT_SIGN_IN='${{ vars.COGNITO_REDIRECT_SIGN_IN || steps.origin.outputs.app_origin }}'
-            -p COGNITO_REDIRECT_SIGN_OUT='${{ vars.COGNITO_REDIRECT_SIGN_OUT || format('{0}/logout', steps.origin.outputs.app_origin) }}'
+            -p ILCR_OIDC_ISSUER_URI='${{ vars.ILCR_OIDC_ISSUER_URI }}'
+            -p ILCR_OIDC_CLIENT_ID='${{ vars.ILCR_OIDC_CLIENT_ID }}'
+            -p APP_ENV='${{ inputs.environment || 'dev' }}'
+            -p OIDC_SITEMINDER_LOGOUT_URL='${{ vars.ILCR_OIDC_SITEMINDER_LOGOUT_URL }}'
             $OC_PROCESS_FLAGS
           debug: false
           triggers: ${{ inputs.triggers }}
@@ -215,24 +209,23 @@ jobs:
         include:
           - name: backend
             # Oracle host/servicename are environment-scoped SECRETS, passed
-            # through the init job above (env-scoped secrets don't resolve in
+            # through the init job above (env-scoped values don't resolve in
             # this matrix — GitHub evaluates it before the environment
-            # attaches) into the backend Secret. ILCR_SECURITY_ENABLED is
-            # hardcoded "true" in the backend template — deployed pods always
-            # enforce auth.
+            # attaches) into the backend Secret. ILCR_DATASOURCE_ENABLED comes
+            # from the job env below for the same reason. ILCR_SECURITY_ENABLED
+            # is hardcoded "true" in the backend template — deployed pods
+            # always enforce auth.
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
-              -p ILCR_DATASOURCE_ENABLED="${{ vars.ILCR_DATASOURCE_ENABLED || 'true' }}"
-          - name: frontend
-            parameters: -p COGNITO_DOMAIN="$COGNITO_DOMAIN"
+              -p ILCR_DATASOURCE_ENABLED="$ILCR_DATASOURCE_ENABLED"
+          # The frontend takes no extra parameters: its auth settings come from the init ConfigMaps.
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
     env:
       IMAGE_REF: ${{ matrix.name == 'backend' && (inputs.backend_image || format('ghcr.io/{0}/backend:{1}', github.repository, inputs.tag)) || (inputs.frontend_image || format('ghcr.io/{0}/frontend:{1}', github.repository, inputs.tag)) }}
       VANITY_HOST: ${{ vars.VANITY_HOST }}
       APPS_DOMAIN: ${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}
-      COGNITO_DOMAIN: ${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}
+      ILCR_DATASOURCE_ENABLED: ${{ vars.ILCR_DATASOURCE_ENABLED || 'true' }}
     steps:
-      # Each job resolves its environment secrets separately; see the init job.
       - name: Validate OpenShift namespace
         if: ${{ inputs.environment != '' }}
         env:
@@ -345,14 +338,16 @@ jobs:
   # new image or template change, delete the deployment in the tools
   # namespace and re-run.
   #
-  # No `environment:` here — the tools namespace is shared across dev/test,
-  # so OC_NAMESPACE_TOOLS, OC_TOKEN_TOOLS and TOOLS_ORACLEDB_PASSWORD are
-  # repo-level secrets (via `secrets: inherit`).
+  # The tools namespace is shared across dev/test, so OC_NAMESPACE_TOOLS,
+  # OC_TOKEN_TOOLS and TOOLS_ORACLEDB_PASSWORD live in the tools environment.
   deploy-database:
     if: ${{ inputs.target != 'prod' }}
     name: Deploy (database)
     needs: [deploy]
     runs-on: ubuntu-26.04
+    environment:
+      name: tools
+      deployment: false
     permissions:
       contents: read
     timeout-minutes: 15

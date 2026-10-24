@@ -36,6 +36,9 @@ const SRC = resolve(process.cwd(), 'src')
 const PAGE_TITLE: Record<string, string> = {
   'schedule-tombstone__title': '2rem (heading-05)',
   'page-title-heading': '1rem',
+  // The signed-out landing page, sized as CSP's welcome screen: type-scale 13 (3.75rem), stepping
+  // down to 3rem and 2.25rem on narrower screens.
+  'welcome-page__heading': '3.75rem (type-scale 13)',
 }
 
 /** Heading classes that deliberately sit BELOW the section-heading tier, with their size. */
