@@ -346,7 +346,7 @@
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <version>11.0.27</version>
+                <version>11.0.29</version>
             </dependency>
             <dependency>
                 <groupId>org.antlr</groupId>
@@ -387,7 +387,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.4</version>
+                <version>3.7.0</version>
                 <executions>
                     <execution>
                         <id>precompile-jasper-reports</id>
