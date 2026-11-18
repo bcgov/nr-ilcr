@@ -586,7 +586,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                 </TableCell>
                 <TableCell>
                   <Button
-                    kind="ghost"
+                    kind="danger--tertiary"
                     size="sm"
                     disabled={!editable || saving}
                     renderIcon={TrashCan}
