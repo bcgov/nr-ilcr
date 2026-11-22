@@ -1,5 +1,6 @@
 import type { FC } from 'react'
-import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
+import { Column, Dropdown, Grid } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
 import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { OriginalValues } from '@/interfaces/OriginalValue'

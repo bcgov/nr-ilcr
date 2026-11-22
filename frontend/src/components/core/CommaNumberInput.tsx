@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react'
 import { useRef } from 'react'
-import { TextInput } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import { groupInput, stripGroup } from '@/utils/number'
 
 // Everything a Carbon TextInput takes, minus the value/onChange we own. `value` is the RAW form

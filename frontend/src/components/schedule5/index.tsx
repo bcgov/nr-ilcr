@@ -33,8 +33,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { Add, CheckmarkOutline, Close, Copy, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'

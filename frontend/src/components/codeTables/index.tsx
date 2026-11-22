@@ -11,8 +11,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import { Add, Close, Edit, Save } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CodeComboBox from '@/components/core/CodeComboBox'

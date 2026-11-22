@@ -13,8 +13,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import { Add, TrashCan } from '@carbon/icons-react'
 import { fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { committedNum, isUnusableStrictEntry } from '@/utils/derivedMath'

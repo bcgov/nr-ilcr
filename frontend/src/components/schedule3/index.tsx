@@ -22,8 +22,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { ALL_LINE_CODES, HARVEST_POP_LINE_CODES } from '@/interfaces/Schedule3Request'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'

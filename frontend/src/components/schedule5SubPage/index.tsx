@@ -22,8 +22,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import { Add, ArrowLeft, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'

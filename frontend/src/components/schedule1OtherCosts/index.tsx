@@ -12,8 +12,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import { Add, TrashCan } from '@carbon/icons-react'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'

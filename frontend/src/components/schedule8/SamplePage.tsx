@@ -21,9 +21,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextInput,
   Tooltip,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import {
   Add,
   ArrowLeft,

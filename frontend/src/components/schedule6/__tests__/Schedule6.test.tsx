@@ -1496,6 +1496,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     expect(screen.getByText('Entered volume must be between 0 and 9,999,999.')).toBeInTheDocument()
+    expect(within(panel).getByLabelText('Volume m³')).toHaveAccessibleDescription(
+      'Entered volume must be between 0 and 9,999,999.',
+    )
     expect(post).not.toHaveBeenCalled()
   })
 

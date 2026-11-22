@@ -321,6 +321,9 @@ describe('Schedule 11 page (Story 25.3)', () => {
     await user.click(await screen.findByRole('button', { name: /^add$/i }))
 
     expect(screen.getByText('Location: Value is required.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Location')).toHaveAccessibleDescription(
+      'Location: Value is required.',
+    )
     expect(screen.getByText('Enhanced: Value is required.')).toBeInTheDocument()
     expect(screen.getByText('Biogeo/Subzone/Variant: Value is required.')).toBeInTheDocument()
     expect(screen.getByText('NAR(ha): Value is required.')).toBeInTheDocument()

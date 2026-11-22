@@ -1,7 +1,7 @@
 import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { CSSProperties, FC, ReactNode } from 'react'
-import { TextInput } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
 import type { CodeDescription, Schedule10CodeLists } from '@/interfaces/Schedule10Response'
 import CodeComboBox from '@/components/core/CodeComboBox'

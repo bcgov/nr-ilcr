@@ -26,8 +26,8 @@ import {
   TableHeader,
   TableRow,
   TextArea,
-  TextInput,
 } from '@carbon/react'
+import TextInput from '@/components/core/ValidationTextInput'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import { Add, TrashCan } from '@carbon/icons-react'
